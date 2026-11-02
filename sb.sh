@@ -22,6 +22,13 @@ reload_main() { cfg export; firewall; systemctl restart sing-box; }
 arch_name() { case $(uname -m) in x86_64) echo amd64;; aarch64|arm64) echo arm64;; *) echo '仅支持 amd64/arm64' >&2; return 1;; esac; }
 install_main() {
     require_system
+    local install_arch
+    install_arch=$(arch_name)
+    if [[ -d "$APP_HOME" && ! -f "$APP_HOME/.managed" ]]; then echo "$APP_HOME 已存在且无项目标记，停止安装" >&2; return 1; fi
+    if [[ -d "$SB_ROOT" && ! -f "$SB_ROOT/sb.json" && ! -f "$SB_ROOT/app.json" ]] && [[ -n $(find "$SB_ROOT" -mindepth 1 -maxdepth 1 -print -quit) ]]; then echo '配置目录已有非本项目文件，停止安装' >&2;return 1;fi
+    if [[ ! -f "$SCRIPT_ROOT/.bin/linux-$install_arch/yg-vpngate" && ! -f "$APP_HOME/.bin/linux-$install_arch/yg-vpngate" ]];then
+        echo '请使用已验证的正式安装包；源码开发请先运行 scripts/build_release.py' >&2;return 1
+    fi
     apt-get update -qq
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl openssl python3 iproute2 iptables procps qrencode tar
     if [[ -d "$APP_HOME" && ! -f "$APP_HOME/.managed" ]]; then echo "$APP_HOME 已存在且无项目标记，停止安装" >&2; return 1; fi
@@ -74,7 +81,7 @@ EOF
     systemctl restart sing-box
     if [[ -f "$SB_ROOT/vpngate/gateway.json" ]]; then systemctl restart yg-vpngate sing-box-vpngate; fi
     # Old templates are removed only after successful generation and migration.
-    rm -f -- "$SB_ROOT/sb10.json" "$SB_ROOT/sb11.json" /root/geosite.db /root/geoip.db
+    rm -f -- "$SB_ROOT/sb10.json" "$SB_ROOT/sb11.json"
     echo '五协议普通节点已安装，输入 sb，菜单 17 添加 VPNGate。'
     cfg show
 }

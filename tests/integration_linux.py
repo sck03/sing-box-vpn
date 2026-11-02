@@ -119,7 +119,7 @@ def main():
             run("openssl","req","-x509","-newkey","rsa:2048","-nodes","-days","1","-subj","/CN=yg-test-ca","-keyout",str(root/"ca.key"),"-out",str(root/"ca.crt"))
             for role in ("server","client"):
                 run("openssl","req","-new","-newkey","rsa:2048","-nodes","-subj","/CN="+("exit.test" if role=="server" else "client"),"-keyout",str(root/(role+".key")),"-out",str(root/(role+".csr")))
-                (root/(role+".ext")).write_text("extendedKeyUsage="+("serverAuth" if role=="server" else "clientAuth")+"\n"+("subjectAltName=DNS:exit.test\n" if role=="server" else ""))
+                (root/(role+".ext")).write_text("keyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage="+("serverAuth" if role=="server" else "clientAuth")+"\n"+("subjectAltName=DNS:exit.test\n" if role=="server" else ""))
                 run("openssl","x509","-req","-in",str(root/(role+".csr")),"-CA",str(root/"ca.crt"),"-CAkey",str(root/"ca.key"),"-CAcreateserial","-days","1","-extfile",str(root/(role+".ext")),"-out",str(root/(role+".crt")))
             server_config="\n".join(["port 1194","proto udp","local "+REMOTE,"dev tun0","server 10.8.0.0 255.255.255.0","topology subnet","dh none","ca "+str(root/"ca.crt"),"cert "+str(root/"server.crt"),"key "+str(root/"server.key"),"tls-version-min 1.2","data-ciphers AES-256-GCM:AES-128-GCM","auth SHA256","push \"redirect-gateway def1\"","keepalive 5 20","verb 3"])+"\n"
             (root/"server.conf").write_text(server_config)
