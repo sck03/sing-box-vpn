@@ -4,7 +4,7 @@ sing-box 1.14.4 五协议普通节点，加一套可临时选择的 VPNGate 家�
 构建工具链锁定 Go 1.27.3。支持 Ubuntu/Debian、systemd、Linux amd64/arm64。
 
 ```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/sck03/sing-box-vpn/main/install.sh)
+curl -fsSL https://raw.githubusercontent.com/sck03/sing-box-vpn/main/install.sh | sudo bash
 ```
 
 安装普通节点后运行 `sb`，菜单 **17** 选择国家并启动 VPNGate，菜单 **9** 获取
