@@ -1,8 +1,10 @@
 {
-  "release": "v1.0.0",
+  "release": "v1.1.0",
   "go": "1.27.3",
   "sing_box": {
-    "version": "1.14.4",
+    "channel": "stable",
+    "minimum_version": "1.14.0",
+    "tested_version": "1.14.4",
     "linux_amd64_sha256": "699a1b510aa4396b2176d32d1181920399ebf1e267835da6f3b598d0f7c24968",
     "linux_arm64_sha256": "436441f76ee2f7fe21b5b2d426d3cb261a480455a704865789ad533e4273ec26"
   },

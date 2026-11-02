@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-VERSION=v1.0.0
+VERSION=v1.1.0
 REPOSITORY=https://github.com/sck03/sing-box-vpn
 if [[ "${1:-}" == --local ]];then
     SOURCE="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)"

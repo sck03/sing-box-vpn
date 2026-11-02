@@ -12,6 +12,7 @@ import tempfile
 from pathlib import Path
 
 CORE_VERSION = "1.14.4"
+MIN_CORE_VERSION = (1, 14, 0)
 PROTOCOLS = ("vless", "vmess", "hysteria2", "tuic", "anytls")
 TAGS = {"vless": "vless-sb", "vmess": "vmess-sb", "hysteria2": "hy2-sb", "tuic": "tuic5-sb", "anytls": "anytls-sb"}
 LABELS = {"vless": "VLESS-Reality", "vmess": "VMess-WS", "hysteria2": "Hysteria-2", "tuic": "TUIC-v5", "anytls": "AnyTLS"}
@@ -43,8 +44,13 @@ def atomic_bytes(path, data, mode=0o600):
 
 def check_core(core):
     result = subprocess.run([str(core), "version"], capture_output=True, text=True, check=True)
-    if not re.search(r"sing-box version " + re.escape(CORE_VERSION) + r"(?:\s|$)", result.stdout):
-        raise ValueError("本版本要求 sing-box " + CORE_VERSION)
+    match = re.search(r"sing-box version (\d+\.\d+\.\d+)([^\s]*)", result.stdout)
+    if not match or match.group(2).startswith("-"):
+        raise ValueError("需要 sing-box 正式稳定版")
+    version = match.group(1)
+    if tuple(map(int,version.split("."))) < MIN_CORE_VERSION:
+        raise ValueError("当前配置要求 sing-box 1.14.0 或更新的稳定版")
+    return version
 
 def checked_json(path, obj, core):
     path = Path(path)

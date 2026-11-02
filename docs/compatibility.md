@@ -1,6 +1,7 @@
 **1.14.4 兼容性说明**
 
-核心来源为官方 sing-box 1.14.4，工具链为 Go 1.27.3；版本与 SHA256 记录在 versions.json。
+测试基线为官方 sing-box 1.14.4，工具链为 Go 1.27.3；基线 SHA256 记录在 versions.json。
+安装与菜单更新从官方 API 获取最新稳定核心，1.14.4 不构成版本锁定。
 研究阶段检查了 sing-box-yg 的新版服务端、四种客户端分支和 Hy2 跳跃格式。
 实现统一使用现代 DNS、WireGuard endpoint、HTTP client、route action 和 SRS 规则集。
 

@@ -1,7 +1,8 @@
 **VPNGate 实施方案与实现说明**
 
 目标是保留普通五协议节点，再提供一套可临时选择的 VPNGate 家宽候选节点。
-版本锁定 sing-box 1.14.4、Go 1.27.3；发行包包含 Linux amd64/arm64 静态网关。
+sing-box 核心支持在线更新至官方最新稳定版，最低 1.14.0，测试基线 1.14.4。
+Go 构建工具链为 1.27.3；发行包包含 Linux amd64/arm64 静态网关。
 
 普通节点与 VPNGate 节点各有 VLESS Reality、VMess-WS、Hysteria-2、TUIC-v5、AnyTLS。
 普通入口保留自己的端口、凭据和路由。VPNGate 入口使用独立端口、密钥和密码，同国家
@@ -66,6 +67,7 @@ ASSOCIATE，TCP/UDP 中继只监听回环地址，必须认证。业务 socket �
   停用状态重启恢复、错误出口国家拒绝。
 - CI 通过后才发布两种架构与 SHA256；测试不冒充公共节点或特定 VPS 的在线结果。
 
-生产要求 Ubuntu/Debian + systemd、root、IPv4、TUN/netns。固定版本下载须校验。
+生产要求 Ubuntu/Debian + systemd、root、IPv4、TUN/netns。稳定版下载须校验。
+配置不兼容时保留旧核心，服务启动失败时自动回滚。
 仓库不包含运行密码、私钥、节点缓存、临时工具链和研究源码副本。
 来源见 [NOTICE.md](NOTICE.md)，使用见 [README.md](README.md)。

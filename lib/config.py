@@ -168,6 +168,7 @@ def base64_encode(text):
     return base64.b64encode(text.encode())+b"\n"
 
 def commit_app(root, core, app):
+    app["version"] = check_core(core)
     config = server_config(app["inbounds"], app.get("routing"), app.get("warp"), app.get("socks_port",40000))
     checked_json(root / "sb.json", config, core)
     atomic_json(root / "app.json", app)
@@ -210,7 +211,7 @@ def main():
     cmd=args.command
     if cmd=="export":exports(root,core,app);return
     if cmd=="show":
-        print(json.dumps({"core":CORE_VERSION,"address":app["address"],"protocols":{i["type"]:i["listen_port"] for i in app["inbounds"]},"routing":app.get("routing",{})},ensure_ascii=False,indent=2));return
+        print(json.dumps({"core":check_core(core),"address":app["address"],"protocols":{i["type"]:i["listen_port"] for i in app["inbounds"]},"routing":app.get("routing",{})},ensure_ascii=False,indent=2));return
     if cmd=="links":
         for link in exports(root,core,app):print(link)
         return

@@ -39,25 +39,19 @@ install_main() {
     fi
     printf '%s\n' 'sck03/sing-box-vpn' > "$APP_HOME/.managed"
     LIB="$APP_HOME/lib"
-    local arch version checksum scratch
+    local arch candidate
     arch=$(arch_name)
-    version=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["sing_box"]["version"])' "$APP_HOME/versions.json")
-    checksum=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["sing_box"]["linux_"+sys.argv[2]+"_sha256"])' "$APP_HOME/versions.json" "$arch")
-    scratch=$(mktemp -d /tmp/sb-core.XXXXXXXX)
-    curl -fLsS --retry 2 --connect-timeout 15 --max-time 180 "https://github.com/SagerNet/sing-box/releases/download/v$version/sing-box-$version-linux-$arch.tar.gz" -o "$scratch/core.tar.gz"
-    printf '%s  %s\n' "$checksum" "$scratch/core.tar.gz" | sha256sum -c - >/dev/null
-    tar -xzf "$scratch/core.tar.gz" -C "$scratch"
-    install -m 0755 "$scratch/sing-box-$version-linux-$arch/sing-box" "$SB_ROOT/sing-box.new"
-    "$SB_ROOT/sing-box.new" version
-    mv -f -- "$SB_ROOT/sing-box.new" "$CORE"
-    case "$scratch" in /tmp/sb-core.*) rm -rf -- "$scratch";; esac
+    candidate="$SB_ROOT/sing-box.candidate"
+    python3 "$LIB/core.py" --root "$SB_ROOT" prepare --output "$candidate"
+    python3 "$LIB/config.py" --root "$SB_ROOT" --core "$candidate" init
+    python3 "$LIB/core.py" --root "$SB_ROOT" activate "$candidate" --no-restart
+    rm -f -- "$candidate"
     if [[ -f "$APP_HOME/.bin/linux-$arch/yg-vpngate" ]]; then
         install -m 0755 "$APP_HOME/.bin/linux-$arch/yg-vpngate" /usr/local/bin/yg-vpngate.new
         mv -f /usr/local/bin/yg-vpngate.new /usr/local/bin/yg-vpngate
     else
         echo '发行包缺少静态网关二进制，请使用 install.sh 安装正式发行包' >&2; return 1
     fi
-    cfg init
     chmod 0600 "$SB_ROOT"/*.json "$SB_ROOT"/*.key 2>/dev/null || true
     cat > /etc/systemd/system/sing-box.service <<EOF
 [Unit]
@@ -134,6 +128,16 @@ for name in ('sbox.json','clmi.yaml','jhsub.txt'):print(f'http://{a}:{s["port"]}
 PY
 }
 protocol_pick() { echo 'vless / vmess / hysteria2 / tuic / anytls'; read -r -p '协议：' PROTOCOL; }
+core_menu() {
+    echo '1. 当前/最新稳定版  2. 更新最新稳定版  3. 指定稳定版本  4. 回滚上一核心  0. 返回'
+    read -r -p '选择：' choice
+    case "$choice" in
+    1) python3 "$LIB/core.py" --root "$SB_ROOT" check;;
+    2) python3 "$LIB/core.py" --root "$SB_ROOT" update;;
+    3) read -r -p '稳定版版本号（1.14.0 或更新）：' version;python3 "$LIB/core.py" --root "$SB_ROOT" update --version "$version";;
+    4) python3 "$LIB/core.py" --root "$SB_ROOT" rollback;;
+    esac
+}
 settings_menu() {
     echo '1. Reality SNI  2. 重置凭据  3. Argo 隧道  4. VMess WS 路径'
     echo '5. Telegram 配置  6. WARP endpoint  7. GitLab 私有订阅  8. 本地订阅  9. VMess CDN 地址'
@@ -196,11 +200,11 @@ uninstall_main() {
 menu() {
     require_system
     while true;do
-        echo;echo 'sing-box-vpn · sing-box 1.14.4 · Go 1.27.3'
+        echo;echo 'sing-box-vpn · 稳定核心可在线更新'
         echo ' 1. 安装/迁移五协议普通节点   2. 卸载'
         echo ' 3. 变更配置                4. 端口/Hy2 跳跃'
         echo ' 5. 域名分流                6. 启停服务'
-        echo ' 7. 更新项目发行版          8. 验证/安装锁定稳定核心'
+        echo ' 7. 更新项目发行版          8. 更新/指定/回滚稳定核心'
         echo ' 9. 刷新并查看节点         10. 运行日志'
         echo '11. BBR + FQ              12. 管理证书'
         echo '13. 查看 WARP 分流配置     14. 配置已有本机 SOCKS5'
@@ -212,7 +216,7 @@ menu() {
         0) return;;1) install_main;;2) uninstall_main;return;;3) settings_menu;;4) port_menu;;5) route_menu;;
         6) read -r -p 'start / stop / restart：' action;[[ "$action" =~ ^(start|stop|restart)$ ]] && systemctl "$action" sing-box;;
         7) curl -fLsS https://raw.githubusercontent.com/sck03/sing-box-vpn/main/install.sh -o /tmp/sb-vpn-update.sh;bash /tmp/sb-vpn-update.sh;rm -f /tmp/sb-vpn-update.sh;;
-        8) install_main;;9) share_menu;;10) journalctl -u sing-box -u yg-vpngate -u sing-box-vpngate -n 100 --no-pager;;
+        8) core_menu;;9) share_menu;;10) journalctl -u sing-box -u yg-vpngate -u sing-box-vpngate -n 100 --no-pager;;
         11) modprobe tcp_bbr;printf 'net.core.default_qdisc=fq\nnet.ipv4.tcp_congestion_control=bbr\n' > /etc/sysctl.d/99-sing-box-vpn-bbr.conf;sysctl -p /etc/sysctl.d/99-sing-box-vpn-bbr.conf;;
         12) certificate_menu;;13) cfg show;;14) read -r -p '已有 SOCKS5 本机端口：' value;cfg socks "$value";reload_main;;
         15) read -r -p '新 VPS IP/域名：' value;cfg address "$value";cfg export;;
@@ -223,6 +227,9 @@ menu() {
 }
 case "${1:-menu}" in
     install) install_main;;export) cfg export;;status) cfg show;;links) cfg links;;
-    menu) menu;;--help|help) echo 'sb [install|export|status|links]；不带参数打开菜单';;
+    core-check) python3 "$LIB/core.py" --root "$SB_ROOT" check;;
+    core-update) require_system;if [[ -n "${2:-}" ]];then python3 "$LIB/core.py" --root "$SB_ROOT" update --version "$2";else python3 "$LIB/core.py" --root "$SB_ROOT" update;fi;;
+    core-rollback) require_system;python3 "$LIB/core.py" --root "$SB_ROOT" rollback;;
+    menu) menu;;--help|help) echo 'sb [install|export|status|links|core-check|core-update [VERSION]|core-rollback]；不带参数打开菜单';;
     *) echo '未知命令' >&2;exit 1;;
 esac

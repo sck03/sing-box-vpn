@@ -34,6 +34,16 @@ jobs:
           python3 -m compileall -q lib scripts tests
       - name: Five real protocols, ordinary and gateway TCP/UDP
         run: python3 tests/e2e_protocols.py
+      - name: Online stable-core update and rollback
+        run: |
+          mkdir -p .test/core-updater
+          cp "$SING_BOX_BINARY" .test/core-updater/sing-box
+          python3 lib/config.py --root "$PWD/.test/core-updater" --core "$SING_BOX_BINARY" init --address 127.0.0.1 --name updater-test
+          python3 lib/config.py --root "$PWD/.test/core-updater" --core "$SING_BOX_BINARY" vpngate JP
+          sudo python3 lib/core.py --root "$PWD/.test/core-updater" prepare --output "$PWD/.test/core-updater/sing-box.candidate"
+          sudo python3 lib/core.py --root "$PWD/.test/core-updater" activate "$PWD/.test/core-updater/sing-box.candidate" --no-restart
+          sudo python3 lib/core.py --root "$PWD/.test/core-updater" rollback
+          python3 lib/core.py --root "$PWD/.test/core-updater" check
       - name: Build Linux gateway
         run: |
           (cd addons/vpngate/gateway && CGO_ENABLED=0 go build -trimpath -o "$GITHUB_WORKSPACE/.build/yg-vpngate" .)
@@ -61,4 +71,4 @@ jobs:
       - name: Publish verified package
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "sing-box 1.14.4 / Go 1.27.3. Five ordinary and VPNGate protocols, strict country validation and fail-closed routing. Full source and static Linux amd64/arm64 gateways are included."
+        run: gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "Online official stable sing-box updates with compatibility checks and rollback. Go 1.27.3 build toolchain. Five ordinary and VPNGate protocols, strict country validation and fail-closed routing. Full source and static Linux amd64/arm64 gateways are included."

@@ -1,6 +1,6 @@
 # sing-box-vpn
 
-sing-box 1.14.4 五协议普通节点，加一套可临时选择的 VPNGate 家宽候选出口。
+可在线更新的 sing-box 稳定版五协议普通节点，加一套可临时选择的 VPNGate 家宽候选出口。
 构建工具链锁定 Go 1.27.3。支持 Ubuntu/Debian、systemd、Linux amd64/arm64。
 
 ```bash
@@ -10,6 +10,20 @@ curl -fsSL https://raw.githubusercontent.com/sck03/sing-box-vpn/main/install.sh 
 安装普通节点后运行 `sb`，菜单 **17** 选择国家并启动 VPNGate，菜单 **9** 获取
 URI、二维码、Mihomo 和 sing-box 配置。本地订阅在菜单 **3 → 8** 配置。
 安装包包含静态网关二进制；VPS 无需安装 Go。
+
+安装默认获取官方最新稳定核心。菜单 **8** 可查询版本、更新最新稳定版、指定稳定版本
+和回滚上一核心，也可以使用：
+
+```bash
+sb core-check
+sb core-update
+sb core-update 1.14.4
+sb core-rollback
+```
+
+最低支持 1.14.0，1.14.4 是当前测试基线，不是版本锁定。更新先校验官方 SHA256，
+再用候选核心检查普通节点、VPNGate 和客户端配置，最后替换并重启原先运行的实例。
+配置不兼容时不替换，启动失败时自动恢复原核心。端口、UUID、密码和分享链接不改变。
 
 | 客户端选择 | 出口 |
 | --- | --- |
