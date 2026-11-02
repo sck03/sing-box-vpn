@@ -72,9 +72,9 @@ def data_server(root):
         def do_GET(self):
             value=EXIT if self.client_address[0].startswith("10.8.") else HOST_EXIT
             body=value.encode();self.send_response(200);self.send_header("Content-Length",str(len(body)));self.end_headers();self.wfile.write(body)
-    http=http.server.ThreadingHTTPServer((TARGET,8443),Handler)
-    context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);context.load_cert_chain(str(root/"server.crt"),str(root/"server.key"));http.socket=context.wrap_socket(http.socket,server_side=True)
-    threading.Thread(target=http.serve_forever,daemon=True).start()
+    https_server=http.server.ThreadingHTTPServer((TARGET,8443),Handler)
+    context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);context.load_cert_chain(str(root/"server.crt"),str(root/"server.key"));https_server.socket=context.wrap_socket(https_server.socket,server_side=True)
+    threading.Thread(target=https_server.serve_forever,daemon=True).start()
     tcp=socket.socket();tcp.bind((TARGET,9000));tcp.listen()
     def tcp_loop():
         while True:
@@ -168,6 +168,9 @@ def main():
             provider.shutdown()
         except Exception:
             for log in root.glob("*.log"):print(log.name+":\n"+log.read_text(errors="replace")[-12000:],file=sys.stderr)
+            for name in ("state.json","openvpn.log"):
+                p=root/"data"/name
+                if p.exists():print(name+":\n"+p.read_text(errors="replace")[-12000:],file=sys.stderr)
             raise
         finally:
             for p,stream in CHILDREN:stop(p);stream.close()

@@ -146,6 +146,8 @@ func (m *manager) apply(c Config, swap bool) error {
 	}
 	m.cfg = c
 	m.swap = swap
+	m.ready = false
+	m.epoch++
 	m.status = Status{Version: version, State: "waiting", Country: c.Country, Mode: c.Mode, Reason: "configuration changed; forwarding blocked", Updated: time.Now()}
 	if m.cancel != nil {
 		m.cancel()
@@ -389,6 +391,9 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 			if ctx.Err() != nil {
 				return
 			}
+			m.mu.Lock()
+			sessionEpoch := m.epoch
+			m.mu.Unlock()
 			m.setStatus("connecting", "OpenVPN handshake", n, nil)
 			active := m.factory(c)
 			session, stop := context.WithCancel(ctx)
@@ -399,6 +404,12 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 				g, e = m.probe(session, c, active)
 				if e == nil && session.Err() == nil {
 					m.mu.Lock()
+					if session.Err() != nil || sessionEpoch != m.epoch || m.cfg.Country != c.Country {
+						m.mu.Unlock()
+						stop()
+						active.stop()
+						return
+					}
 					m.current = active
 					m.previous = n
 					m.ready = true

@@ -7,7 +7,11 @@ from pathlib import Path
 from store import read_json
 
 def run(binary, *args, required=True):
-    result = subprocess.run([binary, "-w", "5", *args], capture_output=True, text=True)
+    try:
+        result = subprocess.run([binary, "-w", "5", *args], capture_output=True, text=True)
+    except FileNotFoundError:
+        if required:raise RuntimeError("缺少防火墙工具："+binary)
+        return False
     if required and result.returncode:
         raise RuntimeError("防火墙操作失败："+result.stderr.strip())
     return result.returncode == 0
@@ -16,6 +20,14 @@ def sync(root, remove=False):
     root = Path(root)
     marker = root / "firewall.owner"
     owned = marker.exists()
+    if owned and marker.read_text().strip()!="sck03/sing-box-vpn":
+        raise RuntimeError("防火墙所有权记录不匹配")
+    if not owned:
+        for binary in ("iptables","ip6tables"):
+            if run(binary,"-S","SBVPN_INPUT",required=False):raise RuntimeError("SBVPN_INPUT 已存在且无本项目所有权记录")
+        if run("iptables","-t","nat","-S","SBVPN_HY2",required=False):raise RuntimeError("SBVPN_HY2 已存在且无所有权记录")
+        if not remove:
+            marker.write_text("sck03/sing-box-vpn\n");marker.chmod(0o600)
     for binary in ("iptables", "ip6tables"):
         if not owned and run(binary, "-S", "SBVPN_INPUT", required=False):
             raise RuntimeError("SBVPN_INPUT 已存在且无本项目所有权记录")
