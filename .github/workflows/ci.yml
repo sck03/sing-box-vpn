@@ -1,0 +1,64 @@
+name: CI
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: Dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq openvpn iproute2 iptables openssl
+      - name: Download verified sing-box 1.14.4
+        run: |
+          mkdir -p .build/core
+          curl -fLsS --retry 2 https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-amd64.tar.gz -o .build/core/core.tar.gz
+          echo '699a1b510aa4396b2176d32d1181920399ebf1e267835da6f3b598d0f7c24968  .build/core/core.tar.gz' | sha256sum -c -
+          tar -xzf .build/core/core.tar.gz -C .build/core
+          echo "SING_BOX_BINARY=$PWD/.build/core/sing-box-1.14.4-linux-amd64/sing-box" >> "$GITHUB_ENV"
+      - name: Go tests and race detection
+        working-directory: addons/vpngate/gateway
+        run: go test -race ./...
+      - name: Python and shell checks
+        run: |
+          python3 -m unittest discover -s tests -v
+          bash -n sb.sh install.sh addons/vpngate/vpngate.sh lib/argo.sh lib/argo-watch.sh
+          python3 -m compileall -q lib scripts tests
+      - name: Five real protocols, ordinary and gateway TCP/UDP
+        run: python3 tests/e2e_protocols.py
+      - name: Build Linux gateway
+        run: |
+          (cd addons/vpngate/gateway && CGO_ENABLED=0 go build -trimpath -o "$GITHUB_WORKSPACE/.build/yg-vpngate" .)
+      - name: OpenVPN, tunnel DNS and fail-closed namespace acceptance
+        run: sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" python3 tests/integration_linux.py
+      - name: Build both release architectures
+        run: python3 scripts/build_release.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-release
+          path: |
+            .build/release/*.tar.gz
+            .build/release/SHA256SUMS
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: verified-release
+          path: release
+      - name: Publish verified package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "sing-box 1.14.4 / Go 1.27.3. Five ordinary and VPNGate protocols, strict country validation and fail-closed routing. Full source and static Linux amd64/arm64 gateways are included."
