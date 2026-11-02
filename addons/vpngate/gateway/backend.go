@@ -21,7 +21,9 @@ import (
 const namespace = "ygvg0"
 const hostVeth = "ygvg-host"
 const peerVeth = "ygvg-peer"
-const packetMark = "0x59564701"
+
+// OpenVPN parses --mark with atoi(), so its CLI must receive decimal.
+const packetMark = "1498826497"
 const ownerID = "sck03/sing-box-vpn:v1"
 
 type ownerState struct {

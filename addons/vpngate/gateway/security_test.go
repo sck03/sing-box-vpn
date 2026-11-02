@@ -8,13 +8,76 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 )
+
+type fakeTunnel struct{ dead chan error }
+
+func (f *fakeTunnel) start(context.Context, Node) error { return nil }
+func (f *fakeTunnel) stop()                             {}
+func (f *fakeTunnel) socket() string                    { return "" }
+func (f *fakeTunnel) died() <-chan error                { return f.dead }
+
+func TestCancelledVerificationCannotEnableOldCountry(t *testing.T) {
+	var csvData strings.Builder
+	writer := csv.NewWriter(&csvData)
+	_ = writer.Write([]string{"HostName", "IP", "CountryShort", "Ping", "Speed", "OpenVPN_ConfigData_Base64"})
+	_ = writer.Write([]string{"jp-node", "203.0.113.5", "JP", "1", "100", base64.StdEncoding.EncodeToString([]byte(safeTestProfile))})
+	writer.Flush()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, csvData.String()) }))
+	defer server.Close()
+	cfg := defaults()
+	cfg.DataDir = t.TempDir()
+	cfg.RunDir = t.TempDir()
+	cfg.ProxyUser = "ygvg-JP"
+	cfg.ProxyPass = strings.Repeat("a", 64)
+	cfg.Sources = []string{server.URL}
+	cfg.Enabled = true
+	m := newManager(cfg, filepath.Join(cfg.DataDir, "config.json"))
+	m.factory = func(Config) tunnel { return &fakeTunnel{dead: make(chan error)} }
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	m.probeOverride = func(context.Context, Config, tunnel) (Geo, error) {
+		once.Do(func() { close(entered) })
+		<-release
+		return Geo{Country: "JP"}, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { m.run(ctx); close(done) }()
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("verification never entered")
+	}
+	next := cfg
+	next.Country = "KR"
+	next.ProxyUser = "ygvg-KR"
+	if e := m.apply(next, false); e != nil {
+		t.Fatal(e)
+	}
+	close(release)
+	ticket, _ := m.authenticate(next.ProxyUser, next.ProxyPass)
+	time.Sleep(50 * time.Millisecond)
+	if m.allowed(ticket) {
+		t.Fatal("cancelled Japanese tunnel was enabled for Korean credentials")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("manager did not stop")
+	}
+}
 
 const safeTestProfile = "client\ndev tun\nproto udp\nremote 203.0.113.5 1194\nremote-cert-tls server\n<ca>\ntest-certificate\n</ca>\n"
 
@@ -82,6 +145,10 @@ func TestGeoRejectsWrongCountryHostingAndUnknownISP(t *testing.T) {
 	}
 }
 func TestKernelGuardHasNoUnmarkedUnderlayAllowance(t *testing.T) {
+	mark, err := strconv.Atoi(packetMark)
+	if err != nil || mark != 0x59564701 {
+		t.Fatal("OpenVPN mark is not decimal")
+	}
 	n := Node{IP: "203.0.113.5", Network: "udp", Port: 1194}
 	rules := guardRules(n)
 	policy := false
