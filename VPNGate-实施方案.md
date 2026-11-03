@@ -3,6 +3,7 @@
 目标是保留普通五协议节点，再提供一套可临时选择的 VPNGate 家宽候选节点。
 sing-box 核心支持在线更新至官方最新稳定版，最低 1.14.0，测试基线 1.14.4。
 Go 构建工具链为 1.27.3；发行包包含 Linux amd64/arm64 静态网关。
+v1.2.0 起管理、配置、证书、订阅、更新、资源下载和远端推送统一为 Go；Bash 保留安装和菜单。
 
 普通节点与 VPNGate 节点各有 VLESS Reality、VMess-WS、Hysteria-2、TUIC-v5、AnyTLS。
 普通入口保留自己的端口、凭据和路由。VPNGate 入口使用独立端口、密钥和密码，同国家
@@ -28,7 +29,8 @@ ASSOCIATE，TCP/UDP 中继只监听回环地址，必须认证。业务 socket �
 国家代码持久化。节点源缺少国家、国家不符、无效 IP，或 profile 含脚本、插件、
 任意文件引用、其他 remote 时拒绝。连上后查询实际出口 IP 的国家和运营商；
 未知或不匹配时阻断。默认排除已知自营机房与 hosting，支持 ISP 严格模式和 ASN
-允许列表。Geo/ASN 缓存 15 分钟，默认健康间隔 10 秒。
+允许列表。Geo/ASN 按源/IP 缓存 15 分钟且最多 128 项，默认健康间隔 10 秒。
+节点列表缓存一分钟，并发刷新合并；探测 HTTP 连接按隧道复用。
 
 当前同时激活一个国家。各国家入口和凭据保留：韩国激活后，日本凭据不能使用韩国
 出口；重新激活日本会恢复原日本链接。停止出口保留入口配置，节点不可用；再次启动
@@ -40,7 +42,8 @@ ASSOCIATE，TCP/UDP 中继只监听回环地址，必须认证。业务 socket �
 | 文件/服务 | 职责 |
 | --- | --- |
 | sb.sh | 五协议菜单、安装迁移、核心、路由/端口/证书/订阅 |
-| lib/config.py、render.py、store.py | 按字段修改、校验后写入、客户端/URI 输出 |
+| internal/manage/ | Go 配置、原生证书/密钥、核心更新、订阅、防火墙及推送 |
+| cmd/release/ | Go 交叉编译与可复现归档、流式 SHA256 |
 | addons/vpngate/vpngate.sh | 菜单 17、国家入口、服务启停及清理 |
 | addons/vpngate/gateway/ | 节点/profile、国家/ISP、代理、worker、namespace |
 | sing-box.service | 普通五协议 |
@@ -56,12 +59,13 @@ ASSOCIATE，TCP/UDP 中继只监听回环地址，必须认证。业务 socket �
 
 只维护现代模板，旧内核、双模板和旧 geosite/geoip 数据库不再生成。旧配置先私有
 备份，再迁移五协议字段，保留端口、用户和 Reality 密钥。修改不依赖行号或数组
-位置；Hy2 单端口转换为等值范围。新配置先通过对应核心 check。
+位置；Hy2 单端口转换为等值范围。全部候选配置先通过对应核心 check，再提交文件；
+配置修改与核心更新共用文件锁。证书指纹从各入口实际证书计算，单个证书更新不影响其他协议。
 
 验收随代码交付：
 
 - Go：危险 profile、国家/固定模式、ASN、内核规则、过期认证、TCP/UDP 和碎片。
-- Python：五协议、迁移、凭据隔离、链接稳定、非法配置保护、跳跃与手动组。
+- Go 管理：五协议、迁移、凭据隔离、链接稳定、非法配置保护、跳跃与手动组、核心回滚、订阅限制。
 - 实际协议：普通/VPNGate 五协议分别验证 TCP/UDP，共 20 条链路。
 - Linux：受控 OpenVPN TLS、隧道 DNS、TCP/UDP、杀隧道后的已有/新连接阻断、
   停用状态重启恢复、错误出口国家拒绝。
@@ -70,4 +74,5 @@ ASSOCIATE，TCP/UDP 中继只监听回环地址，必须认证。业务 socket �
 生产要求 Ubuntu/Debian + systemd、root、IPv4、TUN/netns。稳定版下载须校验。
 配置不兼容时保留旧核心，服务启动失败时自动回滚。
 仓库不包含运行密码、私钥、节点缓存、临时工具链和研究源码副本。
+VPS 不再需要项目 Python 运行时；可选 Certbot 仍由系统包管理器安装其自身依赖。
 来源见 [NOTICE.md](NOTICE.md)，使用见 [README.md](README.md)。

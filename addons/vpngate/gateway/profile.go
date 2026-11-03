@@ -4,6 +4,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/base64"
 	"encoding/csv"
 	"errors"
@@ -40,13 +41,14 @@ func volunteer(n Node) bool {
 	if !publicIPv4(n.IP) || strings.HasPrefix(strings.ToLower(n.Host), "public-vpn-") {
 		return false
 	}
-	_, own, _ := net.ParseCIDR("219.100.37.0/24")
-	return !own.Contains(net.ParseIP(n.IP))
+	return !vpngateSubnet.Contains(net.ParseIP(n.IP))
 }
 
+var _, vpngateSubnet, _ = net.ParseCIDR("219.100.37.0/24")
 var countryPattern = regexp.MustCompile(`^[A-Z]{2}$`)
 var tokenPattern = regexp.MustCompile(`^[A-Za-z0-9_.:/@+=,-]+$`)
 var hostPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
+var columnReplacer = strings.NewReplacer("_", "", "-", "", " ", "", "\ufeff", "")
 
 func validateProfile(profile, expectedIP string) (string, int, string, error) {
 	if len(profile) == 0 || len(profile) > 1<<20 || !publicIPv4(expectedIP) {
@@ -58,7 +60,6 @@ func validateProfile(profile, expectedIP string) (string, int, string, error) {
 	block, proto, remoteProto := "", "udp", ""
 	port, remotes := 0, 0
 	hasCA := false
-	noarg := map[string]bool{"client": true, "nobind": true, "persist-key": true, "persist-tun": true, "auth-nocache": true, "pull": true, "fast-io": true, "auth-user-pass": true}
 	for scanner.Scan() {
 		raw := scanner.Text()
 		line := strings.TrimSpace(raw)
@@ -74,11 +75,15 @@ func validateProfile(profile, expectedIP string) (string, int, string, error) {
 		}
 		if strings.HasPrefix(line, "<") {
 			name := strings.TrimSuffix(strings.TrimPrefix(line, "<"), ">")
-			if !map[string]bool{"ca": true, "cert": true, "key": true, "tls-auth": true, "tls-crypt": true}[name] || line != "<"+name+">" {
+			if line != "<"+name+">" {
 				return "", 0, "", errors.New("unsupported inline block")
 			}
-			if name == "ca" {
+			switch name {
+			case "ca":
 				hasCA = true
+			case "cert", "key", "tls-auth", "tls-crypt":
+			default:
+				return "", 0, "", errors.New("unsupported inline block")
 			}
 			block = name
 			lines = append(lines, line)
@@ -87,50 +92,48 @@ func validateProfile(profile, expectedIP string) (string, int, string, error) {
 		f := strings.Fields(line)
 		name, args := f[0], f[1:]
 		valid := false
-		if noarg[name] {
+		switch name {
+		case "client", "nobind", "persist-key", "persist-tun", "auth-nocache", "pull", "fast-io", "auth-user-pass":
 			valid = len(args) == 0
-		} else {
-			switch name {
-			case "dev", "dev-type":
-				valid = len(args) == 1 && args[0] == "tun"
-			case "proto":
-				valid = len(args) == 1 && validProto(args[0])
-				if valid {
-					proto = normalizeProto(args[0])
-				}
-			case "remote":
-				remotes++
-				valid = len(args) >= 2 && len(args) <= 3 && args[0] == expectedIP && publicIPv4(args[0]) && remotes == 1
-				if valid {
-					port, _ = strconv.Atoi(args[1])
-					valid = port > 0 && port <= 65535
-				}
-				if valid && len(args) == 3 {
-					valid = validProto(args[2])
-					remoteProto = normalizeProto(args[2])
-				}
-			case "resolv-retry":
-				valid = len(args) == 1 && (args[0] == "infinite" || positiveInt(args[0]))
-			case "remote-cert-tls":
-				valid = len(args) == 1 && args[0] == "server"
-			case "cipher", "data-ciphers", "data-ciphers-fallback", "auth", "tls-cipher", "tls-ciphersuites":
-				valid = len(args) == 1 && tokenPattern.MatchString(args[0])
-			case "comp-lzo":
-				valid = len(args) == 0 || (len(args) == 1 && map[string]bool{"yes": true, "no": true, "adaptive": true}[args[0]])
-			case "compress":
-				valid = len(args) == 1 && map[string]bool{"lz4": true, "lz4-v2": true, "stub": true, "stub-v2": true, "no": true}[args[0]]
-			case "key-direction":
-				valid = len(args) == 1 && (args[0] == "0" || args[0] == "1")
-			case "tls-version-min":
-				valid = len(args) == 1 && (args[0] == "1.2" || args[0] == "1.3")
-			case "verb":
-				if len(args) == 1 {
-					v, e := strconv.Atoi(args[0])
-					valid = e == nil && v >= 0 && v <= 6
-				}
-			case "reneg-sec", "connect-timeout", "connect-retry", "sndbuf", "rcvbuf", "explicit-exit-notify":
-				valid = len(args) == 1 && positiveInt(args[0])
+		case "dev", "dev-type":
+			valid = len(args) == 1 && args[0] == "tun"
+		case "proto":
+			valid = len(args) == 1 && validProto(args[0])
+			if valid {
+				proto = normalizeProto(args[0])
 			}
+		case "remote":
+			remotes++
+			valid = len(args) >= 2 && len(args) <= 3 && args[0] == expectedIP && publicIPv4(args[0]) && remotes == 1
+			if valid {
+				port, _ = strconv.Atoi(args[1])
+				valid = port > 0 && port <= 65535
+			}
+			if valid && len(args) == 3 {
+				valid = validProto(args[2])
+				remoteProto = normalizeProto(args[2])
+			}
+		case "resolv-retry":
+			valid = len(args) == 1 && (args[0] == "infinite" || positiveInt(args[0]))
+		case "remote-cert-tls":
+			valid = len(args) == 1 && args[0] == "server"
+		case "cipher", "data-ciphers", "data-ciphers-fallback", "auth", "tls-cipher", "tls-ciphersuites":
+			valid = len(args) == 1 && tokenPattern.MatchString(args[0])
+		case "comp-lzo":
+			valid = len(args) == 0 || (len(args) == 1 && (args[0] == "yes" || args[0] == "no" || args[0] == "adaptive"))
+		case "compress":
+			valid = len(args) == 1 && (args[0] == "lz4" || args[0] == "lz4-v2" || args[0] == "stub" || args[0] == "stub-v2" || args[0] == "no")
+		case "key-direction":
+			valid = len(args) == 1 && (args[0] == "0" || args[0] == "1")
+		case "tls-version-min":
+			valid = len(args) == 1 && (args[0] == "1.2" || args[0] == "1.3")
+		case "verb":
+			if len(args) == 1 {
+				v, e := strconv.Atoi(args[0])
+				valid = e == nil && v >= 0 && v <= 6
+			}
+		case "reneg-sec", "connect-timeout", "connect-retry", "sndbuf", "rcvbuf", "explicit-exit-notify":
+			valid = len(args) == 1 && positiveInt(args[0])
 		}
 		if !valid {
 			return "", 0, "", fmt.Errorf("unsupported or invalid OpenVPN directive %q", name)
@@ -150,7 +153,11 @@ func validateProfile(profile, expectedIP string) (string, int, string, error) {
 }
 
 func validProto(s string) bool {
-	return map[string]bool{"udp": true, "udp4": true, "tcp": true, "tcp4": true, "tcp-client": true}[s]
+	switch s {
+	case "udp", "udp4", "tcp", "tcp4", "tcp-client":
+		return true
+	}
+	return false
 }
 func normalizeProto(s string) string {
 	if strings.HasPrefix(s, "tcp") {
@@ -160,30 +167,30 @@ func normalizeProto(s string) string {
 }
 func positiveInt(s string) bool { v, e := strconv.Atoi(s); return e == nil && v > 0 && v < 1<<31 }
 func canonicalColumn(s string) string {
-	return strings.ToLower(strings.NewReplacer("_", "", "-", "", " ", "", "\ufeff", "").Replace(strings.TrimPrefix(s, "#")))
+	return strings.ToLower(columnReplacer.Replace(strings.TrimPrefix(s, "#")))
 }
 
 func parseNodes(data []byte) ([]Node, error) {
 	if len(data) > 16<<20 {
 		return nil, errors.New("VPNGate response exceeds 16 MiB")
 	}
-	text := strings.TrimPrefix(string(data), "\ufeff")
-	lines := strings.Split(text, "\n")
-	start := -1
-	for i, line := range lines {
+	input := bufio.NewReader(bytes.NewReader(data))
+	var r *csv.Reader
+	for {
+		line, err := input.ReadString('\n')
 		lc := strings.ToLower(line)
 		if strings.Contains(lc, "openvpn_configdata_base64") && strings.Contains(lc, "country") {
-			start = i
+			r = csv.NewReader(io.MultiReader(strings.NewReader(strings.TrimPrefix(line, "\ufeff")), input))
 			break
 		}
+		if err != nil {
+			return nil, errors.New("VPNGate CSV header missing")
+		}
 	}
-	if start < 0 {
-		return nil, errors.New("VPNGate CSV header missing")
-	}
-	r := csv.NewReader(strings.NewReader(strings.Join(lines[start:], "\n")))
 	r.FieldsPerRecord = -1
 	r.LazyQuotes = true
 	r.TrimLeadingSpace = true
+	r.ReuseRecord = true
 	head, err := r.Read()
 	if err != nil {
 		return nil, err
@@ -192,6 +199,17 @@ func parseNodes(data []byte) ([]Node, error) {
 	for i, k := range head {
 		columns[canonicalColumn(k)] = i
 	}
+	column := func(keys ...string) int {
+		for _, key := range keys {
+			if i, ok := columns[key]; ok {
+				return i
+			}
+		}
+		return -1
+	}
+	ipColumn, countryColumn := column("ip"), column("countryshort", "countrycode")
+	hostColumn, profileColumn := column("hostname", "ddnshostname"), column("openvpnconfigdatabase64")
+	speedColumn, pingColumn := column("speed"), column("ping")
 	var out []Node
 	seen := map[string]bool{}
 	for len(out) < 1500 {
@@ -202,26 +220,24 @@ func parseNodes(data []byte) ([]Node, error) {
 		if err != nil {
 			continue
 		}
-		get := func(keys ...string) string {
-			for _, k := range keys {
-				if i, ok := columns[canonicalColumn(k)]; ok && i < len(row) {
-					return strings.TrimSpace(row[i])
-				}
+		get := func(i int) string {
+			if i >= 0 && i < len(row) {
+				return strings.TrimSpace(row[i])
 			}
 			return ""
 		}
-		ip, cc := get("IP"), strings.ToUpper(get("CountryShort", "CountryCode"))
+		ip, cc := get(ipColumn), strings.ToUpper(get(countryColumn))
 		if !publicIPv4(ip) || !countryPattern.MatchString(cc) {
 			continue
 		}
-		host := get("HostName", "Hostname", "DDNS_HostName")
+		host := get(hostColumn)
 		if host == "" {
 			host = strings.ReplaceAll(ip, ".", "-")
 		}
 		if !hostPattern.MatchString(host) || seen[host] {
 			continue
 		}
-		raw, err := base64.StdEncoding.DecodeString(get("OpenVPN_ConfigData_Base64"))
+		raw, err := base64.StdEncoding.DecodeString(get(profileColumn))
 		if err != nil {
 			continue
 		}
@@ -229,8 +245,8 @@ func parseNodes(data []byte) ([]Node, error) {
 		if err != nil {
 			continue
 		}
-		speed, _ := strconv.ParseInt(get("Speed"), 10, 64)
-		ping, _ := strconv.Atoi(get("Ping"))
+		speed, _ := strconv.ParseInt(get(speedColumn), 10, 64)
+		ping, _ := strconv.Atoi(get(pingColumn))
 		out = append(out, Node{Host: host, IP: ip, Country: cc, Port: port, Network: proto, Speed: speed, Ping: ping, Profile: profile})
 		seen[host] = true
 	}

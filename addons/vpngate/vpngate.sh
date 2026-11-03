@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-export PYTHONUTF8=1
 SB_ROOT="${SB_ROOT:-/etc/s-box}"
-APP_HOME="${SB_HOME:-/opt/sing-box-vpn}"
 CONFIG="$SB_ROOT/vpngate/gateway.json"
 ctl() { /usr/local/bin/yg-vpngate ctl "$1" --config "$CONFIG" "${@:2}"; }
-cfg() { python3 "$APP_HOME/lib/config.py" --root "$SB_ROOT" "$@"; }
+cfg() { /usr/local/bin/yg-vpngate config --root "$SB_ROOT" "$@"; }
 preflight() {
     [[ $(id -u) == 0 && $(uname -s) == Linux ]] || { echo 'VPNGate 要求 Linux root' >&2;return 1; }
     [[ -c /dev/net/tun ]] || { echo '缺少 /dev/net/tun，请在 VPS 面板启用 TUN' >&2;return 1; }
@@ -53,10 +51,10 @@ LimitNOFILE=32768
 [Install]
 WantedBy=multi-user.target
 EOF
-    python3 "$APP_HOME/lib/firewall.py" --root "$SB_ROOT"
+    /usr/local/bin/yg-vpngate firewall --root "$SB_ROOT"
     systemctl daemon-reload
     if systemctl is-active --quiet yg-vpngate;then ctl reload;else systemctl enable --now yg-vpngate >/dev/null;fi
-    systemctl enable --now sing-box-vpngate >/dev/null
+    systemctl enable sing-box-vpngate >/dev/null
     systemctl restart sing-box-vpngate
     echo '连接与出口校验在后台进行；通过校验后才转发。菜单 9 可复制五协议 VPNGate 节点。'
     ctl status
@@ -69,7 +67,7 @@ uninstall_gateway() {
     if [[ -f "$SB_ROOT/app.json" ]];then cfg vpngate-remove;fi
     [[ $(realpath -m -- "$SB_ROOT/vpngate") == /etc/s-box/vpngate ]] || { echo '配置清理路径验证失败' >&2;return 1; }
     rm -rf -- /etc/s-box/vpngate /var/lib/yg-vpngate /run/yg-vpngate
-    if [[ -f "$SB_ROOT/app.json" ]];then python3 "$APP_HOME/lib/firewall.py" --root "$SB_ROOT";fi
+    if [[ -f "$SB_ROOT/app.json" ]];then /usr/local/bin/yg-vpngate firewall --root "$SB_ROOT";fi
     systemctl daemon-reload
     echo 'VPNGate 已卸载，普通节点继续使用。'
 }

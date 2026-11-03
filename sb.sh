@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # GPL-3.0. Modernized management derived from sing-box-yg; see NOTICE.md.
 set -Eeuo pipefail
-export PYTHONUTF8=1
 SCRIPT_ROOT="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)"
 APP_HOME="${SB_HOME:-/opt/sing-box-vpn}"
 SB_ROOT="${SB_ROOT:-/etc/s-box}"
 CORE="$SB_ROOT/sing-box"
-LIB="$SCRIPT_ROOT/lib"
-cfg() { python3 "$LIB/config.py" --root "$SB_ROOT" --core "$CORE" "$@"; }
+MANAGER="${SB_MANAGER:-/usr/local/bin/yg-vpngate}"
+cfg() { "$MANAGER" config --root "$SB_ROOT" --core "$CORE" "$@"; }
 pause() { read -r -p '按回车继续…' _ || true; }
 require_root() { [[ $(id -u) == 0 ]] || { echo '需要 root 权限' >&2; return 1; }; }
 require_system() {
@@ -17,8 +16,8 @@ require_system() {
     [[ "$ID" == debian || "$ID" == ubuntu ]] || { echo '当前版本支持 Ubuntu/Debian + systemd' >&2; return 1; }
     command -v systemctl >/dev/null || { echo '需要 systemd' >&2; return 1; }
 }
-firewall() { python3 "$LIB/firewall.py" --root "$SB_ROOT" "$@"; }
-reload_main() { cfg export; firewall; systemctl restart sing-box; }
+firewall() { "$MANAGER" firewall --root "$SB_ROOT" "$@"; }
+reload_main() { firewall; systemctl restart sing-box; }
 arch_name() { case $(uname -m) in x86_64) echo amd64;; aarch64|arm64) echo arm64;; *) echo '仅支持 amd64/arm64' >&2; return 1;; esac; }
 install_main() {
     require_system
@@ -26,32 +25,33 @@ install_main() {
     install_arch=$(arch_name)
     if [[ -d "$APP_HOME" && ! -f "$APP_HOME/.managed" ]]; then echo "$APP_HOME 已存在且无项目标记，停止安装" >&2; return 1; fi
     if [[ -d "$SB_ROOT" && ! -f "$SB_ROOT/sb.json" && ! -f "$SB_ROOT/app.json" ]] && [[ -n $(find "$SB_ROOT" -mindepth 1 -maxdepth 1 -print -quit) ]]; then echo '配置目录已有非本项目文件，停止安装' >&2;return 1;fi
-    if [[ ! -f "$SCRIPT_ROOT/.bin/linux-$install_arch/yg-vpngate" && ! -f "$APP_HOME/.bin/linux-$install_arch/yg-vpngate" ]];then
-        echo '请使用已验证的正式安装包；源码开发请先运行 scripts/build_release.py' >&2;return 1
+    if [[ ! -f "$SCRIPT_ROOT/.bin/linux-$install_arch/yg-vpngate" ]];then
+        echo '请使用已验证的正式安装包；源码开发请先运行 go run ./cmd/release 并解压生成的安装包' >&2;return 1
     fi
     apt-get update -qq
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl openssl python3 iproute2 iptables procps qrencode tar
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl iproute2 iptables procps qrencode tar
     if [[ -d "$APP_HOME" && ! -f "$APP_HOME/.managed" ]]; then echo "$APP_HOME 已存在且无项目标记，停止安装" >&2; return 1; fi
     install -d -m 0755 "$APP_HOME" "$SB_ROOT"
     if [[ "$SCRIPT_ROOT" != "$APP_HOME" ]]; then
-        cp -a "$SCRIPT_ROOT/lib" "$SCRIPT_ROOT/addons" "$SCRIPT_ROOT/versions.json" "$SCRIPT_ROOT/LICENSE" "$SCRIPT_ROOT/NOTICE.md" "$SCRIPT_ROOT/sb.sh" "$SCRIPT_ROOT/install.sh" "$APP_HOME/"
+        cp -a "$SCRIPT_ROOT/lib" "$SCRIPT_ROOT/addons" "$SCRIPT_ROOT/internal" "$SCRIPT_ROOT/cmd" "$SCRIPT_ROOT/go.mod" "$SCRIPT_ROOT/manifest.go" "$SCRIPT_ROOT/versions.json" "$SCRIPT_ROOT/LICENSE" "$SCRIPT_ROOT/NOTICE.md" "$SCRIPT_ROOT/sb.sh" "$SCRIPT_ROOT/install.sh" "$APP_HOME/"
         if [[ -d "$SCRIPT_ROOT/.bin" ]]; then cp -a "$SCRIPT_ROOT/.bin" "$APP_HOME/"; fi
     fi
     printf '%s\n' 'sck03/sing-box-vpn' > "$APP_HOME/.managed"
-    LIB="$APP_HOME/lib"
     local arch candidate
-    arch=$(arch_name)
-    candidate="$SB_ROOT/sing-box.candidate"
-    python3 "$LIB/core.py" --root "$SB_ROOT" prepare --output "$candidate"
-    python3 "$LIB/config.py" --root "$SB_ROOT" --core "$candidate" init
-    python3 "$LIB/core.py" --root "$SB_ROOT" activate "$candidate" --no-restart
-    rm -f -- "$candidate"
+    arch="$install_arch"
     if [[ -f "$APP_HOME/.bin/linux-$arch/yg-vpngate" ]]; then
         install -m 0755 "$APP_HOME/.bin/linux-$arch/yg-vpngate" /usr/local/bin/yg-vpngate.new
         mv -f /usr/local/bin/yg-vpngate.new /usr/local/bin/yg-vpngate
     else
         echo '发行包缺少静态网关二进制，请使用 install.sh 安装正式发行包' >&2; return 1
     fi
+    MANAGER=/usr/local/bin/yg-vpngate
+    candidate="$SB_ROOT/sing-box.candidate"
+    "$MANAGER" core --root "$SB_ROOT" prepare --output "$candidate"
+    "$MANAGER" config --root "$SB_ROOT" --core "$candidate" init
+    "$MANAGER" core --root "$SB_ROOT" activate "$candidate" --no-restart
+    rm -f -- "$candidate"
+    rm -f -- "$APP_HOME/lib/"{assets,config,core,firewall,remote,render,store,subscription}.py
     chmod 0600 "$SB_ROOT"/*.json "$SB_ROOT"/*.key 2>/dev/null || true
     cat > /etc/systemd/system/sing-box.service <<EOF
 [Unit]
@@ -69,73 +69,72 @@ LimitNOFILE=65536
 WantedBy=multi-user.target
 EOF
     ln -sfn "$APP_HOME/sb.sh" /usr/bin/sb
+    if [[ -f "$SB_ROOT/subscription.json" ]]; then write_subscription_service; fi
     firewall
     systemctl daemon-reload
-    systemctl enable --now sing-box >/dev/null
+    systemctl enable sing-box >/dev/null
     systemctl restart sing-box
+    if systemctl is-enabled --quiet sb-subscription 2>/dev/null; then systemctl restart sb-subscription; fi
     if [[ -f "$SB_ROOT/vpngate/gateway.json" ]]; then systemctl restart yg-vpngate sing-box-vpngate; fi
     # Old templates are removed only after successful generation and migration.
     rm -f -- "$SB_ROOT/sb10.json" "$SB_ROOT/sb11.json"
     echo '五协议普通节点已安装，输入 sb，菜单 17 添加 VPNGate。'
     cfg show
 }
-subscription_menu() {
-    echo '1. 启用/重置本地订阅  2. 停止订阅  3. 查看订阅地址'
-    read -r -p '选择：' choice
-    case "$choice" in
-    1) local port; read -r -p '订阅端口（回车随机）：' port
-       python3 - "$SB_ROOT" "$port" <<'PY'
-import sys,secrets,socket,json
-from pathlib import Path
-root=Path(sys.argv[1]);port=int(sys.argv[2]) if sys.argv[2] else 0
-s=socket.socket();s.bind(('0.0.0.0',port));port=s.getsockname()[1];s.close()
-token=secrets.token_urlsafe(32)
-p=root/'subscription.json';p.write_text(json.dumps({'enabled':True,'port':port,'token':token,'listen':'0.0.0.0'}));p.chmod(0o600)
-PY
-       cat > /etc/systemd/system/sb-subscription.service <<EOF
+write_subscription_service() {
+    cat > /etc/systemd/system/sb-subscription.service <<EOF
 [Unit]
 Description=Token protected sing-box-vpn subscriptions
 After=network-online.target
 [Service]
-ExecStart=/usr/bin/python3 $APP_HOME/lib/subscription.py --root $SB_ROOT
+ExecStart=/usr/local/bin/yg-vpngate subscription --root $SB_ROOT
 WorkingDirectory=$SB_ROOT
 Restart=on-failure
+RestartSec=5
 ProtectSystem=strict
 ReadOnlyPaths=$SB_ROOT
 NoNewPrivileges=true
 [Install]
 WantedBy=multi-user.target
 EOF
-       cfg export; firewall; systemctl daemon-reload; systemctl enable --now sb-subscription >/dev/null; systemctl restart sb-subscription; subscription_urls;;
+}
+subscription_menu() {
+    echo '1. 启用/重置本地订阅  2. 停止订阅  3. 查看订阅地址'
+    read -r -p '选择：' choice
+    case "$choice" in
+    1) local port; read -r -p '订阅端口（回车随机）：' port
+       cfg subscription-init --port "${port:-0}"
+       write_subscription_service
+       cfg export; firewall; systemctl daemon-reload; systemctl enable sb-subscription >/dev/null; systemctl restart sb-subscription; subscription_urls;;
     2) systemctl disable --now sb-subscription 2>/dev/null || true
-       python3 - "$SB_ROOT/subscription.json" <<'PY'
-import json,sys,pathlib
-p=pathlib.Path(sys.argv[1])
-if p.exists():
- s=json.loads(p.read_text());s['enabled']=False;p.write_text(json.dumps(s));p.chmod(0o600)
-PY
+       cfg subscription-stop
        firewall;;
     3) subscription_urls;;
     esac
 }
-subscription_urls() {
-    python3 - "$SB_ROOT" <<'PY'
-import json,sys,pathlib
-r=pathlib.Path(sys.argv[1]);p=r/'subscription.json'
-if not p.exists():print('未配置本地订阅');raise SystemExit
-s=json.loads(p.read_text());a=json.loads((r/'app.json').read_text())['address']
-for name in ('sbox.json','clmi.yaml','jhsub.txt'):print(f'http://{a}:{s["port"]}/{s["token"]}/{name}')
-PY
+subscription_urls() { cfg subscription-urls; }
+telegram_config() {
+    local token chat_id
+    read -rs -p 'Bot token（隐藏）：' token; echo
+    read -r -p '你自己的 chat_id：' chat_id
+    printf '%s' "$token" | "$MANAGER" remote --root "$SB_ROOT" telegram-config --chat-id "$chat_id"
+}
+gitlab_config() {
+    local token project branch
+    read -r -p 'GitLab 私有项目 ID 或 group/project：' project
+    read -r -p '分支（默认 main）：' branch
+    read -rs -p '访问令牌（隐藏）：' token; echo
+    printf '%s' "$token" | "$MANAGER" remote --root "$SB_ROOT" gitlab-config --project "$project" --branch "${branch:-main}"
 }
 protocol_pick() { echo 'vless / vmess / hysteria2 / tuic / anytls'; read -r -p '协议：' PROTOCOL; }
 core_menu() {
     echo '1. 当前/最新稳定版  2. 更新最新稳定版  3. 指定稳定版本  4. 回滚上一核心  0. 返回'
     read -r -p '选择：' choice
     case "$choice" in
-    1) python3 "$LIB/core.py" --root "$SB_ROOT" check;;
-    2) python3 "$LIB/core.py" --root "$SB_ROOT" update;;
-    3) read -r -p '稳定版版本号（1.14.0 或更新）：' version;python3 "$LIB/core.py" --root "$SB_ROOT" update --version "$version";;
-    4) python3 "$LIB/core.py" --root "$SB_ROOT" rollback;;
+    1) "$MANAGER" core --root "$SB_ROOT" check;;
+    2) "$MANAGER" core --root "$SB_ROOT" update;;
+    3) read -r -p '稳定版版本号（1.14.0 或更新）：' version;"$MANAGER" core --root "$SB_ROOT" update --version "$version";;
+    4) "$MANAGER" core --root "$SB_ROOT" rollback;;
     esac
 }
 settings_menu() {
@@ -145,13 +144,13 @@ settings_menu() {
     case "$choice" in
     1) read -r -p 'Reality 域名：' value; cfg sni "$value"; reload_main;;
     2) protocol_pick; cfg reset "$PROTOCOL"; reload_main;;
-    3) "$APP_HOME/lib/argo.sh" "$SB_ROOT" "$APP_HOME";;
+    3) "$APP_HOME/lib/argo.sh" "$SB_ROOT";;
     4) read -r -p 'WS 路径：' value; cfg ws "$value"; reload_main;;
-    5) python3 "$LIB/remote.py" --root "$SB_ROOT" telegram-config;;
+    5) telegram_config;;
     6) read -r -p '新版 WireGuard endpoint JSON 文件：' value; cfg warp "$value"; reload_main;;
-    7) python3 "$LIB/remote.py" --root "$SB_ROOT" gitlab-config; cfg export; python3 "$LIB/remote.py" --root "$SB_ROOT" gitlab-push;;
+    7) gitlab_config; cfg export; "$MANAGER" remote --root "$SB_ROOT" gitlab-push;;
     8) subscription_menu;;
-    9) read -r -p 'CDN 地址（空值清除）：' value; cfg cdn "$value"; cfg export;;
+    9) read -r -p 'CDN 地址（空值清除）：' value; cfg cdn "$value";;
     esac
 }
 port_menu() {
@@ -179,11 +178,10 @@ certificate_menu() {
 }
 share_menu() {
     echo '1. URI/二维码/聚合节点  2. 客户端配置与订阅  3. 推送到已配置 Telegram';read -r -p '选择：' choice
-    cfg export
     case "$choice" in
     1) cfg links; if command -v qrencode >/dev/null;then while IFS= read -r link;do qrencode -t ANSIUTF8 "$link";done < "$SB_ROOT/jhsub.txt";fi;;
-    2) echo "Sing-box: $SB_ROOT/sbox.json";echo "Mihomo: $SB_ROOT/clmi.yaml";subscription_urls;;
-    3) python3 "$LIB/remote.py" --root "$SB_ROOT" telegram-push;;
+    2) cfg export;echo "Sing-box: $SB_ROOT/sbox.json";echo "Mihomo: $SB_ROOT/clmi.yaml";subscription_urls;;
+    3) cfg export;"$MANAGER" remote --root "$SB_ROOT" telegram-push;;
     esac
 }
 uninstall_main() {
@@ -219,7 +217,7 @@ menu() {
         8) core_menu;;9) share_menu;;10) journalctl -u sing-box -u yg-vpngate -u sing-box-vpngate -n 100 --no-pager;;
         11) modprobe tcp_bbr;printf 'net.core.default_qdisc=fq\nnet.ipv4.tcp_congestion_control=bbr\n' > /etc/sysctl.d/99-sing-box-vpn-bbr.conf;sysctl -p /etc/sysctl.d/99-sing-box-vpn-bbr.conf;;
         12) certificate_menu;;13) cfg show;;14) read -r -p '已有 SOCKS5 本机端口：' value;cfg socks "$value";reload_main;;
-        15) read -r -p '新 VPS IP/域名：' value;cfg address "$value";cfg export;;
+        15) read -r -p '新 VPS IP/域名：' value;cfg address "$value";;
         16) echo 'https://github.com/sck03/sing-box-vpn · 原节点与 VPNGate 节点各自独立；临时组手动选择。';;
         17) "$APP_HOME/addons/vpngate/vpngate.sh" menu;;esac
         pause
@@ -227,9 +225,9 @@ menu() {
 }
 case "${1:-menu}" in
     install) install_main;;export) cfg export;;status) cfg show;;links) cfg links;;
-    core-check) python3 "$LIB/core.py" --root "$SB_ROOT" check;;
-    core-update) require_system;if [[ -n "${2:-}" ]];then python3 "$LIB/core.py" --root "$SB_ROOT" update --version "$2";else python3 "$LIB/core.py" --root "$SB_ROOT" update;fi;;
-    core-rollback) require_system;python3 "$LIB/core.py" --root "$SB_ROOT" rollback;;
+    core-check) "$MANAGER" core --root "$SB_ROOT" check;;
+    core-update) require_system;if [[ -n "${2:-}" ]];then "$MANAGER" core --root "$SB_ROOT" update --version "$2";else "$MANAGER" core --root "$SB_ROOT" update;fi;;
+    core-rollback) require_system;"$MANAGER" core --root "$SB_ROOT" rollback;;
     menu) menu;;--help|help) echo 'sb [install|export|status|links|core-check|core-update [VERSION]|core-rollback]；不带参数打开菜单';;
     *) echo '未知命令' >&2;exit 1;;
 esac

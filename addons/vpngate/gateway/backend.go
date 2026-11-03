@@ -38,6 +38,7 @@ type backend struct {
 	claimed              bool
 	ovpn, worker         *exec.Cmd
 	ovpnDone, workerDone chan error
+	exited               chan error
 	workerSocket         string
 }
 
@@ -216,6 +217,7 @@ func (b *backend) setup(ctx context.Context, n Node) error {
 }
 
 func (b *backend) start(ctx context.Context, n Node) error {
+	b.exited = make(chan error, 1)
 	if e := b.setup(ctx, n); e != nil {
 		return e
 	}
@@ -264,7 +266,7 @@ func (b *backend) start(ctx context.Context, n Node) error {
 			}
 		}
 	}()
-	go func() { b.ovpnDone <- b.ovpn.Wait() }()
+	go waitProcess(b.ovpn, b.ovpnDone, b.exited)
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -287,7 +289,7 @@ func (b *backend) start(ctx context.Context, n Node) error {
 		return e
 	}
 	b.workerDone = make(chan error, 1)
-	go func() { b.workerDone <- b.worker.Wait() }()
+	go waitProcess(b.worker, b.workerDone, b.exited)
 	deadline := time.NewTimer(8 * time.Second)
 	defer deadline.Stop()
 	tick := time.NewTicker(50 * time.Millisecond)
@@ -310,9 +312,24 @@ func (b *backend) start(ctx context.Context, n Node) error {
 	}
 }
 
+func waitProcess(cmd *exec.Cmd, done, exited chan error) {
+	e := cmd.Wait()
+	done <- e
+	close(done)
+	select {
+	case exited <- e:
+	default:
+	}
+}
+
 func stopProcess(cmd *exec.Cmd, done chan error) {
 	if cmd == nil || cmd.Process == nil {
 		return
+	}
+	select {
+	case <-done:
+		return
+	default:
 	}
 	_ = cmd.Process.Signal(os.Interrupt)
 	select {

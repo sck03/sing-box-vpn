@@ -1,6 +1,7 @@
 # sing-box-vpn
 
 可在线更新的 sing-box 稳定版五协议普通节点，加一套可临时选择的 VPNGate 家宽候选出口。
+管理、配置生成、证书、订阅、核心更新与网关统一使用 Go，Bash 保留安装和菜单入口。
 构建工具链锁定 Go 1.27.3。支持 Ubuntu/Debian、systemd、Linux amd64/arm64。
 
 ```bash
@@ -9,7 +10,7 @@ curl -fsSL https://raw.githubusercontent.com/sck03/sing-box-vpn/main/install.sh 
 
 安装普通节点后运行 `sb`，菜单 **17** 选择国家并启动 VPNGate，菜单 **9** 获取
 URI、二维码、Mihomo 和 sing-box 配置。本地订阅在菜单 **3 → 8** 配置。
-安装包包含静态网关二进制；VPS 无需安装 Go。
+安装包包含静态管理/网关二进制；VPS 无需安装 Go 或 Python。
 
 安装默认获取官方最新稳定核心。菜单 **8** 可查询版本、更新最新稳定版、指定稳定版本
 和回滚上一核心，也可以使用：
@@ -42,7 +43,8 @@ VPNGate 要求 root、可创建 network namespace、可用 `/dev/net/tun` 和 IP
 创建隧道前安装断线阻断规则，业务流量只能经过 `tun0`。仅 OpenVPN 的标记连接
 可经 veth 访问已经校验的远端 IP/端口。目标域名由命名空间中的工作进程解析，
 IPv6 目标拒绝转发。出口国家未知、不匹配或校验失败时不会转发业务流量。
-Geo/ASN 结果按 IP 缓存 15 分钟，健康探测默认每 10 秒进行。
+Geo/ASN 结果按数据源和 IP 缓存 15 分钟，最多保存 128 项。健康探测默认每 10 秒进行。
+探测连接按隧道复用，切换时关闭；节点列表缓存一分钟，手动刷新可立即重新下载。
 
 ```bash
 yg-vpngate ctl status
@@ -75,25 +77,27 @@ yg-vpngate ctl policy --asns 12345,67890
 证书可通过菜单 12 导入或使用 Certbot；普通 VMess 支持 Argo/CDN，VPNGate VMess
 首版使用独立 WS 入口。Telegram 和 GitLab 只在明确选择推送时使用，GitLab 仅允许私有项目。
 
-本地订阅令牌相当于访问密码。需要加密传输时，在订阅端口前配置 HTTPS 反向代理。
+本地订阅使用 Go HTTP 服务，限制 32 个连接并设置请求超时，流式读取文件。
+令牌相当于访问密码。需要加密传输时，在订阅端口前配置 HTTPS 反向代理。
 自签证书的原生 URI/Mihomo 使用对应客户端的自签模式，sing-box JSON 使用公钥指纹。
 其他客户端的 UDP 与协议支持应按其版本确认。
 
 开发与验证：
 
 ```bash
-cd addons/vpngate/gateway
-go test -race ./...
-cd ../../..
-SING_BOX_BINARY=/path/to/sing-box python3 -m unittest discover -s tests -v
-SING_BOX_BINARY=/path/to/sing-box python3 tests/e2e_protocols.py
-sudo GATEWAY_BINARY=/path/to/yg-vpngate python3 tests/integration_linux.py
-python3 scripts/build_release.py
+SING_BOX_BINARY=/path/to/sing-box go test -race -count=1 ./...
+go vet ./...
+go build -trimpath -o .build/yg-vpngate ./addons/vpngate/gateway
+sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_NETNS_TESTS=1 \
+  "$(command -v go)" test -run '^TestLinuxNamespaceIsolation$' -count=1 -v ./addons/vpngate/gateway
+go run ./cmd/release
 ```
 
 CI 验证配置生成、旧参数迁移、稳定链接、认证、五协议真实 TCP/UDP，以及隔离环境的
 OpenVPN 握手、隧道 DNS 和断线行为。带 `v` 的发行标签在全部检查通过后发布源码与
-静态二进制安装包及 SHA256。详见 [实施方案](VPNGate-实施方案.md)。
+静态二进制安装包及 SHA256。详见 [实施方案](VPNGate-实施方案.md) 和
+[Go 迁移与性能分析](docs/optimization.md)。源码本地安装须先构建并解压发行包，再运行包内
+`sudo bash install.sh --local`。v1.2.0 起全部项目程序与验收均使用 Go；升级会替换旧订阅服务入口。
 
 基于 [sing-box-yg](https://github.com/yonggekkk/sing-box-yg)、
 [fanout](https://github.com/byJoey/fanout) 与

@@ -2,12 +2,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/binary"
 	"errors"
 	"io"
 	"net"
+	"net/netip"
 	"strconv"
 	"sync"
 	"time"
@@ -185,7 +187,7 @@ func socksReply(w io.Writer, code byte, ip net.IP, port int) error {
 type udpSession struct {
 	c      net.Conn
 	target string
-	client *net.UDPAddr
+	client netip.AddrPort
 }
 
 func serveUDP(ctx context.Context, control net.Conn, t ticket, a proxyAccess) {
@@ -193,6 +195,11 @@ func serveUDP(ctx context.Context, control net.Conn, t ticket, a proxyAccess) {
 	if !ok {
 		return
 	}
+	clientIP, ok := netip.AddrFromSlice(tcpAddr.IP)
+	if !ok {
+		return
+	}
+	clientIP = clientIP.Unmap()
 	sock, e := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if e != nil {
 		socksReply(control, 1, net.IPv4zero, 0)
@@ -209,7 +216,7 @@ func serveUDP(ctx context.Context, control net.Conn, t ticket, a proxyAccess) {
 	}
 	var mu sync.Mutex
 	sessions := map[string]*udpSession{}
-	var clientAddr *net.UDPAddr
+	var clientAddr netip.AddrPort
 	defer func() {
 		mu.Lock()
 		for _, s := range sessions {
@@ -219,24 +226,24 @@ func serveUDP(ctx context.Context, control net.Conn, t ticket, a proxyAccess) {
 		mu.Unlock()
 	}()
 	go func() { _, _ = control.Read(make([]byte, 1)); sock.Close() }()
-	buf := make([]byte, 65535)
+	buf := make([]byte, maxPacket)
 	for {
 		_ = sock.SetReadDeadline(time.Now().Add(60 * time.Second))
-		n, src, e := sock.ReadFromUDP(buf)
+		n, src, e := sock.ReadFromUDPAddrPort(buf)
 		if e != nil {
 			return
 		}
-		if !src.IP.Equal(tcpAddr.IP) || !a.allowed(t) || n < 7 || buf[0] != 0 || buf[1] != 0 || buf[2] != 0 {
+		if src.Addr() != clientIP || !a.allowed(t) || n < 7 || buf[0] != 0 || buf[1] != 0 || buf[2] != 0 {
 			continue
 		}
-		if clientAddr != nil && src.String() != clientAddr.String() {
+		if clientAddr.IsValid() && src != clientAddr {
 			continue
 		}
 		target, offset, e := udpTarget(buf[:n])
 		if e != nil {
 			continue
 		}
-		if clientAddr == nil {
+		if !clientAddr.IsValid() {
 			clientAddr = src
 		}
 		mu.Lock()
@@ -261,17 +268,18 @@ func serveUDP(ctx context.Context, control net.Conn, t ticket, a proxyAccess) {
 				defer session.c.Close()
 				defer a.untrack(session.c)
 				defer func() { mu.Lock(); delete(sessions, key); mu.Unlock() }()
+				h, e := udpResponseHeader(session.target)
+				if e != nil {
+					return
+				}
+				frames := frameReader{source: session.c, buffer: h, prefix: len(h), limit: maxPacket - len(h)}
 				for {
 					_ = session.c.SetReadDeadline(time.Now().Add(60 * time.Second))
-					p, e := readFrame(session.c, maxPacket)
+					packet, e := frames.read()
 					if e != nil {
 						return
 					}
-					h, e := udpResponseHeader(session.target)
-					if e != nil {
-						return
-					}
-					if _, e = sock.WriteToUDP(append(h, p...), session.client); e != nil {
+					if _, e = sock.WriteToUDPAddrPort(packet, session.client); e != nil {
 						return
 					}
 				}
@@ -283,26 +291,13 @@ func serveUDP(ctx context.Context, control net.Conn, t ticket, a proxyAccess) {
 	}
 }
 
-type countingReader struct {
-	b      []byte
-	offset int
-}
-
-func (r *countingReader) Read(p []byte) (int, error) {
-	if r.offset >= len(r.b) {
-		return 0, io.EOF
-	}
-	n := copy(p, r.b[r.offset:])
-	r.offset += n
-	return n, nil
-}
 func udpTarget(b []byte) (string, int, error) {
 	if len(b) < 4 {
 		return "", 0, io.ErrUnexpectedEOF
 	}
-	r := &countingReader{b: b, offset: 4}
+	r := bytes.NewReader(b[4:])
 	address, e := readSocksAddress(r, b[3])
-	return address, r.offset, e
+	return address, len(b) - r.Len(), e
 }
 func udpResponseHeader(target string) ([]byte, error) {
 	h, p, e := net.SplitHostPort(target)
@@ -314,8 +309,8 @@ func udpResponseHeader(target string) ([]byte, error) {
 		return nil, errors.New("worker returned non-IPv4 target")
 	}
 	port, e := strconv.Atoi(p)
-	if e != nil {
-		return nil, e
+	if e != nil || port < 1 || port > 65535 {
+		return nil, errors.New("worker returned invalid UDP port")
 	}
 	b := append([]byte{0, 0, 0, 1}, ip...)
 	return binary.BigEndian.AppendUint16(b, uint16(port)), nil

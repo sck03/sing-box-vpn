@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -23,26 +24,31 @@ type tunnel interface {
 }
 
 func (b *backend) socket() string     { return b.workerSocket }
-func (b *backend) died() <-chan error { return b.ovpnDone }
+func (b *backend) died() <-chan error { return b.exited }
 
 type manager struct {
-	mu            sync.Mutex
-	cfg           Config
-	configPath    string
-	status        Status
-	ready         bool
-	epoch         uint64
-	current       tunnel
-	previous      Node
-	nodes         []Node
-	connections   map[net.Conn]bool
-	wake          chan struct{}
-	cancel        context.CancelFunc
-	swap          bool
-	factory       func(Config) tunnel
-	probeOverride func(context.Context, Config, tunnel) (Geo, error)
-	geoCache      map[string]cachedGeo
-	failed        map[string]time.Time
+	mu             sync.Mutex
+	cfg            Config
+	configPath     string
+	status         Status
+	ready          bool
+	epoch          uint64
+	current        tunnel
+	previous       Node
+	nodes          []Node
+	nodesUpdated   time.Time
+	refreshSlot    chan struct{}
+	refreshPending bool
+	sourceClient   *http.Client
+	hostClient     *http.Client
+	connections    map[net.Conn]bool
+	wake           chan struct{}
+	cancel         context.CancelFunc
+	swap           bool
+	factory        func(Config) tunnel
+	probeOverride  func(context.Context, Config, tunnel) (Geo, error)
+	geoCache       map[string]cachedGeo
+	failed         map[string]time.Time
 }
 type cachedGeo struct {
 	value   Geo
@@ -51,6 +57,9 @@ type cachedGeo struct {
 
 func newManager(c Config, path string) *manager {
 	m := &manager{cfg: c, configPath: path, status: Status{Version: version, State: "stopped", Country: c.Country, Mode: c.Mode, Updated: time.Now()}, connections: map[net.Conn]bool{}, wake: make(chan struct{}, 1), factory: func(c Config) tunnel { return &backend{cfg: c} }}
+	m.refreshSlot = make(chan struct{}, 1)
+	m.sourceClient = directClient(25 * time.Second)
+	m.hostClient = &http.Client{Timeout: 12 * time.Second, Transport: m.sourceClient.Transport, CheckRedirect: m.sourceClient.CheckRedirect}
 	m.geoCache = map[string]cachedGeo{}
 	m.failed = map[string]time.Time{}
 	if b, e := os.ReadFile(filepath.Join(c.DataDir, "last-node.json")); e == nil {
@@ -73,22 +82,25 @@ func (m *manager) snapshot() Status {
 }
 func (m *manager) setStatus(state, reason string, node Node, geo *Geo) {
 	m.mu.Lock()
+	previous := m.status
 	m.status = Status{Version: version, State: state, Reason: reason, Country: m.cfg.Country, Mode: m.cfg.Mode, Node: node.Host, Exit: geo, Updated: time.Now()}
 	s := m.status
+	sameExit := previous.Exit == nil && geo == nil || previous.Exit != nil && geo != nil && *previous.Exit == *geo
+	changed := previous.State != s.State || previous.Reason != s.Reason || previous.Country != s.Country || previous.Mode != s.Mode || previous.Node != s.Node || !sameExit
 	dir := m.cfg.DataDir
 	m.mu.Unlock()
-	_ = atomicJSON(filepath.Join(dir, "state.json"), s)
+	if changed {
+		_ = atomicJSON(filepath.Join(dir, "state.json"), s)
+	}
 }
 func (m *manager) revoke() {
 	m.mu.Lock()
 	m.ready = false
 	m.epoch++
-	all := make([]net.Conn, 0, len(m.connections))
-	for c := range m.connections {
-		all = append(all, c)
-	}
+	all := m.connections
+	m.connections = map[net.Conn]bool{}
 	m.mu.Unlock()
-	for _, c := range all {
+	for c := range all {
 		c.Close()
 	}
 }
@@ -124,7 +136,13 @@ func (m *manager) open(ctx context.Context, t ticket, network, address string) (
 	if e != nil {
 		return nil, "", e
 	}
-	if !m.allowed(t) || !m.track(c) {
+	m.mu.Lock()
+	ok = ctx.Err() == nil && m.ready && t.epoch == m.epoch && t.country == m.cfg.Country && len(m.connections) < m.cfg.MaxConnections
+	if ok {
+		m.connections[c] = true
+	}
+	m.mu.Unlock()
+	if !ok {
 		c.Close()
 		return nil, "", errors.New("tunnel changed during dial")
 	}
@@ -144,6 +162,9 @@ func (m *manager) apply(c Config, swap bool) error {
 		m.mu.Unlock()
 		return e
 	}
+	if !slices.Equal(c.Sources, m.cfg.Sources) {
+		m.nodesUpdated = time.Time{}
+	}
 	m.cfg = c
 	m.swap = swap
 	m.ready = false
@@ -162,8 +183,12 @@ func (m *manager) apply(c Config, swap bool) error {
 }
 
 func (m *manager) run(ctx context.Context) {
+	defer m.sourceClient.CloseIdleConnections()
 	var done chan struct{}
-	m.wake <- struct{}{}
+	select {
+	case m.wake <- struct{}{}:
+	default:
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -189,21 +214,20 @@ func (m *manager) run(ctx context.Context) {
 				<-done
 				done = nil
 			}
+			child, cancel := context.WithCancel(ctx)
 			m.mu.Lock()
 			c := m.cfg
 			swap := m.swap
 			m.swap = false
+			m.cancel = cancel
 			m.mu.Unlock()
 			if !c.Enabled {
+				cancel()
 				m.setStatus("stopped", "disabled by user", Node{}, nil)
 				continue
 			}
-			child, cancel := context.WithCancel(ctx)
-			m.mu.Lock()
-			m.cancel = cancel
-			m.mu.Unlock()
 			done = make(chan struct{})
-			go func() { defer close(done); m.connectLoop(child, c, swap) }()
+			go func(finished chan struct{}) { defer close(finished); m.connectLoop(child, c, swap) }(done)
 		}
 	}
 }
@@ -211,7 +235,7 @@ func (m *manager) run(ctx context.Context) {
 func directClient(timeout time.Duration) *http.Client {
 	return &http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: func(ctx context.Context, _ string, address string) (net.Conn, error) {
 		return (&net.Dialer{Timeout: 15 * time.Second}).DialContext(ctx, "tcp4", address)
-	}}, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
+	}, TLSHandshakeTimeout: 8 * time.Second, IdleConnTimeout: 90 * time.Second, MaxIdleConns: 8, MaxIdleConnsPerHost: 2, ForceAttemptHTTP2: true, DisableCompression: true}, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 }
 func readHTTP(ctx context.Context, client *http.Client, url string, limit int64) ([]byte, error) {
 	req, e := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -237,11 +261,26 @@ func readHTTP(ctx context.Context, client *http.Client, url string, limit int64)
 	}
 	return b, nil
 }
-func (m *manager) refresh(ctx context.Context, c Config) []Node {
-	client := directClient(25 * time.Second)
-	defer client.CloseIdleConnections()
+func (m *manager) refresh(ctx context.Context, c Config, force bool) []Node {
+	started := time.Now()
+	select {
+	case m.refreshSlot <- struct{}{}:
+		defer func() { <-m.refreshSlot }()
+	case <-ctx.Done():
+		return nil
+	}
+	m.mu.Lock()
+	nodes := m.nodes // Published node slices are immutable.
+	fresh := len(nodes) > 0 && time.Since(m.nodesUpdated) < time.Minute && (!force || m.nodesUpdated.After(started))
+	m.mu.Unlock()
+	if fresh {
+		return nodes
+	}
 	for _, source := range c.Sources {
-		b, e := readHTTP(ctx, client, source, 16<<20)
+		if ctx.Err() != nil {
+			return nil
+		}
+		b, e := readHTTP(ctx, m.sourceClient, source, 16<<20)
 		if e != nil {
 			continue
 		}
@@ -250,13 +289,18 @@ func (m *manager) refresh(ctx context.Context, c Config) []Node {
 			continue
 		}
 		m.mu.Lock()
+		if !slices.Equal(c.Sources, m.cfg.Sources) {
+			m.mu.Unlock()
+			return nil
+		}
 		m.nodes = nodes
+		m.nodesUpdated = time.Now()
 		m.mu.Unlock()
 		_ = atomicJSON(filepath.Join(c.DataDir, "nodes.json"), nodes)
 		return nodes
 	}
 	m.mu.Lock()
-	nodes := append([]Node(nil), m.nodes...)
+	nodes = m.nodes
 	m.mu.Unlock()
 	return nodes
 }
@@ -309,16 +353,18 @@ func candidates(c Config, nodes []Node, previous Node, swap bool) []Node {
 	return pool
 }
 
-func (m *manager) probe(ctx context.Context, c Config, active tunnel) (Geo, error) {
-	if m.probeOverride != nil {
-		return m.probeOverride(ctx, c, active)
-	}
+func tunnelClient(active tunnel) *http.Client {
 	transport := &http.Transport{DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 		conn, _, e := dialWorker(ctx, active.socket(), "tcp", address)
 		return conn, e
-	}}
-	client := &http.Client{Timeout: 12 * time.Second, Transport: transport, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
-	defer transport.CloseIdleConnections()
+	}, TLSHandshakeTimeout: 8 * time.Second, IdleConnTimeout: 90 * time.Second, MaxIdleConns: 2, MaxIdleConnsPerHost: 1, ForceAttemptHTTP2: true, DisableCompression: true}
+	return &http.Client{Timeout: 12 * time.Second, Transport: transport, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
+}
+
+func (m *manager) probe(ctx context.Context, c Config, active tunnel, client *http.Client) (Geo, error) {
+	if m.probeOverride != nil {
+		return m.probeOverride(ctx, c, active)
+	}
 	b, e := readHTTP(ctx, client, c.ProbeURL, 512)
 	if e != nil {
 		return Geo{}, errors.New("tunnel exit probe failed")
@@ -327,22 +373,21 @@ func (m *manager) probe(ctx context.Context, c Config, active tunnel) (Geo, erro
 	if !publicIPv4(ip) {
 		return Geo{}, errors.New("exit probe did not return public IPv4")
 	}
-	hostClient := directClient(12 * time.Second)
-	defer hostClient.CloseIdleConnections()
-	host, e := readHTTP(ctx, hostClient, c.ProbeURL, 512)
+	host, e := readHTTP(ctx, m.hostClient, c.ProbeURL, 512)
 	if e != nil {
 		return Geo{}, errors.New("host exit verification unavailable")
 	}
 	if strings.TrimSpace(string(host)) == ip {
 		return Geo{}, errors.New("tunnel exit equals VPS exit")
 	}
+	cacheKey := c.GeoURL + "\x00" + ip
 	m.mu.Lock()
-	cached, exists := m.geoCache[ip]
+	cached, exists := m.geoCache[cacheKey]
 	m.mu.Unlock()
 	if exists && time.Now().Before(cached.expires) {
 		return cached.value, c.acceptGeo(cached.value)
 	}
-	metadata, e := readHTTP(ctx, hostClient, fmt.Sprintf(c.GeoURL, ip), 1<<20)
+	metadata, e := readHTTP(ctx, m.hostClient, fmt.Sprintf(c.GeoURL, ip), 1<<20)
 	if e != nil {
 		return Geo{}, errors.New("exit country verification unavailable")
 	}
@@ -351,14 +396,20 @@ func (m *manager) probe(ctx context.Context, c Config, active tunnel) (Geo, erro
 		return g, e
 	}
 	m.mu.Lock()
-	m.geoCache[ip] = cachedGeo{value: g, expires: time.Now().Add(15 * time.Minute)}
-	if len(m.geoCache) > 128 {
-		for key, item := range m.geoCache {
-			if time.Now().After(item.expires) {
-				delete(m.geoCache, key)
-			}
+	now := time.Now()
+	oldestKey := ""
+	var oldest time.Time
+	for key, item := range m.geoCache {
+		if !now.Before(item.expires) {
+			delete(m.geoCache, key)
+		} else if oldest.IsZero() || item.expires.Before(oldest) {
+			oldestKey, oldest = key, item.expires
 		}
 	}
+	if len(m.geoCache) >= 128 {
+		delete(m.geoCache, oldestKey)
+	}
+	m.geoCache[cacheKey] = cachedGeo{value: g, expires: now.Add(15 * time.Minute)}
 	m.mu.Unlock()
 	return g, c.acceptGeo(g)
 }
@@ -367,18 +418,24 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 	backoff := 5 * time.Second
 	for ctx.Err() == nil {
 		m.setStatus("fetching", "fetching same-country candidates", Node{}, nil)
-		nodes := m.refresh(ctx, c)
+		nodes := m.refresh(ctx, c, false)
 		m.mu.Lock()
 		previous := m.previous
+		now := time.Now()
+		for host, until := range m.failed {
+			if !now.Before(until) {
+				delete(m.failed, host)
+			}
+		}
 		if c.Mode != "fixed" {
 			filtered := make([]Node, 0, len(nodes))
 			for _, n := range nodes {
-				if until, failed := m.failed[n.Host]; !failed || time.Now().After(until) {
+				if _, failed := m.failed[n.Host]; !failed {
 					filtered = append(filtered, n)
 				}
 			}
 			nodes = filtered
-			if until, failed := m.failed[previous.Host]; failed && time.Now().Before(until) {
+			if _, failed := m.failed[previous.Host]; failed {
 				previous = Node{}
 			}
 		}
@@ -397,16 +454,19 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 			m.setStatus("connecting", "OpenVPN handshake", n, nil)
 			active := m.factory(c)
 			session, stop := context.WithCancel(ctx)
+			var client *http.Client
 			e := active.start(session, n)
 			if e == nil {
+				client = tunnelClient(active)
 				m.setStatus("verifying", "verifying exit country and provider", n, nil)
 				var g Geo
-				g, e = m.probe(session, c, active)
+				g, e = m.probe(session, c, active, client)
 				if e == nil && session.Err() == nil {
 					m.mu.Lock()
 					if session.Err() != nil || sessionEpoch != m.epoch || m.cfg.Country != c.Country {
 						m.mu.Unlock()
 						stop()
+						client.CloseIdleConnections()
 						active.stop()
 						return
 					}
@@ -425,11 +485,14 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 					m.setStatus("ready", "volunteer / residential candidate", n, &g)
 					backoff = 5 * time.Second
 					swap = false
-					e = m.monitor(session, c, active, n)
+					e = m.monitor(session, c, active, n, client)
 				}
 			}
 			m.revoke()
 			stop()
+			if client != nil {
+				client.CloseIdleConnections()
+			}
 			active.stop()
 			m.mu.Lock()
 			m.current = nil
@@ -462,7 +525,7 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 	}
 }
 
-func (m *manager) monitor(ctx context.Context, c Config, active tunnel, n Node) error {
+func (m *manager) monitor(ctx context.Context, c Config, active tunnel, n Node, client *http.Client) error {
 	tick := time.NewTicker(time.Duration(c.HealthInterval) * time.Second)
 	defer tick.Stop()
 	for {
@@ -470,11 +533,14 @@ func (m *manager) monitor(ctx context.Context, c Config, active tunnel, n Node) 
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-active.died():
-			return errors.New("OpenVPN stopped; forwarding blocked")
+			return errors.New("tunnel process stopped; forwarding blocked")
 		case <-tick.C:
-			g, e := m.probe(ctx, c, active)
+			g, e := m.probe(ctx, c, active, client)
 			if e != nil {
 				return e
+			}
+			if ctx.Err() != nil {
+				return ctx.Err()
 			}
 			m.setStatus("ready", "volunteer / residential candidate", n, &g)
 		}

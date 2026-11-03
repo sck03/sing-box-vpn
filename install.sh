@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-VERSION=v1.1.0
 REPOSITORY=https://github.com/sck03/sing-box-vpn
 if [[ "${1:-}" == --local ]];then
     SOURCE="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)"
@@ -8,6 +7,13 @@ if [[ "${1:-}" == --local ]];then
 fi
 [[ $(id -u) == 0 && $(uname -s) == Linux ]] || { echo '安装需要 Linux root' >&2;exit 1; }
 command -v curl >/dev/null || { echo '请先安装 curl' >&2;exit 1; }
+VERSION="${SB_RELEASE_VERSION:-}"
+if [[ -z "$VERSION" ]];then
+    RELEASE_URL=$(curl -fLsSI --retry 2 --connect-timeout 15 --max-time 60 -o /dev/null -w '%{url_effective}' "$REPOSITORY/releases/latest")
+    [[ "$RELEASE_URL" == "$REPOSITORY/releases/tag/"* ]] || { echo '无法确认正式发行地址' >&2;exit 1; }
+    VERSION="${RELEASE_URL##*/}"
+fi
+[[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo '发行版本号无效' >&2;exit 1; }
 SCRATCH=$(mktemp -d /tmp/sing-box-vpn.XXXXXXXX)
 cleanup() { case "$SCRATCH" in /tmp/sing-box-vpn.*) rm -rf -- "$SCRATCH";;esac; }
 trap cleanup EXIT

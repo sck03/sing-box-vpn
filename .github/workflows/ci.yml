@@ -16,7 +16,7 @@ jobs:
           go-version: '1.27.3'
           cache: false
       - name: Dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq openvpn iproute2 iptables openssl
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq openvpn iproute2 iptables
       - name: Download verified sing-box 1.14.4
         run: |
           mkdir -p .build/core
@@ -24,33 +24,31 @@ jobs:
           echo '699a1b510aa4396b2176d32d1181920399ebf1e267835da6f3b598d0f7c24968  .build/core/core.tar.gz' | sha256sum -c -
           tar -xzf .build/core/core.tar.gz -C .build/core
           echo "SING_BOX_BINARY=$PWD/.build/core/sing-box-1.14.4-linux-amd64/sing-box" >> "$GITHUB_ENV"
-      - name: Go tests and race detection
-        working-directory: addons/vpngate/gateway
-        run: go test -race ./...
-      - name: Python and shell checks
+      - name: Go tests, race detection and twenty real TCP/UDP links
+        run: go test -race -count=1 -v ./...
+      - name: Formatting, vet and shell checks
         run: |
-          python3 -m unittest discover -s tests -v
-          bash -n sb.sh install.sh addons/vpngate/vpngate.sh lib/argo.sh lib/argo-watch.sh
-          python3 -m compileall -q lib scripts tests
-      - name: Five real protocols, ordinary and gateway TCP/UDP
-        run: python3 tests/e2e_protocols.py
+          test -z "$(gofmt -l manifest.go internal cmd addons/vpngate/gateway)"
+          go vet ./...
+          for script in sb.sh install.sh addons/vpngate/vpngate.sh lib/argo.sh lib/argo-watch.sh; do
+            bash -n "$script"
+          done
+      - name: Build Linux management and gateway binary
+        run: CGO_ENABLED=0 go build -trimpath -o "$GITHUB_WORKSPACE/.build/yg-vpngate" ./addons/vpngate/gateway
       - name: Online stable-core update and rollback
         run: |
           mkdir -p .test/core-updater
           cp "$SING_BOX_BINARY" .test/core-updater/sing-box
-          python3 lib/config.py --root "$PWD/.test/core-updater" --core "$SING_BOX_BINARY" init --address 127.0.0.1 --name updater-test
-          python3 lib/config.py --root "$PWD/.test/core-updater" --core "$SING_BOX_BINARY" vpngate JP
-          sudo python3 lib/core.py --root "$PWD/.test/core-updater" prepare --output "$PWD/.test/core-updater/sing-box.candidate"
-          sudo python3 lib/core.py --root "$PWD/.test/core-updater" activate "$PWD/.test/core-updater/sing-box.candidate" --no-restart
-          sudo python3 lib/core.py --root "$PWD/.test/core-updater" rollback
-          python3 lib/core.py --root "$PWD/.test/core-updater" check
-      - name: Build Linux gateway
-        run: |
-          (cd addons/vpngate/gateway && CGO_ENABLED=0 go build -trimpath -o "$GITHUB_WORKSPACE/.build/yg-vpngate" .)
+          .build/yg-vpngate config --root "$PWD/.test/core-updater" --core "$SING_BOX_BINARY" init --address 127.0.0.1 --name updater-test
+          .build/yg-vpngate config --root "$PWD/.test/core-updater" --core "$SING_BOX_BINARY" vpngate JP
+          sudo .build/yg-vpngate core --root "$PWD/.test/core-updater" prepare --output "$PWD/.test/core-updater/sing-box.candidate"
+          sudo .build/yg-vpngate core --root "$PWD/.test/core-updater" activate "$PWD/.test/core-updater/sing-box.candidate" --no-restart
+          sudo .build/yg-vpngate core --root "$PWD/.test/core-updater" rollback
+          .build/yg-vpngate core --root "$PWD/.test/core-updater" check
       - name: OpenVPN, tunnel DNS and fail-closed namespace acceptance
-        run: sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" python3 tests/integration_linux.py
+        run: sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_NETNS_TESTS=1 "$(command -v go)" test -run '^TestLinuxNamespaceIsolation$' -count=1 -v -timeout=5m ./addons/vpngate/gateway
       - name: Build both release architectures
-        run: python3 scripts/build_release.py
+        run: go run ./cmd/release
       - uses: actions/upload-artifact@v4
         with:
           name: verified-release
@@ -71,4 +69,4 @@ jobs:
       - name: Publish verified package
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "Online official stable sing-box updates with compatibility checks and rollback. Go 1.27.3 build toolchain. Five ordinary and VPNGate protocols, strict country validation and fail-closed routing. Full source and static Linux amd64/arm64 gateways are included."
+        run: gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "Go management, configuration, subscriptions and gateway with no Python runtime dependency. Official stable sing-box updates with compatibility checks and rollback. Five ordinary and VPNGate protocols, strict country validation and fail-closed routing. Full source and static Linux amd64/arm64 binaries are included."

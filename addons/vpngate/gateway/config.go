@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/sck03/sing-box-vpn/internal/manage"
 )
 
 type Config struct {
@@ -95,33 +97,7 @@ func (c *Config) validate() error {
 }
 
 func atomicJSON(path string, value any) error {
-	b, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".write-*")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	defer os.Remove(tmp)
-	if err = f.Chmod(0600); err == nil {
-		_, err = f.Write(append(b, '\n'))
-	}
-	if err == nil {
-		err = f.Sync()
-	}
-	ce := f.Close()
-	if err == nil {
-		err = ce
-	}
-	if err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return manage.AtomicJSON(path, value)
 }
 
 type Geo struct {

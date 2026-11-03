@@ -17,9 +17,18 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	project "github.com/sck03/sing-box-vpn"
+	"github.com/sck03/sing-box-vpn/internal/manage"
 )
 
-var version = "1.0.0"
+var version string
+
+func init() {
+	if version == "" {
+		version = strings.TrimPrefix(project.Versions.Release, "v")
+	}
+}
 
 const defaultConfig = "/etc/s-box/vpngate/gateway.json"
 
@@ -43,7 +52,7 @@ func main() {
 }
 func entry(args []string) error {
 	if len(args) == 0 || args[0] == "--help" {
-		fmt.Println("yg-vpngate daemon|ctl|worker|cleanup|--version\nctl: status, nodes, start, stop, swap, reload, refresh, mode, policy")
+		fmt.Println("yg-vpngate daemon|ctl|worker|cleanup|config|core|firewall|asset|remote|subscription|--version\nctl: status, nodes, start, stop, swap, reload, refresh, mode, policy")
 		return nil
 	}
 	if args[0] == "--version" {
@@ -51,6 +60,24 @@ func entry(args []string) error {
 		return nil
 	}
 	switch args[0] {
+	case "config", "core", "firewall", "asset", "remote", "subscription":
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		switch args[0] {
+		case "config":
+			return manage.RunConfig(ctx, args[1:], os.Stdout)
+		case "core":
+			return manage.RunCore(ctx, args[1:], os.Stdout)
+		case "firewall":
+			return manage.RunFirewall(ctx, args[1:], os.Stdout)
+		case "asset":
+			return manage.RunAsset(ctx, args[1:], os.Stdout)
+		case "remote":
+			return manage.RunRemote(ctx, args[1:], os.Stdin, os.Stdout)
+		case "subscription":
+			return manage.RunSubscription(ctx, args[1:], os.Stdout)
+		}
+		return errors.New("unknown management command")
 	case "daemon":
 		f := flag.NewFlagSet("daemon", flag.ContinueOnError)
 		path := f.String("config", defaultConfig, "configuration file")
@@ -94,6 +121,14 @@ func entry(args []string) error {
 		if daemonAlive(c.DataDir) {
 			return errors.New("stop the gateway daemon before cleanup")
 		}
+		unlock, lockErr := lockDaemon(c.DataDir)
+		if os.IsNotExist(lockErr) {
+			return nil
+		}
+		if lockErr != nil {
+			return lockErr
+		}
+		defer unlock()
 		b := &backend{cfg: c}
 		data, e := os.ReadFile(filepath.Join(c.DataDir, "namespace-owner.json"))
 		if os.IsNotExist(e) {
@@ -114,34 +149,34 @@ func entry(args []string) error {
 }
 
 func daemonAlive(dir string) bool {
-	b, e := os.ReadFile(filepath.Join(dir, "daemon.lock"))
-	if e != nil {
+	f, e := os.OpenFile(filepath.Join(dir, "daemon.lock"), os.O_RDWR, 0600)
+	if os.IsNotExist(e) {
 		return false
 	}
-	pid, e := strconv.Atoi(strings.TrimSpace(string(b)))
 	if e != nil {
 		return true
 	}
-	_, e = os.Stat(filepath.Join("/proc", strconv.Itoa(pid)))
-	return e == nil
+	defer f.Close()
+	return manage.TryLockFile(f) != nil
 }
 func lockDaemon(dir string) (func(), error) {
 	path := filepath.Join(dir, "daemon.lock")
-	if daemonAlive(dir) {
+	f, e := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	if e != nil {
+		return nil, e
+	}
+	if e = manage.TryLockFile(f); e != nil {
+		f.Close()
 		return nil, errors.New("another gateway daemon owns this directory")
 	}
-	_ = os.Remove(path)
-	f, e := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if e = f.Truncate(0); e == nil {
+		_, e = fmt.Fprintf(f, "%d\n", os.Getpid())
+	}
 	if e != nil {
+		f.Close()
 		return nil, e
 	}
-	_, e = fmt.Fprintf(f, "%d\n", os.Getpid())
-	f.Close()
-	if e != nil {
-		os.Remove(path)
-		return nil, e
-	}
-	return func() { os.Remove(path) }, nil
+	return func() { f.Close() }, nil
 }
 
 func runDaemon(path string) error {
@@ -186,14 +221,17 @@ func runDaemon(path string) error {
 	m := newManager(c, path)
 	api := http.Server{Handler: m.handler(ctx), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, MaxHeaderBytes: 16 << 10}
 	done := make(chan struct{})
+	serveErrors := make(chan error, 2)
 	go func() { defer close(done); m.run(ctx) }()
 	go func() {
 		if e := api.Serve(control); e != nil && !errors.Is(e, http.ErrServerClosed) {
+			serveErrors <- fmt.Errorf("control listener failed: %w", e)
 			cancel()
 		}
 	}()
 	go func() {
 		if e := serveProxy(ctx, proxy, m); e != nil {
+			serveErrors <- fmt.Errorf("proxy listener failed: %w", e)
 			cancel()
 		}
 	}()
@@ -201,7 +239,12 @@ func runDaemon(path string) error {
 	m.revoke()
 	_ = api.Close()
 	<-done
-	return nil
+	select {
+	case e := <-serveErrors:
+		return e
+	default:
+		return nil
+	}
 }
 
 func (m *manager) handler(parent context.Context) http.Handler {
@@ -225,7 +268,7 @@ func (m *manager) handler(parent context.Context) http.Handler {
 		}
 		m.mu.Lock()
 		c := m.cfg
-		nodes := append([]Node(nil), m.nodes...)
+		nodes := m.nodes
 		m.mu.Unlock()
 		var out []map[string]any
 		for _, n := range nodes {
@@ -300,7 +343,17 @@ func (m *manager) handler(parent context.Context) http.Handler {
 				c.AllowASNs = a.AllowASNs
 			}
 		case "refresh":
-			go func() { ctx, stop := context.WithTimeout(parent, 30*time.Second); defer stop(); m.refresh(ctx, c) }()
+			m.mu.Lock()
+			if !m.refreshPending {
+				m.refreshPending = true
+				go func() {
+					defer func() { m.mu.Lock(); m.refreshPending = false; m.mu.Unlock() }()
+					ctx, stop := context.WithTimeout(parent, 30*time.Second)
+					defer stop()
+					m.refresh(ctx, c, true)
+				}()
+			}
+			m.mu.Unlock()
 			respond(w, 202, m.snapshot())
 			return
 		default:

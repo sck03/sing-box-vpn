@@ -31,10 +31,15 @@ func writeFrame(w io.Writer, b []byte) error {
 	}
 	var h [2]byte
 	binary.BigEndian.PutUint16(h[:], uint16(len(b)))
-	if _, e := w.Write(h[:]); e != nil {
+	if n, e := w.Write(h[:]); e != nil {
 		return e
+	} else if n != len(h) {
+		return io.ErrShortWrite
 	}
-	_, e := w.Write(b)
+	n, e := w.Write(b)
+	if e == nil && n != len(b) {
+		return io.ErrShortWrite
+	}
 	return e
 }
 func readFrame(r io.Reader, limit int) ([]byte, error) {
@@ -50,6 +55,36 @@ func readFrame(r io.Reader, limit int) ([]byte, error) {
 	_, e := io.ReadFull(r, b)
 	return b, e
 }
+
+type frameReader struct {
+	source        io.Reader
+	header        [2]byte
+	buffer        []byte
+	limit, prefix int
+}
+
+// Retain only the observed packet capacity; prefix reserves a SOCKS header.
+func (r *frameReader) read() ([]byte, error) {
+	if _, e := io.ReadFull(r.source, r.header[:]); e != nil {
+		return nil, e
+	}
+	n := int(binary.BigEndian.Uint16(r.header[:]))
+	if n > r.limit {
+		return nil, errors.New("frame limit exceeded")
+	}
+	size := r.prefix + n
+	if size > cap(r.buffer) {
+		capacity := min(r.prefix+r.limit, max(2048, 2*cap(r.buffer), size))
+		buf := make([]byte, size, capacity)
+		copy(buf, r.buffer[:r.prefix])
+		r.buffer = buf
+	} else {
+		r.buffer = r.buffer[:size]
+	}
+	_, e := io.ReadFull(r.source, r.buffer[r.prefix:])
+	return r.buffer, e
+}
+
 func writeObject(w io.Writer, v any) error {
 	b, e := json.Marshal(v)
 	if e != nil {
@@ -100,6 +135,8 @@ func (w *worker) dial(ctx context.Context, network, address string) (net.Conn, e
 }
 
 func (w *worker) serve(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	ln, e := net.Listen("unix", w.socket)
 	if e != nil {
 		return e
@@ -129,6 +166,11 @@ func (w *worker) serve(ctx context.Context) error {
 			return e
 		}
 		mu.Lock()
+		if ctx.Err() != nil {
+			mu.Unlock()
+			c.Close()
+			return nil
+		}
 		conns[c] = true
 		mu.Unlock()
 		go func() { defer func() { c.Close(); mu.Lock(); delete(conns, c); mu.Unlock() }(); w.handle(ctx, c) }()
@@ -176,9 +218,10 @@ func (w *worker) handle(parent context.Context, c net.Conn) {
 			}
 		}
 	}()
+	frames := frameReader{source: c, limit: maxPacket}
 	for {
 		_ = c.SetReadDeadline(time.Now().Add(60 * time.Second))
-		b, e := readFrame(c, maxPacket)
+		b, e := frames.read()
 		if e != nil {
 			break
 		}
@@ -192,12 +235,26 @@ func (w *worker) handle(parent context.Context, c net.Conn) {
 }
 
 func relay(a, b net.Conn) {
+	copyTo := func(dst, src net.Conn) {
+		_, e := io.Copy(dst, src)
+		if e == nil {
+			if half, ok := dst.(interface{ CloseWrite() error }); ok {
+				e = half.CloseWrite()
+			} else {
+				e = dst.Close()
+			}
+		}
+		if e != nil {
+			a.Close()
+			b.Close()
+		}
+	}
 	done := make(chan struct{}, 1)
-	go func() { _, _ = io.Copy(a, b); a.Close(); b.Close(); done <- struct{}{} }()
-	_, _ = io.Copy(b, a)
+	go func() { copyTo(a, b); done <- struct{}{} }()
+	copyTo(b, a)
+	<-done
 	a.Close()
 	b.Close()
-	<-done
 }
 
 func dialWorker(ctx context.Context, socket, network, address string) (net.Conn, string, error) {
@@ -205,13 +262,19 @@ func dialWorker(ctx context.Context, socket, network, address string) (net.Conn,
 	if e != nil {
 		return nil, "", e
 	}
+	stop := context.AfterFunc(ctx, func() { c.Close() })
+	defer stop()
 	ok := false
 	defer func() {
 		if !ok {
 			c.Close()
 		}
 	}()
-	_ = c.SetDeadline(time.Now().Add(25 * time.Second))
+	deadline := time.Now().Add(25 * time.Second)
+	if limit, exists := ctx.Deadline(); exists && limit.Before(deadline) {
+		deadline = limit
+	}
+	_ = c.SetDeadline(deadline)
 	if e = writeObject(c, dialRequest{Network: network, Address: address}); e != nil {
 		return nil, "", e
 	}
@@ -228,6 +291,9 @@ func dialWorker(ctx context.Context, socket, network, address string) (net.Conn,
 	}
 	if strings.TrimSpace(reply.Address) == "" {
 		return nil, "", errors.New("worker target missing")
+	}
+	if e = ctx.Err(); e != nil {
+		return nil, "", e
 	}
 	_ = c.SetDeadline(time.Time{})
 	ok = true
