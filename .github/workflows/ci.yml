@@ -25,7 +25,7 @@ jobs:
           tar -xzf .build/core/core.tar.gz -C .build/core
           echo "SING_BOX_BINARY=$PWD/.build/core/sing-box-1.14.4-linux-amd64/sing-box" >> "$GITHUB_ENV"
       - name: Go tests, race detection and twenty real TCP/UDP links
-        run: go test -race -count=1 -v ./...
+        run: RUN_UDP_IDLE_TESTS=1 go test -race -count=1 -v ./...
       - name: Formatting, vet and shell checks
         run: |
           test -z "$(gofmt -l manifest.go internal cmd addons/vpngate/gateway)"
@@ -69,4 +69,4 @@ jobs:
       - name: Publish verified package
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "Go management, configuration, subscriptions and gateway with no Python runtime dependency. Official stable sing-box updates with compatibility checks and rollback. Five ordinary and VPNGate protocols, strict country validation and fail-closed routing. Full source and static Linux amd64/arm64 binaries are included."
+        run: gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "Separate ordinary and VPNGate five-protocol subscriptions, independent menu settings and active-country-only listeners. Lower parsing and export overhead, tunnel DNS TCP fallback and stable one-way UDP sessions verified beyond the idle threshold. Go management and gateway with no Python runtime dependency. Stable sing-box updates, compatibility checks, rollback and fail-closed routing. Full source and static Linux amd64/arm64 binaries are included."

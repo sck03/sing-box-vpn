@@ -217,15 +217,24 @@ func serveUDP(ctx context.Context, control net.Conn, t ticket, a proxyAccess) {
 	var mu sync.Mutex
 	sessions := map[string]*udpSession{}
 	var clientAddr netip.AddrPort
-	defer func() {
+	ctx, cancel := context.WithCancel(ctx)
+	closeAssociation := func() {
+		control.Close()
+		sock.Close()
 		mu.Lock()
 		for _, s := range sessions {
 			s.c.Close()
 			a.untrack(s.c)
 		}
 		mu.Unlock()
+	}
+	stop := context.AfterFunc(ctx, closeAssociation)
+	defer func() {
+		cancel()
+		stop()
+		closeAssociation()
 	}()
-	go func() { _, _ = control.Read(make([]byte, 1)); sock.Close() }()
+	go func() { var b [1]byte; _, _ = control.Read(b[:]); cancel() }()
 	buf := make([]byte, maxPacket)
 	for {
 		_ = sock.SetReadDeadline(time.Now().Add(60 * time.Second))
@@ -262,6 +271,12 @@ func serveUDP(ctx context.Context, control net.Conn, t ticket, a proxyAccess) {
 			}
 			s = &udpSession{c: c, target: resolved, client: src}
 			mu.Lock()
+			if ctx.Err() != nil {
+				mu.Unlock()
+				c.Close()
+				a.untrack(c)
+				return
+			}
 			sessions[target] = s
 			mu.Unlock()
 			go func(key string, session *udpSession) {
@@ -279,12 +294,14 @@ func serveUDP(ctx context.Context, control net.Conn, t ticket, a proxyAccess) {
 					if e != nil {
 						return
 					}
+					_ = sock.SetReadDeadline(time.Now().Add(60 * time.Second))
 					if _, e = sock.WriteToUDPAddrPort(packet, session.client); e != nil {
 						return
 					}
 				}
 			}(target, s)
 		}
+		_ = s.c.SetReadDeadline(time.Now().Add(60 * time.Second))
 		if e = writeFrame(s.c, buf[offset:n]); e != nil {
 			s.c.Close()
 		}

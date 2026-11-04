@@ -8,9 +8,34 @@
 curl -fsSL https://raw.githubusercontent.com/sck03/sing-box-vpn/main/install.sh | sudo bash
 ```
 
-安装普通节点后运行 `sb`，菜单 **17** 选择国家并启动 VPNGate，菜单 **9** 获取
-URI、二维码、Mihomo 和 sing-box 配置。本地订阅在菜单 **3 → 8** 配置。
+安装普通节点后运行 `sb`，菜单 **17** 选择国家并启动 VPNGate，菜单 **9** 分别选择
+“普通五协议”或“VPNGate 五协议”，获取各自的 URI、二维码、Mihomo 和 sing-box 配置。
+本地订阅在菜单 **3 → 8** 配置；两套内容使用同一个订阅服务的不同路径，无需增加常驻进程。
 安装包包含静态管理/网关二进制；VPS 无需安装 Go 或 Python。
+
+| 操作 | 菜单 |
+| --- | --- |
+| 整套卸载（输入 DELETE 确认） | 2 |
+| 普通五协议凭据、Reality SNI、VMess WS/CDN、Argo 等 | 3 |
+| 普通五协议端口、Hy2 跳跃 | 4 |
+| 普通节点域名分流 / 证书 | 5 / 12 |
+| 普通与 VPNGate 分别生成、查看、推送 | 9 |
+| 仅卸载 VPNGate，保留普通节点 | 17 → 12 |
+| VPNGate 节点与订阅 | 17 → 13 |
+| VPNGate 五协议端口、凭据、SNI、WS、统一 TLS 证书 | 17 → 14 |
+
+两套导出不混合，VPNGate 只包含当前国家的五个节点：
+
+| 内容 | 普通节点 | VPNGate 节点 |
+| --- | --- | --- |
+| 文件目录 | `/etc/s-box/` | `/etc/s-box/vpngate/` |
+| URI / 聚合 | `jhsub.txt` / `jhsub-base64.txt` | 同名文件，位于 VPNGate 目录 |
+| 客户端配置 | `sbox.json` / `clmi.yaml` | 同名文件，位于 VPNGate 目录 |
+| HTTP 订阅路径 | `/<令牌>/sbox.json` 等 | `/<令牌>/vpngate/sbox.json` 等 |
+
+两套 HTTP 路径使用同一个订阅令牌。原有订阅地址继续提供普通节点；VPNGate 请使用新地址。
+也可运行 `sb links normal`、`sb links vpngate`、`sb export normal`、`sb export vpngate`。
+Telegram 按所选类型推送；GitLab 的 VPNGate 文件放入 `vpngate/`，不会覆盖普通订阅。
 
 安装默认获取官方最新稳定核心。菜单 **8** 可查询版本、更新最新稳定版、指定稳定版本
 和回滚上一核心，也可以使用：
@@ -32,9 +57,14 @@ sb core-rollback
 | 对应的 VPNGate 节点 | VPS → 本机认证 SOCKS5 → 独立 netns → OpenVPN → 指定国家 |
 
 普通节点与 VPNGate 节点使用独立端口和凭据。五种 VPNGate 协议共用一个出口；
-换 VPNGate IP 时分享链接不变。自动测速只包含普通节点，临时组只能手动选择。
-当前同时激活一个国家。再次启用以前的国家会恢复它的端口和凭据；切换国家后，
-旧国家凭据无法使用新国家出口，因此旧链接会不可用。
+换 VPNGate IP 时分享链接不变。普通订阅保留自动测速与原有分流；VPNGate 订阅手动选择协议，
+公网流量均经过已验证的 VPNGate 出口，不包含普通节点或公网直连回退。
+当前只监听一个国家的五个 VPNGate 入口。再次启用以前的国家会恢复它的端口和凭据；
+切换国家后，旧国家入口关闭，旧链接暂时不可用。
+
+程序不会为了节省资源定时断开 TCP 或轮换出口。UDP 收发任一方向有数据都会续期，
+仅在双方均空闲约 60 秒后回收。健康检查复用现有隧道；修改 VPNGate 入口设置只重启对应
+sing-box 服务，导出订阅不会重启服务。真实隧道故障或出口校验失败仍会阻断并尝试恢复。
 
 VPNGate 是志愿者网络。“家宽候选”采用已知自营机房排除和出口运营商信息筛选，
 并非住宅网络认证。节点可能掉线、满员或变更 IP；固定节点模式也无法保证永久固定 IP。
@@ -85,7 +115,7 @@ yg-vpngate ctl policy --asns 12345,67890
 开发与验证：
 
 ```bash
-SING_BOX_BINARY=/path/to/sing-box go test -race -count=1 ./...
+SING_BOX_BINARY=/path/to/sing-box RUN_UDP_IDLE_TESTS=1 go test -race -count=1 ./...
 go vet ./...
 go build -trimpath -o .build/yg-vpngate ./addons/vpngate/gateway
 sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_NETNS_TESTS=1 \
@@ -93,7 +123,8 @@ sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_NETNS_TESTS=1 \
 go run ./cmd/release
 ```
 
-CI 验证配置生成、旧参数迁移、稳定链接、认证、五协议真实 TCP/UDP，以及隔离环境的
+CI 验证两套配置生成、旧参数迁移、稳定链接、认证、五协议真实 TCP/UDP、65 秒单向 UDP
+传输不被空闲回收，以及隔离环境的
 OpenVPN 握手、隧道 DNS 和断线行为。带 `v` 的发行标签在全部检查通过后发布源码与
 静态二进制安装包及 SHA256。详见 [实施方案](VPNGate-实施方案.md) 和
 [Go 迁移与性能分析](docs/optimization.md)。源码本地安装须先构建并解压发行包，再运行包内

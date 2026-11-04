@@ -106,14 +106,15 @@ func TestCountryLinksStayStableAndCredentialsStayIndependent(t *testing.T) {
 	root, core, app := appFixture(t)
 	ctx := context.Background()
 	ordinary := readBytes(t, filepath.Join(root, "sb.json"))
+	ordinaryLinks := readBytes(t, filepath.Join(root, "jhsub.txt"))
 	if _, err := PrepareVPN(ctx, root, core, app, "JP"); err != nil {
 		t.Fatal(err)
 	}
-	first := readBytes(t, filepath.Join(root, "jhsub.txt"))
+	first := readBytes(t, filepath.Join(root, "vpngate", "jhsub.txt"))
 	if _, err := PrepareVPN(ctx, root, core, app, "JP"); err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(first, readBytes(t, filepath.Join(root, "jhsub.txt"))) {
+	if !bytes.Equal(first, readBytes(t, filepath.Join(root, "vpngate", "jhsub.txt"))) {
 		t.Fatal("same-country links changed")
 	}
 	if _, err := PrepareVPN(ctx, root, core, app, "KR"); err != nil {
@@ -122,9 +123,16 @@ func TestCountryLinksStayStableAndCredentialsStayIndependent(t *testing.T) {
 	if !bytes.Equal(ordinary, readBytes(t, filepath.Join(root, "sb.json"))) {
 		t.Fatal("country selection changed ordinary nodes")
 	}
-	for _, link := range strings.Split(strings.TrimSpace(string(first)), "\n") {
-		if !strings.Contains(string(readBytes(t, filepath.Join(root, "jhsub.txt"))), link) {
-			t.Fatal("old country link was lost")
+	if !bytes.Equal(ordinaryLinks, readBytes(t, filepath.Join(root, "jhsub.txt"))) {
+		t.Fatal("VPNGate selection changed ordinary subscriptions")
+	}
+	entries := objects(readObject(t, filepath.Join(root, "vpngate", "server.json"))["inbounds"])
+	if len(entries) != 5 {
+		t.Fatal("inactive countries kept listeners", len(entries))
+	}
+	for _, entry := range entries {
+		if !strings.HasPrefix(text(entry["tag"]), "vg-KR-") {
+			t.Fatal("inactive country retained an entry")
 		}
 	}
 	_, private, err := loadVPN(root)
@@ -137,6 +145,12 @@ func TestCountryLinksStayStableAndCredentialsStayIndependent(t *testing.T) {
 	gateway := readObject(t, filepath.Join(root, "vpngate", "gateway.json"))
 	if gateway["country"] != "KR" || gateway["proxy_user"] != private["KR"].SocksUser {
 		t.Fatal("wrong active country")
+	}
+	if _, err := PrepareVPN(ctx, root, core, app, "JP"); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first, readBytes(t, filepath.Join(root, "vpngate", "jhsub.txt"))) {
+		t.Fatal("returning to a saved country changed its ports or credentials")
 	}
 	for _, out := range objects(readObject(t, filepath.Join(root, "sbox.json"))["outbounds"]) {
 		if out["tag"] == "auto" {
@@ -212,9 +226,11 @@ func TestHoppingAndMihomoManualGroup(t *testing.T) {
 	if _, err := PrepareVPN(context.Background(), root, core, app, "JP"); err != nil {
 		t.Fatal(err)
 	}
-	mihomo := readObject(t, filepath.Join(root, "clmi.yaml"))
+	mihomo := readObject(t, filepath.Join(root, "vpngate", "clmi.yaml"))
+	found := false
 	for _, group := range objects(mihomo["proxy-groups"]) {
 		if group["name"] == "临时家宽" {
+			found = true
 			if group["type"] != "select" {
 				t.Fatal("gateway group is not manual")
 			}
@@ -224,6 +240,9 @@ func TestHoppingAndMihomoManualGroup(t *testing.T) {
 				}
 			}
 		}
+	}
+	if !found {
+		t.Fatal("VPNGate subscription has no manual group")
 	}
 }
 func TestPinsFollowIndividualProtocolCertificates(t *testing.T) {
@@ -269,17 +288,48 @@ func TestLegacyFixtureIsPreserved(t *testing.T) {
 		t.Skip("set LEGACY_FIXTURE for migration comparison")
 	}
 	core := coreBinary(t)
+	before := map[string][]byte{}
+	for _, name := range []string{"app.json", "vpngate/settings.json", "vpngate/secrets.json"} {
+		if data, err := os.ReadFile(filepath.Join(root, name)); err == nil {
+			before[name] = data
+		} else if !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
 	if err := RunConfig(context.Background(), []string{"--root", root, "--core", core, "export"}, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"sbox.json", "clmi.yaml", "share.json"} {
-		if !reflect.DeepEqual(readObject(t, filepath.Join(root, name)), readObject(t, filepath.Join(root, "expected", name))) {
-			t.Fatalf("legacy %s changed", name)
+	for name, data := range before {
+		if !bytes.Equal(data, readBytes(t, filepath.Join(root, name))) {
+			t.Fatalf("export changed legacy state %s", name)
 		}
 	}
-	for _, name := range []string{"jhsub.txt", "jhsub-base64.txt"} {
-		if !bytes.Equal(readBytes(t, filepath.Join(root, name)), readBytes(t, filepath.Join(root, "expected", name))) {
-			t.Fatalf("legacy %s changed", name)
+	expected := map[string]bool{}
+	for _, link := range strings.Split(strings.TrimSpace(string(readBytes(t, filepath.Join(root, "expected", "jhsub.txt")))), "\n") {
+		expected[link] = true
+	}
+	settings, _, err := loadVPN(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	share := readObject(t, filepath.Join(root, "expected", "share.json"))
+	for _, scope := range []string{normalScope, vpngateScope} {
+		if scope == vpngateScope && settings.ActiveCountry == "" {
+			continue
+		}
+		directory, _ := exportDirectory(root, scope)
+		links := strings.Split(strings.TrimSpace(string(readBytes(t, filepath.Join(directory, "jhsub.txt")))), "\n")
+		want := len(stringsValue(share["normal"]))
+		if scope == vpngateScope {
+			want = len(Protocols)
+		}
+		if len(links) != want {
+			t.Fatalf("legacy %s lost nodes: got %d, want %d", scope, len(links), want)
+		}
+		for _, link := range links {
+			if !expected[link] {
+				t.Fatalf("legacy %s URI changed", scope)
+			}
 		}
 	}
 }

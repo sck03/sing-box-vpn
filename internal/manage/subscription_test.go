@@ -19,9 +19,12 @@ func TestSubscriptionAuthenticationAndFreshFileContent(t *testing.T) {
 	if err := AtomicBytes(filepath.Join(root, "sbox.json"), []byte(`{"version":1}`), 0600); err != nil {
 		t.Fatal(err)
 	}
+	if err := AtomicBytes(filepath.Join(root, "vpngate", "sbox.json"), []byte(`{"scope":"vpngate"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
 	server := httptest.NewServer(subscriptionHandler(root, token))
 	defer server.Close()
-	for _, path := range []string{"wrong/sbox.json", token + "/app.json", token + "/../app.json", token + "/missing/file", "中文/sbox.json"} {
+	for _, path := range []string{"wrong/sbox.json", token + "/app.json", token + "/../app.json", token + "/missing/file", "中文/sbox.json", "wrong/vpngate/sbox.json", token + "/vpngate/secrets.json", token + "/vpngate/server.json", token + "/vpngate/../sbox.json"} {
 		response, err := server.Client().Get(server.URL + "/" + path)
 		if err != nil {
 			t.Fatal(err)
@@ -45,8 +48,17 @@ func TestSubscriptionAuthenticationAndFreshFileContent(t *testing.T) {
 			t.Fatal("stale subscription", err)
 		}
 	}
+	response, err := server.Client().Get(server.URL + "/" + token + "/vpngate/sbox.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil || response.StatusCode != 200 || string(data) != `{"scope":"vpngate"}` {
+		t.Fatal("separate VPNGate subscription returned ordinary content", err)
+	}
 	req, _ := http.NewRequest("HEAD", server.URL+"/"+token+"/sbox.json", nil)
-	response, err := server.Client().Do(req)
+	response, err = server.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}

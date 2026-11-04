@@ -17,7 +17,8 @@ require_system() {
     command -v systemctl >/dev/null || { echo '需要 systemd' >&2; return 1; }
 }
 firewall() { "$MANAGER" firewall --root "$SB_ROOT" "$@"; }
-reload_main() { firewall; systemctl restart sing-box; }
+reload_main() { systemctl restart sing-box; }
+reload_vpngate() { systemctl try-restart sing-box-vpngate; }
 arch_name() { case $(uname -m) in x86_64) echo amd64;; aarch64|arm64) echo arm64;; *) echo '仅支持 amd64/arm64' >&2; return 1;; esac; }
 install_main() {
     require_system
@@ -105,14 +106,17 @@ subscription_menu() {
     1) local port; read -r -p '订阅端口（回车随机）：' port
        cfg subscription-init --port "${port:-0}"
        write_subscription_service
-       cfg export; firewall; systemctl daemon-reload; systemctl enable sb-subscription >/dev/null; systemctl restart sb-subscription; subscription_urls;;
+       cfg export; firewall; systemctl daemon-reload; systemctl enable sb-subscription >/dev/null; systemctl restart sb-subscription
+       echo '普通五协议订阅：'; subscription_urls normal
+       if [[ -f "$SB_ROOT/vpngate/sbox.json" ]]; then echo 'VPNGate 五协议订阅：'; subscription_urls vpngate; fi;;
     2) systemctl disable --now sb-subscription 2>/dev/null || true
        cfg subscription-stop
        firewall;;
-    3) subscription_urls;;
+    3) echo '普通五协议订阅：'; subscription_urls normal
+       if [[ -f "$SB_ROOT/vpngate/sbox.json" ]]; then echo 'VPNGate 五协议订阅：'; subscription_urls vpngate; fi;;
     esac
 }
-subscription_urls() { cfg subscription-urls; }
+subscription_urls() { cfg subscription-urls --scope "${1:-normal}"; }
 telegram_config() {
     local token chat_id
     read -rs -p 'Bot token（隐藏）：' token; echo
@@ -126,7 +130,7 @@ gitlab_config() {
     read -rs -p '访问令牌（隐藏）：' token; echo
     printf '%s' "$token" | "$MANAGER" remote --root "$SB_ROOT" gitlab-config --project "$project" --branch "${branch:-main}"
 }
-protocol_pick() { echo 'vless / vmess / hysteria2 / tuic / anytls'; read -r -p '协议：' PROTOCOL; }
+protocol_pick() { echo 'vless / vmess / hysteria2 / tuic / anytls'; if [[ "${1:-}" == all ]]; then echo 'all = 全部协议'; fi; read -r -p '协议：' PROTOCOL; }
 core_menu() {
     echo '1. 当前/最新稳定版  2. 更新最新稳定版  3. 指定稳定版本  4. 回滚上一核心  0. 返回'
     read -r -p '选择：' choice
@@ -143,12 +147,12 @@ settings_menu() {
     read -r -p '选择：' choice
     case "$choice" in
     1) read -r -p 'Reality 域名：' value; cfg sni "$value"; reload_main;;
-    2) protocol_pick; cfg reset "$PROTOCOL"; reload_main;;
+    2) protocol_pick all; cfg reset "$PROTOCOL"; reload_main;;
     3) "$APP_HOME/lib/argo.sh" "$SB_ROOT";;
     4) read -r -p 'WS 路径：' value; cfg ws "$value"; reload_main;;
     5) telegram_config;;
     6) read -r -p '新版 WireGuard endpoint JSON 文件：' value; cfg warp "$value"; reload_main;;
-    7) gitlab_config; cfg export; "$MANAGER" remote --root "$SB_ROOT" gitlab-push;;
+    7) gitlab_config; echo '配置已保存；在菜单 9 分别选择要推送的普通或 VPNGate 订阅。';;
     8) subscription_menu;;
     9) read -r -p 'CDN 地址（空值清除）：' value; cfg cdn "$value";;
     esac
@@ -156,43 +160,71 @@ settings_menu() {
 port_menu() {
     echo '1. 更改主端口  2. 普通 Hy2 端口跳跃  3. 清除端口跳跃';read -r -p '选择：' choice
     case "$choice" in
-    1) protocol_pick;read -r -p '新端口：' value;cfg port "$PROTOCOL" "$value";reload_main;;
-    2) read -r -p '端口/范围，空格分隔，例如 31000:31100 31200：' value;read -r -a ports <<< "$value";cfg hopping "${ports[@]}";reload_main;;
-    3) cfg hopping;reload_main;;
+    1) protocol_pick;read -r -p '新端口：' value;cfg port "$PROTOCOL" "$value";firewall;reload_main;;
+    2) read -r -p '端口/范围，空格分隔，例如 31000:31100 31200：' value;read -r -a ports <<< "$value";cfg hopping "${ports[@]}";firewall;reload_main;;
+    3) cfg hopping;firewall;reload_main;;
     esac
 }
 route_menu() { echo 'socks / warp / direct4 / direct6';read -r -p '通道：' channel;read -r -p '后缀域名，空格分隔；回车清空：' value;read -r -a domains <<< "$value";cfg route "$channel" "${domains[@]}";reload_main; }
 certificate_menu() {
     echo '1. 导入 PEM 证书  2. Certbot 申请证书';read -r -p '选择：' choice
     case "$choice" in
-    1) protocol_pick;read -r -p '证书绝对路径：' cert;read -r -p '私钥绝对路径：' key;read -r -p '证书域名：' domain;cfg tls "$PROTOCOL" "$cert" "$key" "$domain";reload_main;;
+    1) echo 'vmess / hysteria2 / tuic / anytls / all（VLESS 使用 Reality SNI）';read -r -p '协议：' PROTOCOL
+       read -r -p '证书绝对路径：' cert;read -r -p '私钥绝对路径：' key;read -r -p '证书域名：' domain;cfg tls "$PROTOCOL" "$cert" "$key" "$domain";reload_main;;
     2) read -r -p '已解析到此 VPS 的域名：' domain;read -r -p '邮箱：' email
        [[ "$domain" =~ ^[A-Za-z0-9.-]+$ && "$email" == *@* ]] || return 1
        apt-get install -y -qq certbot
        certbot certonly --standalone --non-interactive --agree-tos --email "$email" -d "$domain"
        cfg tls all "/etc/letsencrypt/live/$domain/fullchain.pem" "/etc/letsencrypt/live/$domain/privkey.pem" "$domain";reload_main
        install -d /etc/letsencrypt/renewal-hooks/deploy
-       printf '#!/bin/sh\nsystemctl restart sing-box\nsb export\n' > /etc/letsencrypt/renewal-hooks/deploy/sing-box-vpn.sh
+       printf '#!/bin/sh\nsystemctl try-restart sing-box sing-box-vpngate\nsb export\n' > /etc/letsencrypt/renewal-hooks/deploy/sing-box-vpn.sh
        chmod 0755 /etc/letsencrypt/renewal-hooks/deploy/sing-box-vpn.sh;;
     esac
 }
-share_menu() {
-    echo '1. URI/二维码/聚合节点  2. 客户端配置与订阅  3. 推送到已配置 Telegram';read -r -p '选择：' choice
+vpngate_settings_menu() {
+    local choice value cert key domain
+    cfg show --scope vpngate
+    echo '1. 五协议主端口  2. 重置凭据  3. Reality SNI  4. VMess WS 路径'
+    echo '5. 统一导入 TLS 证书（VLESS 保持 Reality）  0. 返回'
+    read -r -p '选择：' choice || return 0
     case "$choice" in
-    1) cfg links; if command -v qrencode >/dev/null;then while IFS= read -r link;do qrencode -t ANSIUTF8 "$link";done < "$SB_ROOT/jhsub.txt";fi;;
-    2) cfg export;echo "Sing-box: $SB_ROOT/sbox.json";echo "Mihomo: $SB_ROOT/clmi.yaml";subscription_urls;;
-    3) cfg export;"$MANAGER" remote --root "$SB_ROOT" telegram-push;;
+    1) protocol_pick;read -r -p '新端口：' value;cfg port "$PROTOCOL" "$value" --scope vpngate;firewall;reload_vpngate;;
+    2) protocol_pick all;cfg reset "$PROTOCOL" --scope vpngate;reload_vpngate;;
+    3) read -r -p 'Reality 域名：' value;cfg sni "$value" --scope vpngate;reload_vpngate;;
+    4) read -r -p 'WS 路径：' value;cfg ws "$value" --scope vpngate;reload_vpngate;;
+    5) read -r -p '证书绝对路径：' cert;read -r -p '私钥绝对路径：' key;read -r -p '证书域名：' domain
+       cfg tls all "$cert" "$key" "$domain" --scope vpngate;reload_vpngate;;
+    esac
+}
+share_menu() {
+    local scope="${1:-}" choice export_dir
+    if [[ -z "$scope" ]]; then
+        echo '1. 普通五协议（原 VPS / 已配置分流）  2. VPNGate 五协议（当前国家出口）  0. 返回'
+        read -r -p '选择节点类型：' choice || return 0
+        case "$choice" in 1) scope=normal;;2) scope=vpngate;;*) return 0;;esac
+    fi
+    export_dir="$SB_ROOT"
+    if [[ "$scope" == vpngate ]]; then export_dir="$SB_ROOT/vpngate"; fi
+    echo '1. URI/二维码/聚合节点  2. 客户端配置与订阅  3. 推送到已配置 Telegram  4. 推送到私有 GitLab  0. 返回'
+    read -r -p '选择：' choice || return 0
+    case "$choice" in
+    1) cfg links --scope "$scope"; if command -v qrencode >/dev/null;then while IFS= read -r link;do qrencode -t ANSIUTF8 "$link";done < "$export_dir/jhsub.txt";fi;;
+    2) cfg export --scope "$scope";echo "Sing-box: $export_dir/sbox.json";echo "Mihomo: $export_dir/clmi.yaml";subscription_urls "$scope";;
+    3) cfg export --scope "$scope";"$MANAGER" remote --root "$SB_ROOT" telegram-push --scope "$scope";;
+    4) cfg export --scope "$scope";"$MANAGER" remote --root "$SB_ROOT" gitlab-push --scope "$scope";;
     esac
 }
 uninstall_main() {
     echo '将停止并删除本项目服务与节点配置。';read -r -p '输入 DELETE 确认卸载：' answer;[[ "$answer" == DELETE ]] || return 0
-    "$APP_HOME/addons/vpngate/vpngate.sh" uninstall || return 1
+    [[ "$SB_ROOT" == /etc/s-box && -f "$SB_ROOT/app.json" ]] || { echo '配置目录不符合安全清理条件' >&2;return 1; }
+    [[ "$APP_HOME" == /opt/sing-box-vpn && -f "$APP_HOME/.managed" ]] || { echo '程序目录不符合安全清理条件' >&2;return 1; }
+    "$APP_HOME/addons/vpngate/vpngate.sh" uninstall --all || return 1
     systemctl disable --now sing-box sb-subscription sb-argo 2>/dev/null || true
     firewall --remove
     rm -f /etc/systemd/system/sing-box.service /etc/systemd/system/sb-subscription.service /etc/systemd/system/sb-argo.service /usr/bin/sb /usr/local/bin/yg-vpngate
-    [[ "$SB_ROOT" == /etc/s-box && -f "$SB_ROOT/app.json" ]] || { echo '配置目录不符合安全清理条件' >&2;return 1; }
+    rm -f /etc/letsencrypt/renewal-hooks/deploy/sing-box-vpn.sh /etc/sysctl.d/99-sing-box-vpn-bbr.conf
     rm -rf -- "$SB_ROOT"
-    [[ "$APP_HOME" == /opt/sing-box-vpn && -f "$APP_HOME/.managed" ]] && rm -rf -- "$APP_HOME"
+    rm -rf -- "$APP_HOME"
     systemctl daemon-reload
 }
 menu() {
@@ -224,10 +256,12 @@ menu() {
     done
 }
 case "${1:-menu}" in
-    install) install_main;;export) cfg export;;status) cfg show;;links) cfg links;;
+    install) install_main;;export) cfg export --scope "${2:-normal}";;status) cfg show --scope "${2:-normal}";;links) cfg links --scope "${2:-normal}";;
+    vpngate-share) share_menu vpngate;;
+    vpngate-settings) vpngate_settings_menu;;
     core-check) "$MANAGER" core --root "$SB_ROOT" check;;
     core-update) require_system;if [[ -n "${2:-}" ]];then "$MANAGER" core --root "$SB_ROOT" update --version "$2";else "$MANAGER" core --root "$SB_ROOT" update;fi;;
     core-rollback) require_system;"$MANAGER" core --root "$SB_ROOT" rollback;;
-    menu) menu;;--help|help) echo 'sb [install|export|status|links|core-check|core-update [VERSION]|core-rollback]；不带参数打开菜单';;
+    menu) menu;;--help|help) echo 'sb [install|export [normal|vpngate]|status|links [normal|vpngate]|core-check|core-update [VERSION]|core-rollback]；不带参数打开菜单';;
     *) echo '未知命令' >&2;exit 1;;
 esac

@@ -61,15 +61,15 @@ EOF
 }
 uninstall_gateway() {
     [[ $(id -u) == 0 ]] || return 1
+    [[ $(realpath -m -- "$SB_ROOT/vpngate") == /etc/s-box/vpngate ]] || { echo '配置清理路径验证失败' >&2;return 1; }
     systemctl disable --now sing-box-vpngate yg-vpngate 2>/dev/null || true
     if [[ -f "$CONFIG" && -x /usr/local/bin/yg-vpngate ]];then /usr/local/bin/yg-vpngate cleanup --config "$CONFIG";fi
     rm -f /etc/systemd/system/sing-box-vpngate.service /etc/systemd/system/yg-vpngate.service
-    if [[ -f "$SB_ROOT/app.json" ]];then cfg vpngate-remove;fi
-    [[ $(realpath -m -- "$SB_ROOT/vpngate") == /etc/s-box/vpngate ]] || { echo '配置清理路径验证失败' >&2;return 1; }
+    if [[ "${1:-}" != --all && -f "$SB_ROOT/app.json" ]];then cfg vpngate-remove;fi
     rm -rf -- /etc/s-box/vpngate /var/lib/yg-vpngate /run/yg-vpngate
-    if [[ -f "$SB_ROOT/app.json" ]];then /usr/local/bin/yg-vpngate firewall --root "$SB_ROOT";fi
+    if [[ "${1:-}" != --all && -f "$SB_ROOT/app.json" ]];then /usr/local/bin/yg-vpngate firewall --root "$SB_ROOT";fi
     systemctl daemon-reload
-    echo 'VPNGate 已卸载，普通节点继续使用。'
+    if [[ "${1:-}" == --all ]]; then echo 'VPNGate 组件已清理。'; else echo 'VPNGate 已卸载，普通节点继续使用。'; fi
 }
 menu() {
     while true;do
@@ -77,7 +77,8 @@ menu() {
         echo '1. 安装/选择国家  2. 状态  3. 候选节点'
         echo '4. 同国家换 IP    5. 尽量保持/自动重连  6. 锁定当前节点'
         echo '7. 暂停出口       8. 恢复出口  9. 刷新节点源'
-        echo '10. 镜像源       11. ISP/hosting 策略  12. 卸载  0. 返回'
+        echo '10. 镜像源       11. ISP/hosting 策略  12. 卸载'
+        echo '13. VPNGate 五协议节点/订阅  14. VPNGate 端口/凭据/证书  0. 返回'
         read -r -p '选择：' choice || return 0
         case "$choice" in
         0) return;;
@@ -86,11 +87,13 @@ menu() {
         10) read -r -p '完整 API 源 URL，逗号分隔，官方源放第一项：' sources;ctl policy --sources "$sources";;
         11) read -r -p '要求已确认 ISP？true/false：' isp;read -r -p '排除已知 hosting？true/false：' hosting;ctl policy --require-isp="$isp" --exclude-hosting="$hosting";;
         12) uninstall_gateway;return;;
+        13) sb vpngate-share;;
+        14) sb vpngate-settings;;
         esac
     done
 }
 case "${1:-menu}" in
-    menu) menu;;install|country) install_gateway "${2:-JP}";;uninstall) uninstall_gateway;;
+    menu) menu;;install|country) install_gateway "${2:-JP}";;uninstall) uninstall_gateway "${2:-}";;
     start|stop|swap|status|nodes|refresh) ctl "$1";;
     *) echo 'vpngate.sh menu|install COUNTRY|status|start|stop|swap|uninstall' >&2;exit 1;;
 esac

@@ -57,21 +57,28 @@ func disableSubscription(root string) error {
 	settings.Enabled = false
 	return AtomicJSON(filepath.Join(root, "subscription.json"), settings)
 }
-func subscriptionURLs(root, address string, output io.Writer) error {
+func subscriptionURLs(root, address, scope string, output io.Writer) error {
+	if _, err := exportDirectory(root, scope); err != nil {
+		return err
+	}
 	var settings subscriptionSettings
 	found, err := ReadJSON(filepath.Join(root, "subscription.json"), &settings)
 	if err != nil {
 		return err
 	}
-	if !found {
-		_, err = fmt.Fprintln(output, "未配置本地订阅")
+	if !found || !settings.Enabled {
+		_, err = fmt.Fprintln(output, "本地订阅未启用，请通过菜单 3 → 8 配置")
 		return err
 	}
 	if strings.Contains(address, ":") {
 		address = "[" + address + "]"
 	}
+	prefix := ""
+	if scope == vpngateScope {
+		prefix = "vpngate/"
+	}
 	for _, name := range []string{"sbox.json", "clmi.yaml", "jhsub.txt"} {
-		if _, err = fmt.Fprintf(output, "http://%s:%d/%s/%s\n", address, settings.Port, settings.Token, name); err != nil {
+		if _, err = fmt.Fprintf(output, "http://%s:%d/%s/%s%s\n", address, settings.Port, settings.Token, prefix, name); err != nil {
 			return err
 		}
 	}
@@ -111,19 +118,26 @@ func (l *limitedListener) Close() error {
 }
 
 func subscriptionHandler(root, token string) http.Handler {
-	files := map[string]struct{ path, mime string }{"sbox.json": {"sbox.json", "application/json"}, "clmi.yaml": {"clmi.yaml", "application/yaml"}, "jhsub.txt": {"jhsub-base64.txt", "text/plain"}, "links.txt": {"jhsub.txt", "text/plain"}}
+	type exportedFile struct{ path, mime string }
+	files := map[string]exportedFile{}
+	for _, prefix := range []string{"", "vpngate/"} {
+		files[prefix+"sbox.json"] = exportedFile{prefix + "sbox.json", "application/json"}
+		files[prefix+"clmi.yaml"] = exportedFile{prefix + "clmi.yaml", "application/yaml"}
+		files[prefix+"jhsub.txt"] = exportedFile{prefix + "jhsub-base64.txt", "text/plain"}
+		files[prefix+"links.txt"] = exportedFile{prefix + "jhsub.txt", "text/plain"}
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
 			http.Error(w, "method not allowed", 405)
 			return
 		}
-		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-		if len(parts) != 2 || subtle.ConstantTimeCompare([]byte(parts[0]), []byte(token)) != 1 {
+		credential, name, valid := strings.Cut(strings.Trim(r.URL.Path, "/"), "/")
+		if !valid || subtle.ConstantTimeCompare([]byte(credential), []byte(token)) != 1 {
 			http.NotFound(w, r)
 			return
 		}
-		item, exists := files[parts[1]]
+		item, exists := files[name]
 		if !exists {
 			http.NotFound(w, r)
 			return

@@ -96,6 +96,8 @@ func writeObject(w io.Writer, v any) error {
 type worker struct {
 	socket       string
 	dns          string
+	resolver     *net.Resolver
+	resolverOnce sync.Once
 	dialOverride func(context.Context, string, string) (net.Conn, error)
 }
 
@@ -114,10 +116,12 @@ func (w *worker) dial(ctx context.Context, network, address string) (net.Conn, e
 	if literal := net.ParseIP(host); literal != nil {
 		ip = literal.To4()
 	} else {
-		resolver := net.Resolver{PreferGo: true, Dial: func(c context.Context, _ string, _ string) (net.Conn, error) {
-			return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(c, "udp4", w.dns)
-		}}
-		ips, e := resolver.LookupIP(ctx, "ip4", host)
+		w.resolverOnce.Do(func() {
+			w.resolver = &net.Resolver{PreferGo: true, Dial: func(c context.Context, network, _ string) (net.Conn, error) {
+				return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(c, network+"4", w.dns)
+			}}
+		})
+		ips, e := w.resolver.LookupIP(ctx, "ip4", host)
 		if e != nil {
 			return nil, e
 		}
@@ -213,6 +217,8 @@ func (w *worker) handle(parent context.Context, c net.Conn) {
 			if e != nil {
 				return
 			}
+			// Replies keep a download-only session alive while its request side waits.
+			_ = c.SetReadDeadline(time.Now().Add(60 * time.Second))
 			if writeFrame(c, buf[:n]) != nil {
 				return
 			}
@@ -225,6 +231,8 @@ func (w *worker) handle(parent context.Context, c net.Conn) {
 		if e != nil {
 			break
 		}
+		// Upload traffic also counts as activity when the target sends no replies.
+		_ = remote.SetReadDeadline(time.Now().Add(60 * time.Second))
 		if _, e = remote.Write(b); e != nil {
 			break
 		}

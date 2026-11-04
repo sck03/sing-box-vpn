@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -22,6 +21,22 @@ import (
 
 type fileBundle map[string][]byte
 
+const normalScope = "normal"
+const vpngateScope = "vpngate"
+
+var exportNames = []string{"sbox.json", "clmi.yaml", "jhsub.txt", "jhsub-base64.txt", "share.json"}
+
+func exportDirectory(root, scope string) (string, error) {
+	switch scope {
+	case normalScope:
+		return root, nil
+	case vpngateScope:
+		return filepath.Join(root, "vpngate"), nil
+	default:
+		return "", errors.New("节点类型必须为 normal 或 vpngate")
+	}
+}
+
 func (files fileBundle) json(name string, value any) error {
 	data, err := JSONBytes(value)
 	if err == nil {
@@ -30,13 +45,8 @@ func (files fileBundle) json(name string, value any) error {
 	return err
 }
 
-// Check every generated config before publishing any of the state or exports.
+// Callers validate the whole bundle first; only changed files need staging and fsync.
 func publish(root string, files fileBundle) error {
-	stage, err := os.MkdirTemp(root, ".commit-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(stage)
 	names := make([]string, 0, len(files))
 	for name := range files {
 		if !filepath.IsLocal(name) {
@@ -50,21 +60,50 @@ func publish(root string, files fileBundle) error {
 		exists bool
 	}
 	previous := map[string]previousFile{}
+	changed := make([]string, 0, len(names))
 	for _, name := range names {
 		path := filepath.Join(root, name)
 		data, err := os.ReadFile(path)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
+		if err != nil && files[name] == nil {
+			continue
+		}
+		if err == nil && files[name] != nil && bytes.Equal(data, files[name]) {
+			info, statErr := os.Lstat(path)
+			if statErr != nil {
+				return statErr
+			}
+			if info.Mode().IsRegular() {
+				if info.Mode().Perm() != 0600 {
+					if err := os.Chmod(path, 0600); err != nil {
+						return err
+					}
+				}
+				continue
+			}
+		}
 		previous[name] = previousFile{data, err == nil}
-		if data = files[name]; data != nil {
-			if err = AtomicBytes(filepath.Join(stage, name), data, 0600); err != nil {
+		changed = append(changed, name)
+	}
+	if len(changed) == 0 {
+		return nil
+	}
+	stage, err := os.MkdirTemp(root, ".commit-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	for _, name := range changed {
+		if data := files[name]; data != nil {
+			if err := AtomicBytes(filepath.Join(stage, name), data, 0600); err != nil {
 				return err
 			}
 		}
 	}
 	var applied []string
-	for _, name := range names {
+	for _, name := range changed {
 		path := filepath.Join(root, name)
 		if files[name] == nil {
 			err = os.Remove(path)
@@ -135,56 +174,13 @@ func loadVPN(root string) (VPNSettings, map[string]Secrets, error) {
 	if s.Profiles == nil {
 		s.Profiles = map[string]Profile{}
 	}
-	if len(s.Order) == 0 {
-		data, err := os.ReadFile(path)
-		if err == nil {
-			var raw map[string]json.RawMessage
-			if err = json.Unmarshal(data, &raw); err != nil {
-				return s, nil, err
-			}
-			decoder := json.NewDecoder(bytes.NewReader(raw["profiles"]))
-			_, _ = decoder.Token()
-			for decoder.More() {
-				key, err := decoder.Token()
-				if err != nil {
-					return s, nil, err
-				}
-				var value json.RawMessage
-				if err = decoder.Decode(&value); err != nil {
-					return s, nil, err
-				}
-				s.Order = append(s.Order, key.(string))
-			}
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return s, nil, err
-		}
-	}
 	private := map[string]Secrets{}
 	_, err := ReadJSON(filepath.Join(root, "vpngate", "secrets.json"), &private)
 	return s, private, err
 }
-func orderedCountries(s VPNSettings) []string {
-	var out []string
-	seen := map[string]bool{}
-	for _, cc := range s.Order {
-		if _, exists := s.Profiles[cc]; exists && !seen[cc] {
-			out = append(out, cc)
-			seen[cc] = true
-		}
-	}
-	var extra []string
-	for cc := range s.Profiles {
-		if !seen[cc] {
-			extra = append(extra, cc)
-		}
-	}
-	sort.Strings(extra)
-	return append(out, extra...)
-}
-
-func exportBundle(ctx context.Context, root, core string, app App, settings VPNSettings, private map[string]Secrets) (fileBundle, []string, error) {
+func exportBundle(ctx context.Context, root, core string, app App, settings VPNSettings, private map[string]Secrets) (fileBundle, map[string][]string, error) {
 	normal, vpn, mNormal, mVPN := []Object{}, []Object{}, []Object{}, []Object{}
-	links := []string{}
+	links := map[string][]string{normalScope: {}, vpngateScope: {}}
 	cache := certificateCache{}
 	add := func(inbound Object, profile Profile, name string, gateway bool) error {
 		p, err := outboundProfile(inbound, profile, cache)
@@ -202,11 +198,12 @@ func exportBundle(ctx context.Context, root, core string, app App, settings VPNS
 		if err != nil {
 			return err
 		}
-		links = append(links, link)
 		if gateway {
+			links[vpngateScope] = append(links[vpngateScope], link)
 			vpn = append(vpn, n)
 			mVPN = append(mVPN, MihomoNode(n, p))
 		} else {
+			links[normalScope] = append(links[normalScope], link)
 			normal = append(normal, n)
 			mNormal = append(mNormal, MihomoNode(n, p))
 		}
@@ -245,12 +242,15 @@ func exportBundle(ctx context.Context, root, core string, app App, settings VPNS
 		if err != nil {
 			return nil, nil, err
 		}
-		links = append(links, link)
+		links[normalScope] = append(links[normalScope], link)
 		normal = append(normal, vmess)
 		mNormal = append(mNormal, MihomoNode(vmess, p))
 	}
-	for _, cc := range orderedCountries(settings) {
-		p := settings.Profiles[cc]
+	if cc := settings.ActiveCountry; cc != "" {
+		p, exists := settings.Profiles[cc]
+		if !exists {
+			return nil, nil, errors.New("当前 VPNGate 国家缺少入口配置")
+		}
 		secret, exists := private[cc]
 		if !exists {
 			return nil, nil, fmt.Errorf("国家 %s 缺少独立凭据", cc)
@@ -266,28 +266,44 @@ func exportBundle(ctx context.Context, root, core string, app App, settings VPNS
 			}
 		}
 	}
-	client := ClientConfig(normal, vpn)
-	if err := CheckJSON(ctx, core, root, client); err != nil {
-		return nil, nil, err
-	}
 	files := fileBundle{}
-	if err := files.json("sbox.json", client); err != nil {
-		return nil, nil, err
-	}
-	if err := files.json("clmi.yaml", MihomoConfig(mNormal, mVPN)); err != nil {
-		return nil, nil, err
-	}
-	files["jhsub.txt"] = []byte(strings.Join(links, "\n") + "\n")
-	files["jhsub-base64.txt"] = []byte(base64.StdEncoding.EncodeToString([]byte(strings.Join(links, "\n"))) + "\n")
-	normalNames, vpnNames := []string{}, []string{}
-	for _, n := range normal {
-		normalNames = append(normalNames, text(n["tag"]))
-	}
-	for _, n := range vpn {
-		vpnNames = append(vpnNames, text(n["tag"]))
-	}
-	if err := files.json("share.json", Object{"links": links, "normal": normalNames, "vpngate": vpnNames}); err != nil {
-		return nil, nil, err
+	for _, set := range []struct {
+		scope         string
+		nodes, mihomo []Object
+	}{{normalScope, normal, mNormal}, {vpngateScope, vpn, mVPN}} {
+		gateway := set.scope == vpngateScope
+		prefix := ""
+		if gateway {
+			prefix = "vpngate/"
+			if len(set.nodes) == 0 {
+				for _, name := range exportNames {
+					files[prefix+name] = nil
+				}
+				continue
+			}
+		}
+		client := ClientConfig(set.nodes, gateway)
+		if err := CheckJSON(ctx, core, root, client); err != nil {
+			return nil, nil, err
+		}
+		if err := files.json(prefix+"sbox.json", client); err != nil {
+			return nil, nil, err
+		}
+		if err := files.json(prefix+"clmi.yaml", MihomoConfig(set.mihomo, gateway)); err != nil {
+			return nil, nil, err
+		}
+		joined := strings.Join(links[set.scope], "\n")
+		files[prefix+"jhsub.txt"] = []byte(joined + "\n")
+		files[prefix+"jhsub-base64.txt"] = []byte(base64.StdEncoding.EncodeToString([]byte(joined)) + "\n")
+		share := Object{"links": links[set.scope], "normal": []string{}, "vpngate": []string{}}
+		names := make([]string, 0, len(set.nodes))
+		for _, n := range set.nodes {
+			names = append(names, text(n["tag"]))
+		}
+		share[set.scope] = names
+		if err := files.json(prefix+"share.json", share); err != nil {
+			return nil, nil, err
+		}
 	}
 	return files, links, nil
 }
@@ -345,54 +361,106 @@ func PrepareVPN(ctx context.Context, root, core string, app App, country string)
 		s.Order = append(s.Order, country)
 	}
 	s.ActiveCountry = country
+	return s, commitVPN(ctx, root, core, app, s, private, true)
+}
+
+func commitVPN(ctx context.Context, root, core string, app App, s VPNSettings, private map[string]Secrets, activate bool) error {
+	country := s.ActiveCountry
 	active, exists := private[country]
 	if !exists || active.SocksUser == "" || len(active.SocksPass) < 32 {
-		return s, errors.New("国家缺少独立代理凭据")
+		return errors.New("国家缺少独立代理凭据")
 	}
 	gateway := Object{}
-	if _, err = ReadJSON(filepath.Join(root, "vpngate", "gateway.json"), &gateway); err != nil {
-		return s, err
+	if _, err := ReadJSON(filepath.Join(root, "vpngate", "gateway.json"), &gateway); err != nil {
+		return err
 	}
 	if gateway["country"] != country {
 		gateway["mode"], gateway["fixed_host"] = "sticky", ""
 	}
 	dataDir, runDir := os.Getenv("YGVG_DATA_DIR"), os.Getenv("YGVG_RUN_DIR")
 	if dataDir == "" {
+		dataDir = text(gateway["data_dir"])
+	}
+	if runDir == "" {
+		runDir = text(gateway["run_dir"])
+	}
+	if dataDir == "" {
 		dataDir = "/var/lib/yg-vpngate"
 	}
 	if runDir == "" {
 		runDir = "/run/yg-vpngate"
 	}
-	gateway = merge(gateway, Object{"country": country, "enabled": true, "listen": "127.0.0.1:" + strconv.Itoa(s.ProxyPort), "proxy_user": active.SocksUser, "proxy_pass": active.SocksPass, "data_dir": dataDir, "run_dir": runDir})
-	ins, outs, rules := []Object{}, []Object{}, []Object{}
-	for _, cc := range orderedCountries(s) {
-		p := s.Profiles[cc]
-		p.Secrets = private[cc]
-		entries := MakeInbounds(p, "vg-"+cc+"-")
-		ins = append(ins, entries...)
-		tag := "vg-out-" + cc
-		outs = append(outs, Object{"type": "socks", "tag": tag, "server": "127.0.0.1", "server_port": s.ProxyPort, "version": "5", "username": p.Secrets.SocksUser, "password": p.Secrets.SocksPass})
-		tags := []string{}
-		for _, entry := range entries {
-			tags = append(tags, text(entry["tag"]))
-		}
-		rules = append(rules, Object{"inbound": tags, "action": "route", "outbound": tag})
+	gateway = merge(gateway, Object{"country": country, "listen": "127.0.0.1:" + strconv.Itoa(s.ProxyPort), "proxy_user": active.SocksUser, "proxy_pass": active.SocksPass, "data_dir": dataDir, "run_dir": runDir})
+	if activate {
+		gateway["enabled"] = true
 	}
-	rules = append(rules, Object{"action": "reject"})
-	server := Object{"log": Object{"level": "info", "timestamp": true}, "inbounds": ins, "outbounds": outs, "route": Object{"rules": rules}}
-	if err = CheckJSON(ctx, core, filepath.Join(root, "vpngate"), server); err != nil {
-		return s, err
+	p := s.Profiles[country]
+	p.Secrets = active
+	tag := "vg-out-" + country
+	server := Object{"log": Object{"level": "info", "timestamp": true}, "inbounds": MakeInbounds(p, "vg-"+country+"-"),
+		"outbounds": []Object{{"type": "socks", "tag": tag, "server": "127.0.0.1", "server_port": s.ProxyPort, "version": "5", "username": active.SocksUser, "password": active.SocksPass}},
+		"route":     Object{"final": tag}}
+	if err := CheckJSON(ctx, core, filepath.Join(root, "vpngate"), server); err != nil {
+		return err
 	}
 	files, _, err := exportBundle(ctx, root, core, app, s, private)
 	if err != nil {
-		return s, err
+		return err
 	}
 	for name, value := range map[string]any{"vpngate/secrets.json": private, "vpngate/settings.json": s, "vpngate/gateway.json": gateway, "vpngate/server.json": server} {
 		if err = files.json(name, value); err != nil {
-			return s, err
+			return err
 		}
 	}
-	return s, publish(root, files)
+	return publish(root, files)
+}
+
+func mutateVPN(app App, settings VPNSettings, private map[string]Secrets, operation string, values []string) error {
+	cc := settings.ActiveCountry
+	p, exists := settings.Profiles[cc]
+	if !exists || cc == "" {
+		return errors.New("请先通过菜单 17 安装并选择 VPNGate 国家")
+	}
+	secret, exists := private[cc]
+	if !exists || p.Ports == nil || secret.UUID == nil || secret.Passwords == nil {
+		return errors.New("当前 VPNGate 国家缺少独立凭据")
+	}
+	if !slices.Contains([]string{"port", "reset", "sni", "ws", "tls"}, operation) {
+		return errors.New("VPNGate 支持 port、reset、sni、ws 和 tls 设置")
+	}
+	if operation == "tls" && (len(values) == 0 || values[0] != "all") {
+		return errors.New("VPNGate 的 TLS 证书统一设置，请使用 tls all；VLESS 保持 Reality")
+	}
+	if operation == "port" && len(values) == 2 {
+		port, _ := strconv.Atoi(values[1])
+		if port != p.Ports[values[0]] && usedPorts(app, settings)[port] {
+			return errors.New("端口已被普通节点或其他 VPNGate 入口使用")
+		}
+	}
+	p.Secrets = secret
+	current := App{Profile: p, Inbounds: MakeInbounds(p, "vg-"+cc+"-")}
+	if err := mutateApp(&current, settings, operation, values); err != nil {
+		return err
+	}
+	p = current.Profile
+	for _, in := range current.Inbounds {
+		kind := text(in["type"])
+		for _, user := range objects(in["users"]) {
+			if value, ok := user["uuid"]; ok {
+				secret.UUID[kind] = text(value)
+			}
+			if value, ok := user["password"]; ok {
+				secret.Passwords[kind] = text(value)
+			}
+		}
+		if operation == "tls" && kind == "vmess" {
+			tls := object(in["tls"])
+			p.Certificate, p.Key, p.VMessTLS = text(tls["certificate_path"]), text(tls["key_path"]), true
+		}
+	}
+	p.Secrets = Secrets{}
+	settings.Profiles[cc], private[cc] = p, secret
+	return nil
 }
 
 func hexSecret() string { return fmt.Sprintf("%x", randomBytes(32)) }
@@ -567,8 +635,15 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 	options.SetOutput(output)
 	address, name, port := options.String("address", "", "server address"), options.String("name", "VPS", "node name"), options.Int("port", 0, "subscription port")
 	timeout := options.Duration("timeout", 90*time.Second, "Argo wait timeout")
+	scope := options.String("scope", normalScope, "normal or vpngate nodes")
 	if err := parseOptions(options, args[1:]); err != nil {
 		return err
+	}
+	if _, err := exportDirectory(*root, *scope); err != nil {
+		return err
+	}
+	if *scope == vpngateScope && !slices.Contains([]string{"show", "export", "links", "subscription-urls", "port", "reset", "sni", "ws", "tls"}, operation) {
+		return errors.New("此操作不支持 --scope vpngate")
 	}
 	values := options.Args()
 	if operation == "argo-watch" {
@@ -619,10 +694,26 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 				return err
 			}
 			ports := Object{}
-			for _, in := range app.Inbounds {
-				ports[text(in["type"])] = in["listen_port"]
+			if *scope == vpngateScope {
+				p, exists := settings.Profiles[settings.ActiveCountry]
+				if !exists {
+					return errors.New("尚未配置 VPNGate 国家")
+				}
+				for kind, port := range p.Ports {
+					ports[kind] = port
+				}
+			} else {
+				for _, in := range app.Inbounds {
+					ports[text(in["type"])] = in["listen_port"]
+				}
 			}
-			data, err := JSONBytes(Object{"core": version, "address": app.Address, "protocols": ports, "routing": app.Routing})
+			status := Object{"core": version, "address": app.Address, "protocols": ports, "scope": *scope}
+			if *scope == vpngateScope {
+				status["country"] = settings.ActiveCountry
+			} else {
+				status["routing"] = app.Routing
+			}
+			data, err := JSONBytes(status)
 			if err == nil {
 				_, err = output.Write(data)
 			}
@@ -644,8 +735,11 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 		case "subscription-stop":
 			return disableSubscription(*root)
 		case "subscription-urls":
-			return subscriptionURLs(*root, app.Address, output)
+			return subscriptionURLs(*root, app.Address, *scope, output)
 		case "export", "links":
+			if *scope == vpngateScope && settings.ActiveCountry == "" {
+				return errors.New("请先通过菜单 17 安装并选择 VPNGate 国家")
+			}
 			files, links, err := exportBundle(ctx, *root, *core, app, settings, private)
 			if err != nil {
 				return err
@@ -654,7 +748,7 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 				return err
 			}
 			if operation == "links" {
-				for _, link := range links {
+				for _, link := range links[*scope] {
 					fmt.Fprintln(output, link)
 				}
 			}
@@ -672,6 +766,12 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 			}
 			files["vpngate/settings.json"] = nil
 			return publish(*root, files)
+		}
+		if *scope == vpngateScope {
+			if err := mutateVPN(app, settings, private, operation, values); err != nil {
+				return err
+			}
+			return commitVPN(ctx, *root, *core, app, settings, private, false)
 		}
 		if err := mutateApp(&app, settings, operation, values); err != nil {
 			return err
@@ -811,6 +911,9 @@ func mutateApp(app *App, settings VPNSettings, operation string, values []string
 		}
 		if values[0] != "all" && !protocol(values[0]) {
 			return errors.New("未知协议")
+		}
+		if values[0] == "vless" {
+			return errors.New("VLESS 使用 Reality，请通过 SNI 菜单设置")
 		}
 		if err := validateDomain(values[3]); err != nil {
 			return err

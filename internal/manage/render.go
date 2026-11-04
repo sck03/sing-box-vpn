@@ -289,30 +289,31 @@ func uriWithCache(n Object, p Profile, cache certificateCache) (string, error) {
 	return "", errors.New("未知协议")
 }
 
-func ClientConfig(normal, vpn []Object) Object {
-	ordinary := make([]string, 0, len(normal))
-	for _, node := range normal {
-		ordinary = append(ordinary, text(node["tag"]))
+func ClientConfig(nodes []Object, gateway bool) Object {
+	names := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		names = append(names, text(node["tag"]))
 	}
-	proxy := append([]string{"auto"}, ordinary...)
-	if len(vpn) > 0 {
-		proxy = append(proxy, "vpngate")
+	selectors := []Object{{"type": "selector", "tag": "proxy", "outbounds": names}}
+	if !gateway {
+		selectors = []Object{{"type": "urltest", "tag": "auto", "outbounds": names, "url": "https://www.gstatic.com/generate_204", "interval": "10m", "tolerance": 30}, {"type": "selector", "tag": "proxy", "outbounds": append([]string{"auto"}, names...), "default": "auto"}}
 	}
-	selectors := []Object{{"type": "urltest", "tag": "auto", "outbounds": ordinary, "url": "https://www.gstatic.com/generate_204", "interval": "10m", "tolerance": 30}, {"type": "selector", "tag": "proxy", "outbounds": proxy, "default": "auto"}}
-	if len(vpn) > 0 {
-		names := []string{}
-		for _, node := range vpn {
-			names = append(names, text(node["tag"]))
-		}
-		selectors = append(selectors, Object{"type": "selector", "tag": "vpngate", "outbounds": names})
-	}
-	outbounds := append(append(append([]Object{}, normal...), vpn...), selectors...)
+	outbounds := append(append([]Object{}, nodes...), selectors...)
 	outbounds = append(outbounds, Object{"type": "direct", "tag": "direct"})
-	return Object{"log": Object{"level": "info"}, "http_clients": []Object{{"tag": "rule-set-direct"}},
+	result := Object{"log": Object{"level": "info"}, "http_clients": []Object{{"tag": "rule-set-direct"}},
 		"dns":          Object{"servers": []Object{{"type": "fakeip", "tag": "fakeip", "inet4_range": "198.18.0.0/15"}, {"type": "udp", "tag": "dns-cn", "server": "223.5.5.5"}, {"type": "https", "tag": "dns-proxy", "server": "1.1.1.1", "detour": "proxy"}}, "rules": []Object{{"rule_set": []string{"cn-domains"}, "action": "route", "server": "dns-cn"}, {"query_type": []string{"A", "AAAA"}, "action": "route", "server": "fakeip"}}, "final": "dns-proxy", "strategy": "ipv4_only", "reverse_mapping": true},
 		"inbounds":     []Object{{"type": "tun", "tag": "tun-in", "address": []string{"172.19.0.1/30"}, "auto_route": true, "strict_route": true, "mtu": 1420}},
 		"route":        Object{"default_http_client": "rule-set-direct", "default_domain_resolver": "dns-cn", "auto_detect_interface": true, "rule_set": []Object{{"type": "remote", "tag": "cn-domains", "format": "binary", "url": "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/cn.srs"}, {"type": "remote", "tag": "cn-ips", "format": "binary", "url": "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/cn.srs"}}, "rules": []Object{{"port": 53, "action": "hijack-dns"}, {"clash_mode": "Global", "action": "route", "outbound": "proxy"}, {"clash_mode": "Direct", "action": "route", "outbound": "direct"}, {"ip_is_private": true, "action": "route", "outbound": "direct"}, {"rule_set": []string{"cn-domains", "cn-ips"}, "action": "route", "outbound": "direct"}}, "final": "proxy"},
 		"experimental": Object{"cache_file": Object{"enabled": true, "store_dns": true}, "clash_api": Object{"external_controller": "127.0.0.1:9090", "default_mode": "Rule"}}, "outbounds": outbounds}
+	if gateway {
+		delete(result, "http_clients")
+		route := object(result["route"])
+		delete(route, "default_http_client")
+		delete(route, "rule_set")
+		route["rules"] = []Object{{"port": 53, "action": "hijack-dns"}, {"ip_is_private": true, "action": "route", "outbound": "direct"}}
+		object(result["dns"])["rules"] = []Object{{"query_type": []string{"A", "AAAA"}, "action": "route", "server": "fakeip"}}
+	}
+	return result
 }
 
 func MihomoNode(n Object, p Profile) Object {
@@ -348,23 +349,20 @@ func MihomoNode(n Object, p Profile) Object {
 	return out
 }
 
-func MihomoConfig(ordinary, vpn []Object) Object {
+func MihomoConfig(nodes []Object, gateway bool) Object {
 	names := []string{}
-	for _, node := range ordinary {
+	for _, node := range nodes {
 		names = append(names, text(node["name"]))
 	}
 	choices := append([]string{"自动选择"}, names...)
-	if len(vpn) > 0 {
-		choices = append(choices, "临时家宽")
-	}
 	choices = append(choices, "DIRECT")
 	groups := []Object{{"name": "节点选择", "type": "select", "proxies": choices}, {"name": "自动选择", "type": "url-test", "proxies": names, "url": "https://www.gstatic.com/generate_204", "interval": 600}}
-	if len(vpn) > 0 {
-		values := []string{}
-		for _, node := range vpn {
-			values = append(values, text(node["name"]))
-		}
-		groups = append(groups, Object{"name": "临时家宽", "type": "select", "proxies": values})
+	rules := []string{"IP-CIDR,127.0.0.0/8,DIRECT,no-resolve", "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve"}
+	if gateway {
+		groups = []Object{{"name": "临时家宽", "type": "select", "proxies": names}}
+		rules = append(rules, "MATCH,临时家宽")
+	} else {
+		rules = append(rules, "GEOIP,CN,DIRECT", "MATCH,节点选择")
 	}
-	return Object{"mixed-port": 7890, "allow-lan": false, "mode": "rule", "log-level": "info", "dns": Object{"enable": true, "ipv6": false, "enhanced-mode": "fake-ip", "fake-ip-range": "198.18.0.1/16", "respect-rules": true, "default-nameserver": []string{"223.5.5.5"}, "nameserver": []string{"https://1.1.1.1/dns-query"}, "proxy-server-nameserver": []string{"https://223.5.5.5/dns-query"}}, "proxies": append(append([]Object{}, ordinary...), vpn...), "proxy-groups": groups, "rules": []string{"IP-CIDR,127.0.0.0/8,DIRECT,no-resolve", "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve", "GEOIP,CN,DIRECT", "MATCH,节点选择"}}
+	return Object{"mixed-port": 7890, "allow-lan": false, "mode": "rule", "log-level": "info", "dns": Object{"enable": true, "ipv6": false, "enhanced-mode": "fake-ip", "fake-ip-range": "198.18.0.1/16", "respect-rules": true, "default-nameserver": []string{"223.5.5.5"}, "nameserver": []string{"https://1.1.1.1/dns-query"}, "proxy-server-nameserver": []string{"https://223.5.5.5/dns-query"}}, "proxies": nodes, "proxy-groups": groups, "rules": rules}
 }

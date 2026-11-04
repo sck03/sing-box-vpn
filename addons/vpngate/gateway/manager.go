@@ -526,21 +526,28 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 }
 
 func (m *manager) monitor(ctx context.Context, c Config, active tunnel, n Node, client *http.Client) error {
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	go func() {
+		select {
+		case <-active.died():
+			cancel(errors.New("tunnel process stopped; forwarding blocked"))
+		case <-ctx.Done():
+		}
+	}()
 	tick := time.NewTicker(time.Duration(c.HealthInterval) * time.Second)
 	defer tick.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		case <-active.died():
-			return errors.New("tunnel process stopped; forwarding blocked")
+			return context.Cause(ctx)
 		case <-tick.C:
 			g, e := m.probe(ctx, c, active, client)
+			if ctx.Err() != nil {
+				return context.Cause(ctx)
+			}
 			if e != nil {
 				return e
-			}
-			if ctx.Err() != nil {
-				return ctx.Err()
 			}
 			m.setStatus("ready", "volunteer / residential candidate", n, &g)
 		}

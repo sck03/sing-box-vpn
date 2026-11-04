@@ -20,6 +20,9 @@ func TestGitLabRefusesPublicProjectsAndCommitsFilesTogether(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(root, name), []byte("test-content"), 0600); err != nil {
 			t.Fatal(err)
 		}
+		if err := AtomicBytes(filepath.Join(root, "vpngate", name), []byte("vpn-content"), 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	settings := remoteSettings{}
 	settings.GitLab = &struct {
@@ -29,6 +32,7 @@ func TestGitLabRefusesPublicProjectsAndCommitsFilesTogether(t *testing.T) {
 	}{"group/project", "main", "private-token"}
 	var private atomic.Bool
 	var posts atomic.Int32
+	var vpn atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("PRIVATE-TOKEN") != "private-token" {
 			t.Error("missing private authorization")
@@ -41,6 +45,14 @@ func TestGitLabRefusesPublicProjectsAndCommitsFilesTogether(t *testing.T) {
 			}
 			if len(objects(body["actions"])) != 3 {
 				t.Error("subscriptions were not committed together")
+			}
+			for _, action := range objects(body["actions"]) {
+				if strings.HasPrefix(text(action["file_path"]), "vpngate/") != vpn.Load() {
+					t.Error("GitLab scopes overwrite each other")
+				}
+				if vpn.Load() && action["content"] != "vpn-content" {
+					t.Error("VPNGate push read ordinary files")
+				}
 			}
 			io.WriteString(w, `{}`)
 			return
@@ -56,12 +68,16 @@ func TestGitLabRefusesPublicProjectsAndCommitsFilesTogether(t *testing.T) {
 		json.NewEncoder(w).Encode(Object{"visibility": visibility})
 	}))
 	defer server.Close()
-	if err := pushGitLab(context.Background(), server.Client(), server.URL, root, settings); err == nil || posts.Load() != 0 {
+	if err := pushGitLab(context.Background(), server.Client(), server.URL, root, normalScope, settings); err == nil || posts.Load() != 0 {
 		t.Fatal("public project accepted")
 	}
 	private.Store(true)
-	if err := pushGitLab(context.Background(), server.Client(), server.URL, root, settings); err != nil || posts.Load() != 1 {
+	if err := pushGitLab(context.Background(), server.Client(), server.URL, root, normalScope, settings); err != nil || posts.Load() != 1 {
 		t.Fatal("private commit failed", err, posts.Load())
+	}
+	vpn.Store(true)
+	if err := pushGitLab(context.Background(), server.Client(), server.URL, root, vpngateScope, settings); err != nil || posts.Load() != 2 {
+		t.Fatal("private VPNGate commit failed", err, posts.Load())
 	}
 }
 func TestRemoteFailureDoesNotExposeToken(t *testing.T) {

@@ -104,9 +104,17 @@ func pushTelegram(ctx context.Context, client *http.Client, baseURL, root string
 	return nil
 }
 
-func pushGitLab(ctx context.Context, client *http.Client, baseURL, root string, settings remoteSettings) error {
+func pushGitLab(ctx context.Context, client *http.Client, baseURL, root, scope string, settings remoteSettings) error {
 	if settings.GitLab == nil {
 		return errors.New("先配置 GitLab")
+	}
+	directory, err := exportDirectory(root, scope)
+	if err != nil {
+		return err
+	}
+	prefix := ""
+	if scope == vpngateScope {
+		prefix = "vpngate/"
 	}
 	cfg := settings.GitLab
 	base := baseURL + "/api/v4/projects/" + url.PathEscape(cfg.Project)
@@ -120,10 +128,11 @@ func pushGitLab(ctx context.Context, client *http.Client, baseURL, root string, 
 	}
 	actions := []Object{}
 	for _, name := range []string{"sbox.json", "clmi.yaml", "jhsub.txt"} {
-		content, err := os.ReadFile(filepath.Join(root, name))
+		content, err := os.ReadFile(filepath.Join(directory, name))
 		if err != nil {
 			return err
 		}
+		name = prefix + name
 		action := "update"
 		var existing Object
 		err = remoteRequest(ctx, client, base+"/repository/files/"+url.PathEscape(name)+"?ref="+url.QueryEscape(cfg.Branch), "GET", nil, headers, &existing)
@@ -156,7 +165,12 @@ func RunRemote(ctx context.Context, args []string, input io.Reader, output io.Wr
 	chatID := options.String("chat-id", "", "Telegram chat")
 	project := options.String("project", "", "private GitLab project")
 	branch := options.String("branch", "main", "GitLab branch")
+	scope := options.String("scope", normalScope, "normal or vpngate nodes")
 	if err := parseOptions(options, args[1:]); err != nil {
+		return err
+	}
+	directory, err := exportDirectory(*root, *scope)
+	if err != nil {
 		return err
 	}
 	if operation == "telegram-config" || operation == "gitlab-config" {
@@ -204,13 +218,13 @@ func RunRemote(ctx context.Context, args []string, input io.Reader, output io.Wr
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	switch operation {
 	case "telegram-push":
-		if err := pushTelegram(ctx, client, "https://api.telegram.org", *root, settings); err != nil {
+		if err := pushTelegram(ctx, client, "https://api.telegram.org", directory, settings); err != nil {
 			return err
 		}
 		_, err := fmt.Fprintln(output, "节点已发送到配置的 Telegram 会话")
 		return err
 	case "gitlab-push":
-		if err := pushGitLab(ctx, client, "https://gitlab.com", *root, settings); err != nil {
+		if err := pushGitLab(ctx, client, "https://gitlab.com", *root, *scope, settings); err != nil {
 			return err
 		}
 		_, err := fmt.Fprintln(output, "私有订阅已更新")

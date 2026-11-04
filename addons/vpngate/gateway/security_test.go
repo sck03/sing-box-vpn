@@ -81,6 +81,15 @@ func TestCancelledVerificationCannotEnableOldCountry(t *testing.T) {
 
 const safeTestProfile = "client\ndev tun\nproto udp\nremote 203.0.113.5 1194\nremote-cert-tls server\n<ca>\ntest-certificate\n</ca>\n"
 
+func TestProfileNormalization(t *testing.T) {
+	for _, input := range []string{safeTestProfile, strings.ReplaceAll(safeTestProfile, "\n", "\r\n"), strings.TrimSuffix(safeTestProfile, "\n"), "# comment\n\n" + strings.Replace(safeTestProfile, "remote 203.0.113.5 1194", "  remote\t203.0.113.5   1194  ", 1)} {
+		got, port, protocol, err := validateProfile(input, "203.0.113.5")
+		if err != nil || got != safeTestProfile || port != 1194 || protocol != "udp" {
+			t.Fatalf("profile normalization changed: %q, %d, %s, %v", got, port, protocol, err)
+		}
+	}
+}
+
 func TestRejectProfileExecutionAndMismatchedRemote(t *testing.T) {
 	for _, line := range []string{"script-security 2\nup /bin/sh", "plugin /tmp/code.so", "management 127.0.0.1 1111", "ca /etc/shadow", "config /tmp/other.ovpn", "remote 203.0.113.6 443", "auth-user-pass /etc/shadow"} {
 		if _, _, _, e := validateProfile(safeTestProfile+line+"\n", "203.0.113.5"); e == nil {

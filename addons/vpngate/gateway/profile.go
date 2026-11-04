@@ -54,17 +54,18 @@ func validateProfile(profile, expectedIP string) (string, int, string, error) {
 	if len(profile) == 0 || len(profile) > 1<<20 || !publicIPv4(expectedIP) {
 		return "", 0, "", errors.New("invalid profile or node IPv4")
 	}
-	scanner := bufio.NewScanner(strings.NewReader(strings.ReplaceAll(profile, "\r\n", "\n")))
-	scanner.Buffer(make([]byte, 4096), 1<<20)
-	var lines []string
+	var output strings.Builder
+	output.Grow(min(len(profile), 4096))
+	fields := make([]string, 0, 4)
 	block, proto, remoteProto := "", "udp", ""
 	port, remotes := 0, 0
 	hasCA := false
-	for scanner.Scan() {
-		raw := scanner.Text()
+	for raw := range strings.SplitSeq(profile, "\n") {
+		raw = strings.TrimSuffix(raw, "\r")
 		line := strings.TrimSpace(raw)
 		if block != "" {
-			lines = append(lines, raw)
+			output.WriteString(raw)
+			output.WriteByte('\n')
 			if line == "</"+block+">" {
 				block = ""
 			}
@@ -86,11 +87,15 @@ func validateProfile(profile, expectedIP string) (string, int, string, error) {
 				return "", 0, "", errors.New("unsupported inline block")
 			}
 			block = name
-			lines = append(lines, line)
+			output.WriteString(line)
+			output.WriteByte('\n')
 			continue
 		}
-		f := strings.Fields(line)
-		name, args := f[0], f[1:]
+		fields = fields[:0]
+		for field := range strings.FieldsSeq(line) {
+			fields = append(fields, field)
+		}
+		name, args := fields[0], fields[1:]
 		valid := false
 		switch name {
 		case "client", "nobind", "persist-key", "persist-tun", "auth-nocache", "pull", "fast-io", "auth-user-pass":
@@ -138,10 +143,12 @@ func validateProfile(profile, expectedIP string) (string, int, string, error) {
 		if !valid {
 			return "", 0, "", fmt.Errorf("unsupported or invalid OpenVPN directive %q", name)
 		}
-		lines = append(lines, strings.Join(f, " "))
-	}
-	if err := scanner.Err(); err != nil {
-		return "", 0, "", err
+		output.WriteString(name)
+		for _, arg := range args {
+			output.WriteByte(' ')
+			output.WriteString(arg)
+		}
+		output.WriteByte('\n')
 	}
 	if block != "" || remotes != 1 || !hasCA {
 		return "", 0, "", errors.New("profile needs a complete CA and one permitted remote")
@@ -149,7 +156,7 @@ func validateProfile(profile, expectedIP string) (string, int, string, error) {
 	if remoteProto != "" {
 		proto = remoteProto
 	}
-	return strings.Join(lines, "\n") + "\n", port, proto, nil
+	return output.String(), port, proto, nil
 }
 
 func validProto(s string) bool {
@@ -247,7 +254,9 @@ func parseNodes(data []byte) ([]Node, error) {
 		}
 		speed, _ := strconv.ParseInt(get(speedColumn), 10, 64)
 		ping, _ := strconv.Atoi(get(pingColumn))
-		out = append(out, Node{Host: host, IP: ip, Country: cc, Port: port, Network: proto, Speed: speed, Ping: ping, Profile: profile})
+		// CSV fields share the full record string, including its large base64 profile.
+		host = strings.Clone(host)
+		out = append(out, Node{Host: host, IP: strings.Clone(ip), Country: strings.Clone(cc), Port: port, Network: proto, Speed: speed, Ping: ping, Profile: profile})
 		seen[host] = true
 	}
 	if len(out) == 0 {

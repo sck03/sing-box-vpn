@@ -385,7 +385,7 @@ func checkConfigs(ctx context.Context, root, candidate string) error {
 
 func validateConfigs(ctx context.Context, root, candidate string, check func(context.Context, string, ...string) ([]byte, error)) error {
 	snapshots := map[string][32]byte{}
-	for _, name := range []string{"sb.json", "vpngate/server.json", "sbox.json"} {
+	for _, name := range []string{"sb.json", "vpngate/server.json", "sbox.json", "vpngate/sbox.json"} {
 		path := filepath.Join(root, filepath.FromSlash(name))
 		data, err := os.ReadFile(path)
 		if errors.Is(err, os.ErrNotExist) {
