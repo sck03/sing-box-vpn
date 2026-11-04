@@ -372,11 +372,16 @@ func (m *manager) handler(parent context.Context) http.Handler {
 }
 
 func runCTL(args []string) error {
+	return runCTLWithOutput(args, os.Stdout)
+}
+
+func runCTLWithOutput(args []string, output io.Writer) error {
 	if len(args) == 0 {
 		return errors.New("ctl operation missing")
 	}
 	op := args[0]
 	f := flag.NewFlagSet("ctl "+op, flag.ContinueOnError)
+	f.SetOutput(output)
 	path := f.String("config", defaultConfig, "configuration file")
 	country := f.String("country", "", "configured country")
 	mode := f.String("mode", "", "sticky or fixed")
@@ -385,8 +390,16 @@ func runCTL(args []string) error {
 	asns := f.String("asns", "", "comma-separated ISP ASN allowlist")
 	require := f.Bool("require-isp", false, "require confirmed ISP classification")
 	hosting := f.Bool("exclude-hosting", true, "reject known hosting exits")
+	format := f.String("format", "json", "status output: json or text")
+	requestTimeout := f.Duration("timeout", 10*time.Second, "local control request timeout")
 	if e := f.Parse(args[1:]); e != nil {
 		return e
+	}
+	if *format != "json" && (*format != "text" || op != "status") {
+		return errors.New("status 支持 --format json 或 text")
+	}
+	if *requestTimeout <= 0 || *requestTimeout > time.Minute {
+		return errors.New("control timeout must be between 0 and 1 minute")
 	}
 	c, e := readConfig(*path)
 	if e != nil {
@@ -396,7 +409,7 @@ func runCTL(args []string) error {
 		return (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "unix", filepath.Join(c.RunDir, "control.sock"))
 	}}
 	defer transport.CloseIdleConnections()
-	client := &http.Client{Timeout: 10 * time.Second, Transport: transport}
+	client := &http.Client{Timeout: *requestTimeout, Transport: transport}
 	method, url := http.MethodGet, "http://unix/v1/"+op
 	var body io.Reader
 	if op != "status" && op != "nodes" {
@@ -436,6 +449,10 @@ func runCTL(args []string) error {
 	req.Header.Set("Content-Type", "application/json")
 	res, e := client.Do(req)
 	if e != nil {
+		if op == "status" && *format == "text" {
+			// A saved state.json may outlive the daemon; never present it as a live exit.
+			return writeGatewayStatus(output, Status{State: "unavailable", Country: c.Country, Mode: c.Mode})
+		}
 		return errors.New("gateway control socket unavailable; check yg-vpngate service")
 	}
 	defer res.Body.Close()
@@ -450,6 +467,13 @@ func runCTL(args []string) error {
 		}
 		return errors.New("control operation failed")
 	}
-	_, e = os.Stdout.Write(b)
+	if op == "status" && *format == "text" {
+		var status Status
+		if e := json.Unmarshal(b, &status); e != nil {
+			return e
+		}
+		return writeGatewayStatus(output, status)
+	}
+	_, e = output.Write(b)
 	return e
 }

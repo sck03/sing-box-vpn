@@ -6,8 +6,8 @@ APP_HOME="${SB_HOME:-/opt/sing-box-vpn}"
 SB_ROOT="${SB_ROOT:-/etc/s-box}"
 CORE="$SB_ROOT/sing-box"
 MANAGER="${SB_MANAGER:-/usr/local/bin/yg-vpngate}"
+source "$SCRIPT_ROOT/lib/ui.sh"
 cfg() { "$MANAGER" config --root "$SB_ROOT" --core "$CORE" "$@"; }
-pause() { read -r -p '按回车继续…' _ || true; }
 require_root() { [[ $(id -u) == 0 ]] || { echo '需要 root 权限' >&2; return 1; }; }
 require_system() {
     require_root
@@ -48,9 +48,10 @@ install_main() {
     fi
     MANAGER=/usr/local/bin/yg-vpngate
     candidate="$SB_ROOT/sing-box.candidate"
-    "$MANAGER" core --root "$SB_ROOT" prepare --output "$candidate"
+    ui_line "$UI_CYAN" ' 正在下载并校验 Sing-box 稳定核心…'
+    "$MANAGER" core --root "$SB_ROOT" prepare --output "$candidate" >/dev/null
     "$MANAGER" config --root "$SB_ROOT" --core "$candidate" init
-    "$MANAGER" core --root "$SB_ROOT" activate "$candidate" --no-restart
+    "$MANAGER" core --root "$SB_ROOT" activate "$candidate" --no-restart >/dev/null
     rm -f -- "$candidate"
     rm -f -- "$APP_HOME/lib/"{assets,config,core,firewall,remote,render,store,subscription}.py
     chmod 0600 "$SB_ROOT"/*.json "$SB_ROOT"/*.key 2>/dev/null || true
@@ -79,8 +80,9 @@ EOF
     if [[ -f "$SB_ROOT/vpngate/gateway.json" ]]; then systemctl restart yg-vpngate sing-box-vpngate; fi
     # Old templates are removed only after successful generation and migration.
     rm -f -- "$SB_ROOT/sb10.json" "$SB_ROOT/sb11.json"
-    echo '五协议普通节点已安装，输入 sb，菜单 17 添加 VPNGate。'
-    cfg show
+    ui_line "$UI_GREEN" ' 五协议普通节点已安装完成。'
+    show_status
+    ui_hint '输入 sb 打开管理菜单；菜单 9 查看节点，菜单 17 添加 VPNGate。'
 }
 write_subscription_service() {
     cat > /etc/systemd/system/sb-subscription.service <<EOF
@@ -100,10 +102,13 @@ WantedBy=multi-user.target
 EOF
 }
 subscription_menu() {
-    echo '1. 启用/重置本地订阅  2. 停止订阅  3. 查看订阅地址'
-    read -r -p '选择：' choice
-    case "$choice" in
-    1) local port; read -r -p '订阅端口（回车随机）：' port
+    ui_submenu '本地订阅管理' subscription_action \
+        '启用 / 重置本地订阅' '停止本地订阅' '查看订阅地址'
+}
+subscription_action() {
+    local port
+    case "$1" in
+    1) ui_input port '订阅端口，回车随机' || return "$UI_CANCEL"
        cfg subscription-init --port "${port:-0}"
        write_subscription_service
        cfg export; firewall; systemctl daemon-reload; systemctl enable sb-subscription >/dev/null; systemctl restart sb-subscription
@@ -119,59 +124,110 @@ subscription_menu() {
 subscription_urls() { cfg subscription-urls --scope "${1:-normal}"; }
 telegram_config() {
     local token chat_id
-    read -rs -p 'Bot token（隐藏）：' token; echo
-    read -r -p '你自己的 chat_id：' chat_id
+    ui_secret token 'Bot token' || return "$UI_CANCEL"
+    ui_input chat_id '你自己的 chat_id' || return "$UI_CANCEL"
     printf '%s' "$token" | "$MANAGER" remote --root "$SB_ROOT" telegram-config --chat-id "$chat_id"
 }
 gitlab_config() {
     local token project branch
-    read -r -p 'GitLab 私有项目 ID 或 group/project：' project
-    read -r -p '分支（默认 main）：' branch
-    read -rs -p '访问令牌（隐藏）：' token; echo
+    ui_input project 'GitLab 私有项目 ID 或 group/project' || return "$UI_CANCEL"
+    ui_input branch '分支，回车使用 main' || return "$UI_CANCEL"
+    ui_secret token '访问令牌' || return "$UI_CANCEL"
     printf '%s' "$token" | "$MANAGER" remote --root "$SB_ROOT" gitlab-config --project "$project" --branch "${branch:-main}"
+    echo '配置已保存；在菜单 9 分别选择要推送的普通或 VPNGate 订阅。'
 }
-protocol_pick() { echo 'vless / vmess / hysteria2 / tuic / anytls'; if [[ "${1:-}" == all ]]; then echo 'all = 全部协议'; fi; read -r -p '协议：' PROTOCOL; }
+protocol_pick() {
+    local -a labels=('VLESS Reality' 'VMess WS' 'Hysteria-2' 'TUIC-v5' 'AnyTLS')
+    local -a protocols=(vless vmess hysteria2 tuic anytls)
+    if [[ "${1:-}" == all ]]; then labels+=('全部协议'); protocols+=(all); fi
+    ui_choose '选择要修改的协议' "${labels[@]}" || return 1
+    PROTOCOL=${protocols[REPLY-1]}
+}
 core_menu() {
-    echo '1. 当前/最新稳定版  2. 更新最新稳定版  3. 指定稳定版本  4. 回滚上一核心  0. 返回'
-    read -r -p '选择：' choice
-    case "$choice" in
-    1) "$MANAGER" core --root "$SB_ROOT" check;;
-    2) "$MANAGER" core --root "$SB_ROOT" update;;
-    3) read -r -p '稳定版版本号（1.14.0 或更新）：' version;"$MANAGER" core --root "$SB_ROOT" update --version "$version";;
+    ui_submenu 'Sing-box 稳定版核心管理' core_action \
+        '查询当前版本 / 最新稳定版' '更新到最新稳定版' \
+        '安装指定稳定版本' '回滚到上一核心'
+}
+core_action() {
+    local version
+    case "$1" in
+    1) "$MANAGER" core --root "$SB_ROOT" check --format text;;
+    2) "$MANAGER" core --root "$SB_ROOT" update --format text;;
+    3) ui_input version '稳定版版本号，1.14.0 或更新' || return "$UI_CANCEL"
+       "$MANAGER" core --root "$SB_ROOT" update --version "$version" --format text;;
     4) "$MANAGER" core --root "$SB_ROOT" rollback;;
     esac
 }
 settings_menu() {
-    echo '1. Reality SNI  2. 重置凭据  3. Argo 隧道  4. VMess WS 路径'
-    echo '5. Telegram 配置  6. WARP endpoint  7. GitLab 私有订阅  8. 本地订阅  9. VMess CDN 地址'
-    read -r -p '选择：' choice
-    case "$choice" in
-    1) read -r -p 'Reality 域名：' value; cfg sni "$value"; reload_main;;
-    2) protocol_pick all; cfg reset "$PROTOCOL"; reload_main;;
-    3) "$APP_HOME/lib/argo.sh" "$SB_ROOT";;
-    4) read -r -p 'WS 路径：' value; cfg ws "$value"; reload_main;;
+    while ui_choose '变更普通五协议配置' \
+        '设置 Reality 域名（SNI）' '重置 UUID / 密码' '管理 Argo 隧道' \
+        '修改 VMess WS 路径' '配置 Telegram 通知' '配置 WARP endpoint' \
+        '配置 GitLab 私有订阅' '管理本地订阅' '设置 VMess CDN 地址'; do
+        case "$REPLY" in
+            3) ui_open_menu "$APP_HOME/lib/argo.sh" "$SB_ROOT";;
+            8) subscription_menu;;
+            *) ui_perform settings_action "$REPLY";;
+        esac
+    done
+}
+settings_action() {
+    local value
+    case "$1" in
+    1) ui_input value 'Reality 域名' || return "$UI_CANCEL"; cfg sni "$value"; reload_main;;
+    2) protocol_pick all || return "$UI_CANCEL"; cfg reset "$PROTOCOL"; reload_main;;
+    4) ui_input value 'WS 路径' || return "$UI_CANCEL"; cfg ws "$value"; reload_main;;
     5) telegram_config;;
-    6) read -r -p '新版 WireGuard endpoint JSON 文件：' value; cfg warp "$value"; reload_main;;
-    7) gitlab_config; echo '配置已保存；在菜单 9 分别选择要推送的普通或 VPNGate 订阅。';;
-    8) subscription_menu;;
-    9) read -r -p 'CDN 地址（空值清除）：' value; cfg cdn "$value";;
+    6) ui_input value '新版 WireGuard endpoint JSON 文件' || return "$UI_CANCEL"; cfg warp "$value"; reload_main;;
+    7) gitlab_config;;
+    9) ui_input value 'CDN 地址，回车清除' || return "$UI_CANCEL"; cfg cdn "$value";;
     esac
 }
 port_menu() {
-    echo '1. 更改主端口  2. 普通 Hy2 端口跳跃  3. 清除端口跳跃';read -r -p '选择：' choice
-    case "$choice" in
-    1) protocol_pick;read -r -p '新端口：' value;cfg port "$PROTOCOL" "$value";firewall;reload_main;;
-    2) read -r -p '端口/范围，空格分隔，例如 31000:31100 31200：' value;read -r -a ports <<< "$value";cfg hopping "${ports[@]}";firewall;reload_main;;
+    ui_submenu '普通五协议端口管理' port_action \
+        '更改协议主端口' '添加 Hysteria-2 端口跳跃' '清除 Hysteria-2 端口跳跃'
+}
+port_action() {
+    local value
+    local -a ports
+    case "$1" in
+    1) protocol_pick || return "$UI_CANCEL"; ui_input value '新端口' || return "$UI_CANCEL"
+       cfg port "$PROTOCOL" "$value";firewall;reload_main;;
+    2) ui_hint '端口或范围用空格分隔，例如：31000:31100 31200'
+       ui_input value '端口 / 范围' || return "$UI_CANCEL"
+       read -r -a ports <<< "$value";cfg hopping "${ports[@]}";firewall;reload_main;;
     3) cfg hopping;firewall;reload_main;;
     esac
 }
-route_menu() { echo 'socks / warp / direct4 / direct6';read -r -p '通道：' channel;read -r -p '后缀域名，空格分隔；回车清空：' value;read -r -a domains <<< "$value";cfg route "$channel" "${domains[@]}";reload_main; }
+route_menu() {
+    ui_submenu '普通节点域名分流' route_action \
+        '设置 SOCKS5 分流域名' '设置 WARP 分流域名' \
+        '设置 IPv4 直连域名' '设置 IPv6 直连域名' '查看当前分流'
+}
+route_action() {
+    local value channel
+    local -a channels=(socks warp direct4 direct6) domains
+    if [[ "$1" == 5 ]]; then show_status; return; fi
+    channel=${channels[$1-1]}
+    ui_input value '后缀域名，空格分隔；回车清空' || return "$UI_CANCEL"
+    read -r -a domains <<< "$value"
+    cfg route "$channel" "${domains[@]}"; reload_main
+}
 certificate_menu() {
-    echo '1. 导入 PEM 证书  2. Certbot 申请证书';read -r -p '选择：' choice
-    case "$choice" in
-    1) echo 'vmess / hysteria2 / tuic / anytls / all（VLESS 使用 Reality SNI）';read -r -p '协议：' PROTOCOL
-       read -r -p '证书绝对路径：' cert;read -r -p '私钥绝对路径：' key;read -r -p '证书域名：' domain;cfg tls "$PROTOCOL" "$cert" "$key" "$domain";reload_main;;
-    2) read -r -p '已解析到此 VPS 的域名：' domain;read -r -p '邮箱：' email
+    ui_submenu '普通节点 TLS 证书管理' certificate_action \
+        '导入 PEM 证书 / 私钥' '使用 Certbot 申请域名证书'
+}
+certificate_action() {
+    local cert key domain email
+    local -a protocols=(vmess hysteria2 tuic anytls all)
+    case "$1" in
+    1) ui_choose '选择证书协议（VLESS 使用 Reality）' \
+           'VMess WS' 'Hysteria-2' 'TUIC-v5' 'AnyTLS' '全部 TLS 协议' || return "$UI_CANCEL"
+       PROTOCOL=${protocols[REPLY-1]}
+       ui_input cert '证书绝对路径' || return "$UI_CANCEL"; ui_input key '私钥绝对路径' || return "$UI_CANCEL"
+       ui_input domain '证书域名' || return "$UI_CANCEL"
+       cfg tls "$PROTOCOL" "$cert" "$key" "$domain";reload_main;;
+    2) ui_input domain '已解析到此 VPS 的域名' || return "$UI_CANCEL"
+       ui_input email '邮箱' || return "$UI_CANCEL"
        [[ "$domain" =~ ^[A-Za-z0-9.-]+$ && "$email" == *@* ]] || return 1
        apt-get install -y -qq certbot
        certbot certonly --standalone --non-interactive --agree-tos --email "$email" -d "$domain"
@@ -182,31 +238,45 @@ certificate_menu() {
     esac
 }
 vpngate_settings_menu() {
-    local choice value cert key domain
-    cfg show --scope vpngate
-    echo '1. 五协议主端口  2. 重置凭据  3. Reality SNI  4. VMess WS 路径'
-    echo '5. 统一导入 TLS 证书（VLESS 保持 Reality）  0. 返回'
-    read -r -p '选择：' choice || return 0
-    case "$choice" in
-    1) protocol_pick;read -r -p '新端口：' value;cfg port "$PROTOCOL" "$value" --scope vpngate;firewall;reload_vpngate;;
-    2) protocol_pick all;cfg reset "$PROTOCOL" --scope vpngate;reload_vpngate;;
-    3) read -r -p 'Reality 域名：' value;cfg sni "$value" --scope vpngate;reload_vpngate;;
-    4) read -r -p 'WS 路径：' value;cfg ws "$value" --scope vpngate;reload_vpngate;;
-    5) read -r -p '证书绝对路径：' cert;read -r -p '私钥绝对路径：' key;read -r -p '证书域名：' domain
+    ui_submenu 'VPNGate 五协议配置' vpngate_settings_action \
+        '更改五协议主端口' '重置 UUID / 密码' '设置 Reality 域名（SNI）' \
+        '修改 VMess WS 路径' '统一导入 TLS 证书（VLESS 保持 Reality）' '查看当前节点配置'
+}
+vpngate_settings_action() {
+    local value cert key domain
+    case "$1" in
+    1) protocol_pick || return "$UI_CANCEL"; ui_input value '新端口' || return "$UI_CANCEL"
+       cfg port "$PROTOCOL" "$value" --scope vpngate;firewall;reload_vpngate;;
+    2) protocol_pick all || return "$UI_CANCEL";cfg reset "$PROTOCOL" --scope vpngate;reload_vpngate;;
+    3) ui_input value 'Reality 域名' || return "$UI_CANCEL";cfg sni "$value" --scope vpngate;reload_vpngate;;
+    4) ui_input value 'WS 路径' || return "$UI_CANCEL";cfg ws "$value" --scope vpngate;reload_vpngate;;
+    5) ui_input cert '证书绝对路径' || return "$UI_CANCEL"; ui_input key '私钥绝对路径' || return "$UI_CANCEL"
+       ui_input domain '证书域名' || return "$UI_CANCEL"
        cfg tls all "$cert" "$key" "$domain" --scope vpngate;reload_vpngate;;
+    6) show_status vpngate;;
     esac
 }
 share_menu() {
-    local scope="${1:-}" choice export_dir
-    if [[ -z "$scope" ]]; then
-        echo '1. 普通五协议（原 VPS / 已配置分流）  2. VPNGate 五协议（当前国家出口）  0. 返回'
-        read -r -p '选择节点类型：' choice || return 0
-        case "$choice" in 1) scope=normal;;2) scope=vpngate;;*) return 0;;esac
+    if [[ -n "${1:-}" ]]; then
+        share_scope_menu "$1"
+        return
     fi
-    export_dir="$SB_ROOT"
+    while ui_choose '刷新并查看节点 / 订阅' \
+        '普通五协议（VPS 出口 / 已配置分流）' 'VPNGate 五协议（当前国家出口）'; do
+        case "$REPLY" in 1) share_scope_menu normal;;2) share_scope_menu vpngate;;esac
+    done
+}
+share_scope_menu() {
+    local scope=$1 title='普通五协议 · 节点与订阅'
+    if [[ "$scope" == vpngate ]]; then title='VPNGate 五协议 · 节点与订阅'; fi
+    while ui_choose "$title" '查看 URI / 二维码 / 聚合节点' '生成客户端配置 / 查看订阅地址' \
+        '推送到已配置的 Telegram' '推送到私有 GitLab'; do
+        ui_perform share_action "$scope" "$REPLY"
+    done
+}
+share_action() {
+    local scope=$1 choice=$2 export_dir="$SB_ROOT" link
     if [[ "$scope" == vpngate ]]; then export_dir="$SB_ROOT/vpngate"; fi
-    echo '1. URI/二维码/聚合节点  2. 客户端配置与订阅  3. 推送到已配置 Telegram  4. 推送到私有 GitLab  0. 返回'
-    read -r -p '选择：' choice || return 0
     case "$choice" in
     1) cfg links --scope "$scope"; if command -v qrencode >/dev/null;then while IFS= read -r link;do qrencode -t ANSIUTF8 "$link";done < "$export_dir/jhsub.txt";fi;;
     2) cfg export --scope "$scope";echo "Sing-box: $export_dir/sbox.json";echo "Mihomo: $export_dir/clmi.yaml";subscription_urls "$scope";;
@@ -215,7 +285,6 @@ share_menu() {
     esac
 }
 uninstall_main() {
-    echo '将停止并删除本项目服务与节点配置。';read -r -p '输入 DELETE 确认卸载：' answer;[[ "$answer" == DELETE ]] || return 0
     [[ "$SB_ROOT" == /etc/s-box && -f "$SB_ROOT/app.json" ]] || { echo '配置目录不符合安全清理条件' >&2;return 1; }
     [[ "$APP_HOME" == /opt/sing-box-vpn && -f "$APP_HOME/.managed" ]] || { echo '程序目录不符合安全清理条件' >&2;return 1; }
     "$APP_HOME/addons/vpngate/vpngate.sh" uninstall --all || return 1
@@ -226,35 +295,134 @@ uninstall_main() {
     rm -rf -- "$SB_ROOT"
     rm -rf -- "$APP_HOME"
     systemctl daemon-reload
+    ui_line "$UI_GREEN" ' Sing-box 与 VPNGate 已卸载。'
+}
+show_status() {
+    local status line
+    if status=$(cfg show --scope "${1:-normal}" --format text); then
+        while IFS= read -r line; do
+            case "$line" in
+                *'五协议节点：'|*'域名分流：') ui_rule; ui_line "$UI_WHITE" "$line";;
+                *'端口：'*) ui_line "$UI_YELLOW" "$line";;
+                *) ui_line "$UI_CYAN" "$line";;
+            esac
+        done <<< "$status"
+    else
+        ui_line "$UI_YELLOW" ' 节点信息暂时无法读取，请检查上方提示。'
+    fi
+}
+main_status() {
+    local release='未安装' congestion
+    if [[ -x "$MANAGER" ]]; then release=$("$MANAGER" --version 2>/dev/null) || release='未知'; fi
+    ui_field '当前脚本版本' "$release（菜单 7 更新）"
+    ui_rule
+    ui_line "$UI_WHITE" ' VPS 与服务状态：'
+    ui_field '系统' "${PRETTY_NAME:-Linux}"
+    ui_field '内核 / 架构' "$(uname -r) / $(uname -m)"
+    congestion=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null) || congestion='未知'
+    ui_field 'TCP 拥塞控制' "$congestion"
+    ui_service 'Sing-box 状态' sing-box
+    ui_rule "$UI_RED" '~'
+    if [[ -f "$SB_ROOT/app.json" ]]; then
+        show_status
+    else
+        ui_line "$UI_YELLOW" ' 尚未安装普通五协议节点，请选择 1 安装。'
+    fi
+    ui_gateway_status "$MANAGER" "$SB_ROOT/vpngate/gateway.json"
+    ui_rule "$UI_RED" '~'
+}
+service_menu() {
+    ui_submenu 'Sing-box 服务管理' service_action '启动 Sing-box' '停止 Sing-box' '重启 Sing-box' '查看服务状态'
+}
+service_action() {
+    local -a actions=(start stop restart)
+    if [[ "$1" != 4 ]]; then systemctl "${actions[$1-1]}" sing-box; fi
+    ui_service 'Sing-box 状态' sing-box
+}
+socks_menu() { ui_submenu '本机 SOCKS5 分流入口' socks_action '配置已有的本机 SOCKS5 端口'; }
+socks_action() {
+    local value
+    ui_input value '已有 SOCKS5 本机端口' || return "$UI_CANCEL"
+    cfg socks "$value"; reload_main
+}
+address_menu() { ui_submenu '节点入口地址管理' address_action '更换 VPS IP / 域名并刷新节点'; }
+address_action() {
+    local value
+    ui_input value '新 VPS IP / 域名' || return "$UI_CANCEL"
+    cfg address "$value"
+}
+main_menu_render() {
+    ui_header 'Sing-box-vpn · 五协议共存管理'
+    ui_option 1 '一键安装 / 迁移 Sing-box 五协议'
+    ui_option 2 '删除卸载 Sing-box'
+    ui_rule
+    ui_option 3 '变更配置（TLS / UUID / Argo / 订阅）'
+    ui_option 4 '更改主端口 / Hysteria-2 端口跳跃'
+    ui_option 5 '设置普通节点域名分流'
+    ui_option 6 '启动 / 停止 / 重启 Sing-box'
+    ui_option 7 '更新 Sing-box-vpn 脚本'
+    ui_option 8 '更新 / 指定 / 回滚 Sing-box 稳定核心'
+    ui_rule
+    ui_option 9 '刷新并查看节点 / 订阅 / 推送'
+    ui_option 10 '查看 Sing-box / VPNGate 运行日志'
+    ui_option 11 '一键开启 BBR + FQ 加速'
+    ui_option 12 '管理 TLS 证书 / Certbot 申请证书'
+    ui_option 13 '查看 WARP 与域名分流配置'
+    ui_option 14 '配置已有本机 SOCKS5 代理'
+    ui_option 15 '更换节点入口 IP / 域名'
+    ui_rule
+    ui_option 16 'Sing-box-vpn 使用说明'
+    ui_option 17 'VPNGate 临时家宽候选管理'
+    ui_rule
+    ui_option 0 '退出脚本'
+    ui_rule "$UI_RED" '~'
+    main_status
+}
+main_action() {
+    case "$1" in
+        1) install_main;;
+        7) curl -fLsS https://raw.githubusercontent.com/sck03/sing-box-vpn/main/install.sh -o /tmp/sb-vpn-update.sh
+           bash /tmp/sb-vpn-update.sh; rm -f /tmp/sb-vpn-update.sh;;
+        10) journalctl -u sing-box -u yg-vpngate -u sing-box-vpngate -n 100 --no-pager;;
+        11) modprobe tcp_bbr
+            printf 'net.core.default_qdisc=fq\nnet.ipv4.tcp_congestion_control=bbr\n' > /etc/sysctl.d/99-sing-box-vpn-bbr.conf
+            sysctl -p /etc/sysctl.d/99-sing-box-vpn-bbr.conf;;
+        13) show_status;;
+        16) ui_header 'Sing-box-vpn 使用说明'
+            ui_line "$UI_WHITE" ' 项目：https://github.com/sck03/sing-box-vpn'
+            ui_hint '菜单 9：分别查看普通节点与 VPNGate 节点。'
+            ui_hint '菜单 3 → 8：配置本地订阅。'
+            ui_hint '菜单 17：选择 VPNGate 国家，管理临时出口。'
+            ui_hint '各级子菜单输入 0 返回；填写参数时也可输入 0 取消。'
+            ui_hint '普通节点与 VPNGate 使用独立的端口和凭据。';;
+    esac
 }
 menu() {
     require_system
     while true;do
-        echo;echo 'sing-box-vpn · 稳定核心可在线更新'
-        echo ' 1. 安装/迁移五协议普通节点   2. 卸载'
-        echo ' 3. 变更配置                4. 端口/Hy2 跳跃'
-        echo ' 5. 域名分流                6. 启停服务'
-        echo ' 7. 更新项目发行版          8. 更新/指定/回滚稳定核心'
-        echo ' 9. 刷新并查看节点         10. 运行日志'
-        echo '11. BBR + FQ              12. 管理证书'
-        echo '13. 查看 WARP 分流配置     14. 配置已有本机 SOCKS5'
-        echo '15. 更换入口地址           16. 使用说明'
-        echo '17. VPNGate 临时家宽候选    0. 退出'
-        if [[ -f "$SB_ROOT/app.json" ]];then cfg show;fi
-        read -r -p '选择：' choice || return 0
-        case "$choice" in
-        0) return;;1) install_main;;2) uninstall_main;return;;3) settings_menu;;4) port_menu;;5) route_menu;;
-        6) read -r -p 'start / stop / restart：' action;[[ "$action" =~ ^(start|stop|restart)$ ]] && systemctl "$action" sing-box;;
-        7) curl -fLsS https://raw.githubusercontent.com/sck03/sing-box-vpn/main/install.sh -o /tmp/sb-vpn-update.sh;bash /tmp/sb-vpn-update.sh;rm -f /tmp/sb-vpn-update.sh;;
-        8) core_menu;;9) share_menu;;10) journalctl -u sing-box -u yg-vpngate -u sing-box-vpngate -n 100 --no-pager;;
-        11) modprobe tcp_bbr;printf 'net.core.default_qdisc=fq\nnet.ipv4.tcp_congestion_control=bbr\n' > /etc/sysctl.d/99-sing-box-vpn-bbr.conf;sysctl -p /etc/sysctl.d/99-sing-box-vpn-bbr.conf;;
-        12) certificate_menu;;13) cfg show;;14) read -r -p '已有 SOCKS5 本机端口：' value;cfg socks "$value";reload_main;;
-        15) read -r -p '新 VPS IP/域名：' value;cfg address "$value";;
-        16) echo 'https://github.com/sck03/sing-box-vpn · 原节点与 VPNGate 节点各自独立；临时组手动选择。';;
-        17) "$APP_HOME/addons/vpngate/vpngate.sh" menu;;esac
-        pause
+        main_menu_render
+        ui_read_choice || return 0
+        case "$REPLY" in
+            0) return;;
+            2) ui_header '删除卸载 Sing-box'
+               ui_line "$UI_YELLOW" ' 将停止服务，并删除本项目的普通 / VPNGate 节点配置。'
+               if ui_confirm '确认卸载'; then
+                   ui_run uninstall_main
+                   if ((UI_RESULT == 0)); then return; fi
+                   ui_pause
+               fi
+               continue;;
+            3) settings_menu;continue;;4) port_menu;continue;;5) route_menu;continue;;
+            6) service_menu;continue;;8) core_menu;continue;;9) share_menu;continue;;
+            12) certificate_menu;continue;;14) socks_menu;continue;;15) address_menu;continue;;
+            17) ui_open_menu "$APP_HOME/addons/vpngate/vpngate.sh" menu;continue;;
+            1|7|10|11|13|16) ui_run main_action "$REPLY";;
+            *) ui_invalid;;
+        esac
+        ui_pause
     done
 }
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; fi
 case "${1:-menu}" in
     install) install_main;;export) cfg export --scope "${2:-normal}";;status) cfg show --scope "${2:-normal}";;links) cfg links --scope "${2:-normal}";;
     vpngate-share) share_menu vpngate;;

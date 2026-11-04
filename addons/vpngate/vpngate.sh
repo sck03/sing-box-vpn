@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+ADDON_ROOT="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/../.." && pwd)"
+source "$ADDON_ROOT/lib/ui.sh"
 SB_ROOT="${SB_ROOT:-/etc/s-box}"
 CONFIG="$SB_ROOT/vpngate/gateway.json"
 ctl() { /usr/local/bin/yg-vpngate ctl "$1" --config "$CONFIG" "${@:2}"; }
@@ -71,27 +73,65 @@ uninstall_gateway() {
     systemctl daemon-reload
     if [[ "${1:-}" == --all ]]; then echo 'VPNGate 组件已清理。'; else echo 'VPNGate 已卸载，普通节点继续使用。'; fi
 }
+gateway_menu_render() {
+    ui_header 'VPNGate · 临时家宽候选管理'
+    ui_hint '同时激活一个国家，五协议共用该国家出口。'
+    ui_rule
+    ui_option 1 '安装 VPNGate / 选择国家'
+    ui_option 2 '查看连接与出口状态'
+    ui_option 3 '查看候选节点'
+    ui_rule
+    ui_option 4 '更换同国家出口 IP'
+    ui_option 5 '尽量保持当前节点 / 故障自动重连'
+    ui_option 6 '锁定当前节点'
+    ui_option 7 '暂停 VPNGate 出口'
+    ui_option 8 '恢复 VPNGate 出口'
+    ui_option 9 '刷新节点源'
+    ui_rule
+    ui_option 10 '配置节点镜像源'
+    ui_option 11 '设置 ISP / hosting 筛选策略'
+    ui_option 12 '卸载 VPNGate（保留普通节点）'
+    ui_rule
+    ui_option 13 '查看 VPNGate 五协议节点 / 订阅'
+    ui_option 14 '修改 VPNGate 端口 / 凭据 / 证书'
+    ui_rule
+    ui_option 0 '返回上一级'
+    ui_gateway_status "${SB_MANAGER:-/usr/local/bin/yg-vpngate}" "$CONFIG"
+    ui_rule "$UI_RED" '~'
+}
+gateway_action() {
+    local country sources isp hosting
+    case "$1" in
+        1) ui_input country '国家代码，例如 JP / KR / US' || return "$UI_CANCEL";install_gateway "$country";;
+        2) ui_gateway_status "${SB_MANAGER:-/usr/local/bin/yg-vpngate}" "$CONFIG";;
+        3) ctl nodes;;4) ctl swap;;5) ctl mode --mode sticky;;6) ctl mode --mode fixed;;7) ctl stop;;8) ctl start;;9) ctl refresh;;
+        10) ui_hint '多个 API 源 URL 用逗号分隔，官方源放第一项。'
+            ui_input sources '完整 API 源 URL' || return "$UI_CANCEL";ctl policy --sources "$sources";;
+        11) ui_input isp '要求已确认 ISP？true / false' || return "$UI_CANCEL"
+            ui_input hosting '排除已知 hosting？true / false' || return "$UI_CANCEL"
+            ctl policy --require-isp="$isp" --exclude-hosting="$hosting";;
+    esac
+}
 menu() {
     while true;do
-        echo;echo 'VPNGate · 家宽候选 · 同时激活一个国家'
-        echo '1. 安装/选择国家  2. 状态  3. 候选节点'
-        echo '4. 同国家换 IP    5. 尽量保持/自动重连  6. 锁定当前节点'
-        echo '7. 暂停出口       8. 恢复出口  9. 刷新节点源'
-        echo '10. 镜像源       11. ISP/hosting 策略  12. 卸载'
-        echo '13. VPNGate 五协议节点/订阅  14. VPNGate 端口/凭据/证书  0. 返回'
-        read -r -p '选择：' choice || return 0
-        case "$choice" in
-        0) return;;
-        1) read -r -p '国家代码 JP/KR/US 等：' country;install_gateway "$country";;
-        2) ctl status;;3) ctl nodes;;4) ctl swap;;5) ctl mode --mode sticky;;6) ctl mode --mode fixed;;7) ctl stop;;8) ctl start;;9) ctl refresh;;
-        10) read -r -p '完整 API 源 URL，逗号分隔，官方源放第一项：' sources;ctl policy --sources "$sources";;
-        11) read -r -p '要求已确认 ISP？true/false：' isp;read -r -p '排除已知 hosting？true/false：' hosting;ctl policy --require-isp="$isp" --exclude-hosting="$hosting";;
-        12) uninstall_gateway;return;;
-        13) sb vpngate-share;;
-        14) sb vpngate-settings;;
+        gateway_menu_render
+        ui_read_choice || return 0
+        case "$REPLY" in
+            0) return;;
+            12) if ui_confirm '卸载 VPNGate，保留普通节点'; then
+                    ui_run uninstall_gateway
+                    if ((UI_RESULT == 0)); then return; fi
+                    ui_pause
+                fi
+                continue;;
+            13) ui_open_menu sb vpngate-share;continue;;
+            14) ui_open_menu sb vpngate-settings;continue;;
+            1|2|3|4|5|6|7|8|9|10|11) ui_perform gateway_action "$REPLY";;
+            *) ui_invalid;ui_pause;;
         esac
     done
 }
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; fi
 case "${1:-menu}" in
     menu) menu;;install|country) install_gateway "${2:-JP}";;uninstall) uninstall_gateway "${2:-}";;
     start|stop|swap|status|nodes|refresh) ctl "$1";;

@@ -494,8 +494,12 @@ func RunCore(ctx context.Context, args []string, output io.Writer) error {
 	version := options.String("version", "", "stable version")
 	destination := options.String("output", "", "candidate path")
 	noRestart := options.Bool("no-restart", false, "do not restart services")
+	format := options.String("format", "json", "output: json or text")
 	if err := parseOptions(options, args[1:]); err != nil {
 		return err
+	}
+	if *format != "json" && *format != "text" {
+		return errors.New("核心输出支持 --format json 或 text")
 	}
 	u := newCoreUpdater()
 	defer u.client.CloseIdleConnections()
@@ -509,6 +513,10 @@ func RunCore(ctx context.Context, args []string, output io.Writer) error {
 		}
 		asset, err := u.release(ctx, "")
 		if err != nil {
+			return err
+		}
+		if *format == "text" {
+			_, err := fmt.Fprintf(output, " 当前安装核心：%s\n 最新稳定核心：%s\n", current, asset.Version)
 			return err
 		}
 		return json.NewEncoder(output).Encode(Object{"current": current, "latest_stable": asset.Version, "update_available": current != asset.Version})
@@ -563,6 +571,10 @@ func RunCore(ctx context.Context, args []string, output io.Writer) error {
 				if err = u.validate(ctx, *root, current); err != nil {
 					return err
 				}
+				if *format == "text" {
+					_, err := fmt.Fprintf(output, " 当前已安装此稳定版本：%s\n", installed)
+					return err
+				}
 				return json.NewEncoder(output).Encode(Object{"version": installed, "changed": false})
 			}
 			stage, err := os.MkdirTemp(*root, ".core-update-")
@@ -576,6 +588,10 @@ func RunCore(ctx context.Context, args []string, output io.Writer) error {
 			}
 			installed, err := u.activate(ctx, *root, candidate, !*noRestart)
 			if err != nil {
+				return err
+			}
+			if *format == "text" {
+				_, err := fmt.Fprintf(output, " Sing-box 核心已更新：%s\n", installed)
 				return err
 			}
 			return json.NewEncoder(output).Encode(Object{"version": installed, "changed": true})

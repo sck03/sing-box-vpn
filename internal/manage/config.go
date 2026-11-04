@@ -660,8 +660,12 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 	address, name, port := options.String("address", "", "server address"), options.String("name", "VPS", "node name"), options.Int("port", 0, "subscription port")
 	timeout := options.Duration("timeout", 90*time.Second, "Argo wait timeout")
 	scope := options.String("scope", normalScope, "normal or vpngate nodes")
+	format := options.String("format", "json", "show output: json or text")
 	if err := parseOptions(options, args[1:]); err != nil {
 		return err
+	}
+	if *format != "json" && (*format != "text" || operation != "show") {
+		return errors.New("show 支持 --format json 或 text")
 	}
 	if _, err := exportDirectory(*root, *scope); err != nil {
 		return err
@@ -714,6 +718,12 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 		switch operation {
 		case "show":
 			version, err := CheckCore(ctx, *core)
+			if *format == "text" {
+				if err != nil {
+					version = "不可用（菜单 8 检查核心）"
+				}
+				return writeStatusText(output, app, settings, *scope, version)
+			}
 			if err != nil {
 				return err
 			}
