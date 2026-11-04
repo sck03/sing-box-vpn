@@ -347,17 +347,7 @@ func (m *manager) handler(parent context.Context) http.Handler {
 				c.AllowASNs = a.AllowASNs
 			}
 		case "refresh":
-			m.mu.Lock()
-			if !m.refreshPending {
-				m.refreshPending = true
-				go func() {
-					defer func() { m.mu.Lock(); m.refreshPending = false; m.mu.Unlock() }()
-					ctx, stop := context.WithTimeout(parent, 30*time.Second)
-					defer stop()
-					m.refresh(ctx, c, true)
-				}()
-			}
-			m.mu.Unlock()
+			m.scheduleRefresh(parent, c, true)
 			respond(w, 202, m.snapshot())
 			return
 		default:

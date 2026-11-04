@@ -252,11 +252,18 @@ func RunFirewall(ctx context.Context, args []string, output io.Writer) error {
 	f.SetOutput(output)
 	root := f.String("root", "/etc/s-box", "configuration directory")
 	remove := f.Bool("remove", false, "remove owned chains")
+	wait := f.Bool("wait", false, "wait for configuration recovery before service startup")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
 	if runtime.GOOS != "linux" || os.Geteuid() != 0 {
 		return errors.New("防火墙管理要求 Linux root")
+	}
+	if *wait {
+		if *remove {
+			return errors.New("--wait 仅用于启动时恢复防火墙")
+		}
+		return withStartupLock(ctx, *root, func() error { return (firewall{}).sync(ctx, *root, false) })
 	}
 	lock := withLock
 	if *remove {

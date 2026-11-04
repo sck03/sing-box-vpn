@@ -80,6 +80,9 @@ func (m *manager) snapshot() Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s := m.status
+	if s.State == "ready" && !m.ready {
+		s.State, s.Reason, s.Exit = "waiting", "forwarding blocked; waiting for exit verification", nil
+	}
 	if s.Exit != nil {
 		g := *s.Exit
 		s.Exit = &g
@@ -272,6 +275,8 @@ func readHTTP(ctx context.Context, client *http.Client, url string, limit int64)
 	return b, nil
 }
 func (m *manager) refresh(ctx context.Context, c Config, force bool) []Node {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	started := time.Now()
 	select {
 	case m.refreshSlot <- struct{}{}:
@@ -315,10 +320,28 @@ func (m *manager) refresh(ctx context.Context, c Config, force bool) []Node {
 	return nodes
 }
 
-func candidates(c Config, nodes []Node, previous Node, swap bool) []Node {
+func (m *manager) scheduleRefresh(parent context.Context, c Config, force bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.refreshPending {
+		return
+	}
+	m.refreshPending = true
+	go func() {
+		defer func() { m.mu.Lock(); m.refreshPending = false; m.mu.Unlock() }()
+		m.refresh(parent, c, force)
+	}()
+}
+
+func candidates(c Config, nodes []Node, previous Node, swap bool, failed map[string]time.Time) []Node {
 	var pool []Node
 	seen := map[string]bool{}
 	accept := func(n Node) bool {
+		if c.Mode != "fixed" {
+			if _, blocked := failed[n.Host]; blocked {
+				return false
+			}
+		}
 		return n.Country == c.Country && countryPattern.MatchString(n.Country) && publicIPv4(n.IP) && (!c.ResidentialOnly || volunteer(n)) && (!swap || n.Host != previous.Host)
 	}
 	add := func(n Node) {
@@ -449,12 +472,18 @@ func (m *manager) probe(ctx context.Context, c Config, active tunnel, client *ht
 // Block forwarding on the first failure; transient lookups get two retries
 // on the existing tunnel before the connection loop tears it down.
 func (m *manager) recheck(ctx context.Context, c Config, active tunnel, n Node, client *http.Client) (Geo, error) {
+	return m.verifyExit(ctx, c, active, n, client, true)
+}
+
+func (m *manager) verifyExit(ctx context.Context, c Config, active tunnel, n Node, client *http.Client, revokeOnFailure bool) (Geo, error) {
 	for attempt := 0; ; attempt++ {
 		g, err := m.probe(ctx, c, active, client)
 		if err == nil || ctx.Err() != nil {
 			return g, err
 		}
-		m.revoke()
+		if revokeOnFailure {
+			m.revoke()
+		}
 		m.setStatus("verifying", err.Error()+"; forwarding blocked", n, nil)
 		var temporary probeUnavailable
 		if !errors.As(err, &temporary) || attempt == 2 {
@@ -473,33 +502,42 @@ func (m *manager) recheck(ctx context.Context, c Config, active tunnel, n Node, 
 	}
 }
 
+func (m *manager) reconnectCandidates(c Config, nodes []Node, swap bool) []Node {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	now := time.Now()
+	for host, until := range m.failed {
+		if !now.Before(until) {
+			delete(m.failed, host)
+		}
+	}
+	return candidates(c, nodes, m.previous, swap, m.failed)
+}
+
 func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 	backoff := 5 * time.Second
-	for ctx.Err() == nil {
-		m.setStatus("fetching", "fetching same-country candidates", Node{}, nil)
-		nodes := m.refresh(ctx, c, false)
+	var initial []Node
+	if !swap {
 		m.mu.Lock()
-		previous := m.previous
-		now := time.Now()
-		for host, until := range m.failed {
-			if !now.Before(until) {
-				delete(m.failed, host)
-			}
-		}
-		if c.Mode != "fixed" {
-			filtered := make([]Node, 0, len(nodes))
-			for _, n := range nodes {
-				if _, failed := m.failed[n.Host]; !failed {
-					filtered = append(filtered, n)
-				}
-			}
-			nodes = filtered
-			if _, failed := m.failed[previous.Host]; failed {
-				previous = Node{}
-			}
-		}
+		cached, saved := m.nodes, m.previous.Host != ""
 		m.mu.Unlock()
-		pool := candidates(c, nodes, previous, swap)
+		if saved {
+			initial = m.reconnectCandidates(c, cached, false)
+			if len(initial) > 0 {
+				// Retry one saved candidate immediately; update its source in parallel.
+				initial = []Node{initial[0]}
+				m.scheduleRefresh(ctx, c, false)
+			}
+		}
+	}
+	for ctx.Err() == nil {
+		pool := initial
+		cachedAttempt := len(pool) > 0
+		initial = nil
+		if len(pool) == 0 {
+			m.setStatus("fetching", "fetching same-country candidates", Node{}, nil)
+			pool = m.reconnectCandidates(c, m.refresh(ctx, c, false), swap)
+		}
 		if len(pool) == 0 {
 			m.setStatus("waiting", "no valid candidate in requested country", Node{}, nil)
 		}
@@ -519,7 +557,8 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 				client = tunnelClient(active)
 				m.setStatus("verifying", "verifying exit country and provider", n, nil)
 				var g Geo
-				g, e = m.probe(session, c, active, client)
+				// Startup already blocks forwarding; retries must retain its epoch.
+				g, e = m.verifyExit(session, c, active, n, client, false)
 				if e == nil && session.Err() == nil {
 					m.mu.Lock()
 					if session.Err() != nil || sessionEpoch != m.epoch || m.cfg.Country != c.Country {
@@ -532,15 +571,13 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 					m.current = active
 					m.previous = n
 					m.ready = true
-					m.mu.Unlock()
-					_ = atomicJSON(filepath.Join(c.DataDir, "last-node.json"), n)
 					if c.Mode == "fixed" && c.FixedHost == "" {
 						c.FixedHost = n.Host
-						m.mu.Lock()
 						m.cfg.FixedHost = n.Host
 						_ = atomicJSON(m.configPath, m.cfg)
-						m.mu.Unlock()
 					}
+					m.mu.Unlock()
+					_ = atomicJSON(filepath.Join(c.DataDir, "last-node.json"), n)
 					m.setStatus("ready", "volunteer / residential candidate", n, &g)
 					backoff = 5 * time.Second
 					swap = false
@@ -567,6 +604,9 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 			m.mu.Lock()
 			m.failed[n.Host] = time.Now().Add(2 * time.Minute)
 			m.mu.Unlock()
+		}
+		if cachedAttempt {
+			continue
 		}
 		timer := time.NewTimer(backoff)
 		select {

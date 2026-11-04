@@ -113,6 +113,8 @@ jobs:
         run: sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_NETNS_TESTS=1 "$(command -v go)" test -run '^TestLinuxNamespaceIsolation$' -count=1 -v -timeout=6m ./addons/vpngate/gateway
       - name: IPv4 and IPv6 multiport forwarding and owned firewall cleanup
         run: sudo env RUN_FIREWALL_TESTS=1 "$(command -v go)" test -run '^TestLinuxMultiportFirewall$' -count=1 -v -timeout=1m ./internal/manage
+      - name: systemd startup recovery after firewall loss and unexpected clean exit
+        run: sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_SERVICE_TESTS=1 "$(command -v go)" test -run '^TestLinuxServiceStartupRecovery$' -count=1 -v -timeout=2m ./internal/manage
       - name: Build both release architectures
         run: go run ./cmd/release
       - uses: actions/upload-artifact@v7.0.2

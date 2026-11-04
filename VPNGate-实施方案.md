@@ -33,6 +33,8 @@ ASSOCIATE，TCP/UDP 中继只监听回环地址，必须认证。业务 socket �
 节点列表缓存一分钟，并发刷新合并；探测 HTTP 连接按隧道复用。
 健康探测遇到临时网络 / 元数据故障时先阻断，再在原隧道上间隔 2 秒重试两次。
 错误国家或筛选策略不符直接拒绝；重复启动或重载相同设置保持已验证隧道。
+启动先尝试一个本地保存的同国候选，同时刷新节点源；仍重新校验实际出口。
+启动探测也支持临时故障重试；一次节点刷新总计最多 30 秒，包含等待其他刷新。
 
 当前只监听和导出一个国家的五个 VPNGate 入口。各国家端口和凭据仍保存：韩国激活后，
 日本入口关闭；重新激活日本会恢复原日本链接。停止出口保留入口配置，节点不可用；再次启动
@@ -48,6 +50,7 @@ ASSOCIATE，TCP/UDP 中继只监听回环地址，必须认证。业务 socket �
 | cmd/release/ | Go 交叉编译与可复现归档、流式 SHA256 |
 | addons/vpngate/vpngate.sh | 菜单 17、国家入口、服务启停及清理 |
 | addons/vpngate/gateway/ | 节点/profile、国家/ISP、代理、worker、namespace |
+| lib/services.sh | 统一服务单元、启动恢复和 3 秒意外退出重试策略 |
 | sing-box.service | 普通五协议 |
 | yg-vpngate.service | 出口管理器与认证 SOCKS5 |
 | sing-box-vpngate.service | 独立五协议 VPNGate 入口 |

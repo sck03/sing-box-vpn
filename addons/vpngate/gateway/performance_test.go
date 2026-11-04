@@ -63,7 +63,7 @@ func BenchmarkPinnedCandidates(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if pool := candidates(cfg, nodes, nodes[0], false); len(pool) != 1 {
+		if pool := candidates(cfg, nodes, nodes[0], false, nil); len(pool) != 1 {
 			b.Fatal("pinned node was not selected")
 		}
 	}

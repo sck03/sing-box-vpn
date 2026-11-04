@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 ADDON_ROOT="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/../.." && pwd)"
 source "$ADDON_ROOT/lib/ui.sh"
+source "$ADDON_ROOT/lib/services.sh"
 SB_ROOT="${SB_ROOT:-/etc/s-box}"
 CONFIG="$SB_ROOT/vpngate/gateway.json"
 ctl() { /usr/local/bin/yg-vpngate ctl "$1" --config "$CONFIG" "${@:2}"; }
@@ -19,46 +20,11 @@ install_gateway() {
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openvpn iproute2 iptables procps
     install -d -m 0700 "$SB_ROOT/vpngate" /var/lib/yg-vpngate /run/yg-vpngate
     cfg vpngate "$country"
-    cat > /etc/systemd/system/yg-vpngate.service <<EOF
-[Unit]
-Description=VPNGate country-locked gateway
-After=network-online.target
-Wants=network-online.target
-[Service]
-User=root
-UMask=0077
-ExecStartPre=/usr/local/bin/yg-vpngate config --root $SB_ROOT recover
-ExecStart=/usr/local/bin/yg-vpngate daemon --config $CONFIG
-ExecStopPost=/usr/local/bin/yg-vpngate cleanup --config $CONFIG
-Restart=on-failure
-RestartSec=5
-TimeoutStopSec=20
-NoNewPrivileges=true
-LimitNOFILE=32768
-[Install]
-WantedBy=multi-user.target
-EOF
-    cat > /etc/systemd/system/sing-box-vpngate.service <<EOF
-[Unit]
-Description=VPNGate five-protocol dedicated entries
-After=network-online.target yg-vpngate.service
-[Service]
-User=root
-UMask=0077
-ExecStartPre=/usr/local/bin/yg-vpngate config --root $SB_ROOT recover
-ExecStart=$SB_ROOT/sing-box run -c $SB_ROOT/vpngate/server.json
-ExecReload=/bin/kill -HUP \$MAINPID
-WorkingDirectory=$SB_ROOT/vpngate
-Restart=on-failure
-RestartSec=5
-LimitNOFILE=32768
-[Install]
-WantedBy=multi-user.target
-EOF
+    write_gateway_services
     /usr/local/bin/yg-vpngate firewall --root "$SB_ROOT"
     systemctl daemon-reload
-    if systemctl is-active --quiet yg-vpngate;then ctl reload;else systemctl enable --now yg-vpngate >/dev/null;fi
-    systemctl enable sing-box-vpngate >/dev/null
+    systemctl enable yg-vpngate sing-box-vpngate >/dev/null
+    if systemctl is-active --quiet yg-vpngate;then ctl reload;else systemctl start yg-vpngate;fi
     systemctl restart sing-box-vpngate
     echo '连接与出口校验在后台进行；通过校验后才转发。菜单 9 可复制五协议 VPNGate 节点。'
     ctl status
@@ -68,6 +34,7 @@ uninstall_gateway() {
     [[ $(realpath -m -- "$SB_ROOT/vpngate") == /etc/s-box/vpngate ]] || { echo '配置清理路径验证失败' >&2;return 1; }
     systemctl disable --now sing-box-vpngate yg-vpngate 2>/dev/null || true
     if [[ -f "$CONFIG" && -x /usr/local/bin/yg-vpngate ]];then /usr/local/bin/yg-vpngate cleanup --config "$CONFIG";fi
+    remove_service_recovery sing-box-vpngate yg-vpngate
     rm -f /etc/systemd/system/sing-box-vpngate.service /etc/systemd/system/yg-vpngate.service
     if [[ "${1:-}" != --all && -f "$SB_ROOT/app.json" ]];then cfg vpngate-remove;fi
     rm -rf -- /etc/s-box/vpngate /var/lib/yg-vpngate /run/yg-vpngate

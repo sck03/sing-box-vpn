@@ -85,6 +85,17 @@ sb core-rollback
 会恢复提交前的配置与订阅；也可运行 `sb recover`。并发服务启动会等待正在进行的配置操作，
 损坏的恢复记录会保留并报错。明确确认的整套卸载仍可清理损坏的配置。
 
+**服务器重启后会自动恢复已启用的服务，但不能保证立即连通。** 普通节点、VPNGate、
+本地订阅和 Argo 在启动前共同恢复未完成配置及 IPv4/IPv6 防火墙规则，包括 Hy2 跳跃和
+TUIC 多端口转发。意外退出（含正常退出码）后间隔 3 秒重试，不因启动次数限制停止恢复；
+主动 `systemctl stop` 仍保持停止，`yg-vpngate ctl stop` 的暂停设置也会保存。
+安装升级会同步更新已有 VPNGate 服务单元，并为已有 Argo 单元补上恢复策略。
+
+网关先尝试一个本地保存的同国候选，同时刷新节点源；单次刷新含等待最多 30 秒。
+保存节点仍须通过实际出口校验。启动时临时探测故障也会在同一隧道上重试两次。
+恢复耗时取决于开机网络准备、OpenVPN 握手（默认每个候选最多 60 秒）和出口校验；
+候选故障时可能重试数分钟，固定节点离线时持续等待。服务器重启前的连接需由客户端重新建立。
+
 | 客户端选择 | 出口 |
 | --- | --- |
 | VLESS / VMess / Hy2 / TUIC / AnyTLS 普通节点 | 原有 VPS 出口与域名分流 |
@@ -170,6 +181,8 @@ sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_NETNS_TESTS=1 \
   "$(command -v go)" test -run '^TestLinuxNamespaceIsolation$' -count=1 -v ./addons/vpngate/gateway
 sudo env RUN_FIREWALL_TESTS=1 "$(command -v go)" test \
   -run '^TestLinuxMultiportFirewall$' -count=1 -v -timeout=1m ./internal/manage
+sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_SERVICE_TESTS=1 "$(command -v go)" test \
+  -run '^TestLinuxServiceStartupRecovery$' -count=1 -v -timeout=2m ./internal/manage
 go run ./cmd/release
 ```
 

@@ -59,7 +59,7 @@ func TestPinnedNodeUsesRefreshedProfile(t *testing.T) {
 		if mode == "fixed" {
 			cfg.FixedHost = old.Host
 		}
-		pool := candidates(cfg, []Node{fresh}, old, false)
+		pool := candidates(cfg, []Node{fresh}, old, false, nil)
 		if len(pool) != 1 || pool[0].IP != fresh.IP {
 			t.Fatalf("%s kept stale cached node after refresh: %+v", mode, pool)
 		}

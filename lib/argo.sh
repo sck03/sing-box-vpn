@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 ARGO_LIB="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)"
 source "$ARGO_LIB/ui.sh"
+source "$ARGO_LIB/services.sh"
 ROOT="${1:-${SB_ROOT:-/etc/s-box}}"
 argo_action() {
 local choice=$1 arch port scheme domain token command post
@@ -29,20 +30,11 @@ else
     command="$ROOT/cloudflared tunnel --no-autoupdate --no-tls-verify --url $scheme://127.0.0.1:$port --logfile $ROOT/argo.log"
     post="ExecStartPost=/usr/local/bin/yg-vpngate config --root $ROOT argo-watch"
 fi
-cat > /etc/systemd/system/sb-argo.service <<EOF
-[Unit]
-Description=sing-box-vpn Argo entry
-After=network-online.target sing-box.service
-[Service]
+write_service_unit sb-argo 'sing-box-vpn Argo entry' "$ROOT" sing-box.service <<EOF
 EnvironmentFile=$ROOT/argo.env
 ExecStartPre=/usr/bin/truncate -s 0 $ROOT/argo.log
 ExecStart=$command
 $post
-Restart=on-failure
-RestartSec=5
-TimeoutStartSec=120
-[Install]
-WantedBy=multi-user.target
 EOF
 systemctl daemon-reload;systemctl enable sb-argo >/dev/null;systemctl restart sb-argo
 ui_line "$UI_GREEN" ' Argo 已启动，菜单 9 刷新节点。'

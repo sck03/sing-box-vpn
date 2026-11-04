@@ -7,6 +7,7 @@ SB_ROOT="${SB_ROOT:-/etc/s-box}"
 CORE="$SB_ROOT/sing-box"
 MANAGER="${SB_MANAGER:-/usr/local/bin/yg-vpngate}"
 source "$SCRIPT_ROOT/lib/ui.sh"
+source "$SCRIPT_ROOT/lib/services.sh"
 cfg() { "$MANAGER" config --root "$SB_ROOT" --core "$CORE" "$@"; }
 require_root() { [[ $(id -u) == 0 ]] || { echo '需要 root 权限' >&2; return 1; }; }
 require_system() {
@@ -70,24 +71,11 @@ install_main() {
     "$MANAGER" core --root "$SB_ROOT" activate "$candidate" --no-restart >/dev/null
     rm -f -- "$candidate"
     chmod 0600 "$SB_ROOT"/*.json "$SB_ROOT"/*.key 2>/dev/null || true
-    cat > /etc/systemd/system/sing-box.service <<EOF
-[Unit]
-Description=sing-box-vpn ordinary five-protocol service
-After=network-online.target
-Wants=network-online.target
-[Service]
-ExecStartPre=/usr/local/bin/yg-vpngate config --root $SB_ROOT recover
-ExecStart=$CORE run -c $SB_ROOT/sb.json
-ExecReload=/bin/kill -HUP \$MAINPID
-WorkingDirectory=$SB_ROOT
-Restart=on-failure
-RestartSec=5
-LimitNOFILE=65536
-[Install]
-WantedBy=multi-user.target
-EOF
+    write_main_service
     ln -sfn "$APP_HOME/sb.sh" /usr/bin/sb
     if [[ -f "$SB_ROOT/subscription.json" ]]; then write_subscription_service; fi
+    if [[ -f "$SB_ROOT/vpngate/gateway.json" ]]; then write_gateway_services; fi
+    write_service_recovery "$SB_ROOT" sb-argo
     firewall
     systemctl daemon-reload
     systemctl enable sing-box >/dev/null
@@ -98,23 +86,6 @@ EOF
     ui_line "$UI_GREEN" ' 五协议普通节点已安装完成。'
     show_status
     ui_hint '输入 sb 打开管理菜单；菜单 9 查看节点，菜单 17 添加 VPNGate。'
-}
-write_subscription_service() {
-    cat > /etc/systemd/system/sb-subscription.service <<EOF
-[Unit]
-Description=Token protected sing-box-vpn subscriptions
-After=network-online.target sing-box.service sing-box-vpngate.service
-[Service]
-ExecStart=/usr/local/bin/yg-vpngate subscription --root $SB_ROOT
-WorkingDirectory=$SB_ROOT
-Restart=on-failure
-RestartSec=5
-ProtectSystem=strict
-ReadOnlyPaths=$SB_ROOT
-NoNewPrivileges=true
-[Install]
-WantedBy=multi-user.target
-EOF
 }
 subscription_menu() {
     ui_submenu '本地订阅管理' subscription_action \
@@ -362,6 +333,7 @@ uninstall_main() {
     "$APP_HOME/addons/vpngate/vpngate.sh" uninstall --all || return 1
     systemctl disable --now sing-box sb-subscription sb-argo 2>/dev/null || true
     firewall --remove
+    remove_service_recovery sing-box sb-subscription sb-argo
     rm -f /etc/systemd/system/sing-box.service /etc/systemd/system/sb-subscription.service /etc/systemd/system/sb-argo.service /usr/bin/sb /usr/local/bin/yg-vpngate
     rm -f /etc/letsencrypt/renewal-hooks/deploy/sing-box-vpn.sh /etc/sysctl.d/99-sing-box-vpn-bbr.conf
     rm -rf -- "$SB_ROOT"

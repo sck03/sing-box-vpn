@@ -22,13 +22,17 @@ type commitJournal struct {
 // Services may start together; recovery waits for a writer instead of failing
 // one service merely because another startup is recovering the same bundle.
 func recoverConfig(ctx context.Context, root string) error {
+	return withStartupLock(ctx, root, func() error { return nil })
+}
+
+func withStartupLock(ctx context.Context, root string, operation func() error) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		err := withLock(root, func() error { return nil })
+		err := withLock(root, operation)
 		if !errors.Is(err, errLockBusy) {
 			return err
 		}

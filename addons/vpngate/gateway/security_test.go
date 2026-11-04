@@ -114,7 +114,7 @@ func TestCSVRejectsMissingCountryAndKnownDatacenter(t *testing.T) {
 	}
 	cfg := defaults()
 	cfg.Country = "JP"
-	pool := candidates(cfg, nodes, Node{}, false)
+	pool := candidates(cfg, nodes, Node{}, false, nil)
 	if len(pool) != 1 || pool[0].Host != "volunteer" {
 		t.Fatalf("country/residential filter failed: %+v", pool)
 	}
@@ -128,12 +128,12 @@ func TestStrictCountryFixedModeAndManualSwap(t *testing.T) {
 	cfg.Country = "JP"
 	cfg.Mode = "fixed"
 	cfg.FixedHost = "kr-one"
-	if len(candidates(cfg, []Node{jp, kr}, kr, false)) != 0 {
+	if len(candidates(cfg, []Node{jp, kr}, kr, false, nil)) != 0 {
 		t.Fatal("fixed mode escaped country")
 	}
 	cfg.Mode = "sticky"
 	cfg.FixedHost = ""
-	if len(candidates(cfg, []Node{jp, kr}, jp, true)) != 0 {
+	if len(candidates(cfg, []Node{jp, kr}, jp, true, nil)) != 0 {
 		t.Fatal("swap returned old node or other country")
 	}
 }

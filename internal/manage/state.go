@@ -136,7 +136,10 @@ func AtomicBytes(path string, data []byte, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), path)
+	if err := os.Rename(f.Name(), path); err != nil {
+		return err
+	}
+	return syncDirectory(filepath.Dir(path))
 }
 
 func randomBytes(size int) []byte {
