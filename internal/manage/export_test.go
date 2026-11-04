@@ -171,3 +171,41 @@ func TestVPNSettingsAreIndependent(t *testing.T) {
 		t.Fatal("rejected port change altered the server")
 	}
 }
+
+func TestUpgradePrunesInactiveVPNListeners(t *testing.T) {
+	root, core, app := appFixture(t)
+	ctx := context.Background()
+	for _, country := range []string{"JP", "KR"} {
+		if _, err := PrepareVPN(ctx, root, core, app, country); err != nil {
+			t.Fatal(err)
+		}
+	}
+	settings, private, err := loadVPN(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "vpngate", "server.json")
+	server := readObject(t, path)
+	p := settings.Profiles["JP"]
+	p.Secrets = private["JP"]
+	server["inbounds"] = append(objects(server["inbounds"]), MakeInbounds(p, "vg-JP-")...)
+	if err := AtomicJSON(path, server); err != nil {
+		t.Fatal(err)
+	}
+	before := readBytes(t, filepath.Join(root, "vpngate", "jhsub.txt"))
+	if err := RunConfig(ctx, []string{"--root", root, "--core", core, "init"}, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	entries := objects(readObject(t, path)["inbounds"])
+	if len(entries) != 5 {
+		t.Fatal("upgrade retained historical listeners", len(entries))
+	}
+	for _, entry := range entries {
+		if !strings.HasPrefix(text(entry["tag"]), "vg-KR-") {
+			t.Fatal("upgrade enabled an inactive country's entry")
+		}
+	}
+	if !bytes.Equal(before, readBytes(t, filepath.Join(root, "vpngate", "jhsub.txt"))) {
+		t.Fatal("upgrade changed the active country's links")
+	}
+}

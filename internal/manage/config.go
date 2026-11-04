@@ -335,7 +335,36 @@ func CommitApp(ctx context.Context, root, core string, app *App) error {
 	if err = files.json("app.json", app); err != nil {
 		return err
 	}
+	if settings.ActiveCountry != "" {
+		gateway, err := vpnServer(settings, private)
+		if err != nil {
+			return err
+		}
+		if err := CheckJSON(ctx, core, root, gateway); err != nil {
+			return err
+		}
+		if err := files.json("vpngate/server.json", gateway); err != nil {
+			return err
+		}
+	}
 	return publish(root, files)
+}
+
+func vpnServer(settings VPNSettings, private map[string]Secrets) (Object, error) {
+	country := settings.ActiveCountry
+	p, exists := settings.Profiles[country]
+	if !exists || !countryPattern.MatchString(country) {
+		return nil, errors.New("当前 VPNGate 国家缺少有效入口配置")
+	}
+	active, exists := private[country]
+	if !exists || active.SocksUser == "" || len(active.SocksPass) < 32 {
+		return nil, errors.New("国家缺少独立代理凭据")
+	}
+	p.Secrets = active
+	tag := "vg-out-" + country
+	return Object{"log": Object{"level": "info", "timestamp": true}, "inbounds": MakeInbounds(p, "vg-"+country+"-"),
+		"outbounds": []Object{{"type": "socks", "tag": tag, "server": "127.0.0.1", "server_port": settings.ProxyPort, "version": "5", "username": active.SocksUser, "password": active.SocksPass}},
+		"route":     Object{"final": tag}}, nil
 }
 
 func PrepareVPN(ctx context.Context, root, core string, app App, country string) (VPNSettings, error) {
@@ -366,10 +395,11 @@ func PrepareVPN(ctx context.Context, root, core string, app App, country string)
 
 func commitVPN(ctx context.Context, root, core string, app App, s VPNSettings, private map[string]Secrets, activate bool) error {
 	country := s.ActiveCountry
-	active, exists := private[country]
-	if !exists || active.SocksUser == "" || len(active.SocksPass) < 32 {
-		return errors.New("国家缺少独立代理凭据")
+	server, err := vpnServer(s, private)
+	if err != nil {
+		return err
 	}
+	active := private[country]
 	gateway := Object{}
 	if _, err := ReadJSON(filepath.Join(root, "vpngate", "gateway.json"), &gateway); err != nil {
 		return err
@@ -394,12 +424,6 @@ func commitVPN(ctx context.Context, root, core string, app App, s VPNSettings, p
 	if activate {
 		gateway["enabled"] = true
 	}
-	p := s.Profiles[country]
-	p.Secrets = active
-	tag := "vg-out-" + country
-	server := Object{"log": Object{"level": "info", "timestamp": true}, "inbounds": MakeInbounds(p, "vg-"+country+"-"),
-		"outbounds": []Object{{"type": "socks", "tag": tag, "server": "127.0.0.1", "server_port": s.ProxyPort, "version": "5", "username": active.SocksUser, "password": active.SocksPass}},
-		"route":     Object{"final": tag}}
 	if err := CheckJSON(ctx, core, filepath.Join(root, "vpngate"), server); err != nil {
 		return err
 	}
