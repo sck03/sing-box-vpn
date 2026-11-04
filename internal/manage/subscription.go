@@ -32,18 +32,28 @@ func configureSubscription(root string, app App, settings VPNSettings, port int)
 		return errors.New("订阅端口必须为 1-65535")
 	}
 	used := usedPorts(app, settings)
+	ranges, err := usedPortRanges(app, settings)
+	if err != nil {
+		return err
+	}
 	if port == 0 {
-		value, err := AvailablePort(used)
+		value, err := AvailablePort(used, ranges...)
 		if err != nil {
 			return err
 		}
 		port = value
 	} else {
-		if used[port] {
+		if used[port] || portInRanges(port, ranges) {
 			return errors.New("订阅端口已被节点使用")
 		}
-		if err := probePort(port); err != nil {
+		var previous subscriptionSettings
+		if _, err := ReadJSON(filepath.Join(root, "subscription.json"), &previous); err != nil {
 			return err
+		}
+		if !previous.Enabled || port != previous.Port {
+			if err := probePort(port); err != nil {
+				return err
+			}
 		}
 	}
 	return AtomicJSON(filepath.Join(root, "subscription.json"), subscriptionSettings{true, port, randomSecret(), "0.0.0.0"})

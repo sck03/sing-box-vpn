@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 
 type firewall struct {
 	execute func(context.Context, string, ...string) ([]byte, error)
+	restore func(context.Context, string, string) ([]byte, error)
 }
 
 func (f firewall) command(ctx context.Context, required bool, binary string, args ...string) (bool, error) {
@@ -36,6 +38,122 @@ func (f firewall) command(ctx context.Context, required bool, binary string, arg
 	return err == nil, nil
 }
 
+const inputChain = "SBVPN_INPUT"
+const udpChain = "SBVPN_UDP"
+const legacyUDPChain = "SBVPN_HY2"
+
+func (f firewall) apply(ctx context.Context, binary, rules string) error {
+	child, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	binary += "-restore"
+	var output []byte
+	var err error
+	if f.restore != nil {
+		output, err = f.restore(child, binary, rules)
+	} else {
+		command := exec.CommandContext(child, binary, "-w", "5", "--noflush")
+		command.Stdin = strings.NewReader(rules)
+		output, err = command.CombinedOutput()
+	}
+	if err != nil {
+		return fmt.Errorf("防火墙批量提交失败: %s: %w: %s", binary, err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func (f firewall) removeChain(ctx context.Context, binary, table, parent, chain string) error {
+	prefix := []string{"-t", table}
+	has := func(args ...string) bool {
+		ok, _ := f.command(ctx, false, binary, append(prefix, args...)...)
+		return ok
+	}
+	if !has("-S", chain) {
+		return nil
+	}
+	run := func(args ...string) error {
+		_, err := f.command(ctx, true, binary, append(prefix, args...)...)
+		return err
+	}
+	for has("-C", parent, "-j", chain) {
+		if err := run("-D", parent, "-j", chain); err != nil {
+			return err
+		}
+	}
+	if err := run("-F", chain); err != nil {
+		return err
+	}
+	return run("-X", chain)
+}
+
+func firewallRules(app App, settings VPNSettings, gateway Object, subscription subscriptionSettings) (string, string, error) {
+	inputs := append(append([]Object{}, app.Inbounds...), objects(gateway["inbounds"])...)
+	ports := map[string]bool{}
+	for _, in := range inputs {
+		port, kind := number(in["listen_port"]), text(in["type"])
+		if port < 1 || port > 65535 || !slices.Contains(Protocols, kind) {
+			return "", "", errors.New("入口协议或端口错误")
+		}
+		network := "tcp"
+		if kind == "hysteria2" || kind == "tuic" {
+			network = "udp"
+		}
+		ports[network+" --dport "+strconv.Itoa(port)] = true
+	}
+	if subscription.Enabled {
+		if subscription.Port < 1 || subscription.Port > 65535 {
+			return "", "", errors.New("订阅端口错误")
+		}
+		ports["tcp --dport "+strconv.Itoa(subscription.Port)] = true
+	}
+	names := make([]string, 0, len(ports))
+	for name := range ports {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	var input, udp strings.Builder
+	for _, name := range names {
+		fmt.Fprintf(&input, "-A %s -p %s -j ACCEPT\n", inputChain, name)
+	}
+	profiles := []Profile{app.Profile}
+	if settings.ActiveCountry != "" {
+		profile, exists := settings.Profiles[settings.ActiveCountry]
+		if !exists {
+			return "", "", errors.New("当前 VPNGate 国家缺少端口配置")
+		}
+		profiles = append(profiles, profile)
+	}
+	for i, profile := range profiles {
+		entries := app.Inbounds
+		if i > 0 {
+			entries = objects(gateway["inbounds"])
+		}
+		for _, kind := range []string{"hysteria2", "tuic"} {
+			values := forwardPorts(profile, kind)
+			if len(values) == 0 {
+				continue
+			}
+			if !slices.ContainsFunc(entries, func(in Object) bool {
+				return in["type"] == kind && number(in["listen_port"]) == profile.Ports[kind]
+			}) {
+				return "", "", fmt.Errorf("%s 多端口的主端口与入口配置不一致", kind)
+			}
+			scope := normalScope
+			if i > 0 {
+				scope = vpngateScope
+			}
+			if err := validatePortMutation("", app, settings, scope, "multiport", append([]string{kind}, values...)); err != nil {
+				return "", "", err
+			}
+			ranges, _ := parsePortRanges(values)
+			for _, r := range ranges {
+				// Forward only packets addressed to this host, preserving transit traffic.
+				fmt.Fprintf(&udp, "-A %s -p udp -m addrtype --dst-type LOCAL --dport %s -j REDIRECT --to-ports %d\n", udpChain, r.String(), profile.Ports[kind])
+			}
+		}
+	}
+	return input.String(), udp.String(), nil
+}
+
 func (f firewall) sync(ctx context.Context, root string, remove bool) error {
 	marker := filepath.Join(root, "firewall.owner")
 	owner, err := os.ReadFile(marker)
@@ -46,115 +164,84 @@ func (f firewall) sync(ctx context.Context, root string, remove bool) error {
 	if owned && strings.TrimSpace(string(owner)) != "sck03/sing-box-vpn" {
 		return errors.New("防火墙所有权记录不匹配")
 	}
-	run := func(binary string, args ...string) error { _, err := f.command(ctx, true, binary, args...); return err }
 	has := func(binary string, args ...string) bool { ok, _ := f.command(ctx, false, binary, args...); return ok }
 	if !owned {
 		for _, binary := range []string{"iptables", "ip6tables"} {
-			if has(binary, "-S", "SBVPN_INPUT") {
-				return errors.New("SBVPN_INPUT 已存在且无本项目所有权记录")
+			for _, chain := range []struct{ table, name string }{{"filter", inputChain}, {"nat", udpChain}, {"nat", legacyUDPChain}} {
+				if has(binary, "-t", chain.table, "-S", chain.name) {
+					return fmt.Errorf("%s 已存在且无本项目所有权记录", chain.name)
+				}
 			}
-		}
-		if has("iptables", "-t", "nat", "-S", "SBVPN_HY2") {
-			return errors.New("SBVPN_HY2 已存在且无本项目所有权记录")
 		}
 		if remove {
 			return nil
 		}
+	}
+	if remove {
+		// Uninstall must work even if an application configuration is damaged.
+		for _, binary := range []string{"iptables", "ip6tables"} {
+			for _, chain := range []struct{ table, parent, name string }{{"filter", "INPUT", inputChain}, {"nat", "PREROUTING", udpChain}, {"nat", "PREROUTING", legacyUDPChain}} {
+				if err := f.removeChain(ctx, binary, chain.table, chain.parent, chain.name); err != nil {
+					return err
+				}
+			}
+		}
+		return os.Remove(marker)
+	}
+	var app App
+	var settings VPNSettings
+	var gateway Object
+	var subscription subscriptionSettings
+	for _, file := range []struct {
+		name  string
+		value any
+	}{{"app.json", &app}, {"vpngate/settings.json", &settings}, {"vpngate/server.json", &gateway}, {"subscription.json", &subscription}} {
+		if _, err := ReadJSON(filepath.Join(root, file.name), file.value); err != nil {
+			return err
+		}
+	}
+	input, udp, err := firewallRules(app, settings, gateway, subscription)
+	if err != nil {
+		return err
+	}
+	if !owned {
 		if err := AtomicBytes(marker, []byte("sck03/sing-box-vpn\n"), 0600); err != nil {
 			return err
 		}
 	}
-	var app App
-	if _, err = ReadJSON(filepath.Join(root, "app.json"), &app); err != nil {
-		return err
-	}
-	var gateway Object
-	if _, err = ReadJSON(filepath.Join(root, "vpngate", "server.json"), &gateway); err != nil {
-		return err
-	}
-	var subscription subscriptionSettings
-	if _, err = ReadJSON(filepath.Join(root, "subscription.json"), &subscription); err != nil {
-		return err
-	}
-	inputs := append(append([]Object{}, app.Inbounds...), objects(gateway["inbounds"])...)
 	for _, binary := range []string{"iptables", "ip6tables"} {
-		if remove {
-			for has(binary, "-C", "INPUT", "-j", "SBVPN_INPUT") {
-				if err := run(binary, "-D", "INPUT", "-j", "SBVPN_INPUT"); err != nil {
-					return err
-				}
-			}
-			_, _ = f.command(ctx, false, binary, "-F", "SBVPN_INPUT")
-			_, _ = f.command(ctx, false, binary, "-X", "SBVPN_INPUT")
+		if binary == "ip6tables" && !has(binary, "-S", "INPUT") {
 			continue
 		}
-		if !has(binary, "-S", "SBVPN_INPUT") {
-			if !has(binary, "-N", "SBVPN_INPUT") {
-				if binary == "ip6tables" {
-					continue
-				}
-				return errors.New("无法创建 IPv4 防火墙链")
-			}
+		var rules strings.Builder
+		fmt.Fprintf(&rules, "*filter\n:%s - [0:0]\n-F %s\n%s", inputChain, inputChain, input)
+		if !has(binary, "-C", "INPUT", "-j", inputChain) {
+			fmt.Fprintf(&rules, "-I INPUT 1 -j %s\n", inputChain)
 		}
-		if err := run(binary, "-F", "SBVPN_INPUT"); err != nil {
+		rules.WriteString("COMMIT\n")
+		natHook := has(binary, "-t", "nat", "-C", "PREROUTING", "-j", udpChain)
+		if udp != "" {
+			fmt.Fprintf(&rules, "*nat\n:%s - [0:0]\n-F %s\n%s", udpChain, udpChain, udp)
+			if !natHook {
+				fmt.Fprintf(&rules, "-I PREROUTING 1 -j %s\n", udpChain)
+			}
+			rules.WriteString("COMMIT\n")
+		} else if natHook || has(binary, "-t", "nat", "-S", udpChain) {
+			fmt.Fprintf(&rules, "*nat\n-F %s\n", udpChain)
+			if natHook {
+				fmt.Fprintf(&rules, "-D PREROUTING -j %s\n", udpChain)
+			}
+			fmt.Fprintf(&rules, "-X %s\nCOMMIT\n", udpChain)
+		}
+		// --noflush preserves unrelated rules; each table changes at COMMIT,
+		// avoiding an externally visible empty project chain during updates.
+		if err := f.apply(ctx, binary, rules.String()); err != nil {
 			return err
 		}
-		for _, in := range inputs {
-			port := number(in["listen_port"])
-			if port < 1 || port > 65535 {
-				return errors.New("入口端口错误")
-			}
-			protocol := "tcp"
-			if in["type"] == "hysteria2" || in["type"] == "tuic" {
-				protocol = "udp"
-			}
-			if err := run(binary, "-A", "SBVPN_INPUT", "-p", protocol, "--dport", strconv.Itoa(port), "-j", "ACCEPT"); err != nil {
+		if owned {
+			if err := f.removeChain(ctx, binary, "nat", "PREROUTING", legacyUDPChain); err != nil {
 				return err
 			}
-		}
-		if subscription.Enabled {
-			if subscription.Port < 1 || subscription.Port > 65535 {
-				return errors.New("订阅端口错误")
-			}
-			if err := run(binary, "-A", "SBVPN_INPUT", "-p", "tcp", "--dport", strconv.Itoa(subscription.Port), "-j", "ACCEPT"); err != nil {
-				return err
-			}
-		}
-		for _, port := range app.Profile.Hopping {
-			if err := run(binary, "-A", "SBVPN_INPUT", "-p", "udp", "--dport", port, "-j", "ACCEPT"); err != nil {
-				return err
-			}
-		}
-		if !has(binary, "-C", "INPUT", "-j", "SBVPN_INPUT") {
-			if err := run(binary, "-I", "INPUT", "1", "-j", "SBVPN_INPUT"); err != nil {
-				return err
-			}
-		}
-	}
-	if owned {
-		for has("iptables", "-t", "nat", "-C", "PREROUTING", "-j", "SBVPN_HY2") {
-			if err := run("iptables", "-t", "nat", "-D", "PREROUTING", "-j", "SBVPN_HY2"); err != nil {
-				return err
-			}
-		}
-		_, _ = f.command(ctx, false, "iptables", "-t", "nat", "-F", "SBVPN_HY2")
-		_, _ = f.command(ctx, false, "iptables", "-t", "nat", "-X", "SBVPN_HY2")
-	}
-	if remove {
-		return os.Remove(marker)
-	}
-	if len(app.Profile.Hopping) > 0 {
-		if err := run("iptables", "-t", "nat", "-N", "SBVPN_HY2"); err != nil {
-			return err
-		}
-		port := app.Profile.Ports["hysteria2"]
-		for _, value := range app.Profile.Hopping {
-			if err := run("iptables", "-t", "nat", "-A", "SBVPN_HY2", "-p", "udp", "--dport", value, "-j", "REDIRECT", "--to-ports", strconv.Itoa(port)); err != nil {
-				return err
-			}
-		}
-		if err := run("iptables", "-t", "nat", "-I", "PREROUTING", "1", "-j", "SBVPN_HY2"); err != nil {
-			return err
 		}
 	}
 	return nil

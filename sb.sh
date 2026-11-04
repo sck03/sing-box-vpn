@@ -19,7 +19,22 @@ require_system() {
 firewall() { "$MANAGER" firewall --root "$SB_ROOT" "$@"; }
 reload_main() { systemctl restart sing-box; }
 reload_vpngate() { systemctl try-restart sing-box-vpngate; }
+reload_scope() { if [[ "$1" == vpngate ]]; then reload_vpngate; else reload_main; fi; }
 arch_name() { case $(uname -m) in x86_64) echo amd64;; aarch64|arm64) echo arm64;; *) echo '仅支持 amd64/arm64' >&2; return 1;; esac; }
+archive_legacy_files() {
+    local file archive='' unused_arch
+    case "${1:-$(arch_name)}" in amd64) unused_arch=arm64;; arm64) unused_arch=amd64;; esac
+    for file in "$APP_HOME/lib/"{assets,config,core,firewall,remote,render,store,subscription}.py "$SB_ROOT/"{sb10,sb11}.json "$APP_HOME/.bin/linux-$unused_arch"; do
+        [[ -e "$file" || -L "$file" ]] || continue
+        if [[ -z "$archive" ]]; then
+            install -d -m 0700 "$SB_ROOT/待手动删除"
+            archive=$(mktemp -d "$SB_ROOT/待手动删除/迁移-XXXXXXXX")
+        fi
+        printf '%s\n' "$file" >> "$archive/原始路径.txt"
+        mv -- "$file" "$archive/"
+    done
+    if [[ -n "$archive" ]]; then ui_hint "旧文件已移至 $archive，可在确认迁移后手动删除。"; fi
+}
 install_main() {
     require_system
     local install_arch
@@ -35,7 +50,8 @@ install_main() {
     install -d -m 0755 "$APP_HOME" "$SB_ROOT"
     if [[ "$SCRIPT_ROOT" != "$APP_HOME" ]]; then
         cp -a "$SCRIPT_ROOT/lib" "$SCRIPT_ROOT/addons" "$SCRIPT_ROOT/internal" "$SCRIPT_ROOT/cmd" "$SCRIPT_ROOT/go.mod" "$SCRIPT_ROOT/manifest.go" "$SCRIPT_ROOT/versions.json" "$SCRIPT_ROOT/LICENSE" "$SCRIPT_ROOT/NOTICE.md" "$SCRIPT_ROOT/sb.sh" "$SCRIPT_ROOT/install.sh" "$APP_HOME/"
-        if [[ -d "$SCRIPT_ROOT/.bin" ]]; then cp -a "$SCRIPT_ROOT/.bin" "$APP_HOME/"; fi
+        install -d "$APP_HOME/.bin"
+        cp -a "$SCRIPT_ROOT/.bin/linux-$install_arch" "$APP_HOME/.bin/"
     fi
     printf '%s\n' 'sck03/sing-box-vpn' > "$APP_HOME/.managed"
     local arch candidate
@@ -53,7 +69,6 @@ install_main() {
     "$MANAGER" config --root "$SB_ROOT" --core "$candidate" init
     "$MANAGER" core --root "$SB_ROOT" activate "$candidate" --no-restart >/dev/null
     rm -f -- "$candidate"
-    rm -f -- "$APP_HOME/lib/"{assets,config,core,firewall,remote,render,store,subscription}.py
     chmod 0600 "$SB_ROOT"/*.json "$SB_ROOT"/*.key 2>/dev/null || true
     cat > /etc/systemd/system/sing-box.service <<EOF
 [Unit]
@@ -78,8 +93,7 @@ EOF
     systemctl restart sing-box
     if systemctl is-enabled --quiet sb-subscription 2>/dev/null; then systemctl restart sb-subscription; fi
     if [[ -f "$SB_ROOT/vpngate/gateway.json" ]]; then systemctl restart yg-vpngate sing-box-vpngate; fi
-    # Old templates are removed only after successful generation and migration.
-    rm -f -- "$SB_ROOT/sb10.json" "$SB_ROOT/sb11.json"
+    archive_legacy_files "$install_arch"
     ui_line "$UI_GREEN" ' 五协议普通节点已安装完成。'
     show_status
     ui_hint '输入 sb 打开管理菜单；菜单 9 查看节点，菜单 17 添加 VPNGate。'
@@ -160,10 +174,11 @@ core_action() {
 }
 settings_menu() {
     while ui_choose '变更普通五协议配置' \
-        '设置 Reality 域名（SNI）' '重置 UUID / 密码' '管理 Argo 隧道' \
+        '设置 Reality 域名（SNI）' '自定义 / 重置 UUID 与密码' '管理 Argo 隧道' \
         '修改 VMess WS 路径' '配置 Telegram 通知' '配置 WARP endpoint' \
         '配置 GitLab 私有订阅' '管理本地订阅' '设置 VMess CDN 地址'; do
         case "$REPLY" in
+            2) credentials_menu normal;;
             3) ui_open_menu "$APP_HOME/lib/argo.sh" "$SB_ROOT";;
             8) subscription_menu;;
             *) ui_perform settings_action "$REPLY";;
@@ -174,7 +189,6 @@ settings_action() {
     local value
     case "$1" in
     1) ui_input value 'Reality 域名' || return "$UI_CANCEL"; cfg sni "$value"; reload_main;;
-    2) protocol_pick all || return "$UI_CANCEL"; cfg reset "$PROTOCOL"; reload_main;;
     4) ui_input value 'WS 路径' || return "$UI_CANCEL"; cfg ws "$value"; reload_main;;
     5) telegram_config;;
     6) ui_input value '新版 WireGuard endpoint JSON 文件' || return "$UI_CANCEL"; cfg warp "$value"; reload_main;;
@@ -182,20 +196,68 @@ settings_action() {
     9) ui_input value 'CDN 地址，回车清除' || return "$UI_CANCEL"; cfg cdn "$value";;
     esac
 }
+credentials_menu() {
+    local scope=${1:-normal} title='普通五协议 · UUID / 密码'
+    if [[ "$scope" == vpngate ]]; then title='VPNGate 五协议 · UUID / 密码'; fi
+    while ui_choose "$title" '自定义 UUID / 密码' '随机重置 UUID / 密码'; do
+        ui_perform credentials_action "$REPLY" "$scope"
+    done
+}
+credentials_action() {
+    local choice=$1 scope=$2 value password=''
+    protocol_pick all || return "$UI_CANCEL"
+    if [[ "$choice" == 2 ]]; then
+        cfg reset "$PROTOCOL" --scope "$scope"
+    else
+        case "$PROTOCOL" in
+            all) ui_hint '统一 UUID 会用于 VLESS、VMess、TUIC，并作为 Hy2、TUIC、AnyTLS 的密码。'
+                 ui_secret value '统一 UUID，回车随机重置' || return "$UI_CANCEL";;
+            hysteria2|anytls) ui_secret value '协议密码，回车随机重置' || return "$UI_CANCEL";;
+            *) ui_secret value 'UUID，回车随机重置' || return "$UI_CANCEL";;
+        esac
+        if [[ -z "$value" ]]; then
+            cfg reset "$PROTOCOL" --scope "$scope"
+        else
+            if [[ "$PROTOCOL" == tuic ]]; then
+                ui_secret password 'TUIC 密码，回车使用上述 UUID' || return "$UI_CANCEL"
+            fi
+            if [[ -n "$password" ]]; then
+                printf '%s\n%s' "$value" "$password" | cfg credentials "$PROTOCOL" --stdin --scope "$scope"
+            else
+                printf '%s' "$value" | cfg credentials "$PROTOCOL" --stdin --scope "$scope"
+            fi
+        fi
+    fi
+    reload_scope "$scope"
+    ui_hint '凭据已更新，请从菜单 9 获取新的节点和订阅。'
+}
 port_menu() {
-    ui_submenu '普通五协议端口管理' port_action \
-        '更改协议主端口' '添加 Hysteria-2 端口跳跃' '清除 Hysteria-2 端口跳跃'
+    local scope=${1:-normal} title='普通五协议端口管理'
+    if [[ "$scope" == vpngate ]]; then title='VPNGate 五协议端口管理'; fi
+    while ui_choose "$title" '更改协议主端口' '设置 Hysteria-2 多端口 / 跳跃' \
+        '清除 Hysteria-2 多端口' '设置 TUIC-v5 多端口复用' '清除 TUIC-v5 多端口' \
+        '生成指定 TUIC 端口的分享链接' '查看当前端口'; do
+        ui_perform port_action "$REPLY" "$scope"
+    done
 }
 port_action() {
-    local value
-    local -a ports
+    local value scope=${2:-normal} protocol=hysteria2
+    local -a ports=()
     case "$1" in
     1) protocol_pick || return "$UI_CANCEL"; ui_input value '新端口' || return "$UI_CANCEL"
-       cfg port "$PROTOCOL" "$value";firewall;reload_main;;
-    2) ui_hint '端口或范围用空格分隔，例如：31000:31100 31200'
-       ui_input value '端口 / 范围' || return "$UI_CANCEL"
-       read -r -a ports <<< "$value";cfg hopping "${ports[@]}";firewall;reload_main;;
-    3) cfg hopping;firewall;reload_main;;
+       cfg port "$PROTOCOL" "$value" --scope "$scope";firewall;reload_scope "$scope";;
+    2|3|4|5)
+       if [[ "$1" == 4 || "$1" == 5 ]]; then protocol=tuic; fi
+       if [[ "$1" == 2 || "$1" == 4 ]]; then
+           ui_hint '端口或范围用空格分隔，例如：31000:31100 31200；本次输入替换已有设置。'
+           ui_input value '端口 / 范围，回车清空' || return "$UI_CANCEL"
+           read -r -a ports <<< "$value"
+       fi
+       cfg multiport "$protocol" "${ports[@]}" --scope "$scope";firewall
+       show_status "$scope";;
+    6) ui_input value 'TUIC 主端口或已设置的复用端口' || return "$UI_CANCEL"
+       cfg links --scope "$scope" --tuic-port "$value";;
+    7) show_status "$scope";;
     esac
 }
 route_menu() {
@@ -238,16 +300,22 @@ certificate_action() {
     esac
 }
 vpngate_settings_menu() {
-    ui_submenu 'VPNGate 五协议配置' vpngate_settings_action \
-        '更改五协议主端口' '重置 UUID / 密码' '设置 Reality 域名（SNI）' \
-        '修改 VMess WS 路径' '统一导入 TLS 证书（VLESS 保持 Reality）' '查看当前节点配置'
+    while ui_choose 'VPNGate 五协议配置' \
+        '更改五协议主端口' '自定义 / 重置 UUID 与密码' '设置 Reality 域名（SNI）' \
+        '修改 VMess WS 路径' '统一导入 TLS 证书（VLESS 保持 Reality）' '查看当前节点配置' \
+        '管理 Hy2 / TUIC 多端口'; do
+        case "$REPLY" in
+            2) credentials_menu vpngate;;
+            7) port_menu vpngate;;
+            *) ui_perform vpngate_settings_action "$REPLY";;
+        esac
+    done
 }
 vpngate_settings_action() {
     local value cert key domain
     case "$1" in
     1) protocol_pick || return "$UI_CANCEL"; ui_input value '新端口' || return "$UI_CANCEL"
        cfg port "$PROTOCOL" "$value" --scope vpngate;firewall;reload_vpngate;;
-    2) protocol_pick all || return "$UI_CANCEL";cfg reset "$PROTOCOL" --scope vpngate;reload_vpngate;;
     3) ui_input value 'Reality 域名' || return "$UI_CANCEL";cfg sni "$value" --scope vpngate;reload_vpngate;;
     4) ui_input value 'WS 路径' || return "$UI_CANCEL";cfg ws "$value" --scope vpngate;reload_vpngate;;
     5) ui_input cert '证书绝对路径' || return "$UI_CANCEL"; ui_input key '私钥绝对路径' || return "$UI_CANCEL"
@@ -357,7 +425,7 @@ main_menu_render() {
     ui_option 2 '删除卸载 Sing-box'
     ui_rule
     ui_option 3 '变更配置（TLS / UUID / Argo / 订阅）'
-    ui_option 4 '更改主端口 / Hysteria-2 端口跳跃'
+    ui_option 4 '更改主端口 / Hy2 跳跃 / TUIC 多端口'
     ui_option 5 '设置普通节点域名分流'
     ui_option 6 '启动 / 停止 / 重启 Sing-box'
     ui_option 7 '更新 Sing-box-vpn 脚本'
@@ -427,9 +495,10 @@ case "${1:-menu}" in
     install) install_main;;export) cfg export --scope "${2:-normal}";;status) cfg show --scope "${2:-normal}";;links) cfg links --scope "${2:-normal}";;
     vpngate-share) share_menu vpngate;;
     vpngate-settings) vpngate_settings_menu;;
+    tuic-link) cfg links --scope "${3:-normal}" --tuic-port "${2:?需要 TUIC 端口}";;
     core-check) "$MANAGER" core --root "$SB_ROOT" check;;
     core-update) require_system;if [[ -n "${2:-}" ]];then "$MANAGER" core --root "$SB_ROOT" update --version "$2";else "$MANAGER" core --root "$SB_ROOT" update;fi;;
     core-rollback) require_system;"$MANAGER" core --root "$SB_ROOT" rollback;;
-    menu) menu;;--help|help) echo 'sb [install|export [normal|vpngate]|status|links [normal|vpngate]|core-check|core-update [VERSION]|core-rollback]；不带参数打开菜单';;
+    menu) menu;;--help|help) echo 'sb [install|export [normal|vpngate]|status|links [normal|vpngate]|tuic-link PORT [normal|vpngate]|core-check|core-update [VERSION]|core-rollback]；不带参数打开菜单';;
     *) echo '未知命令' >&2;exit 1;;
 esac

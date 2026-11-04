@@ -77,6 +77,26 @@ jobs:
           done
       - name: Build Linux management and gateway binary
         run: CGO_ENABLED=0 go build -trimpath -o "$GITHUB_WORKSPACE/.build/yg-vpngate" ./addons/vpngate/gateway
+      - name: Preserve legacy files and unused architecture during upgrade
+        run: |
+          bash -c '
+            source ./sb.sh
+            APP_HOME="$PWD/.build/archive-check/program"
+            SB_ROOT="$PWD/.build/archive-check/config"
+            mkdir -p "$APP_HOME/lib" "$APP_HOME/.bin/linux-arm64" "$SB_ROOT"
+            printf legacy-python > "$APP_HOME/lib/config.py"
+            printf legacy-config > "$SB_ROOT/sb10.json"
+            printf other-architecture > "$APP_HOME/.bin/linux-arm64/yg-vpngate"
+            archive_legacy_files amd64
+            archives=("$SB_ROOT/待手动删除/"*)
+            test ! -e "$APP_HOME/lib/config.py"
+            test ! -e "$SB_ROOT/sb10.json"
+            test ! -e "$APP_HOME/.bin/linux-arm64"
+            cmp <(printf legacy-python) "${archives[0]}/config.py"
+            cmp <(printf legacy-config) "${archives[0]}/sb10.json"
+            cmp <(printf other-architecture) "${archives[0]}/linux-arm64/yg-vpngate"
+            test "$(stat -c %a "${archives[0]}")" = 700
+          '
       - name: Online stable-core update and rollback
         run: |
           mkdir -p .test/core-updater
@@ -89,6 +109,8 @@ jobs:
           .build/yg-vpngate core --root "$PWD/.test/core-updater" check
       - name: OpenVPN, tunnel DNS and fail-closed namespace acceptance
         run: sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_NETNS_TESTS=1 "$(command -v go)" test -run '^TestLinuxNamespaceIsolation$' -count=1 -v -timeout=5m ./addons/vpngate/gateway
+      - name: IPv4 and IPv6 multiport forwarding and owned firewall cleanup
+        run: sudo env RUN_FIREWALL_TESTS=1 "$(command -v go)" test -run '^TestLinuxMultiportFirewall$' -count=1 -v -timeout=1m ./internal/manage
       - name: Build both release architectures
         run: go run ./cmd/release
       - uses: actions/upload-artifact@v7.0.2

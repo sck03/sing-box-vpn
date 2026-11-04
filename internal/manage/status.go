@@ -69,15 +69,22 @@ func writeStatusText(output io.Writer, app App, settings VPNSettings, scope, ver
 		fmt.Fprintf(&out, " [ %-13s ] 端口：%-5d  %s\n", Labels[protocol], number(inbound["listen_port"]), mode)
 	}
 	fmt.Fprintf(&out, " Reality 域名：%s\n", terminalText(profile.RealitySNI))
+	for _, item := range []struct {
+		label string
+		ports []string
+	}{{"Hy2 端口跳跃", profile.Hopping}, {"TUIC 复用端口", profile.TUICPorts}} {
+		value := "未设置"
+		if len(item.ports) > 0 {
+			value = terminalText(strings.Join(item.ports, ", "))
+		}
+		fmt.Fprintf(&out, " %s：%s\n", item.label, value)
+	}
 	if scope == normalScope {
 		argo := terminalText(text(app.Argo["domain"]))
 		if argo == "" {
 			argo = "未配置"
 		}
 		fmt.Fprintf(&out, " Argo 隧道：%s\n", argo)
-		if len(profile.Hopping) > 0 {
-			fmt.Fprintf(&out, " Hy2 端口跳跃：%s\n", terminalText(strings.Join(profile.Hopping, ", ")))
-		}
 		fmt.Fprintln(&out, " 域名分流：")
 		hasRoutes := false
 		for _, route := range []struct{ key, label string }{{"socks", "SOCKS5"}, {"warp", "WARP"}, {"direct4", "IPv4 直连"}, {"direct6", "IPv6 直连"}} {

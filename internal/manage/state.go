@@ -58,6 +58,7 @@ type Profile struct {
 	Secrets       Secrets        `json:"secrets,omitzero"`
 	Country       string         `json:"country,omitempty"`
 	Hopping       []string       `json:"hopping,omitempty"`
+	TUICPorts     []string       `json:"tuic_ports,omitempty"`
 	HandshakeHost string         `json:"handshake_host,omitempty"`
 	HandshakePort int            `json:"handshake_port,omitempty"`
 }
@@ -229,14 +230,14 @@ func (cache certificateCache) get(path string) (certificateInfo, error) {
 	return info, nil
 }
 
-func AvailablePort(used map[int]bool) (int, error) {
+func AvailablePort(used map[int]bool, excluded ...portRange) (int, error) {
 	for i := 0; i < 200; i++ {
 		value, err := rand.Int(rand.Reader, big.NewInt(40000))
 		if err != nil {
 			return 0, err
 		}
 		port := 20000 + int(value.Int64())
-		if !used[port] && probePort(port) == nil {
+		if !used[port] && !portInRanges(port, excluded) && probePort(port) == nil {
 			used[port] = true
 			return port, nil
 		}

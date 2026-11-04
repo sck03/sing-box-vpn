@@ -25,12 +25,29 @@ curl -fsSL https://raw.githubusercontent.com/sck03/sing-box-vpn/main/install.sh 
 | --- | --- |
 | 整套卸载（输入 y 确认，回车取消） | 2 |
 | 普通五协议凭据、Reality SNI、VMess WS/CDN、Argo 等 | 3 |
-| 普通五协议端口、Hy2 跳跃 | 4 |
+| 普通五协议端口、Hy2 跳跃、TUIC 多端口 | 4 |
 | 普通节点域名分流 / 证书 | 5 / 12 |
 | 普通与 VPNGate 分别生成、查看、推送 | 9 |
 | 仅卸载 VPNGate，保留普通节点 | 17 → 12 |
 | VPNGate 节点与订阅 | 17 → 13 |
 | VPNGate 五协议端口、凭据、SNI、WS、统一 TLS 证书 | 17 → 14 |
+| VPNGate 的 Hy2 跳跃 / TUIC 多端口 | 17 → 14 → 7 |
+
+自定义凭据在 **3 → 2 → 1**，VPNGate 使用 **17 → 14 → 2 → 1**。
+选择“全部协议”后填写一个标准 UUID，会同时用于 VLESS、VMess、TUIC 的 UUID 和
+Hy2、TUIC、AnyTLS 的密码；也可以单独修改一个协议，TUIC 可另填独立密码。
+输入回车或选择“随机重置”仍可自动生成凭据。修改只作用于所选的普通节点或当前 VPNGate 国家，
+随后同步服务配置和订阅；Reality 密钥、WS 路径及网关内部认证保持原值。
+
+TUIC 多端口在普通菜单 **4 → 4**，或 VPNGate 菜单 **17 → 14 → 7 → 4**。
+支持多个单端口、范围及其组合，例如 `31000:31100 31200`；本次输入替换旧设置，菜单 **5** 清空。
+与原版相同，额外 UDP 端口转发到主端口，各端口可同时使用同一组凭据；IPv4/IPv6 入口分别配置规则。
+程序合并重复、重叠和连续范围，拒绝与其他节点、历史国家、订阅及已占用端口冲突的设置。
+更换主端口会保留复用范围并更新转发目标；修改复用范围无需重启服务。
+
+默认订阅仍保留五种协议的主端口。TUIC 客户端使用一个指定端口，菜单 **4 → 6** 可生成
+某个主端口或复用端口的专用 URI，也可运行 `sb tuic-link 31200` 或
+`sb tuic-link 31200 vpngate`。Hy2 的自动端口跳跃参数继续正常导出。
 
 两套导出不混合，VPNGate 只包含当前国家的五个节点：
 
@@ -73,6 +90,7 @@ sb core-rollback
 程序不会为了节省资源定时断开 TCP 或轮换出口。UDP 收发任一方向有数据都会续期，
 仅在双方均空闲约 60 秒后回收。健康检查复用现有隧道；修改 VPNGate 入口设置只重启对应
 sing-box 服务，导出订阅不会重启服务。真实隧道故障或出口校验失败仍会阻断并尝试恢复。
+两套客户端配置的 AnyTLS 在空闲超时后保留一个会话，继续按需建立并发会话，减少空闲连接占用。
 
 VPNGate 是志愿者网络。“家宽候选”采用已知自营机房排除和出口运营商信息筛选，
 并非住宅网络认证。节点可能掉线、满员或变更 IP；固定节点模式也无法保证永久固定 IP。
@@ -112,6 +130,9 @@ yg-vpngate ctl policy --asns 12345,67890
 已有 sing-box-yg 的 `/etc/s-box/sb.json` 会先备份为 `migration-backup.json`，再迁移到
 单一现代模板；保留已有入口的端口、用户凭据、Reality 密钥与证书路径。
 旧内核、旧 geosite/geoip 数据库分支、旧配置修改方式不再维护。
+安装只复制本机架构的管理二进制。升级成功后，另一架构的旧二进制、旧 Python 管理模块
+和 `sb10.json` / `sb11.json` 会移入
+`/etc/s-box/待手动删除/迁移-XXXXXXXX/`，附原始路径清单，供你确认后手动删除。
 证书可通过菜单 12 导入或使用 Certbot；普通 VMess 支持 Argo/CDN，VPNGate VMess
 首版使用独立 WS 入口。Telegram 和 GitLab 只在明确选择推送时使用，GitLab 仅允许私有项目。
 
@@ -128,6 +149,8 @@ go vet ./...
 go build -trimpath -o .build/yg-vpngate ./addons/vpngate/gateway
 sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_NETNS_TESTS=1 \
   "$(command -v go)" test -run '^TestLinuxNamespaceIsolation$' -count=1 -v ./addons/vpngate/gateway
+sudo env RUN_FIREWALL_TESTS=1 "$(command -v go)" test \
+  -run '^TestLinuxMultiportFirewall$' -count=1 -v -timeout=1m ./internal/manage
 go run ./cmd/release
 ```
 

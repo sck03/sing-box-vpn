@@ -16,7 +16,9 @@ import (
 	"unicode/utf16"
 )
 
-func NewProfile(root string, used map[int]bool, suffix string) (Profile, error) {
+const anyTLSMinIdleSessions = 1
+
+func NewProfile(root string, used map[int]bool, suffix string, excluded ...portRange) (Profile, error) {
 	directory := root
 	if suffix != "" {
 		directory = filepath.Join(root, "vpngate")
@@ -26,7 +28,7 @@ func NewProfile(root string, used map[int]bool, suffix string) (Profile, error) 
 		return p, err
 	}
 	for _, protocol := range Protocols {
-		port, err := AvailablePort(used)
+		port, err := AvailablePort(used, excluded...)
 		if err != nil {
 			return p, err
 		}
@@ -178,7 +180,7 @@ func outboundWithCache(inbound Object, p Profile, address, name string, cache ce
 	case "tuic":
 		n["congestion_control"], n["udp_relay_mode"], n["zero_rtt_handshake"], n["heartbeat"] = "bbr", "native", false, "10s"
 	case "anytls":
-		n["idle_session_check_interval"], n["idle_session_timeout"], n["min_idle_session"] = "30s", "30s", 5
+		n["idle_session_check_interval"], n["idle_session_timeout"], n["min_idle_session"] = "30s", "30s", anyTLSMinIdleSessions
 	case "hysteria2":
 		if len(p.Hopping) > 0 {
 			ports := make([]string, len(p.Hopping))
@@ -341,6 +343,9 @@ func MihomoNode(n Object, p Profile) Object {
 		}
 		if kind == "tuic" {
 			out["congestion-controller"], out["udp-relay-mode"] = "bbr", "native"
+		}
+		if kind == "anytls" {
+			out["idle-session-check-interval"], out["idle-session-timeout"], out["min-idle-session"] = 30, 30, anyTLSMinIdleSessions
 		}
 		if kind == "hysteria2" && len(p.Hopping) > 0 {
 			out["ports"] = strings.ReplaceAll(strings.Join(p.Hopping, ","), ":", "-")

@@ -314,6 +314,7 @@ func CommitApp(ctx context.Context, root, core string, app *App) error {
 		return err
 	}
 	app.Version = version
+	syncProfileSecrets(&app.Profile, app.Inbounds)
 	server, err := ServerConfig(app.Inbounds, app.Routing, app.Warp, app.SocksPort)
 	if err != nil {
 		return err
@@ -377,8 +378,11 @@ func PrepareVPN(ctx context.Context, root, core string, app App, country string)
 		return s, err
 	}
 	if _, exists := s.Profiles[country]; !exists {
-		used := usedPorts(app, s)
-		p, err := NewProfile(root, used, country+"-")
+		used, ranges, err := allocationPorts(root, app, s)
+		if err != nil {
+			return s, err
+		}
+		p, err := NewProfile(root, used, country+"-", ranges...)
 		if err != nil {
 			return s, err
 		}
@@ -449,34 +453,26 @@ func mutateVPN(app App, settings VPNSettings, private map[string]Secrets, operat
 	if !exists || p.Ports == nil || secret.UUID == nil || secret.Passwords == nil {
 		return errors.New("当前 VPNGate 国家缺少独立凭据")
 	}
-	if !slices.Contains([]string{"port", "reset", "sni", "ws", "tls"}, operation) {
-		return errors.New("VPNGate 支持 port、reset、sni、ws 和 tls 设置")
+	if !slices.Contains([]string{"port", "hopping", "multiport", "credentials", "reset", "sni", "ws", "tls"}, operation) {
+		return errors.New("VPNGate 支持 port、hopping、multiport、credentials、reset、sni、ws 和 tls 设置")
 	}
 	if operation == "tls" && (len(values) == 0 || values[0] != "all") {
 		return errors.New("VPNGate 的 TLS 证书统一设置，请使用 tls all；VLESS 保持 Reality")
 	}
-	if operation == "port" && len(values) == 2 {
-		port, _ := strconv.Atoi(values[1])
-		if port != p.Ports[values[0]] && usedPorts(app, settings)[port] {
-			return errors.New("端口已被普通节点或其他 VPNGate 入口使用")
+	if slices.Contains([]string{"port", "hopping", "multiport"}, operation) {
+		if err := validatePortMutation("", app, settings, vpngateScope, operation, values); err != nil {
+			return err
 		}
 	}
-	p.Secrets = secret
+	p.Secrets, p.Country = secret, cc
 	current := App{Profile: p, Inbounds: MakeInbounds(p, "vg-"+cc+"-")}
 	if err := mutateApp(&current, settings, operation, values); err != nil {
 		return err
 	}
 	p = current.Profile
+	secret = p.Secrets
 	for _, in := range current.Inbounds {
 		kind := text(in["type"])
-		for _, user := range objects(in["users"]) {
-			if value, ok := user["uuid"]; ok {
-				secret.UUID[kind] = text(value)
-			}
-			if value, ok := user["password"]; ok {
-				secret.Passwords[kind] = text(value)
-			}
-		}
 		if operation == "tls" && kind == "vmess" {
 			tls := object(in["tls"])
 			p.Certificate, p.Key, p.VMessTLS = text(tls["certificate_path"]), text(tls["key_path"]), true
@@ -489,7 +485,7 @@ func mutateVPN(app App, settings VPNSettings, private map[string]Secrets, operat
 
 func hexSecret() string { return fmt.Sprintf("%x", randomBytes(32)) }
 func usedPorts(app App, settings VPNSettings) map[int]bool {
-	used := map[int]bool{settings.ProxyPort: true}
+	used := map[int]bool{settings.ProxyPort: true, app.SocksPort: true}
 	for _, inbound := range app.Inbounds {
 		used[number(inbound["listen_port"])] = true
 	}
@@ -507,7 +503,7 @@ func ImportExisting(root string) (Profile, []Object, map[string][]string, Object
 	if err != nil {
 		return Profile{}, nil, nil, nil, err
 	}
-	used := map[int]bool{}
+	used := map[int]bool{40000: true, 7928: true}
 	for _, inbound := range objects(existing["inbounds"]) {
 		used[number(inbound["listen_port"])] = true
 	}
@@ -618,6 +614,7 @@ func ImportExisting(root string) (Profile, []Object, map[string][]string, Object
 			}
 		}
 	}
+	syncProfileSecrets(&p, result)
 	return p, result, routing, warp, nil
 }
 
@@ -661,19 +658,40 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 	timeout := options.Duration("timeout", 90*time.Second, "Argo wait timeout")
 	scope := options.String("scope", normalScope, "normal or vpngate nodes")
 	format := options.String("format", "json", "show output: json or text")
+	stdin := options.Bool("stdin", false, "read custom UUID/password from stdin")
+	tuicPort := options.Int("tuic-port", 0, "TUIC port for a single share link")
 	if err := parseOptions(options, args[1:]); err != nil {
 		return err
 	}
+	tuicRequested := false
+	options.Visit(func(option *flag.Flag) {
+		if option.Name == "tuic-port" {
+			tuicRequested = true
+		}
+	})
 	if *format != "json" && (*format != "text" || operation != "show") {
 		return errors.New("show 支持 --format json 或 text")
 	}
 	if _, err := exportDirectory(*root, *scope); err != nil {
 		return err
 	}
-	if *scope == vpngateScope && !slices.Contains([]string{"show", "export", "links", "subscription-urls", "port", "reset", "sni", "ws", "tls"}, operation) {
+	if *scope == vpngateScope && !slices.Contains([]string{"show", "export", "links", "subscription-urls", "port", "hopping", "multiport", "credentials", "reset", "sni", "ws", "tls"}, operation) {
 		return errors.New("此操作不支持 --scope vpngate")
 	}
 	values := options.Args()
+	if *stdin {
+		if operation != "credentials" || len(values) != 1 {
+			return errors.New("--stdin 仅用于 credentials，并需要指定一个协议或 all")
+		}
+		credentials, err := readCredentials(os.Stdin)
+		if err != nil {
+			return err
+		}
+		values = append(values, credentials...)
+	}
+	if tuicRequested && (operation != "links" || *tuicPort < 1 || *tuicPort > 65535) {
+		return errors.New("--tuic-port 仅用于 links，端口须为 1-65535")
+	}
 	if operation == "argo-watch" {
 		return waitArgo(ctx, *root, *core, *timeout, output)
 	}
@@ -741,7 +759,12 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 					ports[text(in["type"])] = in["listen_port"]
 				}
 			}
-			status := Object{"core": version, "address": app.Address, "protocols": ports, "scope": *scope}
+			profile := app.Profile
+			if *scope == vpngateScope {
+				profile = settings.Profiles[settings.ActiveCountry]
+			}
+			status := Object{"core": version, "address": app.Address, "protocols": ports, "scope": *scope,
+				"multiport": Object{"hysteria2": profile.Hopping, "tuic": profile.TUICPorts}}
 			if *scope == vpngateScope {
 				status["country"] = settings.ActiveCountry
 			} else {
@@ -774,6 +797,9 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 			if *scope == vpngateScope && settings.ActiveCountry == "" {
 				return errors.New("请先通过菜单 17 安装并选择 VPNGate 国家")
 			}
+			if tuicRequested {
+				return writeTUICLink(output, app, settings, private, *scope, *tuicPort)
+			}
 			files, links, err := exportBundle(ctx, *root, *core, app, settings, private)
 			if err != nil {
 				return err
@@ -801,6 +827,11 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 			files["vpngate/settings.json"] = nil
 			return publish(*root, files)
 		}
+		if slices.Contains([]string{"port", "hopping", "multiport"}, operation) {
+			if err := validatePortMutation(*root, app, settings, *scope, operation, values); err != nil {
+				return err
+			}
+		}
 		if *scope == vpngateScope {
 			if err := mutateVPN(app, settings, private, operation, values); err != nil {
 				return err
@@ -814,8 +845,6 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 	})
 }
 
-var hoppingPattern = regexp.MustCompile(`^\d+(?::\d+)?$`)
-
 func mutateApp(app *App, settings VPNSettings, operation string, values []string) error {
 	count := func(n int) error {
 		if len(values) != n {
@@ -825,49 +854,10 @@ func mutateApp(app *App, settings VPNSettings, operation string, values []string
 	}
 	protocol := func(value string) bool { return slices.Contains(Protocols, value) }
 	switch operation {
-	case "port":
-		if err := count(2); err != nil {
-			return err
-		}
-		p, err := strconv.Atoi(values[1])
-		if err != nil || p < 1 || p > 65535 || !protocol(values[0]) {
-			return errors.New("协议或端口错误")
-		}
-		old := app.Profile.Ports[values[0]]
-		if p != old {
-			if usedPorts(*app, settings)[p] {
-				return errors.New("端口已被其他入口使用")
-			}
-			if err = probePort(p); err != nil {
-				return err
-			}
-		}
-		for _, in := range app.Inbounds {
-			if in["type"] == values[0] {
-				in["listen_port"] = p
-			}
-		}
-		app.Profile.Ports[values[0]] = p
-	case "reset":
-		if err := count(1); err != nil {
-			return err
-		}
-		if values[0] != "all" && !protocol(values[0]) {
-			return errors.New("未知协议")
-		}
-		for _, in := range app.Inbounds {
-			if values[0] != "all" && in["type"] != values[0] {
-				continue
-			}
-			for _, user := range objects(in["users"]) {
-				if _, ok := user["uuid"]; ok {
-					user["uuid"] = randomUUID()
-				}
-				if _, ok := user["password"]; ok {
-					user["password"] = randomSecret()
-				}
-			}
-		}
+	case "port", "hopping", "multiport":
+		return changePorts(app, settings, operation, values)
+	case "reset", "credentials":
+		return changeCredentials(app, operation, values)
 	case "route":
 		if len(values) == 0 || !slices.Contains([]string{"socks", "warp", "direct4", "direct6"}, values[0]) {
 			return errors.New("未知分流通道")
@@ -997,22 +987,6 @@ func mutateApp(app *App, settings VPNSettings, operation string, values []string
 			return errors.New("请输入新版 WireGuard endpoint JSON")
 		}
 		app.Warp = warp
-	case "hopping":
-		for _, value := range values {
-			if !hoppingPattern.MatchString(value) {
-				return errors.New("端口跳跃使用 20000:20100 或单端口格式")
-			}
-			parts := strings.Split(value, ":")
-			first, err := strconv.Atoi(parts[0])
-			if err != nil || first < 1 || first > 65535 {
-				return errors.New("端口范围错误")
-			}
-			last, err := strconv.Atoi(parts[len(parts)-1])
-			if err != nil || last < first || last > 65535 {
-				return errors.New("端口范围错误")
-			}
-		}
-		app.Profile.Hopping = append([]string{}, values...)
 	default:
 		return errors.New("未知配置操作")
 	}
