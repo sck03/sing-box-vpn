@@ -87,7 +87,7 @@ func writeStatusText(output io.Writer, app App, settings VPNSettings, scope, ver
 		fmt.Fprintf(&out, " Argo 隧道：%s\n", argo)
 		fmt.Fprintln(&out, " 域名分流：")
 		hasRoutes := false
-		for _, route := range []struct{ key, label string }{{"socks", "SOCKS5"}, {"warp", "WARP"}, {"direct4", "IPv4 直连"}, {"direct6", "IPv6 直连"}} {
+		for _, route := range []struct{ key, label string }{{"socks", "SOCKS5"}, {"warp", "WARP"}, {"direct4", "IPv4 优先解析"}, {"direct6", "IPv6 优先解析"}} {
 			if domains := app.Routing[route.key]; len(domains) > 0 {
 				hasRoutes = true
 				fmt.Fprintf(&out, "   %s：%s\n", route.label, terminalText(strings.Join(domains, ", ")))

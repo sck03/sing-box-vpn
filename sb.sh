@@ -76,6 +76,7 @@ Description=sing-box-vpn ordinary five-protocol service
 After=network-online.target
 Wants=network-online.target
 [Service]
+ExecStartPre=/usr/local/bin/yg-vpngate config --root $SB_ROOT recover
 ExecStart=$CORE run -c $SB_ROOT/sb.json
 ExecReload=/bin/kill -HUP \$MAINPID
 WorkingDirectory=$SB_ROOT
@@ -102,7 +103,7 @@ write_subscription_service() {
     cat > /etc/systemd/system/sb-subscription.service <<EOF
 [Unit]
 Description=Token protected sing-box-vpn subscriptions
-After=network-online.target
+After=network-online.target sing-box.service sing-box-vpngate.service
 [Service]
 ExecStart=/usr/local/bin/yg-vpngate subscription --root $SB_ROOT
 WorkingDirectory=$SB_ROOT
@@ -263,13 +264,16 @@ port_action() {
 route_menu() {
     ui_submenu '普通节点域名分流' route_action \
         '设置 SOCKS5 分流域名' '设置 WARP 分流域名' \
-        '设置 IPv4 直连域名' '设置 IPv6 直连域名' '查看当前分流'
+        '设置 IPv4 优先解析域名' '设置 IPv6 优先解析域名' '查看当前分流'
 }
 route_action() {
     local value channel
     local -a channels=(socks warp direct4 direct6) domains
     if [[ "$1" == 5 ]]; then show_status; return; fi
     channel=${channels[$1-1]}
+    if [[ "$channel" == direct4 || "$channel" == direct6 ]]; then
+        ui_hint '设置目标域名的解析优先级，保留可用地址回退；客户端直接传来的 IP 保持原值。'
+    fi
     ui_input value '后缀域名，空格分隔；回车清空' || return "$UI_CANCEL"
     read -r -a domains <<< "$value"
     cfg route "$channel" "${domains[@]}"; reload_main
@@ -495,10 +499,11 @@ case "${1:-menu}" in
     install) install_main;;export) cfg export --scope "${2:-normal}";;status) cfg show --scope "${2:-normal}";;links) cfg links --scope "${2:-normal}";;
     vpngate-share) share_menu vpngate;;
     vpngate-settings) vpngate_settings_menu;;
+    recover) cfg recover;;
     tuic-link) cfg links --scope "${3:-normal}" --tuic-port "${2:?需要 TUIC 端口}";;
     core-check) "$MANAGER" core --root "$SB_ROOT" check;;
     core-update) require_system;if [[ -n "${2:-}" ]];then "$MANAGER" core --root "$SB_ROOT" update --version "$2";else "$MANAGER" core --root "$SB_ROOT" update;fi;;
     core-rollback) require_system;"$MANAGER" core --root "$SB_ROOT" rollback;;
-    menu) menu;;--help|help) echo 'sb [install|export [normal|vpngate]|status|links [normal|vpngate]|tuic-link PORT [normal|vpngate]|core-check|core-update [VERSION]|core-rollback]；不带参数打开菜单';;
+    menu) menu;;--help|help) echo 'sb [install|export [normal|vpngate]|status|links [normal|vpngate]|tuic-link PORT [normal|vpngate]|recover|core-check|core-update [VERSION]|core-rollback]；不带参数打开菜单';;
     *) echo '未知命令' >&2;exit 1;;
 esac

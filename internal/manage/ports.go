@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 type portRange struct{ first, last int }
@@ -257,6 +259,32 @@ func checkSystemPorts(ranges []portRange, ownPort int) error {
 		}
 		err = scanner.Err()
 		file.Close()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func probePort(port int) error {
+	for _, probe := range []struct{ family, host string }{{"4", "0.0.0.0"}, {"6", "::"}, {"4", "127.0.0.1"}, {"6", "::1"}} {
+		// Unix wildcard binds cover loopback; Windows can accept both bindings.
+		if runtime.GOOS != "windows" && (probe.host == "127.0.0.1" || probe.host == "::1") {
+			continue
+		}
+		address := net.JoinHostPort(probe.host, strconv.Itoa(port))
+		tcp, err := net.Listen("tcp"+probe.family, address)
+		if err == nil {
+			var udp net.PacketConn
+			udp, err = net.ListenPacket("udp"+probe.family, address)
+			if udp != nil {
+				udp.Close()
+			}
+			tcp.Close()
+		}
+		if probe.family == "6" && (errors.Is(err, syscall.EAFNOSUPPORT) || errors.Is(err, syscall.EADDRNOTAVAIL) || errors.Is(err, syscall.EPROTONOSUPPORT)) {
+			continue
+		}
 		if err != nil {
 			return err
 		}

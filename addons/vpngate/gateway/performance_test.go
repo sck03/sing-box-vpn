@@ -52,3 +52,19 @@ func BenchmarkUDPFrameRead(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkPinnedCandidates(b *testing.B) {
+	nodes, err := parseNodes(benchmarkNodes(250))
+	if err != nil {
+		b.Fatal(err)
+	}
+	cfg := defaults()
+	cfg.Mode, cfg.FixedHost = "fixed", nodes[0].Host
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if pool := candidates(cfg, nodes, nodes[0], false); len(pool) != 1 {
+			b.Fatal("pinned node was not selected")
+		}
+	}
+}

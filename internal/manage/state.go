@@ -18,11 +18,9 @@ import (
 	"fmt"
 	"io"
 	"math/big"
-	"net"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -202,6 +200,28 @@ func EnsureCertificate(certPath, keyPath, domain string) error {
 	return err
 }
 
+func validateImportedCertificate(certPath, keyPath, domain string) error {
+	pair, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		return err
+	}
+	cert := pair.Leaf
+	if cert == nil {
+		cert, err = x509.ParseCertificate(pair.Certificate[0])
+		if err != nil {
+			return err
+		}
+	}
+	if err := cert.VerifyHostname(domain); err != nil {
+		return fmt.Errorf("证书不包含域名 %s: %w", domain, err)
+	}
+	now := time.Now()
+	if now.Before(cert.NotBefore) || !now.Before(cert.NotAfter) {
+		return errors.New("证书尚未生效或已过期，请先续期")
+	}
+	return nil
+}
+
 type certificateInfo struct {
 	Pin, Hash  string
 	SelfSigned bool
@@ -244,26 +264,18 @@ func AvailablePort(used map[int]bool, excluded ...portRange) (int, error) {
 	}
 	return 0, errors.New("没有可用入口端口")
 }
-func probePort(port int) error {
-	address := net.JoinHostPort("0.0.0.0", strconv.Itoa(port))
-	tcp, err := net.Listen("tcp4", address)
-	if err != nil {
-		return err
-	}
-	defer tcp.Close()
-	udp, err := net.ListenPacket("udp4", address)
-	if err == nil {
-		udp.Close()
-	}
-	return err
-}
 
-var domainPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$`)
+var domainLabelPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
 var countryPattern = regexp.MustCompile(`^[A-Z]{2}$`)
 
 func validateDomain(value string) error {
-	if !domainPattern.MatchString(value) {
+	if len(value) == 0 || len(value) > 253 {
 		return errors.New("域名格式错误")
+	}
+	for label := range strings.SplitSeq(value, ".") {
+		if !domainLabelPattern.MatchString(label) {
+			return errors.New("域名格式错误")
+		}
 	}
 	return nil
 }

@@ -131,6 +131,16 @@ func parseGeo(b []byte, ip string) (Geo, error) {
 	if v["error"] != nil && v["error"] != false && v["error"] != "" {
 		return Geo{}, errors.New("geolocation provider reported an error")
 	}
+	reported, exists := v["ip"]
+	if !exists {
+		reported, exists = v["query"]
+	}
+	if exists {
+		address, _ := reported.(string)
+		if parsed := net.ParseIP(address); parsed == nil || !parsed.Equal(net.ParseIP(ip)) {
+			return Geo{}, errors.New("geolocation address does not match the tunnel exit")
+		}
+	}
 	g := Geo{IP: ip}
 	str := func(m map[string]any, k string) string { s, _ := m[k].(string); return s }
 	obj := func(m map[string]any, k string) map[string]any { a, _ := m[k].(map[string]any); return a }

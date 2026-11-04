@@ -9,6 +9,20 @@
 Hy2 server_ports 的单端口写成 31200:31200。Mihomo 使用自身格式和版本校验。
 SRS 中国规则仍支持；它不是被移除的旧 geosite/geoip 数据库选项。
 
+域名分流保留。官方 1.14 的路由规则仍支持 `domain`、`domain_suffix`、`domain_keyword`、
+`domain_regex` 和 `rule_set`，SOCKS5 / WARP 仍可作为匹配后的出口。
+旧 geosite/geoip 数据库在 1.12 被移除，旧 DNS server 格式在 1.14 被移除；
+旧字段的迁移不等于取消域名分流。
+
+本项目的 IPv4 / IPv6 设置使用 `resolve` 的 `prefer_ipv4` / `prefer_ipv6`。
+它们是解析优先级，保留另一地址族的可用回退。1.14.4 的 `resolve` 仅解析请求目标中的域名，
+不会用 HTTP Host / TLS SNI 改写已有目标 IP；菜单与状态输出据此使用“优先解析”表述。
+真实核心验收覆盖域名请求、IP 请求的 HTTP 域名嗅探以及 IPv6 优先设置对仅 A 记录目标的回退。
+
+官方参考：[路由规则](https://sing-box.sagernet.org/configuration/route/rule/)、
+[resolve 动作](https://sing-box.sagernet.org/configuration/route/rule_action/#resolve)、
+[废弃功能清单](https://sing-box.sagernet.org/deprecated/)。
+
 Go 验收包含配置/迁移、认证代理、真实五协议 TCP/UDP，以及受控 Linux OpenVPN
 与命名空间测试。公共节点的可用性和特定 VPS 网络仍取决于实际运行环境。
 许可证与代码来源见 NOTICE.md。

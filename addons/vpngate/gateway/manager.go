@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -54,6 +55,10 @@ type cachedGeo struct {
 	value   Geo
 	expires time.Time
 }
+
+type probeUnavailable string
+
+func (e probeUnavailable) Error() string { return string(e) }
 
 func newManager(c Config, path string) *manager {
 	m := &manager{cfg: c, configPath: path, status: Status{Version: version, State: "stopped", Country: c.Country, Mode: c.Mode, Updated: time.Now()}, connections: map[net.Conn]bool{}, wake: make(chan struct{}, 1), factory: func(c Config) tunnel { return &backend{cfg: c} }}
@@ -157,6 +162,10 @@ func (m *manager) apply(c Config, swap bool) error {
 	if c.Listen != m.cfg.Listen || c.RunDir != m.cfg.RunDir || c.DataDir != m.cfg.DataDir {
 		m.mu.Unlock()
 		return errors.New("restart the daemon to change its listening port or directories")
+	}
+	if !swap && reflect.DeepEqual(c, m.cfg) {
+		m.mu.Unlock()
+		return nil
 	}
 	if e := atomicJSON(m.configPath, c); e != nil {
 		m.mu.Unlock()
@@ -326,20 +335,38 @@ func candidates(c Config, nodes []Node, previous Node, swap bool) []Node {
 		seen[n.Host] = true
 	}
 	if c.Mode == "fixed" {
-		for _, n := range append([]Node{previous}, nodes...) {
-			if (c.FixedHost != "" && n.Host == c.FixedHost) || (c.FixedHost == "" && n.Host == previous.Host && n.Host != "") {
+		host := c.FixedHost
+		if host == "" {
+			host = previous.Host
+		}
+		for _, n := range nodes {
+			if host != "" && n.Host == host {
 				add(n)
-				if len(pool) > 0 || c.FixedHost != "" {
+				if len(pool) > 0 {
 					return pool
 				}
 			}
+		}
+		if host != "" && previous.Host == host {
+			add(previous)
+		}
+		if len(pool) > 0 {
+			return pool
 		}
 		if c.FixedHost != "" {
 			return nil
 		}
 	}
 	if !swap {
-		add(previous)
+		for _, n := range nodes {
+			if n.Host == previous.Host {
+				add(n)
+				break
+			}
+		}
+		if len(pool) == 0 {
+			add(previous)
+		}
 	}
 	for _, n := range nodes {
 		add(n)
@@ -367,7 +394,7 @@ func (m *manager) probe(ctx context.Context, c Config, active tunnel, client *ht
 	}
 	b, e := readHTTP(ctx, client, c.ProbeURL, 512)
 	if e != nil {
-		return Geo{}, errors.New("tunnel exit probe failed")
+		return Geo{}, probeUnavailable("tunnel exit probe failed")
 	}
 	ip := strings.TrimSpace(string(b))
 	if !publicIPv4(ip) {
@@ -375,9 +402,13 @@ func (m *manager) probe(ctx context.Context, c Config, active tunnel, client *ht
 	}
 	host, e := readHTTP(ctx, m.hostClient, c.ProbeURL, 512)
 	if e != nil {
-		return Geo{}, errors.New("host exit verification unavailable")
+		return Geo{}, probeUnavailable("host exit verification unavailable")
 	}
-	if strings.TrimSpace(string(host)) == ip {
+	hostIP := strings.TrimSpace(string(host))
+	if !publicIPv4(hostIP) {
+		return Geo{}, probeUnavailable("host exit probe did not return public IPv4")
+	}
+	if hostIP == ip {
 		return Geo{}, errors.New("tunnel exit equals VPS exit")
 	}
 	cacheKey := c.GeoURL + "\x00" + ip
@@ -389,11 +420,11 @@ func (m *manager) probe(ctx context.Context, c Config, active tunnel, client *ht
 	}
 	metadata, e := readHTTP(ctx, m.hostClient, fmt.Sprintf(c.GeoURL, ip), 1<<20)
 	if e != nil {
-		return Geo{}, errors.New("exit country verification unavailable")
+		return Geo{}, probeUnavailable("exit country verification unavailable")
 	}
 	g, e := parseGeo(metadata, ip)
 	if e != nil {
-		return g, e
+		return g, probeUnavailable("exit country verification unavailable: " + e.Error())
 	}
 	m.mu.Lock()
 	now := time.Now()
@@ -412,6 +443,33 @@ func (m *manager) probe(ctx context.Context, c Config, active tunnel, client *ht
 	m.geoCache[cacheKey] = cachedGeo{value: g, expires: now.Add(15 * time.Minute)}
 	m.mu.Unlock()
 	return g, c.acceptGeo(g)
+}
+
+// Block forwarding on the first failure; transient lookups get two retries
+// on the existing tunnel before the connection loop tears it down.
+func (m *manager) recheck(ctx context.Context, c Config, active tunnel, n Node, client *http.Client) (Geo, error) {
+	for attempt := 0; ; attempt++ {
+		g, err := m.probe(ctx, c, active, client)
+		if err == nil || ctx.Err() != nil {
+			return g, err
+		}
+		m.revoke()
+		m.setStatus("verifying", err.Error()+"; forwarding blocked", n, nil)
+		var temporary probeUnavailable
+		if !errors.As(err, &temporary) || attempt == 2 {
+			return g, err
+		}
+		if client != nil {
+			client.CloseIdleConnections()
+		}
+		timer := time.NewTimer(2 * time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return Geo{}, context.Cause(ctx)
+		case <-timer.C:
+		}
+	}
 }
 
 func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
@@ -542,13 +600,20 @@ func (m *manager) monitor(ctx context.Context, c Config, active tunnel, n Node, 
 		case <-ctx.Done():
 			return context.Cause(ctx)
 		case <-tick.C:
-			g, e := m.probe(ctx, c, active, client)
+			g, e := m.recheck(ctx, c, active, n, client)
 			if ctx.Err() != nil {
 				return context.Cause(ctx)
 			}
 			if e != nil {
 				return e
 			}
+			m.mu.Lock()
+			if ctx.Err() != nil || m.current != active || m.cfg.Country != c.Country {
+				m.mu.Unlock()
+				return errors.New("tunnel changed during health verification")
+			}
+			m.ready = true
+			m.mu.Unlock()
 			m.setStatus("ready", "volunteer / residential candidate", n, &g)
 		}
 	}

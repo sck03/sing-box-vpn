@@ -199,6 +199,8 @@ func (w *worker) handle(parent context.Context, c net.Conn) {
 		return
 	}
 	defer remote.Close()
+	stop := context.AfterFunc(parent, func() { c.Close(); remote.Close() })
+	defer stop()
 	if e = writeObject(c, dialResponse{Address: remote.RemoteAddr().String()}); e != nil {
 		return
 	}

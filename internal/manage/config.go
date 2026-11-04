@@ -1,7 +1,6 @@
 package manage
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -13,7 +12,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -43,96 +41,6 @@ func (files fileBundle) json(name string, value any) error {
 		files[name] = data
 	}
 	return err
-}
-
-// Callers validate the whole bundle first; only changed files need staging and fsync.
-func publish(root string, files fileBundle) error {
-	names := make([]string, 0, len(files))
-	for name := range files {
-		if !filepath.IsLocal(name) {
-			return errors.New("无效配置路径")
-		}
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	type previousFile struct {
-		data   []byte
-		exists bool
-	}
-	previous := map[string]previousFile{}
-	changed := make([]string, 0, len(names))
-	for _, name := range names {
-		path := filepath.Join(root, name)
-		data, err := os.ReadFile(path)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		if err != nil && files[name] == nil {
-			continue
-		}
-		if err == nil && files[name] != nil && bytes.Equal(data, files[name]) {
-			info, statErr := os.Lstat(path)
-			if statErr != nil {
-				return statErr
-			}
-			if info.Mode().IsRegular() {
-				if info.Mode().Perm() != 0600 {
-					if err := os.Chmod(path, 0600); err != nil {
-						return err
-					}
-				}
-				continue
-			}
-		}
-		previous[name] = previousFile{data, err == nil}
-		changed = append(changed, name)
-	}
-	if len(changed) == 0 {
-		return nil
-	}
-	stage, err := os.MkdirTemp(root, ".commit-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(stage)
-	for _, name := range changed {
-		if data := files[name]; data != nil {
-			if err := AtomicBytes(filepath.Join(stage, name), data, 0600); err != nil {
-				return err
-			}
-		}
-	}
-	var applied []string
-	for _, name := range changed {
-		path := filepath.Join(root, name)
-		if files[name] == nil {
-			err = os.Remove(path)
-			if errors.Is(err, os.ErrNotExist) {
-				err = nil
-			}
-		} else {
-			if err = os.MkdirAll(filepath.Dir(path), 0700); err == nil {
-				err = os.Rename(filepath.Join(stage, name), path)
-			}
-		}
-		if err != nil {
-			for _, changed := range applied {
-				before := previous[changed]
-				target := filepath.Join(root, changed)
-				if before.exists {
-					err = errors.Join(err, AtomicBytes(target, before.data, 0600))
-				} else {
-					removeErr := os.Remove(target)
-					if !errors.Is(removeErr, os.ErrNotExist) {
-						err = errors.Join(err, removeErr)
-					}
-				}
-			}
-			return err
-		}
-		applied = append(applied, name)
-	}
-	return nil
 }
 
 func parseOptions(f *flag.FlagSet, args []string) error {
@@ -695,6 +603,9 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 	if operation == "argo-watch" {
 		return waitArgo(ctx, *root, *core, *timeout, output)
 	}
+	if operation == "recover" {
+		return recoverConfig(ctx, *root)
+	}
 	return withLock(*root, func() error {
 		var app App
 		exists, err := ReadJSON(filepath.Join(*root, "app.json"), &app)
@@ -863,12 +774,16 @@ func mutateApp(app *App, settings VPNSettings, operation string, values []string
 			return errors.New("未知分流通道")
 		}
 		domains := []string{}
+		seen := make(map[string]bool, len(values)-1)
 		for _, domain := range values[1:] {
-			domain = strings.TrimLeft(domain, ".")
+			domain = strings.ToLower(strings.TrimPrefix(domain, "."))
 			if err := validateDomain(domain); err != nil {
 				return err
 			}
-			domains = append(domains, domain)
+			if !seen[domain] {
+				domains = append(domains, domain)
+				seen[domain] = true
+			}
 		}
 		if app.Routing == nil {
 			app.Routing = map[string][]string{}
@@ -950,7 +865,7 @@ func mutateApp(app *App, settings VPNSettings, operation string, values []string
 		if err != nil {
 			return err
 		}
-		if err = EnsureCertificate(cert, key, values[3]); err != nil {
+		if err = validateImportedCertificate(cert, key, values[3]); err != nil {
 			return err
 		}
 		for _, in := range app.Inbounds {

@@ -100,6 +100,15 @@ func CheckJSON(ctx context.Context, binary, directory string, value any) error {
 }
 
 func withLock(root string, operation func() error) error {
+	return withFileLock(root, func() error {
+		if err := recoverPublish(root); err != nil {
+			return err
+		}
+		return operation()
+	})
+}
+
+func withFileLock(root string, operation func() error) error {
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return err
 	}

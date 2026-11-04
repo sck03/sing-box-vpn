@@ -11,6 +11,8 @@ import (
 
 var lockFileEx = syscall.NewLazyDLL("kernel32.dll").NewProc("LockFileEx")
 
+var errLockBusy error = syscall.Errno(33) // ERROR_LOCK_VIOLATION
+
 func lockFile(file *os.File) error {
 	var overlap syscall.Overlapped
 	result, _, err := lockFileEx.Call(file.Fd(), 3, 0, 1, 0, uintptr(unsafe.Pointer(&overlap)))

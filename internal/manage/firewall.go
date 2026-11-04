@@ -258,5 +258,10 @@ func RunFirewall(ctx context.Context, args []string, output io.Writer) error {
 	if runtime.GOOS != "linux" || os.Geteuid() != 0 {
 		return errors.New("防火墙管理要求 Linux root")
 	}
-	return withLock(*root, func() error { return (firewall{}).sync(ctx, *root, *remove) })
+	lock := withLock
+	if *remove {
+		// Confirmed uninstall must still work with a damaged recovery journal.
+		lock = withFileLock
+	}
+	return lock(*root, func() error { return (firewall{}).sync(ctx, *root, *remove) })
 }

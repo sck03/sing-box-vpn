@@ -54,7 +54,7 @@ ui_choose() {
 }
 ui_input() { read -r -p "$2（0 返回）：" "$1" && [[ ${!1} != 0 ]]; }
 ui_secret() {
-    read -rs -p "$2（隐藏，0 返回）：" "$1" || { printf '\n'; return 1; }
+    IFS= read -rs -p "$2（隐藏，0 返回）：" "$1" || { printf '\n'; return 1; }
     printf '\n'
     [[ ${!1} != 0 ]]
 }

@@ -3,13 +3,18 @@ package manage
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/pem"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func coreBinary(t *testing.T) string {
@@ -83,6 +88,60 @@ func TestCertificateRejectsMismatchedAndMissingKeys(t *testing.T) {
 	}
 	if err := EnsureCertificate(cert, key, "www.bing.com"); err == nil {
 		t.Fatal("silently replaced a missing key")
+	}
+}
+
+func TestTLSImportRejectsWrongDomainAndMissingFiles(t *testing.T) {
+	root := t.TempDir()
+	cert, key := filepath.Join(root, "cert.pem"), filepath.Join(root, "key.pem")
+	if err := EnsureCertificate(cert, key, "example.com"); err != nil {
+		t.Fatal(err)
+	}
+	app := App{Inbounds: []Object{{"type": "anytls"}}}
+	if err := mutateApp(&app, VPNSettings{}, "tls", []string{"anytls", cert, key, "other.example"}); err == nil {
+		t.Fatal("TLS import accepted a certificate that does not cover its SNI")
+	}
+	missingCert, missingKey := filepath.Join(root, "missing.pem"), filepath.Join(root, "missing.key")
+	if err := mutateApp(&app, VPNSettings{}, "tls", []string{"anytls", missingCert, missingKey, "example.com"}); err == nil {
+		t.Fatal("TLS import silently generated a self-signed certificate at a mistyped path")
+	}
+	for _, path := range []string{missingCert, missingKey} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatal("failed import created files", err)
+		}
+	}
+}
+
+func TestTLSImportRejectsInvalidValidityPeriod(t *testing.T) {
+	for _, future := range []bool{false, true} {
+		root := t.TempDir()
+		certPath, keyPath := filepath.Join(root, "cert.pem"), filepath.Join(root, "key.pem")
+		if err := EnsureCertificate(certPath, keyPath, "example.com"); err != nil {
+			t.Fatal(err)
+		}
+		pair, err := tls.LoadX509KeyPair(certPath, keyPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cert, err := x509.ParseCertificate(pair.Certificate[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		cert.NotBefore, cert.NotAfter = time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour)
+		if future {
+			cert.NotBefore, cert.NotAfter = time.Now().Add(time.Hour), time.Now().Add(2*time.Hour)
+		}
+		der, err := x509.CreateCertificate(rand.Reader, cert, cert, cert.PublicKey, pair.PrivateKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := AtomicBytes(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0600); err != nil {
+			t.Fatal(err)
+		}
+		app := App{Inbounds: []Object{{"type": "anytls"}}}
+		if err := mutateApp(&app, VPNSettings{}, "tls", []string{"anytls", certPath, keyPath, "example.com"}); err == nil {
+			t.Fatal("expired or not-yet-valid certificate was accepted")
+		}
 	}
 }
 

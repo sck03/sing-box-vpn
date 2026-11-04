@@ -27,6 +27,7 @@ Wants=network-online.target
 [Service]
 User=root
 UMask=0077
+ExecStartPre=/usr/local/bin/yg-vpngate config --root $SB_ROOT recover
 ExecStart=/usr/local/bin/yg-vpngate daemon --config $CONFIG
 ExecStopPost=/usr/local/bin/yg-vpngate cleanup --config $CONFIG
 Restart=on-failure
@@ -44,6 +45,7 @@ After=network-online.target yg-vpngate.service
 [Service]
 User=root
 UMask=0077
+ExecStartPre=/usr/local/bin/yg-vpngate config --root $SB_ROOT recover
 ExecStart=$SB_ROOT/sing-box run -c $SB_ROOT/vpngate/server.json
 ExecReload=/bin/kill -HUP \$MAINPID
 WorkingDirectory=$SB_ROOT/vpngate

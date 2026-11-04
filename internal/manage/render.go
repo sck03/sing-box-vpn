@@ -81,11 +81,14 @@ func ServerConfig(inbounds []Object, routing map[string][]string, warp Object, s
 	if socksPort == 0 {
 		socksPort = 40000
 	}
-	rules := []Object{{"action": "sniff"}}
+	rules := []Object{}
 	for _, name := range []string{"socks", "warp", "direct4", "direct6"} {
 		domains := routing[name]
 		if len(domains) == 0 {
 			continue
+		}
+		if len(rules) == 0 {
+			rules = append(rules, Object{"action": "sniff"})
 		}
 		if strings.HasPrefix(name, "direct") {
 			strategy := "prefer_ipv4"

@@ -137,12 +137,17 @@ func TestPortConflictsDoNotCommit(t *testing.T) {
 		{"port", "tuic", strconv.Itoa(port)},
 		{"multiport", "tuic", strconv.Itoa(app.Profile.Ports["tuic"]), "--scope", vpngateScope},
 	}
-	busy, err := net.Listen("tcp4", "127.0.0.1:0")
+	reserved := usedPorts(app, settings)
+	reserved[port] = true
+	busyPort, err := AvailablePort(reserved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	busy, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(busyPort)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer busy.Close()
-	busyPort := busy.Addr().(*net.TCPAddr).Port
 	cases = append(cases, []string{"multiport", "tuic", fmt.Sprintf("%d:%d", max(1, busyPort-1), min(65535, busyPort+1))})
 	for _, args := range cases {
 		if err := RunConfig(ctx, append([]string{"--root", root, "--core", core}, args...), &bytes.Buffer{}); err == nil {
@@ -153,6 +158,24 @@ func TestPortConflictsDoNotCommit(t *testing.T) {
 				t.Fatal("rejected port change committed a file", name)
 			}
 		}
+	}
+}
+
+func TestPortProbeRejectsLoopbackAndIPv6Listeners(t *testing.T) {
+	for _, probe := range []struct{ network, address string }{{"tcp4", "127.0.0.1:0"}, {"tcp6", "[::1]:0"}} {
+		t.Run(probe.network, func(t *testing.T) {
+			listener, err := net.Listen(probe.network, probe.address)
+			if err != nil && probe.network == "tcp6" {
+				t.Skip("IPv6 is unavailable", err)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer listener.Close()
+			if err := probePort(listener.Addr().(*net.TCPAddr).Port); err == nil {
+				t.Fatal("port allocator missed an active listener", probe.network)
+			}
+		})
 	}
 }
 
