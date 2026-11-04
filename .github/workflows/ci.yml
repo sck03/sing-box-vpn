@@ -3,18 +3,60 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: '验证通过后发布 GitHub Release（默认只验证）'
+        type: boolean
+        default: false
+      version:
+        description: '自定义版本，如 v1.2.3；留空自动递增'
+        type: string
+        required: false
+      bump:
+        description: '自动递增位置：patch 补丁 / minor 次版本 / major 主版本'
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+      draft:
+        description: '发布时先保存为草稿'
+        type: boolean
+        default: false
+      notes:
+        description: '自定义发布说明；留空由 GitHub 自动生成'
+        type: string
+        required: false
+concurrency:
+  group: ci-${{ ((github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.publish)) && 'release' || github.ref }}
+  cancel-in-progress: false
 permissions:
   contents: read
 jobs:
   verify:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      commit: ${{ steps.version.outputs.commit }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version: '1.27.3'
           cache: false
+      - name: Resolve and synchronize release version
+        id: version
+        env:
+          RELEASE_PUBLISH: ${{ inputs.publish || false }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_BUMP: ${{ inputs.bump || 'patch' }}
+        run: |
+          go run ./cmd/ci-release
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Dependencies
         run: sudo apt-get update -qq && sudo apt-get install -y -qq openvpn iproute2 iptables
       - name: Download verified sing-box 1.14.4
@@ -49,24 +91,55 @@ jobs:
         run: sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_NETNS_TESTS=1 "$(command -v go)" test -run '^TestLinuxNamespaceIsolation$' -count=1 -v -timeout=5m ./addons/vpngate/gateway
       - name: Build both release architectures
         run: go run ./cmd/release
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: verified-release
+          if-no-files-found: error
           path: |
             .build/release/*.tar.gz
             .build/release/SHA256SUMS
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.publish)
     needs: verify
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8.0.2
         with:
           name: verified-release
           path: release
       - name: Publish verified package
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "Separate ordinary and VPNGate five-protocol subscriptions, independent menu settings and active-country-only listeners. Lower parsing and export overhead, tunnel DNS TCP fallback and stable one-way UDP sessions verified beyond the idle threshold. Go management and gateway with no Python runtime dependency. Stable sing-box updates, compatibility checks, rollback and fail-closed routing. Full source and static Linux amd64/arm64 binaries are included."
+          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.verify.outputs.commit }}
+          RELEASE_DRAFT: ${{ inputs.draft || false }}
+          RELEASE_NOTES: ${{ inputs.notes }}
+        run: |
+          archive="release/sing-box-vpn-${RELEASE_VERSION}.tar.gz"
+          test -f "$archive"
+          (cd release && sha256sum -c SHA256SUMS)
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            if ! gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f "ref=refs/tags/$RELEASE_VERSION" -f "sha=$RELEASE_COMMIT" >/dev/null; then
+              echo 'Tag creation failed; checking whether this is a retry.' >&2
+            fi
+          fi
+          tag_commit="$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_VERSION" --jq '.sha')"
+          if [[ "$tag_commit" != "$RELEASE_COMMIT" ]]; then
+            echo "Tag $RELEASE_VERSION does not point to the verified commit" >&2
+            exit 1
+          fi
+          args=("$RELEASE_VERSION" "$archive" release/SHA256SUMS
+            --repo "$GITHUB_REPOSITORY" --title "$RELEASE_VERSION" --verify-tag)
+          if [[ "$RELEASE_DRAFT" == true ]]; then
+            args+=(--draft)
+          fi
+          if [[ -n "$RELEASE_NOTES" ]]; then
+            args+=(--notes "$RELEASE_NOTES")
+          else
+            args+=(--generate-notes)
+          fi
+          gh release create "${args[@]}"
