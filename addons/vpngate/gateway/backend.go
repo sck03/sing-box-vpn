@@ -36,6 +36,7 @@ type backend struct {
 	runCommand           func(context.Context, string, ...string) ([]byte, error)
 	owner                ownerState
 	claimed              bool
+	cleanupErr           error
 	ovpn, worker         *exec.Cmd
 	ovpnDone, workerDone chan error
 	exited               chan error
@@ -59,7 +60,7 @@ func preflight() error {
 	if _, e := os.Stat("/dev/net/tun"); e != nil {
 		return errors.New("/dev/net/tun is unavailable")
 	}
-	for _, name := range []string{"ip", "iptables", "openvpn", "sysctl"} {
+	for _, name := range []string{"ip", "iptables", "openvpn", "sysctl", "kill"} {
 		if _, e := exec.LookPath(name); e != nil {
 			return fmt.Errorf("missing dependency: %s", name)
 		}
@@ -84,12 +85,6 @@ func (b *backend) ns(ctx context.Context, name string, args ...string) error {
 func (b *backend) iptables(ctx context.Context, args ...string) error {
 	return b.must(ctx, "iptables", append([]string{"-w", "5"}, args...)...)
 }
-func (b *backend) quiet(name string, args ...string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_, _ = b.run(ctx, name, args...)
-}
-
 func chooseSubnet(routes []byte) (string, error) {
 	var entries []struct {
 		Dst string `json:"dst"`
@@ -134,6 +129,9 @@ func (b *backend) setup(ctx context.Context, n Node) error {
 		}
 		b.claimed = true
 		b.stop()
+		if b.cleanupErr != nil {
+			return b.cleanupErr
+		}
 	}
 	list, e := b.run(ctx, "ip", "netns", "list")
 	if e != nil {
@@ -348,29 +346,122 @@ func (b *backend) stop() {
 	stopProcess(b.ovpn, b.ovpnDone)
 	b.worker = nil
 	b.ovpn = nil
+	b.cleanupErr = nil
 	if !b.claimed {
 		return
 	}
-	b.quiet("ip", "netns", "del", namespace)
-	b.quiet("ip", "link", "del", hostVeth)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	orphanErr := b.killOrphans(ctx)
+	// Keep the namespace name available for retry if its processes cannot be
+	// enumerated or stopped. Removing the veth still blocks their underlay.
+	if orphanErr == nil {
+		_, _ = b.run(ctx, "ip", "netns", "del", namespace)
+	}
+	_, _ = b.run(ctx, "ip", "link", "del", hostVeth)
 	s := b.owner.Subnet
 	for _, args := range [][]string{
 		{"-D", "FORWARD", "-i", hostVeth, "-s", s, "-j", "YGVG_FWD"}, {"-D", "FORWARD", "-o", hostVeth, "-d", s, "-j", "YGVG_FWD"},
 		{"-F", "YGVG_FWD"}, {"-X", "YGVG_FWD"}, {"-t", "nat", "-D", "POSTROUTING", "-s", s, "-j", "YGVG_NAT"},
 		{"-t", "nat", "-F", "YGVG_NAT"}, {"-t", "nat", "-X", "YGVG_NAT"},
 	} {
-		b.quiet("iptables", append([]string{"-w", "5"}, args...)...)
+		_, _ = b.run(ctx, "iptables", append([]string{"-w", "5"}, args...)...)
+	}
+	names, err := b.run(ctx, "ip", "netns", "list")
+	if err != nil {
+		b.cleanupErr = errors.Join(orphanErr, err)
+		return
+	}
+	links, err := b.run(ctx, "ip", "-j", "link", "show")
+	if err != nil {
+		b.cleanupErr = errors.Join(orphanErr, err)
+		return
+	}
+	var interfaces []struct{ Ifname string }
+	if err := json.Unmarshal(links, &interfaces); err != nil {
+		b.cleanupErr = err
+		return
+	}
+	filter, filterErr := b.run(ctx, "iptables", "-w", "5", "-S")
+	nat, natErr := b.run(ctx, "iptables", "-w", "5", "-t", "nat", "-S")
+	if err := errors.Join(orphanErr, filterErr, natErr); err != nil {
+		b.cleanupErr = err
+		return
+	}
+	remaining := namespaceListed(names) || strings.Contains(string(filter), "YGVG_FWD") || strings.Contains(string(nat), "YGVG_NAT")
+	for _, link := range interfaces {
+		remaining = remaining || link.Ifname == hostVeth
+	}
+	if remaining {
+		b.cleanupErr = errors.New("gateway cleanup incomplete; ownership retained for retry")
+		return
 	}
 	if b.owner.ForwardBefore == "0" {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		names, _ := b.run(ctx, "ip", "netns", "list")
-		nat, _ := b.run(ctx, "iptables", "-t", "nat", "-S")
-		cancel()
 		if strings.TrimSpace(string(names)) == "" && !strings.Contains(string(nat), "MASQUERADE") {
-			b.quiet("sysctl", "-qw", "net.ipv4.ip_forward=0")
+			if _, err := b.run(ctx, "sysctl", "-qw", "net.ipv4.ip_forward=0"); err != nil {
+				b.cleanupErr = err
+				return
+			}
 		}
 	}
-	_ = os.Remove(filepath.Join(b.cfg.DataDir, "namespace-owner.json"))
-	_ = os.Remove(filepath.Join(b.cfg.RunDir, "worker.sock"))
+	if err := os.Remove(filepath.Join(b.cfg.RunDir, "worker.sock")); err != nil && !os.IsNotExist(err) {
+		b.cleanupErr = err
+		return
+	}
+	if err := os.Remove(filepath.Join(b.cfg.DataDir, "namespace-owner.json")); err != nil && !os.IsNotExist(err) {
+		b.cleanupErr = err
+		return
+	}
 	b.claimed = false
+}
+
+func namespaceListed(data []byte) bool {
+	for line := range strings.SplitSeq(string(data), "\n") {
+		if fields := strings.Fields(line); len(fields) > 0 && fields[0] == namespace {
+			return true
+		}
+	}
+	return false
+}
+
+// SIGKILL of the daemon bypasses stopProcess. Only processes still attached to
+// our owned namespace may be killed; unlinking netns alone would leave them alive.
+func (b *backend) killOrphans(ctx context.Context) error {
+	names, err := b.run(ctx, "ip", "netns", "list")
+	if err != nil || !namespaceListed(names) {
+		return err
+	}
+	data, err := b.run(ctx, "ip", "netns", "pids", namespace)
+	if err != nil {
+		return err
+	}
+	pids := strings.Fields(string(data))
+	if len(pids) == 0 {
+		return nil
+	}
+	for _, pid := range pids {
+		n, err := strconv.Atoi(pid)
+		if err != nil || n <= 1 || n >= 1<<31 || n == os.Getpid() {
+			return errors.New("invalid process ID in owned namespace")
+		}
+	}
+	_, _ = b.run(ctx, "kill", append([]string{"-KILL", "--"}, pids...)...)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	tick := time.NewTicker(50 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		data, err := b.run(ctx, "ip", "netns", "pids", namespace)
+		if err != nil {
+			return err
+		}
+		if len(strings.Fields(string(data))) == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return errors.New("owned namespace processes did not stop; cleanup can be retried")
+		case <-tick.C:
+		}
+	}
 }

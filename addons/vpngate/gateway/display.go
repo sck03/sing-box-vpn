@@ -5,20 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strings"
-	"unicode"
 
 	"github.com/sck03/sing-box-vpn/internal/manage"
 )
-
-func displayText(value string) string {
-	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) || unicode.In(r, unicode.Cf) {
-			return -1
-		}
-		return r
-	}, value)
-}
 
 func writeGatewayStatus(output io.Writer, status Status) error {
 	var out bytes.Buffer
@@ -30,7 +19,7 @@ func writeGatewayStatus(output io.Writer, status Status) error {
 	if status.State == "unavailable" {
 		label = "配置国家"
 	}
-	fmt.Fprintf(&out, " %s：%s\n", label, displayText(country))
+	fmt.Fprintf(&out, " %s：%s\n", label, manage.TerminalText(country))
 	state := map[string]string{
 		"ready":       "已连接（出口已验证）",
 		"fetching":    "正在获取同国家候选节点",
@@ -52,7 +41,7 @@ func writeGatewayStatus(output io.Writer, status Status) error {
 	if verified {
 		exit = status.Exit.IP
 	}
-	fmt.Fprintf(&out, " 出口 IP：%s\n", displayText(exit))
+	fmt.Fprintf(&out, " 出口 IP：%s\n", manage.TerminalText(exit))
 	mode := "未知"
 	switch status.Mode {
 	case "sticky":
@@ -62,13 +51,13 @@ func writeGatewayStatus(output io.Writer, status Status) error {
 	}
 	fmt.Fprintf(&out, " 连接模式：%s\n", mode)
 	if status.Node != "" {
-		fmt.Fprintf(&out, " 当前节点：%s\n", displayText(status.Node))
+		fmt.Fprintf(&out, " 当前节点：%s\n", manage.TerminalText(status.Node))
 	}
 	if verified && status.Exit.ISP != "" {
-		fmt.Fprintf(&out, " 出口运营商：%s\n", displayText(status.Exit.ISP))
+		fmt.Fprintf(&out, " 出口运营商：%s\n", manage.TerminalText(status.Exit.ISP))
 	}
 	if status.Reason != "" && status.State != "ready" && status.State != "stopped" {
-		fmt.Fprintf(&out, " 状态说明：%s\n", displayText(status.Reason))
+		fmt.Fprintf(&out, " 状态说明：%s\n", manage.TerminalText(status.Reason))
 	}
 	_, err := output.Write(out.Bytes())
 	return err

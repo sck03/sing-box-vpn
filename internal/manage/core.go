@@ -475,8 +475,14 @@ func (u *coreUpdater) activate(ctx context.Context, root, candidate string, rest
 			if restoreErr := os.Rename(restore, current); restoreErr != nil {
 				return "", errors.Join(err, restoreErr)
 			}
+			var recoveryErr error
 			for _, service := range active {
-				_ = u.services.restart(rollback, service)
+				if restoreErr := u.services.restart(rollback, service); restoreErr != nil {
+					recoveryErr = errors.Join(recoveryErr, fmt.Errorf("%s 恢复失败: %w", service, restoreErr))
+				}
+			}
+			if recoveryErr != nil {
+				return "", fmt.Errorf("原核心已恢复，但服务恢复失败: %w", errors.Join(err, recoveryErr))
 			}
 		} else {
 			_ = os.Remove(current)

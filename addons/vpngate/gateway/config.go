@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,10 +49,18 @@ func readConfig(path string) (Config, error) {
 		return c, err
 	}
 	defer f.Close()
-	d := json.NewDecoder(f)
+	input := &io.LimitedReader{R: f, N: (1 << 20) + 1}
+	d := json.NewDecoder(input)
 	d.DisallowUnknownFields()
 	if err = d.Decode(&c); err != nil {
 		return c, err
+	}
+	err = d.Decode(&struct{}{})
+	if input.N == 0 {
+		return c, errors.New("gateway configuration exceeds 1 MiB")
+	}
+	if err != io.EOF {
+		return c, errors.New("gateway configuration must contain exactly one JSON object")
 	}
 	return c, c.validate()
 }
@@ -63,13 +73,14 @@ func (c *Config) validate() error {
 		return errors.New("mode must be sticky or fixed")
 	}
 	host, port, err := net.SplitHostPort(c.Listen)
-	if err != nil || host != "127.0.0.1" || !positiveInt(port) {
+	if err != nil || host != "127.0.0.1" || !validPort(port) {
 		return errors.New("proxy must listen on an IPv4 loopback TCP port")
 	}
 	if len(c.ProxyUser) < 1 || len(c.ProxyUser) > 255 || len(c.ProxyPass) < 32 || len(c.ProxyPass) > 255 {
 		return errors.New("proxy credentials missing or too short")
 	}
-	if !filepath.IsAbs(c.DataDir) || !filepath.IsAbs(c.RunDir) || c.DataDir == "/" || c.RunDir == "/" {
+	c.DataDir, c.RunDir = filepath.Clean(c.DataDir), filepath.Clean(c.RunDir)
+	if !filepath.IsAbs(c.DataDir) || !filepath.IsAbs(c.RunDir) || filepath.Dir(c.DataDir) == c.DataDir || filepath.Dir(c.RunDir) == c.RunDir {
 		return errors.New("data and runtime directories must be dedicated absolute paths")
 	}
 	if c.ConnectTimeout < 5 || c.ConnectTimeout > 180 || c.HealthInterval < 1 || c.HealthInterval > 300 || c.MaxConnections < 1 || c.MaxConnections > 1024 {
@@ -79,21 +90,29 @@ func (c *Config) validate() error {
 		return errors.New("configure 1-16 VPNGate sources")
 	}
 	for _, s := range c.Sources {
-		if !strings.HasPrefix(s, "https://") && !strings.HasPrefix(s, "http://") {
+		if !validHTTPURL(s, false) {
 			return errors.New("node source must use HTTP(S)")
 		}
 	}
-	if strings.Count(c.GeoURL, "%s") != 1 || (!strings.HasPrefix(c.GeoURL, "https://") && !strings.HasPrefix(c.GeoURL, "http://")) {
+	if strings.Count(c.GeoURL, "%s") != 1 || !validHTTPURL(strings.Replace(c.GeoURL, "%s", "1.1.1.1", 1), false) {
 		return errors.New("geo_url must be an HTTP(S) template with one %s")
 	}
-	if !strings.HasPrefix(c.ProbeURL, "https://") {
+	if !validHTTPURL(c.ProbeURL, true) {
 		return errors.New("exit probe must use HTTPS")
 	}
 	dh, dp, e := net.SplitHostPort(c.DNS)
-	if e != nil || !publicIPv4(dh) || !positiveInt(dp) {
+	if e != nil || !publicIPv4(dh) || !validPort(dp) {
 		return errors.New("DNS must be a public IPv4 resolver with port")
 	}
 	return nil
+}
+
+func validHTTPURL(value string, httpsOnly bool) bool {
+	u, err := url.Parse(value)
+	if err != nil {
+		return false
+	}
+	return u.Hostname() != "" && (u.Scheme == "https" || !httpsOnly && u.Scheme == "http") && (u.Port() == "" || validPort(u.Port()))
 }
 
 func atomicJSON(path string, value any) error {

@@ -29,6 +29,7 @@ func (b *backend) died() <-chan error { return b.exited }
 
 type manager struct {
 	mu             sync.Mutex
+	actionsMu      sync.Mutex
 	cfg            Config
 	configPath     string
 	status         Status
@@ -418,7 +419,7 @@ func (m *manager) probe(ctx context.Context, c Config, active tunnel, client *ht
 	if exists && time.Now().Before(cached.expires) {
 		return cached.value, c.acceptGeo(cached.value)
 	}
-	metadata, e := readHTTP(ctx, m.hostClient, fmt.Sprintf(c.GeoURL, ip), 1<<20)
+	metadata, e := readHTTP(ctx, m.hostClient, strings.Replace(c.GeoURL, "%s", ip, 1), 1<<20)
 	if e != nil {
 		return Geo{}, probeUnavailable("exit country verification unavailable")
 	}

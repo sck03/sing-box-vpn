@@ -89,3 +89,22 @@ func TestRemoteFailureDoesNotExposeToken(t *testing.T) {
 		t.Fatal("remote error exposed token", err)
 	}
 }
+
+func TestRemoteRedirectCannotReportPushSuccess(t *testing.T) {
+	var redirected atomic.Int32
+	destination := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		redirected.Add(1)
+	}))
+	defer destination.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, destination.URL, http.StatusTemporaryRedirect)
+	}))
+	defer server.Close()
+	client := server.Client()
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	err := remoteRequest(context.Background(), client, server.URL, http.MethodPost, Object{"content": "subscription"}, map[string]string{"PRIVATE-TOKEN": "secret"}, nil)
+	var status httpStatusError
+	if !errors.As(err, &status) || status != http.StatusTemporaryRedirect || redirected.Load() != 0 {
+		t.Fatal("redirected push reported success or forwarded credentials", err, redirected.Load())
+	}
+}

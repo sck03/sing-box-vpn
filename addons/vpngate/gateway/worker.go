@@ -15,6 +15,7 @@ import (
 )
 
 const maxPacket = 65507
+const udpIdleTimeout = 60 * time.Second
 
 type dialRequest struct {
 	Network string `json:"network"`
@@ -41,6 +42,20 @@ func writeFrame(w io.Writer, b []byte) error {
 		return io.ErrShortWrite
 	}
 	return e
+}
+
+// UDP callers reserve two bytes in their existing packet buffer. Writing the
+// header and payload together avoids a second syscall and per-packet allocation.
+func writePacket(w io.Writer, packet []byte) error {
+	if len(packet) < 2 || len(packet) > maxPacket+2 {
+		return errors.New("invalid UDP frame size")
+	}
+	binary.BigEndian.PutUint16(packet[:2], uint16(len(packet)-2))
+	n, err := w.Write(packet)
+	if err == nil && n != len(packet) {
+		err = io.ErrShortWrite
+	}
+	return err
 }
 func readFrame(r io.Reader, limit int) ([]byte, error) {
 	var h [2]byte
@@ -109,33 +124,64 @@ func (w *worker) dial(ctx context.Context, network, address string) (net.Conn, e
 		return w.dialOverride(ctx, network, address)
 	}
 	host, port, e := net.SplitHostPort(address)
-	if e != nil || !positiveInt(port) {
+	if e != nil || !validPort(port) {
 		return nil, errors.New("invalid target")
 	}
-	var ip net.IP
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	var ips []net.IP
 	if literal := net.ParseIP(host); literal != nil {
-		ip = literal.To4()
+		ips = []net.IP{literal}
 	} else {
 		w.resolverOnce.Do(func() {
 			w.resolver = &net.Resolver{PreferGo: true, Dial: func(c context.Context, network, _ string) (net.Conn, error) {
 				return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(c, network+"4", w.dns)
 			}}
 		})
-		ips, e := w.resolver.LookupIP(ctx, "ip4", host)
+		ips, e = w.resolver.LookupIP(ctx, "ip4", host)
 		if e != nil {
 			return nil, e
 		}
-		for _, v := range ips {
-			if publicIPv4(v.String()) {
-				ip = v.To4()
-				break
-			}
+	}
+	return dialPublicTargets(ctx, network, port, ips, (&net.Dialer{KeepAlive: 30 * time.Second}).DialContext)
+}
+
+func dialPublicTargets(ctx context.Context, network, port string, ips []net.IP, dial func(context.Context, string, string) (net.Conn, error)) (net.Conn, error) {
+	targets := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		if v := ip.To4(); v != nil && publicIPv4(v.String()) {
+			targets = append(targets, net.JoinHostPort(v.String(), port))
 		}
 	}
-	if ip == nil || !publicIPv4(ip.String()) {
+	if len(targets) == 0 {
 		return nil, errors.New("only public IPv4 targets are permitted")
 	}
-	return (&net.Dialer{Timeout: 20 * time.Second, KeepAlive: 30 * time.Second}).DialContext(ctx, network+"4", net.JoinHostPort(ip.String(), port))
+	deadline := time.Now().Add(20 * time.Second)
+	if limit, ok := ctx.Deadline(); ok && limit.Before(deadline) {
+		deadline = limit
+	}
+	var firstErr error
+	for i, address := range targets {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return nil, context.DeadlineExceeded
+		}
+		// Share the overall budget, like net.Dialer's serial address fallback.
+		budget := min(remaining, max(2*time.Second, remaining/time.Duration(len(targets)-i)))
+		attempt, cancel := context.WithTimeout(ctx, budget)
+		c, err := dial(attempt, network+"4", address)
+		cancel()
+		if err == nil {
+			return c, nil
+		}
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
+	return nil, firstErr
 }
 
 func (w *worker) serve(ctx context.Context) error {
@@ -212,29 +258,29 @@ func (w *worker) handle(parent context.Context, c net.Conn) {
 	done := make(chan struct{}, 1)
 	go func() {
 		defer func() { done <- struct{}{}; c.Close() }()
-		buf := make([]byte, maxPacket)
+		buf := make([]byte, maxPacket+2)
 		for {
-			_ = remote.SetReadDeadline(time.Now().Add(60 * time.Second))
-			n, e := remote.Read(buf)
+			_ = remote.SetReadDeadline(time.Now().Add(udpIdleTimeout))
+			n, e := remote.Read(buf[2:])
 			if e != nil {
 				return
 			}
 			// Replies keep a download-only session alive while its request side waits.
-			_ = c.SetReadDeadline(time.Now().Add(60 * time.Second))
-			if writeFrame(c, buf[:n]) != nil {
+			_ = c.SetDeadline(time.Now().Add(udpIdleTimeout))
+			if writePacket(c, buf[:n+2]) != nil {
 				return
 			}
 		}
 	}()
 	frames := frameReader{source: c, limit: maxPacket}
 	for {
-		_ = c.SetReadDeadline(time.Now().Add(60 * time.Second))
+		_ = c.SetReadDeadline(time.Now().Add(udpIdleTimeout))
 		b, e := frames.read()
 		if e != nil {
 			break
 		}
 		// Upload traffic also counts as activity when the target sends no replies.
-		_ = remote.SetReadDeadline(time.Now().Add(60 * time.Second))
+		_ = remote.SetDeadline(time.Now().Add(udpIdleTimeout))
 		if _, e = remote.Write(b); e != nil {
 			break
 		}

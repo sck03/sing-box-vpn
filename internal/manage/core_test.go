@@ -201,3 +201,42 @@ func TestConfigurationAndCoreUpdatesShareOneLock(t *testing.T) {
 		t.Fatal("lock was not released", err)
 	}
 }
+
+type failedRecoveryServices struct {
+	root  string
+	err   error
+	calls []string
+}
+
+func (s *failedRecoveryServices) active(context.Context) ([]string, error) {
+	return []string{"sing-box", "sing-box-vpngate"}, nil
+}
+
+func (s *failedRecoveryServices) restart(ctx context.Context, name string) error {
+	s.calls = append(s.calls, name)
+	data, err := os.ReadFile(filepath.Join(s.root, "sing-box"))
+	if err != nil {
+		return err
+	}
+	if string(data) == "new" {
+		return errors.New("new core failed to start")
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return s.err
+}
+
+func TestCoreRollbackReportsServiceRecoveryFailure(t *testing.T) {
+	root, candidate, u, _ := updaterFixture(t)
+	recoveryErr := errors.New("original service failed to recover")
+	services := &failedRecoveryServices{root: root, err: recoveryErr}
+	u.services = services
+	_, err := u.activate(context.Background(), root, candidate, true)
+	if !errors.Is(err, recoveryErr) {
+		t.Fatal("service recovery failure was hidden", err)
+	}
+	if string(readBytes(t, filepath.Join(root, "sing-box"))) != "old" || !reflect.DeepEqual(services.calls, []string{"sing-box", "sing-box", "sing-box-vpngate"}) {
+		t.Fatal("rollback did not restore the original core or try both services", services.calls)
+	}
+}

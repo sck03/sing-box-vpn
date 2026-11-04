@@ -230,7 +230,7 @@ func (a *testAccess) track(c net.Conn) bool {
 	return true
 }
 func (a *testAccess) untrack(c net.Conn) { a.mu.Lock(); delete(a.conns, c); a.mu.Unlock() }
-func startProxyFixture(t *testing.T) (string, *testAccess, context.CancelFunc) {
+func startProxyFixture(t testing.TB) (string, *testAccess, context.CancelFunc) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	socket := filepath.Join(t.TempDir(), "w.sock")
@@ -268,7 +268,7 @@ func startProxyFixture(t *testing.T) (string, *testAccess, context.CancelFunc) {
 	})
 	return ln.Addr().String(), access, cancel
 }
-func authProxy(t *testing.T, address string, pass string) net.Conn {
+func authProxy(t testing.TB, address string, pass string) net.Conn {
 	t.Helper()
 	c, e := net.Dial("tcp", address)
 	if e != nil {

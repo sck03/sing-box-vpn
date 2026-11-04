@@ -275,7 +275,7 @@ func TestLinuxNamespaceIsolation(t *testing.T) {
 	})
 	t.Cleanup(func() {
 		if t.Failed() {
-			for _, name := range []string{"openvpn-server.log", "data-server.log", "daemon.log", "restart.log", "data/state.json", "data/openvpn.log"} {
+			for _, name := range []string{"openvpn-server.log", "data-server.log", "daemon.log", "crash-restart.log", "restart.log", "data/state.json", "data/openvpn.log"} {
 				if data, err := os.ReadFile(filepath.Join(root, name)); err == nil {
 					if len(data) > 12000 {
 						data = data[len(data)-12000:]
@@ -367,6 +367,44 @@ func TestLinuxNamespaceIsolation(t *testing.T) {
 	linuxWait(t, 90*time.Second, func() bool { status, err := tryCTL("status"); return err == nil && status.State == "ready" })
 	if linuxCommand(t, "ip", "-4", "route", "show", "default") != originalRoute {
 		t.Fatal("host default route changed")
+	}
+	// Simulate a daemon crash that bypasses normal teardown. Its OpenVPN and
+	// worker children must be reclaimed before the next daemon builds a tunnel.
+	orphanNamespaces := map[string]string{}
+	for _, pid := range strings.Fields(linuxCommand(t, "ip", "netns", "pids", namespace)) {
+		id, err := os.Readlink(filepath.Join("/proc", pid, "ns/net"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		orphanNamespaces[pid] = id
+	}
+	if len(orphanNamespaces) < 2 {
+		t.Fatal("fixture did not start OpenVPN and a namespace worker")
+	}
+	daemonPID, err := os.ReadFile(filepath.Join(cfg.DataDir, "daemon.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(daemonPID)))
+	if err != nil || pid <= 1 || pid == os.Getpid() {
+		t.Fatal("invalid fixture daemon PID", err)
+	}
+	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	stopDaemon()
+	if linuxCommand(t, "ip", "netns", "pids", namespace) == "" {
+		t.Fatal("crash fixture did not leave namespace children to recover")
+	}
+	stopDaemon = linuxProcess(t, root, "crash-restart", environment, gateway, "daemon", "--config", configPath)
+	linuxWait(t, 90*time.Second, func() bool { status, err := tryCTL("status"); return err == nil && status.State == "ready" })
+	for pid, oldNamespace := range orphanNamespaces {
+		if current, err := os.Readlink(filepath.Join("/proc", pid, "ns/net")); err == nil && current == oldNamespace {
+			t.Fatal("daemon restart retained an orphaned namespace process", pid)
+		}
+	}
+	if linuxCommand(t, "ip", "-4", "route", "show", "default") != originalRoute {
+		t.Fatal("crash recovery changed the host default route")
 	}
 	connect := func(command byte, target string, domain bool) (net.Conn, string) {
 		c, err := net.DialTimeout("tcp4", "127.0.0.1:"+strconv.Itoa(port), 3*time.Second)

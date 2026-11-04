@@ -216,6 +216,7 @@ func serveUDP(ctx context.Context, control net.Conn, t ticket, a proxyAccess) {
 	}
 	var mu sync.Mutex
 	sessions := map[string]*udpSession{}
+	headers := map[string]*udpSession{}
 	var clientAddr netip.AddrPort
 	ctx, cancel := context.WithCancel(ctx)
 	closeAssociation := func() {
@@ -237,7 +238,7 @@ func serveUDP(ctx context.Context, control net.Conn, t ticket, a proxyAccess) {
 	go func() { var b [1]byte; _, _ = control.Read(b[:]); cancel() }()
 	buf := make([]byte, maxPacket)
 	for {
-		_ = sock.SetReadDeadline(time.Now().Add(60 * time.Second))
+		_ = sock.SetReadDeadline(time.Now().Add(udpIdleTimeout))
 		n, src, e := sock.ReadFromUDPAddrPort(buf)
 		if e != nil {
 			return
@@ -248,7 +249,7 @@ func serveUDP(ctx context.Context, control net.Conn, t ticket, a proxyAccess) {
 		if clientAddr.IsValid() && src != clientAddr {
 			continue
 		}
-		target, offset, e := udpTarget(buf[:n])
+		offset, e := udpHeaderSize(buf[:n])
 		if e != nil {
 			continue
 		}
@@ -256,12 +257,25 @@ func serveUDP(ctx context.Context, control net.Conn, t ticket, a proxyAccess) {
 			clientAddr = src
 		}
 		mu.Lock()
-		s := sessions[target]
-		mu.Unlock()
+		// A []byte-to-string map lookup does not allocate. Parse the address
+		// only on a cache miss, retaining canonical sessions across address forms.
+		s := headers[string(buf[3:offset])]
+		target, full := "", false
 		if s == nil {
-			mu.Lock()
-			full := len(sessions) >= 128
-			mu.Unlock()
+			target, _, e = udpTarget(buf[:n])
+			if e == nil {
+				s = sessions[target]
+				full = len(sessions) >= 128
+				if s != nil && len(headers) < 256 {
+					headers[string(buf[3:offset])] = s
+				}
+			}
+		}
+		mu.Unlock()
+		if e != nil {
+			continue
+		}
+		if s == nil {
 			if full {
 				continue
 			}
@@ -278,34 +292,67 @@ func serveUDP(ctx context.Context, control net.Conn, t ticket, a proxyAccess) {
 				return
 			}
 			sessions[target] = s
+			if len(headers) < 256 {
+				headers[string(buf[3:offset])] = s
+			}
 			mu.Unlock()
 			go func(key string, session *udpSession) {
 				defer session.c.Close()
 				defer a.untrack(session.c)
-				defer func() { mu.Lock(); delete(sessions, key); mu.Unlock() }()
+				defer func() {
+					mu.Lock()
+					delete(sessions, key)
+					for header, cached := range headers {
+						if cached == session {
+							delete(headers, header)
+						}
+					}
+					mu.Unlock()
+				}()
 				h, e := udpResponseHeader(session.target)
 				if e != nil {
 					return
 				}
 				frames := frameReader{source: session.c, buffer: h, prefix: len(h), limit: maxPacket - len(h)}
 				for {
-					_ = session.c.SetReadDeadline(time.Now().Add(60 * time.Second))
+					_ = session.c.SetReadDeadline(time.Now().Add(udpIdleTimeout))
 					packet, e := frames.read()
 					if e != nil {
 						return
 					}
-					_ = sock.SetReadDeadline(time.Now().Add(60 * time.Second))
+					_ = sock.SetDeadline(time.Now().Add(udpIdleTimeout))
 					if _, e = sock.WriteToUDPAddrPort(packet, session.client); e != nil {
 						return
 					}
 				}
 			}(target, s)
 		}
-		_ = s.c.SetReadDeadline(time.Now().Add(60 * time.Second))
-		if e = writeFrame(s.c, buf[offset:n]); e != nil {
+		_ = s.c.SetDeadline(time.Now().Add(udpIdleTimeout))
+		if e = writePacket(s.c, buf[offset-2:n]); e != nil {
 			s.c.Close()
 		}
 	}
+}
+
+func udpHeaderSize(b []byte) (int, error) {
+	if len(b) < 4 {
+		return 0, io.ErrUnexpectedEOF
+	}
+	size := 10
+	switch b[3] {
+	case 1:
+	case 3:
+		if len(b) < 5 || b[4] == 0 {
+			return 0, errors.New("invalid domain")
+		}
+		size = 7 + int(b[4])
+	default:
+		return 0, errors.New("IPv6 targets are unsupported")
+	}
+	if len(b) < size {
+		return 0, io.ErrUnexpectedEOF
+	}
+	return size, nil
 }
 
 func udpTarget(b []byte) (string, int, error) {

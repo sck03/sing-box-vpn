@@ -142,7 +142,7 @@ func entry(args []string) error {
 		}
 		b.claimed = true
 		b.stop()
-		return nil
+		return b.cleanupErr
 	default:
 		return errors.New("unknown command")
 	}
@@ -219,7 +219,7 @@ func runDaemon(path string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	m := newManager(c, path)
-	api := http.Server{Handler: m.handler(ctx), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, MaxHeaderBytes: 16 << 10}
+	api := http.Server{Handler: m.handler(ctx), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 15 * time.Second, MaxHeaderBytes: 16 << 10}
 	done := make(chan struct{})
 	serveErrors := make(chan error, 2)
 	go func() { defer close(done); m.run(ctx) }()
@@ -290,6 +290,10 @@ func (m *manager) handler(parent context.Context) http.Handler {
 			respond(w, 400, map[string]string{"error": "invalid action"})
 			return
 		}
+		// Serialize the snapshot and apply together so concurrent actions cannot
+		// overwrite settings changed by another request.
+		m.actionsMu.Lock()
+		defer m.actionsMu.Unlock()
 		m.mu.Lock()
 		c := m.cfg
 		s := m.status

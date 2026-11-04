@@ -53,7 +53,7 @@ func remoteRequest(ctx context.Context, client *http.Client, endpoint, method st
 		return errors.New("远端请求失败，检查配置与网络；凭据未输出")
 	}
 	defer response.Body.Close()
-	if response.StatusCode >= 400 {
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return httpStatusError(response.StatusCode)
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, (4<<20)+1))

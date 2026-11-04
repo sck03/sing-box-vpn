@@ -110,7 +110,7 @@ jobs:
           sudo .build/yg-vpngate core --root "$PWD/.test/core-updater" rollback
           .build/yg-vpngate core --root "$PWD/.test/core-updater" check
       - name: OpenVPN, tunnel DNS and fail-closed namespace acceptance
-        run: sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_NETNS_TESTS=1 "$(command -v go)" test -run '^TestLinuxNamespaceIsolation$' -count=1 -v -timeout=5m ./addons/vpngate/gateway
+        run: sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_NETNS_TESTS=1 "$(command -v go)" test -run '^TestLinuxNamespaceIsolation$' -count=1 -v -timeout=6m ./addons/vpngate/gateway
       - name: IPv4 and IPv6 multiport forwarding and owned firewall cleanup
         run: sudo env RUN_FIREWALL_TESTS=1 "$(command -v go)" test -run '^TestLinuxMultiportFirewall$' -count=1 -v -timeout=1m ./internal/manage
       - name: Build both release architectures

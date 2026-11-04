@@ -173,6 +173,7 @@ func normalizeProto(s string) string {
 	return "udp"
 }
 func positiveInt(s string) bool { v, e := strconv.Atoi(s); return e == nil && v > 0 && v < 1<<31 }
+func validPort(s string) bool   { v, e := strconv.Atoi(s); return e == nil && v > 0 && v <= 65535 }
 func canonicalColumn(s string) string {
 	return strings.ToLower(columnReplacer.Replace(strings.TrimPrefix(s, "#")))
 }
