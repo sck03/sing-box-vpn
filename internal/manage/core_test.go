@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 type testTransport func(*http.Request) (*http.Response, error)
@@ -91,9 +93,10 @@ func TestBadHashAndArchiveLinkKeepCandidate(t *testing.T) {
 }
 
 type fakeServices struct {
-	root  string
-	fail  bool
-	calls []string
+	root         string
+	fail         bool
+	calls        []string
+	afterFailure func()
 }
 
 func (s *fakeServices) active(context.Context) ([]string, error) { return []string{"sing-box"}, nil }
@@ -104,6 +107,9 @@ func (s *fakeServices) restart(_ context.Context, name string) error {
 		return err
 	}
 	if s.fail && string(data) == "new" {
+		if s.afterFailure != nil {
+			s.afterFailure()
+		}
 		return errors.New("startup failed")
 	}
 	return nil
@@ -199,6 +205,89 @@ func TestConfigurationAndCoreUpdatesShareOneLock(t *testing.T) {
 	}
 	if err := withLock(root, func() error { return nil }); err != nil {
 		t.Fatal("lock was not released", err)
+	}
+}
+
+type recoveringServices struct{ fakeServices }
+
+func (s *recoveringServices) restart(ctx context.Context, name string) error {
+	// ExecStartPre must be able to recover while the update still owns the
+	// operation lock. Ordinary configuration writers must remain excluded.
+	if err := withLock(s.root, func() error { return nil }); !errors.Is(err, errLockBusy) {
+		return errors.New("configuration writer was allowed during core restart")
+	}
+	startup, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	if err := recoverConfig(startup, s.root); err != nil {
+		return fmt.Errorf("service startup could not recover: %w", err)
+	}
+	return s.fakeServices.restart(ctx, name)
+}
+
+func TestCoreRestartAllowsStartupRecoveryAndExcludesWriters(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(map[bool]string{false: "update", true: "rollback"}[fail], func(t *testing.T) {
+			root, candidate, u, _ := updaterFixture(t)
+			services := &recoveringServices{fakeServices{root: root, fail: fail}}
+			u.services = services
+			u.validate = func(context.Context, string, string) error {
+				if err := withFileLock(root, func() error { return nil }); !errors.Is(err, errLockBusy) {
+					t.Fatal("core validation did not hold the configuration lock", err)
+				}
+				return nil
+			}
+			err := withOperationLock(root, func() error {
+				_, err := u.activate(context.Background(), root, candidate, true)
+				return err
+			})
+			expected, restarts := "new", 1
+			if fail {
+				expected, restarts = "old", 2
+				if err == nil || !strings.Contains(err.Error(), "startup failed") {
+					t.Fatal("new-core startup failure was not reported", err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(fmt.Sprint(err), "could not recover") || len(services.calls) != restarts || string(readBytes(t, filepath.Join(root, "sing-box"))) != expected {
+				t.Fatal("startup recovery blocked core update or rollback", services.calls, err)
+			}
+			if err := withLock(root, func() error { return nil }); err != nil {
+				t.Fatal("core update did not release its operation lock", err)
+			}
+		})
+	}
+}
+
+func TestCoreRollbackWaitsForConcurrentStartup(t *testing.T) {
+	root, candidate, u, services := updaterFixture(t)
+	held, release := make(chan struct{}), make(chan struct{})
+	done := make(chan error, 1)
+	services.fail = true
+	services.afterFailure = func() {
+		go func() {
+			done <- withFileLock(root, func() error {
+				close(held)
+				<-release
+				return nil
+			})
+		}()
+		select {
+		case <-held:
+		case <-time.After(time.Second):
+			t.Fatal("concurrent startup did not hold the configuration lock")
+		}
+		time.AfterFunc(100*time.Millisecond, func() { close(release) })
+	}
+	err := withOperationLock(root, func() error {
+		_, err := u.activate(context.Background(), root, candidate, true)
+		return err
+	})
+	if err == nil || errors.Is(err, errLockBusy) || string(readBytes(t, filepath.Join(root, "sing-box"))) != "old" {
+		t.Fatal("startup lock contention prevented automatic rollback", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 

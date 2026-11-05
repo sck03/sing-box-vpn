@@ -422,11 +422,18 @@ main_menu_render() {
     ui_rule "$UI_RED" '~'
     main_status
 }
+update_main() (
+    local update_script
+    update_script=$(mktemp /tmp/sb-vpn-update.XXXXXXXX)
+    trap 'rm -f -- "$update_script"' EXIT
+    curl -fLsS --retry 2 --connect-timeout 15 --max-time 60 \
+        https://raw.githubusercontent.com/sck03/sing-box-vpn/main/install.sh -o "$update_script"
+    bash "$update_script"
+)
 main_action() {
     case "$1" in
         1) install_main;;
-        7) curl -fLsS https://raw.githubusercontent.com/sck03/sing-box-vpn/main/install.sh -o /tmp/sb-vpn-update.sh
-           bash /tmp/sb-vpn-update.sh; rm -f /tmp/sb-vpn-update.sh;;
+        7) update_main;;
         10) journalctl -u sing-box -u yg-vpngate -u sing-box-vpngate -n 100 --no-pager;;
         11) modprobe tcp_bbr
             printf 'net.core.default_qdisc=fq\nnet.ipv4.tcp_congestion_control=bbr\n' > /etc/sysctl.d/99-sing-box-vpn-bbr.conf

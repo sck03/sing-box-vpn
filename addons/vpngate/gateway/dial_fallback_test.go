@@ -80,3 +80,33 @@ func TestPublicTargetsRejectPrivateOnlyAnswers(t *testing.T) {
 		t.Fatal("private-only DNS answer was accepted")
 	}
 }
+
+func TestPublicTargetsDoNotRetryDuplicateAddresses(t *testing.T) {
+	peer, success := net.Pipe()
+	defer peer.Close()
+	defer success.Close()
+	var calls []string
+	conn, err := dialPublicTargets(context.Background(), "tcp", "443", []net.IP{
+		net.ParseIP("203.0.113.1"), net.IP{203, 0, 113, 1}, net.ParseIP("203.0.113.2"),
+	}, func(_ context.Context, _, address string) (net.Conn, error) {
+		calls = append(calls, address)
+		if address == "203.0.113.1:443" {
+			return nil, errors.New("unreachable")
+		}
+		return success, nil
+	})
+	if err != nil || conn != success || !reflect.DeepEqual(calls, []string{"203.0.113.1:443", "203.0.113.2:443"}) {
+		t.Fatal("duplicate DNS answers consumed fallback attempts", calls, err)
+	}
+}
+
+func BenchmarkPublicTargetDial(b *testing.B) {
+	ips := []net.IP{net.ParseIP("203.0.113.1"), net.ParseIP("203.0.113.2"), net.ParseIP("203.0.113.3"), net.ParseIP("203.0.113.4")}
+	b.ReportAllocs()
+	for b.Loop() {
+		_, err := dialPublicTargets(context.Background(), "tcp", "443", ips, func(context.Context, string, string) (net.Conn, error) { return nil, nil })
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}

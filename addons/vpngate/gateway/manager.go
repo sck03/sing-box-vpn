@@ -478,7 +478,10 @@ func (m *manager) recheck(ctx context.Context, c Config, active tunnel, n Node, 
 func (m *manager) verifyExit(ctx context.Context, c Config, active tunnel, n Node, client *http.Client, revokeOnFailure bool) (Geo, error) {
 	for attempt := 0; ; attempt++ {
 		g, err := m.probe(ctx, c, active, client)
-		if err == nil || ctx.Err() != nil {
+		if ctx.Err() != nil {
+			return Geo{}, context.Cause(ctx)
+		}
+		if err == nil {
 			return g, err
 		}
 		if revokeOnFailure {
@@ -550,10 +553,13 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 			m.mu.Unlock()
 			m.setStatus("connecting", "OpenVPN handshake", n, nil)
 			active := m.factory(c)
-			session, stop := context.WithCancel(ctx)
+			session, stop := context.WithCancelCause(ctx)
 			var client *http.Client
 			e := active.start(session, n)
 			if e == nil {
+				// Observe death during startup verification as well as between health
+				// checks. A failed process must not retain a 12-second probe and retries.
+				go watchTunnel(session, active, stop)
 				client = tunnelClient(active)
 				m.setStatus("verifying", "verifying exit country and provider", n, nil)
 				var g Geo
@@ -563,7 +569,7 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 					m.mu.Lock()
 					if session.Err() != nil || sessionEpoch != m.epoch || m.cfg.Country != c.Country {
 						m.mu.Unlock()
-						stop()
+						stop(nil)
 						client.CloseIdleConnections()
 						active.stop()
 						return
@@ -571,21 +577,18 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 					m.current = active
 					m.previous = n
 					m.ready = true
-					if c.Mode == "fixed" && c.FixedHost == "" {
-						c.FixedHost = n.Host
-						m.cfg.FixedHost = n.Host
-						_ = atomicJSON(m.configPath, m.cfg)
-					}
 					m.mu.Unlock()
+					// An implicit fixed node is already persisted in last-node.json;
+					// rewriting gateway.json here could overwrite a concurrent menu edit.
 					_ = atomicJSON(filepath.Join(c.DataDir, "last-node.json"), n)
 					m.setStatus("ready", "volunteer / residential candidate", n, &g)
 					backoff = 5 * time.Second
 					swap = false
-					e = m.monitor(session, c, active, n, client)
+					e = m.monitorSession(session, c, active, n, client)
 				}
 			}
 			m.revoke()
-			stop()
+			stop(nil)
 			if client != nil {
 				client.CloseIdleConnections()
 			}
@@ -624,16 +627,22 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 	}
 }
 
+func watchTunnel(ctx context.Context, active tunnel, cancel context.CancelCauseFunc) {
+	select {
+	case <-active.died():
+		cancel(errors.New("tunnel process stopped; forwarding blocked"))
+	case <-ctx.Done():
+	}
+}
+
 func (m *manager) monitor(ctx context.Context, c Config, active tunnel, n Node, client *http.Client) error {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
-	go func() {
-		select {
-		case <-active.died():
-			cancel(errors.New("tunnel process stopped; forwarding blocked"))
-		case <-ctx.Done():
-		}
-	}()
+	go watchTunnel(ctx, active, cancel)
+	return m.monitorSession(ctx, c, active, n, client)
+}
+
+func (m *manager) monitorSession(ctx context.Context, c Config, active tunnel, n Node, client *http.Client) error {
 	tick := time.NewTicker(time.Duration(c.HealthInterval) * time.Second)
 	defer tick.Stop()
 	for {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -92,16 +93,29 @@ func chooseSubnet(routes []byte) (string, error) {
 	if e := json.Unmarshal(routes, &entries); e != nil {
 		return "", e
 	}
-	for _, candidate := range []string{"10.231.254.0/30", "10.232.254.0/30", "172.29.253.0/30", "192.168.223.0/30"} {
-		ip, n, _ := net.ParseCIDR(candidate)
-		conflict := false
-		for _, r := range entries {
-			if r.Dst == "default" || r.Dst == "0.0.0.0/0" {
-				continue
+	prefixes := make([]netip.Prefix, 0, len(entries))
+	for _, route := range entries {
+		if route.Dst == "default" || route.Dst == "0.0.0.0/0" {
+			continue
+		}
+		prefix, err := netip.ParsePrefix(route.Dst)
+		if err != nil {
+			// ip -j omits /32 on a host route; it still reserves that address.
+			if address, err := netip.ParseAddr(route.Dst); err == nil {
+				prefix = netip.PrefixFrom(address, address.BitLen())
+			} else {
+				return "", fmt.Errorf("invalid route destination %q", route.Dst)
 			}
-			otherIP, other, e := net.ParseCIDR(r.Dst)
-			if e == nil && (other.Contains(ip) || n.Contains(otherIP)) {
+		}
+		prefixes = append(prefixes, prefix)
+	}
+	for _, candidate := range []string{"10.231.254.0/30", "10.232.254.0/30", "172.29.253.0/30", "192.168.223.0/30"} {
+		n := netip.MustParsePrefix(candidate)
+		conflict := false
+		for _, other := range prefixes {
+			if n.Overlaps(other) {
 				conflict = true
+				break
 			}
 		}
 		if !conflict {
@@ -300,6 +314,8 @@ func (b *backend) start(ctx context.Context, n Node) error {
 			return errors.New("tunnel worker failed to start")
 		case <-b.workerDone:
 			return errors.New("tunnel worker exited")
+		case <-b.ovpnDone:
+			return errors.New("OpenVPN exited while starting the tunnel worker")
 		case <-tick.C:
 			c, e := net.DialTimeout("unix", b.workerSocket, 100*time.Millisecond)
 			if e == nil {

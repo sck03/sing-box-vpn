@@ -298,66 +298,80 @@ func (m *manager) handler(parent context.Context) http.Handler {
 		c := m.cfg
 		s := m.status
 		m.mu.Unlock()
-		var e error
-		swap := false
-		if a.Country != "" && strings.ToUpper(a.Country) != c.Country {
-			respond(w, 409, map[string]string{"error": "configure that country's independent entries through sb first"})
+		if a.Op == "refresh" {
+			if a.Country != "" && strings.ToUpper(a.Country) != c.Country {
+				respond(w, 409, map[string]string{"error": "configure that country's independent entries through sb first"})
+				return
+			}
+			m.scheduleRefresh(parent, c, true)
+			respond(w, 202, m.snapshot())
 			return
 		}
-		switch a.Op {
-		case "start":
-			c.Enabled = true
-		case "stop":
-			c.Enabled = false
-		case "swap":
-			if c.Mode == "fixed" {
-				e = errors.New("switch to sticky mode before swapping")
+		swap := false
+		code := 400
+		root := filepath.Dir(m.configPath)
+		if filepath.Base(root) == "vpngate" {
+			root = filepath.Dir(root)
+		}
+		e := manage.ConfigTransaction(root, func() error {
+			// Menu configuration may have changed while the daemon still holds its
+			// previous snapshot. Merge this action into the latest published file.
+			latest, err := readConfig(m.configPath)
+			if err == nil {
+				c = latest
+			} else if !os.IsNotExist(err) || a.Op == "reload" {
+				return err
 			}
-			if s.State == "connecting" || s.State == "verifying" {
-				e = errors.New("a tunnel is already connecting")
+			if a.Country != "" && strings.ToUpper(a.Country) != c.Country {
+				code = 409
+				return errors.New("configure that country's independent entries through sb first")
 			}
-			c.Enabled = true
-			swap = true
-		case "mode":
-			if a.Mode != "sticky" && a.Mode != "fixed" {
-				e = errors.New("mode must be sticky or fixed")
-			} else {
-				c.Mode = a.Mode
-				c.FixedHost = a.FixedHost
-				if c.Mode == "fixed" && c.FixedHost == "" {
+			switch a.Op {
+			case "start":
+				c.Enabled = true
+			case "stop":
+				c.Enabled = false
+			case "swap":
+				if c.Mode == "fixed" {
+					return errors.New("switch to sticky mode before swapping")
+				}
+				if s.State == "connecting" || s.State == "verifying" {
+					return errors.New("a tunnel is already connecting")
+				}
+				c.Enabled = true
+				swap = true
+			case "mode":
+				if a.Mode != "sticky" && a.Mode != "fixed" {
+					return errors.New("mode must be sticky or fixed")
+				}
+				c.Mode, c.FixedHost = a.Mode, a.FixedHost
+				if c.Mode == "fixed" && c.FixedHost == "" && s.Country == c.Country {
 					c.FixedHost = s.Node
 				}
 				if c.Mode == "sticky" {
 					c.FixedHost = ""
 				}
+			case "reload":
+			case "policy":
+				if a.RequireISP != nil {
+					c.RequireISP = *a.RequireISP
+				}
+				if a.ExcludeHosting != nil {
+					c.ExcludeHosting = *a.ExcludeHosting
+				}
+				if a.Sources != nil {
+					c.Sources = a.Sources
+				}
+				if a.AllowASNs != nil || a.ClearASNs {
+					c.AllowASNs = a.AllowASNs
+				}
+			default:
+				return errors.New("unknown action")
 			}
-		case "reload":
-			c, e = readConfig(m.configPath)
-		case "policy":
-			if a.RequireISP != nil {
-				c.RequireISP = *a.RequireISP
-			}
-			if a.ExcludeHosting != nil {
-				c.ExcludeHosting = *a.ExcludeHosting
-			}
-			if a.Sources != nil {
-				c.Sources = a.Sources
-			}
-			if a.AllowASNs != nil || a.ClearASNs {
-				c.AllowASNs = a.AllowASNs
-			}
-		case "refresh":
-			m.scheduleRefresh(parent, c, true)
-			respond(w, 202, m.snapshot())
-			return
-		default:
-			e = errors.New("unknown action")
-		}
-		if e == nil {
-			e = m.apply(c, swap)
-		}
+			return m.apply(c, swap)
+		})
 		if e != nil {
-			respond(w, 400, map[string]string{"error": e.Error()})
+			respond(w, code, map[string]string{"error": e.Error()})
 			return
 		}
 		respond(w, 202, m.snapshot())

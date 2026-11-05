@@ -100,6 +100,23 @@ func CheckJSON(ctx context.Context, binary, directory string, value any) error {
 }
 
 func withLock(root string, operation func() error) error {
+	return withOperationLock(root, func() error { return withConfigLock(root, operation) })
+}
+
+// ConfigTransaction lets the gateway share the application's publication lock
+// when changing the configuration file that both processes use.
+func ConfigTransaction(root string, operation func() error) error {
+	return withLock(root, operation)
+}
+
+// Configuration writers and core updates share this lock. Service startup only
+// needs the shorter configuration lock, so restarting a service cannot deadlock
+// with the update that requested its restart.
+func withOperationLock(root string, operation func() error) error {
+	return withNamedFileLock(root, ".operation.lock", operation)
+}
+
+func withConfigLock(root string, operation func() error) error {
 	return withFileLock(root, func() error {
 		if err := recoverPublish(root); err != nil {
 			return err
@@ -109,10 +126,14 @@ func withLock(root string, operation func() error) error {
 }
 
 func withFileLock(root string, operation func() error) error {
+	return withNamedFileLock(root, ".manage.lock", operation)
+}
+
+func withNamedFileLock(root, name string, operation func() error) error {
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(filepath.Join(root, ".manage.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	f, err := os.OpenFile(filepath.Join(root, name), os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return err
 	}
@@ -430,36 +451,41 @@ func (u *coreUpdater) activate(ctx context.Context, root, candidate string, rest
 	if err = copyBinary(candidate, next); err != nil {
 		return "", err
 	}
-	version, err := u.check(ctx, next)
-	if err != nil {
-		return "", err
-	}
-	if err = u.validate(ctx, root, next); err != nil {
-		return "", err
-	}
+	var version string
 	var active []string
-	if restart {
-		active, err = u.services.active(ctx)
-		if err != nil {
-			return "", err
-		}
-	}
 	current, previous := filepath.Join(root, "sing-box"), filepath.Join(root, "sing-box.previous")
-	_, currentErr := os.Stat(current)
-	hadCurrent := currentErr == nil
-	if currentErr != nil && !errors.Is(currentErr, os.ErrNotExist) {
-		return "", currentErr
-	}
-	if hadCurrent {
-		backup := filepath.Join(stage, "previous")
-		if err = copyBinary(current, backup); err != nil {
-			return "", err
+	hadCurrent := false
+	err = withStartupLock(ctx, root, func() error {
+		version, err = u.check(ctx, next)
+		if err != nil {
+			return err
 		}
-		if err = os.Rename(backup, previous); err != nil {
-			return "", err
+		if err = u.validate(ctx, root, next); err != nil {
+			return err
 		}
-	}
-	if err = os.Rename(next, current); err != nil {
+		if restart {
+			active, err = u.services.active(ctx)
+			if err != nil {
+				return err
+			}
+		}
+		_, currentErr := os.Stat(current)
+		hadCurrent = currentErr == nil
+		if currentErr != nil && !errors.Is(currentErr, os.ErrNotExist) {
+			return currentErr
+		}
+		if hadCurrent {
+			backup := filepath.Join(stage, "previous")
+			if err = copyBinary(current, backup); err != nil {
+				return err
+			}
+			if err = os.Rename(backup, previous); err != nil {
+				return err
+			}
+		}
+		return os.Rename(next, current)
+	})
+	if err != nil {
 		return "", err
 	}
 	for _, name := range active {
@@ -469,10 +495,12 @@ func (u *coreUpdater) activate(ctx context.Context, root, candidate string, rest
 		rollback := context.Background()
 		if hadCurrent {
 			restore := filepath.Join(stage, "restore")
-			if restoreErr := copyBinary(previous, restore); restoreErr != nil {
-				return "", errors.Join(err, restoreErr)
-			}
-			if restoreErr := os.Rename(restore, current); restoreErr != nil {
+			if restoreErr := withStartupLock(rollback, root, func() error {
+				if restoreErr := copyBinary(previous, restore); restoreErr != nil {
+					return restoreErr
+				}
+				return os.Rename(restore, current)
+			}); restoreErr != nil {
 				return "", errors.Join(err, restoreErr)
 			}
 			var recoveryErr error
@@ -485,7 +513,9 @@ func (u *coreUpdater) activate(ctx context.Context, root, candidate string, rest
 				return "", fmt.Errorf("原核心已恢复，但服务恢复失败: %w", errors.Join(err, recoveryErr))
 			}
 		} else {
-			_ = os.Remove(current)
+			if restoreErr := withStartupLock(rollback, root, func() error { return os.Remove(current) }); restoreErr != nil {
+				return "", errors.Join(err, restoreErr)
+			}
 		}
 		return "", fmt.Errorf("新核心服务启动失败，已恢复原核心: %w", err)
 	}
@@ -539,7 +569,7 @@ func RunCore(ctx context.Context, args []string, output io.Writer) error {
 	if runtime.GOOS != "linux" || os.Geteuid() != 0 {
 		return errors.New("核心安装/更新要求 Linux root")
 	}
-	return withLock(*root, func() error {
+	return withOperationLock(*root, func() error {
 		switch operation {
 		case "prepare":
 			if *destination == "" {
@@ -583,7 +613,7 @@ func RunCore(ctx context.Context, args []string, output io.Writer) error {
 			}
 			current := filepath.Join(*root, "sing-box")
 			if installed, err := u.check(ctx, current); err == nil && installed == asset.Version {
-				if err = u.validate(ctx, *root, current); err != nil {
+				if err = withStartupLock(ctx, *root, func() error { return u.validate(ctx, *root, current) }); err != nil {
 					return err
 				}
 				if *format == "text" {

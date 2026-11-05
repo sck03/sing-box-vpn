@@ -268,7 +268,9 @@ func RunFirewall(ctx context.Context, args []string, output io.Writer) error {
 	lock := withLock
 	if *remove {
 		// Confirmed uninstall must still work with a damaged recovery journal.
-		lock = withFileLock
+		lock = func(root string, operation func() error) error {
+			return withOperationLock(root, func() error { return withFileLock(root, operation) })
+		}
 	}
 	return lock(*root, func() error { return (firewall{}).sync(ctx, *root, *remove) })
 }

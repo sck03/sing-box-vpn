@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"os"
 	"strings"
 	"sync"
@@ -147,10 +148,15 @@ func (w *worker) dial(ctx context.Context, network, address string) (net.Conn, e
 }
 
 func dialPublicTargets(ctx context.Context, network, port string, ips []net.IP, dial func(context.Context, string, string) (net.Conn, error)) (net.Conn, error) {
-	targets := make([]string, 0, len(ips))
+	targets := make([]netip.Addr, 0, len(ips))
+	seen := make(map[netip.Addr]bool, len(ips))
 	for _, ip := range ips {
-		if v := ip.To4(); v != nil && publicIPv4(v.String()) {
-			targets = append(targets, net.JoinHostPort(v.String(), port))
+		if address, ok := netip.AddrFromSlice(ip); ok {
+			address = address.Unmap()
+			if publicIPv4Addr(address) && !seen[address] {
+				targets = append(targets, address)
+				seen[address] = true
+			}
 		}
 	}
 	if len(targets) == 0 {
@@ -172,7 +178,7 @@ func dialPublicTargets(ctx context.Context, network, port string, ips []net.IP, 
 		// Share the overall budget, like net.Dialer's serial address fallback.
 		budget := min(remaining, max(2*time.Second, remaining/time.Duration(len(targets)-i)))
 		attempt, cancel := context.WithTimeout(ctx, budget)
-		c, err := dial(attempt, network+"4", address)
+		c, err := dial(attempt, network+"4", net.JoinHostPort(address.String(), port))
 		cancel()
 		if err == nil {
 			return c, nil

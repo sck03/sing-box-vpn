@@ -32,7 +32,7 @@ func withStartupLock(ctx context.Context, root string, operation func() error) e
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		err := withLock(root, operation)
+		err := withConfigLock(root, operation)
 		if !errors.Is(err, errLockBusy) {
 			return err
 		}
@@ -49,7 +49,7 @@ func withStartupLock(ctx context.Context, root string, operation func() error) e
 func bundleNames(files fileBundle) ([]string, error) {
 	names := make([]string, 0, len(files))
 	for name := range files {
-		if !filepath.IsLocal(name) || filepath.ToSlash(filepath.Clean(name)) != name || name == "." || name == journalName || name == ".manage.lock" || strings.HasPrefix(name, ".commit-") {
+		if !filepath.IsLocal(name) || filepath.ToSlash(filepath.Clean(name)) != name || name == "." || name == journalName || name == ".manage.lock" || name == ".operation.lock" || strings.HasPrefix(name, ".commit-") {
 			return nil, errors.New("无效配置路径")
 		}
 		names = append(names, name)

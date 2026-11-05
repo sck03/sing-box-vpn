@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -93,5 +94,44 @@ func TestTunnelDeathInterruptsHealthProbe(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("tunnel exit waited for a blocked health probe")
+	}
+}
+
+func TestTunnelDeathInterruptsStartupProbe(t *testing.T) {
+	cfg := defaults()
+	cfg.Enabled = true
+	cfg.DataDir, cfg.RunDir = t.TempDir(), t.TempDir()
+	m := newManager(cfg, "")
+	m.previous = Node{Host: "saved-jp", IP: "203.0.113.5", Country: "JP", Profile: safeTestProfile}
+	m.sourceClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		<-r.Context().Done()
+		return nil, r.Context().Err()
+	})
+	active := &fakeTunnel{dead: make(chan error)}
+	m.factory = func(Config) tunnel { return active }
+	entered, stopped := make(chan struct{}), make(chan struct{})
+	m.probeOverride = func(ctx context.Context, _ Config, _ tunnel) (Geo, error) {
+		close(entered)
+		<-ctx.Done()
+		close(stopped)
+		return Geo{}, context.Cause(ctx)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); m.run(ctx) }()
+	defer func() { cancel(); <-done }()
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("startup probe did not begin")
+	}
+	close(active.dead)
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("dead tunnel retained its blocked startup probe")
+	}
+	if m.snapshot().State == "ready" {
+		t.Fatal("dead tunnel enabled forwarding")
 	}
 }

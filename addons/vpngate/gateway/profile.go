@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"regexp"
 	"sort"
 	"strconv"
@@ -29,11 +30,15 @@ type Node struct {
 }
 
 func publicIPv4(s string) bool {
-	ip := net.ParseIP(s)
-	if ip == nil || ip.To4() == nil || !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+	ip, err := netip.ParseAddr(s)
+	return err == nil && publicIPv4Addr(ip.Unmap())
+}
+
+func publicIPv4Addr(ip netip.Addr) bool {
+	if !ip.Is4() || !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
 		return false
 	}
-	v := ip.To4()
+	v := ip.As4()
 	return !(v[0] == 100 && v[1] >= 64 && v[1] <= 127)
 }
 
