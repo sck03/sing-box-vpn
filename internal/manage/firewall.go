@@ -36,10 +36,29 @@ func (f firewall) command(ctx context.Context, required bool, binary string, arg
 		return true, nil
 	}
 	var exit interface{ ExitCode() int }
-	if !required && child.Err() == nil && errors.As(err, &exit) && exit.ExitCode() == 1 {
-		return false, nil
+	if !required && child.Err() == nil && errors.As(err, &exit) {
+		if exit.ExitCode() == 1 || exit.ExitCode() == 2 && missingFirewallChain(args, string(output)) {
+			return false, nil
+		}
 	}
 	return false, fmt.Errorf("防火墙操作失败: %s: %w: %s", binary, errors.Join(err, child.Err()), strings.TrimSpace(string(output)))
+}
+
+// nf_tables uses exit 2 for an absent queried/jump chain as well as bad syntax.
+// Match the specific query target; an unrelated error must still be reported.
+func missingFirewallChain(args []string, output string) bool {
+	query := slices.Contains(args, "-C") || slices.Contains(args, "-S")
+	if !query {
+		return false
+	}
+	for i, arg := range args {
+		if (arg == "-S" || arg == "-j") && i+1 < len(args) {
+			if strings.Contains(output, "Chain '"+args[i+1]+"' does not exist") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 const inputChain = "SBVPN_INPUT"

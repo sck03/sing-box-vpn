@@ -25,6 +25,26 @@ func TestFirewallQueryDistinguishesMissingRuleFromFailure(t *testing.T) {
 	}
 }
 
+func TestFirewallNFTMissingChainQuery(t *testing.T) {
+	for _, args := range [][]string{{"-t", "filter", "-S", inputChain}, {"-C", "INPUT", "-j", inputChain}} {
+		f := firewall{execute: func(context.Context, string, ...string) ([]byte, error) {
+			return []byte("iptables v1.8.10 (nf_tables): Chain 'SBVPN_INPUT' does not exist\n"), firewallExit(2)
+		}}
+		if found, err := f.command(context.Background(), false, "iptables", args...); found || err != nil {
+			t.Fatal("nf_tables missing chain was treated as an invalid query", found, err)
+		}
+		if _, err := f.command(context.Background(), true, "iptables", args...); err == nil {
+			t.Fatal("required operation ignored a missing chain")
+		}
+	}
+	f := firewall{execute: func(context.Context, string, ...string) ([]byte, error) {
+		return []byte("iptables v1.8.10 (nf_tables): Chain 'OTHER_CHAIN' does not exist\n"), firewallExit(2)
+	}}
+	if _, err := f.command(context.Background(), false, "iptables", "-S", inputChain); err == nil {
+		t.Fatal("query ignored an unrelated missing-chain error")
+	}
+}
+
 func TestFirewallFailedCleanupRetainsOwnership(t *testing.T) {
 	root := t.TempDir()
 	marker := filepath.Join(root, "firewall.owner")
