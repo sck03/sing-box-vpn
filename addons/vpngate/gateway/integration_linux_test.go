@@ -537,8 +537,17 @@ func TestLinuxNamespaceIsolation(t *testing.T) {
 	}
 	country.Store("KR")
 	_ = ctl("start")
+	var lastStatus Status
+	defer func() {
+		if t.Failed() {
+			t.Logf("last wrong-country startup status before cleanup: %+v", lastStatus)
+		}
+	}()
 	linuxWait(t, 90*time.Second, func() bool {
 		status, err := tryCTL("status")
+		if err == nil {
+			lastStatus = status
+		}
 		return err == nil && strings.Contains(status.Reason, "does not match JP")
 	})
 	if ctl("status").State == "ready" {

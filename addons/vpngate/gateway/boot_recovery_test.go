@@ -75,6 +75,39 @@ func TestSavedNodeStillRequiresExitVerification(t *testing.T) {
 	}
 }
 
+func TestCooldownRetainsLastTunnelFailure(t *testing.T) {
+	cfg := defaults()
+	cfg.Enabled = true
+	cfg.DataDir, cfg.RunDir = t.TempDir(), t.TempDir()
+	node := Node{Host: "saved-jp", IP: "203.0.113.5", Country: "JP", Profile: safeTestProfile}
+	m := newManager(cfg, "")
+	m.previous, m.nodes, m.nodesUpdated = node, []Node{node}, time.Now()
+	m.factory = func(Config) tunnel { return &fakeTunnel{dead: make(chan error)} }
+	m.probeOverride = func(_ context.Context, c Config, _ tunnel) (Geo, error) {
+		g := Geo{IP: node.IP, Country: "KR"}
+		return g, c.acceptGeo(g)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); m.run(ctx) }()
+	defer func() { cancel(); <-done }()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		status := m.snapshot()
+		if status.State == "waiting" && strings.HasPrefix(status.Reason, "no valid candidate") {
+			if !strings.Contains(status.Reason, "does not match JP") {
+				t.Fatal("cooldown hid the exit verification failure", status.Reason)
+			}
+			if status.Exit != nil {
+				t.Fatal("rejected exit was still advertised")
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("failed cached candidate did not enter cooldown")
+}
+
 func TestStartupRetriesTransientVerificationOnSameTunnel(t *testing.T) {
 	cfg := defaults()
 	cfg.Enabled = true

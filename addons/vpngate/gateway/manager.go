@@ -519,6 +519,7 @@ func (m *manager) reconnectCandidates(c Config, nodes []Node, swap bool) []Node 
 
 func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 	backoff := 5 * time.Second
+	lastFailure := ""
 	var initial []Node
 	if !swap {
 		m.mu.Lock()
@@ -542,7 +543,11 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 			pool = m.reconnectCandidates(c, m.refresh(ctx, c, false), swap)
 		}
 		if len(pool) == 0 {
-			m.setStatus("waiting", "no valid candidate in requested country", Node{}, nil)
+			reason := "no valid candidate in requested country"
+			if lastFailure != "" {
+				reason += "; last tunnel failure: " + lastFailure
+			}
+			m.setStatus("waiting", reason, Node{}, nil)
 		}
 		for _, n := range pool {
 			if ctx.Err() != nil {
@@ -603,6 +608,7 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 			if e != nil {
 				reason = e.Error()
 			}
+			lastFailure = reason
 			m.setStatus("waiting", reason, n, nil)
 			m.mu.Lock()
 			m.failed[n.Host] = time.Now().Add(2 * time.Minute)
