@@ -52,9 +52,7 @@ func TestLinuxServiceStartupRecovery(t *testing.T) {
 		if err := AtomicBytes(filepath.Join(root, "app.json"), []byte("interrupted write"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		if err := AtomicJSON(filepath.Join(root, journalName), commitJournal{Before: fileBundle{"app.json": before}, Stage: ".commit-service-test"}); err != nil {
-			t.Fatal(err)
-		}
+		writePendingJournal(t, root, fileBundle{"app.json": before}, snapshotStage)
 	}
 	interrupt()
 	// Run only the firewall operation inside an isolated namespace; service

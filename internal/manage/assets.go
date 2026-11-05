@@ -7,8 +7,7 @@ import (
 	"errors"
 	"flag"
 	"io"
-	"os"
-	"path/filepath"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -39,31 +38,23 @@ func RunAsset(ctx context.Context, args []string, output io.Writer) error {
 		if asset.URL != expected || !digestPattern.MatchString(asset.Digest) {
 			return errors.New("发行资产缺少可验证的官方地址或 SHA256")
 		}
-		if err := os.MkdirAll(filepath.Dir(*destination), 0700); err != nil {
-			return err
-		}
-		file, err := os.CreateTemp(filepath.Dir(*destination), ".asset-")
-		if err != nil {
-			return err
-		}
-		defer os.Remove(file.Name())
+		return downloadAsset(ctx, client, asset, *destination)
+	}
+	return errors.New("发行缺少本机架构的 cloudflared")
+}
+
+func downloadAsset(ctx context.Context, client *http.Client, asset releaseAsset, destination string) error {
+	if !digestPattern.MatchString(asset.Digest) {
+		return errors.New("发行资产缺少 SHA256")
+	}
+	return atomicWrite(destination, 0755, func(output io.Writer) error {
 		response, err := httpRequest(ctx, client, asset.URL)
 		if err != nil {
-			file.Close()
 			return err
 		}
+		defer response.Body.Close()
 		digest := sha256.New()
-		size, err := io.Copy(io.MultiWriter(file, digest), io.LimitReader(response.Body, (256<<20)+1))
-		response.Body.Close()
-		if err == nil {
-			err = file.Sync()
-		}
-		if err == nil {
-			err = file.Chmod(0755)
-		}
-		if closeErr := file.Close(); err == nil {
-			err = closeErr
-		}
+		size, err := copyFileContent(io.MultiWriter(output, digest), io.LimitReader(response.Body, (256<<20)+1))
 		if err != nil {
 			return err
 		}
@@ -73,7 +64,6 @@ func RunAsset(ctx context.Context, args []string, output io.Writer) error {
 		if hex.EncodeToString(digest.Sum(nil)) != strings.ToLower(asset.Digest[7:]) {
 			return errors.New("SHA256 不匹配")
 		}
-		return os.Rename(file.Name(), *destination)
-	}
-	return errors.New("发行缺少本机架构的 cloudflared")
+		return nil
+	})
 }

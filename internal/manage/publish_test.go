@@ -3,11 +3,37 @@ package manage
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 )
+
+func writePendingJournal(t *testing.T, root string, before fileBundle, stage string) {
+	t.Helper()
+	j := commitJournal{Files: map[string]string{}, Stage: stage}
+	if err := os.MkdirAll(filepath.Join(root, stage), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := AtomicBytes(filepath.Join(root, stage, ".owner"), []byte(snapshotOwner), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range before {
+		j.Files[name] = ""
+		if data != nil {
+			if err := AtomicBytes(filepath.Join(root, stage, "before", name), data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			digest := sha256.Sum256(data)
+			j.Files[name] = hex.EncodeToString(digest[:])
+		}
+	}
+	if err := AtomicJSON(filepath.Join(root, journalName), j); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestPublishSkipsUnchangedFiles(t *testing.T) {
 	root := t.TempDir()
@@ -47,13 +73,11 @@ func TestInterruptedPublishRestoresBeforeNextManagementOperation(t *testing.T) {
 	if err := publish(root, fileBundle{"app.json": []byte("partial new state"), "sb.json": []byte("partial new server"), "new.txt": []byte("partial new file")}); err != nil {
 		t.Fatal(err)
 	}
-	stage := ".commit-interrupted"
+	stage := snapshotStage
 	if err := os.Mkdir(filepath.Join(root, stage), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := AtomicJSON(filepath.Join(root, ".pending-config.json"), Object{"before": before, "stage": stage}); err != nil {
-		t.Fatal(err)
-	}
+	writePendingJournal(t, root, before, stage)
 	if err := withLock(root, func() error {
 		for name, want := range before {
 			path := filepath.Join(root, name)
@@ -81,10 +105,10 @@ func TestInterruptedPublishRestoresBeforeNextManagementOperation(t *testing.T) {
 
 func TestRecoveryRejectsInvalidJournalBeforeWriting(t *testing.T) {
 	for _, bad := range []Object{
-		{"before": fileBundle{"../outside.txt": []byte("changed")}, "stage": ".commit-test"},
-		{"before": fileBundle{"app.json": []byte("changed")}, "stage": "../outside"},
-		{"before": fileBundle{".manage.lock": []byte("changed")}, "stage": ".commit-test"},
-		{"before": fileBundle{"other/../.manage.lock": []byte("changed")}, "stage": ".commit-test"},
+		{"files": map[string]string{"../outside.txt": ""}, "stage": ".commit-test"},
+		{"files": map[string]string{"app.json": ""}, "stage": "../outside"},
+		{"files": map[string]string{".manage.lock": ""}, "stage": ".commit-test"},
+		{"files": map[string]string{"other/../.manage.lock": ""}, "stage": ".commit-test"},
 	} {
 		root := t.TempDir()
 		if err := AtomicBytes(filepath.Join(root, "app.json"), []byte("unchanged"), 0600); err != nil {
@@ -110,9 +134,7 @@ func TestFailedRecoveryKeepsJournalForRetry(t *testing.T) {
 	}
 	before := fileBundle{"app.json": []byte("old state"), "vpngate/sbox.json": []byte("old export")}
 	journal := filepath.Join(root, ".pending-config.json")
-	if err := AtomicJSON(journal, Object{"before": before, "stage": ".commit-test"}); err != nil {
-		t.Fatal(err)
-	}
+	writePendingJournal(t, root, before, snapshotStage)
 	if err := withLock(root, func() error { t.Fatal("failed recovery continued into mutation"); return nil }); err == nil {
 		t.Fatal("recovery ignored an unwritable destination")
 	}

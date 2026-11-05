@@ -76,7 +76,9 @@ sb core-rollback
 sb recover
 ```
 
-`sb recover` 恢复未完成的配置提交；损坏的恢复记录会保留并报错。迁移已有 sing-box-yg
+`sb recover` 恢复未完成的配置提交。每次修改只保留一份修改前的临时快照，提交或恢复成功后
+清理，不累积历史配置。恢复记录只存文件列表与校验值；备份缺失或损坏时保留快照并报错。
+迁移已有 sing-box-yg
 配置时先保存 `migration-backup.json`。升级成功后，旧 Python 模块、旧模板及另一架构二进制
 移入 `/etc/s-box/待手动删除/迁移-XXXXXXXX/`，附原始路径清单，供确认后手动删除。
 

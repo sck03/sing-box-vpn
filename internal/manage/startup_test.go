@@ -18,9 +18,7 @@ func TestStartupWaitsForWriterAndRecoversBeforeAction(t *testing.T) {
 		if err := AtomicBytes(filepath.Join(root, "app.json"), []byte("incomplete"), 0600); err != nil {
 			return err
 		}
-		if err := AtomicJSON(filepath.Join(root, journalName), commitJournal{Before: fileBundle{"app.json": []byte("recovered")}, Stage: ".commit-startup"}); err != nil {
-			return err
-		}
+		writePendingJournal(t, root, fileBundle{"app.json": []byte("recovered")}, snapshotStage)
 		go func() {
 			done <- withStartupLock(ctx, root, func() error {
 				data, err := os.ReadFile(filepath.Join(root, "app.json"))

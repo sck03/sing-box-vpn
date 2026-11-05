@@ -12,14 +12,11 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io"
 	"math/big"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -77,69 +74,6 @@ type VPNSettings struct {
 	ProxyPort     int                `json:"proxy_port"`
 	Profiles      map[string]Profile `json:"profiles"`
 	Order         []string           `json:"profile_order,omitempty"`
-}
-
-func ReadJSON(path string, target any) (bool, error) {
-	f, err := os.Open(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, (16<<20)+1))
-	if err != nil {
-		return false, err
-	}
-	if len(data) > 16<<20 {
-		return false, errors.New("配置文件超过 16 MiB")
-	}
-	return true, json.Unmarshal(data, target)
-}
-
-func JSONBytes(value any) ([]byte, error) {
-	var out bytes.Buffer
-	encoder := json.NewEncoder(&out)
-	encoder.SetEscapeHTML(false)
-	encoder.SetIndent("", "  ")
-	err := encoder.Encode(value)
-	return out.Bytes(), err
-}
-
-func AtomicJSON(path string, value any) error {
-	data, err := JSONBytes(value)
-	if err != nil {
-		return err
-	}
-	return AtomicBytes(path, data, 0600)
-}
-
-func AtomicBytes(path string, data []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".write-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	if err = f.Chmod(mode); err == nil {
-		_, err = f.Write(data)
-	}
-	if err == nil {
-		err = f.Sync()
-	}
-	if closeErr := f.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	if err := os.Rename(f.Name(), path); err != nil {
-		return err
-	}
-	return syncDirectory(filepath.Dir(path))
 }
 
 func randomBytes(size int) []byte {
