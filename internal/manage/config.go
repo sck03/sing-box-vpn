@@ -374,7 +374,14 @@ func mutateVPN(app App, settings VPNSettings, private map[string]Secrets, operat
 	}
 	p.Secrets, p.Country = secret, cc
 	current := App{Profile: p, Inbounds: MakeInbounds(p, "vg-"+cc+"-")}
-	if err := mutateApp(&current, settings, operation, values); err != nil {
+	var err error
+	if slices.Contains([]string{"port", "hopping", "multiport"}, operation) {
+		protocol, ranges, _ := portMutation(operation, values)
+		err = applyPorts(&current, operation, protocol, ranges)
+	} else {
+		err = mutateApp(&current, settings, operation, values)
+	}
+	if err != nil {
 		return err
 	}
 	p = current.Profile

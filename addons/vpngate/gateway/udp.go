@@ -20,13 +20,15 @@ const (
 	maxUDPDials         = 8
 	maxUDPQueuedPackets = 64
 	maxUDPQueuedBytes   = 256 << 10
+	maxUDPTargetBytes   = maxUDPQueuedBytes / 2
 )
 
 type udpSession struct {
-	target string
-	c      net.Conn // Published once, under the association lock.
-	queued [][]byte
-	sendMu sync.Mutex
+	target      string
+	c           net.Conn // Published once, under the association lock.
+	queued      chan *queuedUDPPacket
+	queuedBytes int
+	closed      bool
 }
 
 type udpAssociation struct {
@@ -56,8 +58,8 @@ func (u *udpAssociation) close() {
 	})
 }
 
-// Pending targets have bounded queues. Established targets write from the receive
-// buffer directly, retaining the allocation-free path and their source ports.
+// Each target has one bounded sender. A blocked IPC write cannot stall other
+// targets, and reusable queued packets retain the allocation-free steady state.
 func (u *udpAssociation) dispatch(packet []byte, offset int, client netip.AddrPort) {
 	u.mu.Lock()
 	if u.ctx.Err() != nil {
@@ -77,7 +79,7 @@ func (u *udpAssociation) dispatch(packet []byte, offset int, client netip.AddrPo
 				u.mu.Unlock()
 				return
 			}
-			s = &udpSession{target: target}
+			s = &udpSession{target: target, queued: make(chan *queuedUDPPacket, maxUDPQueuedPackets)}
 			if !u.queue(s, packet[offset-2:]) {
 				u.mu.Unlock()
 				return
@@ -96,35 +98,8 @@ func (u *udpAssociation) dispatch(packet []byte, offset int, client netip.AddrPo
 			u.headers[string(packet[3:offset])] = s
 		}
 	}
-	c := s.c
-	if c == nil {
-		u.queue(s, packet[offset-2:])
-	}
+	u.queue(s, packet[offset-2:])
 	u.mu.Unlock()
-	if c != nil {
-		s.sendMu.Lock()
-		_ = sendUDPPacket(c, packet[offset-2:])
-		s.sendMu.Unlock()
-	}
-}
-
-// queue and takeQueued are called only while holding the association lock.
-func (u *udpAssociation) queue(s *udpSession, packet []byte) bool {
-	if len(s.queued) >= maxUDPQueuedPackets || u.queuedBytes+len(packet) > maxUDPQueuedBytes {
-		return false
-	}
-	s.queued = append(s.queued, bytes.Clone(packet))
-	u.queuedBytes += len(packet)
-	return true
-}
-
-func (u *udpAssociation) takeQueued(s *udpSession) [][]byte {
-	packets := s.queued
-	for _, packet := range packets {
-		u.queuedBytes -= len(packet)
-	}
-	s.queued = nil
-	return packets
 }
 
 func (u *udpAssociation) remove(s *udpSession) {
@@ -133,7 +108,10 @@ func (u *udpAssociation) remove(s *udpSession) {
 	if s.c == nil {
 		u.pending--
 	}
-	u.takeQueued(s)
+	u.closeQueue(s)
+	for packet := range s.queued {
+		u.releasePacket(s, packet)
+	}
 	delete(u.sessions, s.target)
 	for header, cached := range u.headers {
 		if cached == s {
@@ -153,24 +131,13 @@ func sendUDPPacket(c net.Conn, packet []byte) error {
 }
 
 func (u *udpAssociation) activate(s *udpSession, c net.Conn) error {
-	// Publish the connection while holding its write lock, so queued datagrams
-	// finish before new packets can write to the same framed stream.
-	s.sendMu.Lock()
-	defer s.sendMu.Unlock()
 	u.mu.Lock()
+	defer u.mu.Unlock()
 	if err := u.ctx.Err(); err != nil {
-		u.mu.Unlock()
 		return err
 	}
 	s.c = c
 	u.pending--
-	packets := u.takeQueued(s)
-	u.mu.Unlock()
-	for _, packet := range packets {
-		if err := sendUDPPacket(c, packet); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
@@ -190,9 +157,18 @@ func (u *udpAssociation) run(s *udpSession, client netip.AddrPort) {
 	if err := u.activate(s, c); err != nil {
 		return
 	}
+	written := make(chan struct{})
+	go func() { defer close(written); defer c.Close(); u.send(s, c) }()
+	defer func() {
+		c.Close()
+		u.mu.Lock()
+		u.closeQueue(s)
+		u.mu.Unlock()
+		<-written
+	}()
 	frames := frameReader{source: c, buffer: header, prefix: len(header), limit: maxPacket - len(header)}
 	for {
-		_ = c.SetReadDeadline(time.Now().Add(udpIdleTimeout))
+		_ = c.SetDeadline(time.Now().Add(udpIdleTimeout))
 		packet, err := frames.read()
 		if err != nil {
 			return

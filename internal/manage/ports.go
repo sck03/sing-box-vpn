@@ -102,7 +102,7 @@ func portReservations(app App, settings VPNSettings) ([]portReservation, error) 
 		}
 		return nil
 	}
-	owner := profileOwner(app.Profile.Country)
+	owner := normalScope
 	for _, in := range app.Inbounds {
 		port := number(in["listen_port"])
 		out = append(out, portReservation{portRange{port, port}, owner, text(in["type"])})
@@ -180,7 +180,7 @@ func validatePortMutation(root string, app App, settings VPNSettings, scope, ope
 		return err
 	}
 	profile := app.Profile
-	owner := profileOwner(profile.Country)
+	owner := normalScope
 	if scope == vpngateScope {
 		var exists bool
 		profile, exists = settings.Profiles[settings.ActiveCountry]
@@ -205,6 +205,16 @@ func validatePortMutation(root string, app App, settings VPNSettings, scope, ope
 			reservations = append(reservations, portReservation{portRange{subscription.Port, subscription.Port}, "", "subscription"})
 		}
 	}
+	if err := validateReservedPorts(reservations, owner, protocol, ranges); err != nil {
+		return err
+	}
+	if root != "" && len(ranges) > 0 {
+		return checkSystemPorts(ranges, profile.Ports[protocol])
+	}
+	return nil
+}
+
+func validateReservedPorts(reservations []portReservation, owner, protocol string, ranges []portRange) error {
 	for _, r := range ranges {
 		for _, occupied := range reservations {
 			if occupied.owner == owner && occupied.protocol == protocol {
@@ -214,9 +224,6 @@ func validatePortMutation(root string, app App, settings VPNSettings, scope, ope
 				return fmt.Errorf("端口 %s 与其他节点、代理或订阅端口冲突", r.String())
 			}
 		}
-	}
-	if root != "" && len(ranges) > 0 {
-		return checkSystemPorts(ranges, profile.Ports[protocol])
 	}
 	return nil
 }
@@ -297,6 +304,11 @@ func changePorts(app *App, settings VPNSettings, operation string, values []stri
 		return err
 	}
 	protocol, ranges, _ := portMutation(operation, values)
+	return applyPorts(app, operation, protocol, ranges)
+}
+
+// Scope validation belongs to the caller; both node types share this mutation.
+func applyPorts(app *App, operation, protocol string, ranges []portRange) error {
 	if operation == "port" {
 		port := ranges[0].first
 		if port != app.Profile.Ports[protocol] {

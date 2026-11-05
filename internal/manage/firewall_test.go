@@ -2,7 +2,6 @@ package manage
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,7 +37,7 @@ func TestFirewallUsesProtocolPortsAndSeparateHoppingChain(t *testing.T) {
 		command := binary + " " + strings.Join(args, " ")
 		calls = append(calls, command)
 		if strings.Contains(command, " -C ") || strings.Contains(command, "-S "+legacyUDPChain) {
-			return nil, errors.New("absent")
+			return nil, firewallExit(1)
 		}
 		return nil, nil
 	}, restore: func(_ context.Context, binary, rules string) ([]byte, error) {
@@ -117,7 +116,7 @@ func TestFirewallRemovalDoesNotReadDamagedApplication(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "app.json"), []byte("{damaged"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	f := firewall{execute: func(context.Context, string, ...string) ([]byte, error) { return nil, errors.New("chain absent") }}
+	f := firewall{execute: func(context.Context, string, ...string) ([]byte, error) { return nil, firewallExit(1) }}
 	if err := f.sync(context.Background(), root, true); err != nil {
 		t.Fatal("damaged application blocked cleanup of owned firewall rules", err)
 	}

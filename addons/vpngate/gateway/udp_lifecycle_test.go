@@ -42,14 +42,20 @@ func (a *delayedUDPAccess) open(ctx context.Context, t ticket, network, address 
 func delayedUDPFixture(t *testing.T, target string) (net.Conn, *net.UDPConn, *delayedUDPAccess) {
 	t.Helper()
 	_, access, _ := startProxyFixture(t)
+	delayed := &delayedUDPAccess{proxyAccess: access, entered: make(chan string, 32), finished: make(chan string, 32), release: make(chan struct{}), target: target}
+	control, client := udpAssociationFixture(t, delayed)
+	return control, client, delayed
+}
+
+func udpAssociationFixture(t testing.TB, access proxyAccess) (net.Conn, *net.UDPConn) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	delayed := &delayedUDPAccess{proxyAccess: access, entered: make(chan string, 32), finished: make(chan string, 32), release: make(chan struct{}), target: target}
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	go serveProxy(ctx, listener, delayed)
+	go serveProxy(ctx, listener, access)
 	control := authProxy(t, listener.Addr().String(), "password")
 	t.Cleanup(func() { control.Close() })
 	_, _ = control.Write(requestAddress(3, "0.0.0.0:0"))
@@ -62,7 +68,7 @@ func delayedUDPFixture(t *testing.T, target string) (net.Conn, *net.UDPConn, *de
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { client.Close() })
-	return control, client, delayed
+	return control, client
 }
 
 func udpTestPacket(target, payload string) []byte {

@@ -32,10 +32,14 @@ func (f firewall) command(ctx context.Context, required bool, binary string, arg
 	} else {
 		output, err = exec.CommandContext(child, binary, full...).CombinedOutput()
 	}
-	if err != nil && required {
-		return false, fmt.Errorf("防火墙操作失败: %s: %w: %s", binary, err, strings.TrimSpace(string(output)))
+	if err == nil {
+		return true, nil
 	}
-	return err == nil, nil
+	var exit interface{ ExitCode() int }
+	if !required && child.Err() == nil && errors.As(err, &exit) && exit.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, fmt.Errorf("防火墙操作失败: %s: %w: %s", binary, errors.Join(err, child.Err()), strings.TrimSpace(string(output)))
 }
 
 const inputChain = "SBVPN_INPUT"
@@ -62,19 +66,27 @@ func (f firewall) apply(ctx context.Context, binary, rules string) error {
 }
 
 func (f firewall) removeChain(ctx context.Context, binary, table, parent, chain string) error {
+	found, err := f.command(ctx, false, binary, "-t", table, "-S", chain)
+	if err != nil || !found {
+		return err
+	}
+	return f.removeKnownChain(ctx, binary, table, parent, chain)
+}
+
+func (f firewall) removeKnownChain(ctx context.Context, binary, table, parent, chain string) error {
 	prefix := []string{"-t", table}
-	has := func(args ...string) bool {
-		ok, _ := f.command(ctx, false, binary, append(prefix, args...)...)
-		return ok
-	}
-	if !has("-S", chain) {
-		return nil
-	}
 	run := func(args ...string) error {
 		_, err := f.command(ctx, true, binary, append(prefix, args...)...)
 		return err
 	}
-	for has("-C", parent, "-j", chain) {
+	for {
+		found, err := f.command(ctx, false, binary, append(prefix, "-C", parent, "-j", chain)...)
+		if err != nil {
+			return err
+		}
+		if !found {
+			break
+		}
 		if err := run("-D", parent, "-j", chain); err != nil {
 			return err
 		}
@@ -86,6 +98,13 @@ func (f firewall) removeChain(ctx context.Context, binary, table, parent, chain 
 }
 
 func firewallRules(app App, settings VPNSettings, gateway Object, subscription subscriptionSettings) (string, string, error) {
+	reservations, err := portReservations(app, settings)
+	if err != nil {
+		return "", "", err
+	}
+	if subscription.Enabled {
+		reservations = append(reservations, portReservation{portRange{subscription.Port, subscription.Port}, "", "subscription"})
+	}
 	inputs := append(append([]Object{}, app.Inbounds...), objects(gateway["inbounds"])...)
 	ports := map[string]bool{}
 	for _, in := range inputs {
@@ -141,10 +160,17 @@ func firewallRules(app App, settings VPNSettings, gateway Object, subscription s
 			if i > 0 {
 				scope = vpngateScope
 			}
-			if err := validatePortMutation("", app, settings, scope, "multiport", append([]string{kind}, values...)); err != nil {
+			owner := normalScope
+			if scope == vpngateScope {
+				owner = profileOwner(settings.ActiveCountry)
+			}
+			ranges, err := parsePortRanges(values)
+			if err != nil {
 				return "", "", err
 			}
-			ranges, _ := parsePortRanges(values)
+			if err := validateReservedPorts(reservations, owner, kind, ranges); err != nil {
+				return "", "", err
+			}
 			for _, r := range ranges {
 				// Forward only packets addressed to this host, preserving transit traffic.
 				fmt.Fprintf(&udp, "-A %s -p udp -m addrtype --dst-type LOCAL --dport %s -j REDIRECT --to-ports %d\n", udpChain, r.String(), profile.Ports[kind])
@@ -152,6 +178,76 @@ func firewallRules(app App, settings VPNSettings, gateway Object, subscription s
 		}
 	}
 	return input.String(), udp.String(), nil
+}
+
+type firewallPlan struct {
+	binary, rules string
+	legacy        bool
+}
+
+// Probe every required family before changing rules or claiming ownership.
+func (f firewall) plan(ctx context.Context, binary, input, udp string, owned bool) (firewallPlan, error) {
+	if binary == "ip6tables" {
+		available, err := f.command(ctx, false, binary, "-S", "INPUT")
+		if err != nil || !available {
+			return firewallPlan{}, err
+		}
+	}
+	inputHook, err := f.command(ctx, false, binary, "-C", "INPUT", "-j", inputChain)
+	if err != nil {
+		return firewallPlan{}, err
+	}
+	natHook, err := f.command(ctx, false, binary, "-t", "nat", "-C", "PREROUTING", "-j", udpChain)
+	if err != nil {
+		return firewallPlan{}, err
+	}
+	var rules strings.Builder
+	fmt.Fprintf(&rules, "*filter\n:%s - [0:0]\n-F %s\n%s", inputChain, inputChain, input)
+	if !inputHook {
+		fmt.Fprintf(&rules, "-I INPUT 1 -j %s\n", inputChain)
+	}
+	rules.WriteString("COMMIT\n")
+	if udp != "" {
+		fmt.Fprintf(&rules, "*nat\n:%s - [0:0]\n-F %s\n%s", udpChain, udpChain, udp)
+		if !natHook {
+			fmt.Fprintf(&rules, "-I PREROUTING 1 -j %s\n", udpChain)
+		}
+		rules.WriteString("COMMIT\n")
+	} else {
+		exists := natHook
+		if !exists {
+			exists, err = f.command(ctx, false, binary, "-t", "nat", "-S", udpChain)
+			if err != nil {
+				return firewallPlan{}, err
+			}
+		}
+		if exists {
+			fmt.Fprintf(&rules, "*nat\n-F %s\n", udpChain)
+			if natHook {
+				fmt.Fprintf(&rules, "-D PREROUTING -j %s\n", udpChain)
+			}
+			fmt.Fprintf(&rules, "-X %s\nCOMMIT\n", udpChain)
+		}
+	}
+	legacy := false
+	if owned {
+		legacy, err = f.command(ctx, false, binary, "-t", "nat", "-S", legacyUDPChain)
+		if err != nil {
+			return firewallPlan{}, err
+		}
+	}
+	return firewallPlan{binary, rules.String(), legacy}, nil
+}
+
+func (f firewall) families() ([]string, error) {
+	if runtime.GOOS == "linux" && f.execute == nil {
+		if _, err := os.Stat("/proc/sys/net/ipv6"); errors.Is(err, os.ErrNotExist) {
+			return []string{"iptables"}, nil
+		} else if err != nil {
+			return nil, err
+		}
+	}
+	return []string{"iptables", "ip6tables"}, nil
 }
 
 func (f firewall) sync(ctx context.Context, root string, remove bool) error {
@@ -164,11 +260,18 @@ func (f firewall) sync(ctx context.Context, root string, remove bool) error {
 	if owned && strings.TrimSpace(string(owner)) != "sck03/sing-box-vpn" {
 		return errors.New("防火墙所有权记录不匹配")
 	}
-	has := func(binary string, args ...string) bool { ok, _ := f.command(ctx, false, binary, args...); return ok }
+	families, err := f.families()
+	if err != nil {
+		return err
+	}
 	if !owned {
-		for _, binary := range []string{"iptables", "ip6tables"} {
+		for _, binary := range families {
 			for _, chain := range []struct{ table, name string }{{"filter", inputChain}, {"nat", udpChain}, {"nat", legacyUDPChain}} {
-				if has(binary, "-t", chain.table, "-S", chain.name) {
+				found, err := f.command(ctx, false, binary, "-t", chain.table, "-S", chain.name)
+				if err != nil {
+					return err
+				}
+				if found {
 					return fmt.Errorf("%s 已存在且无本项目所有权记录", chain.name)
 				}
 			}
@@ -178,8 +281,8 @@ func (f firewall) sync(ctx context.Context, root string, remove bool) error {
 		}
 	}
 	if remove {
-		// Uninstall must work even if an application configuration is damaged.
-		for _, binary := range []string{"iptables", "ip6tables"} {
+		// Keep ownership until every query and owned-chain removal succeeds.
+		for _, binary := range families {
 			for _, chain := range []struct{ table, parent, name string }{{"filter", "INPUT", inputChain}, {"nat", "PREROUTING", udpChain}, {"nat", "PREROUTING", legacyUDPChain}} {
 				if err := f.removeChain(ctx, binary, chain.table, chain.parent, chain.name); err != nil {
 					return err
@@ -204,42 +307,28 @@ func (f firewall) sync(ctx context.Context, root string, remove bool) error {
 	if err != nil {
 		return err
 	}
+	plans := make([]firewallPlan, 0, len(families))
+	for _, binary := range families {
+		plan, err := f.plan(ctx, binary, input, udp, owned)
+		if err != nil {
+			return err
+		}
+		if plan.binary != "" {
+			plans = append(plans, plan)
+		}
+	}
 	if !owned {
 		if err := AtomicBytes(marker, []byte("sck03/sing-box-vpn\n"), 0600); err != nil {
 			return err
 		}
 	}
-	for _, binary := range []string{"iptables", "ip6tables"} {
-		if binary == "ip6tables" && !has(binary, "-S", "INPUT") {
-			continue
-		}
-		var rules strings.Builder
-		fmt.Fprintf(&rules, "*filter\n:%s - [0:0]\n-F %s\n%s", inputChain, inputChain, input)
-		if !has(binary, "-C", "INPUT", "-j", inputChain) {
-			fmt.Fprintf(&rules, "-I INPUT 1 -j %s\n", inputChain)
-		}
-		rules.WriteString("COMMIT\n")
-		natHook := has(binary, "-t", "nat", "-C", "PREROUTING", "-j", udpChain)
-		if udp != "" {
-			fmt.Fprintf(&rules, "*nat\n:%s - [0:0]\n-F %s\n%s", udpChain, udpChain, udp)
-			if !natHook {
-				fmt.Fprintf(&rules, "-I PREROUTING 1 -j %s\n", udpChain)
-			}
-			rules.WriteString("COMMIT\n")
-		} else if natHook || has(binary, "-t", "nat", "-S", udpChain) {
-			fmt.Fprintf(&rules, "*nat\n-F %s\n", udpChain)
-			if natHook {
-				fmt.Fprintf(&rules, "-D PREROUTING -j %s\n", udpChain)
-			}
-			fmt.Fprintf(&rules, "-X %s\nCOMMIT\n", udpChain)
-		}
-		// --noflush preserves unrelated rules; each table changes at COMMIT,
-		// avoiding an externally visible empty project chain during updates.
-		if err := f.apply(ctx, binary, rules.String()); err != nil {
+	for _, plan := range plans {
+		// --noflush preserves unrelated rules; each table changes at COMMIT.
+		if err := f.apply(ctx, plan.binary, plan.rules); err != nil {
 			return err
 		}
-		if owned {
-			if err := f.removeChain(ctx, binary, "nat", "PREROUTING", legacyUDPChain); err != nil {
+		if plan.legacy {
+			if err := f.removeKnownChain(ctx, plan.binary, "nat", "PREROUTING", legacyUDPChain); err != nil {
 				return err
 			}
 		}
