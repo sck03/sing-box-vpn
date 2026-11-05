@@ -2,16 +2,13 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/binary"
 	"errors"
 	"io"
 	"net"
-	"net/netip"
 	"strconv"
-	"sync"
 	"time"
 )
 
@@ -177,205 +174,16 @@ func readSocksAddress(r io.Reader, kind byte) (string, error) {
 	return net.JoinHostPort(host, strconv.Itoa(int(binary.BigEndian.Uint16(p[:])))), nil
 }
 func socksReply(w io.Writer, code byte, ip net.IP, port int) error {
-	b := []byte{5, code, 0, 1}
-	b = append(b, ip.To4()...)
-	b = binary.BigEndian.AppendUint16(b, uint16(port))
-	_, e := w.Write(b)
-	return e
-}
-
-type udpSession struct {
-	c      net.Conn
-	target string
-	client netip.AddrPort
-}
-
-func serveUDP(ctx context.Context, control net.Conn, t ticket, a proxyAccess) {
-	tcpAddr, ok := control.RemoteAddr().(*net.TCPAddr)
-	if !ok {
-		return
+	address := ip.To4()
+	if address == nil || port < 0 || port > 65535 {
+		return errors.New("invalid SOCKS reply address")
 	}
-	clientIP, ok := netip.AddrFromSlice(tcpAddr.IP)
-	if !ok {
-		return
+	b := [10]byte{5, code, 0, 1}
+	copy(b[4:8], address)
+	binary.BigEndian.PutUint16(b[8:], uint16(port))
+	n, err := w.Write(b[:])
+	if err == nil && n != len(b) {
+		err = io.ErrShortWrite
 	}
-	clientIP = clientIP.Unmap()
-	sock, e := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
-	if e != nil {
-		socksReply(control, 1, net.IPv4zero, 0)
-		return
-	}
-	if !a.track(sock) {
-		sock.Close()
-		return
-	}
-	defer sock.Close()
-	defer a.untrack(sock)
-	if e = socksReply(control, 0, net.IPv4(127, 0, 0, 1), sock.LocalAddr().(*net.UDPAddr).Port); e != nil {
-		return
-	}
-	var mu sync.Mutex
-	sessions := map[string]*udpSession{}
-	headers := map[string]*udpSession{}
-	var clientAddr netip.AddrPort
-	ctx, cancel := context.WithCancel(ctx)
-	closeAssociation := func() {
-		control.Close()
-		sock.Close()
-		mu.Lock()
-		for _, s := range sessions {
-			s.c.Close()
-			a.untrack(s.c)
-		}
-		mu.Unlock()
-	}
-	stop := context.AfterFunc(ctx, closeAssociation)
-	defer func() {
-		cancel()
-		stop()
-		closeAssociation()
-	}()
-	go func() { var b [1]byte; _, _ = control.Read(b[:]); cancel() }()
-	buf := make([]byte, maxPacket)
-	for {
-		_ = sock.SetReadDeadline(time.Now().Add(udpIdleTimeout))
-		n, src, e := sock.ReadFromUDPAddrPort(buf)
-		if e != nil {
-			return
-		}
-		if src.Addr() != clientIP || !a.allowed(t) || n < 7 || buf[0] != 0 || buf[1] != 0 || buf[2] != 0 {
-			continue
-		}
-		if clientAddr.IsValid() && src != clientAddr {
-			continue
-		}
-		offset, e := udpHeaderSize(buf[:n])
-		if e != nil {
-			continue
-		}
-		if !clientAddr.IsValid() {
-			clientAddr = src
-		}
-		mu.Lock()
-		// A []byte-to-string map lookup does not allocate. Parse the address
-		// only on a cache miss, retaining canonical sessions across address forms.
-		s := headers[string(buf[3:offset])]
-		target, full := "", false
-		if s == nil {
-			target, _, e = udpTarget(buf[:n])
-			if e == nil {
-				s = sessions[target]
-				full = len(sessions) >= 128
-				if s != nil && len(headers) < 256 {
-					headers[string(buf[3:offset])] = s
-				}
-			}
-		}
-		mu.Unlock()
-		if e != nil {
-			continue
-		}
-		if s == nil {
-			if full {
-				continue
-			}
-			c, resolved, e := a.open(ctx, t, "udp", target)
-			if e != nil {
-				continue
-			}
-			s = &udpSession{c: c, target: resolved, client: src}
-			mu.Lock()
-			if ctx.Err() != nil {
-				mu.Unlock()
-				c.Close()
-				a.untrack(c)
-				return
-			}
-			sessions[target] = s
-			if len(headers) < 256 {
-				headers[string(buf[3:offset])] = s
-			}
-			mu.Unlock()
-			go func(key string, session *udpSession) {
-				defer session.c.Close()
-				defer a.untrack(session.c)
-				defer func() {
-					mu.Lock()
-					delete(sessions, key)
-					for header, cached := range headers {
-						if cached == session {
-							delete(headers, header)
-						}
-					}
-					mu.Unlock()
-				}()
-				h, e := udpResponseHeader(session.target)
-				if e != nil {
-					return
-				}
-				frames := frameReader{source: session.c, buffer: h, prefix: len(h), limit: maxPacket - len(h)}
-				for {
-					_ = session.c.SetReadDeadline(time.Now().Add(udpIdleTimeout))
-					packet, e := frames.read()
-					if e != nil {
-						return
-					}
-					_ = sock.SetDeadline(time.Now().Add(udpIdleTimeout))
-					if _, e = sock.WriteToUDPAddrPort(packet, session.client); e != nil {
-						return
-					}
-				}
-			}(target, s)
-		}
-		_ = s.c.SetDeadline(time.Now().Add(udpIdleTimeout))
-		if e = writePacket(s.c, buf[offset-2:n]); e != nil {
-			s.c.Close()
-		}
-	}
-}
-
-func udpHeaderSize(b []byte) (int, error) {
-	if len(b) < 4 {
-		return 0, io.ErrUnexpectedEOF
-	}
-	size := 10
-	switch b[3] {
-	case 1:
-	case 3:
-		if len(b) < 5 || b[4] == 0 {
-			return 0, errors.New("invalid domain")
-		}
-		size = 7 + int(b[4])
-	default:
-		return 0, errors.New("IPv6 targets are unsupported")
-	}
-	if len(b) < size {
-		return 0, io.ErrUnexpectedEOF
-	}
-	return size, nil
-}
-
-func udpTarget(b []byte) (string, int, error) {
-	if len(b) < 4 {
-		return "", 0, io.ErrUnexpectedEOF
-	}
-	r := bytes.NewReader(b[4:])
-	address, e := readSocksAddress(r, b[3])
-	return address, len(b) - r.Len(), e
-}
-func udpResponseHeader(target string) ([]byte, error) {
-	h, p, e := net.SplitHostPort(target)
-	if e != nil {
-		return nil, e
-	}
-	ip := net.ParseIP(h).To4()
-	if ip == nil {
-		return nil, errors.New("worker returned non-IPv4 target")
-	}
-	port, e := strconv.Atoi(p)
-	if e != nil || port < 1 || port > 65535 {
-		return nil, errors.New("worker returned invalid UDP port")
-	}
-	b := append([]byte{0, 0, 0, 1}, ip...)
-	return binary.BigEndian.AppendUint16(b, uint16(port)), nil
+	return err
 }

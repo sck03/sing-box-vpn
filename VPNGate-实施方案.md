@@ -50,6 +50,7 @@ ASSOCIATE，TCP/UDP 中继只监听回环地址，必须认证。业务 socket �
 | cmd/release/ | Go 交叉编译与可复现归档、流式 SHA256 |
 | addons/vpngate/vpngate.sh | 菜单 17、国家入口、服务启停及清理 |
 | addons/vpngate/gateway/ | 节点/profile、国家/ISP、代理、worker、namespace |
+| addons/vpngate/gateway/{control,socks,udp,transport}.go | 控制 HTTP、SOCKS 握手、UDP 会话、共享 IPC 帧与 TCP 中继 |
 | lib/services.sh | 统一服务单元、启动恢复和 3 秒意外退出重试策略 |
 | sing-box.service | 普通五协议 |
 | yg-vpngate.service | 出口管理器与认证 SOCKS5 |
@@ -67,6 +68,8 @@ ASSOCIATE，TCP/UDP 中继只监听回环地址，必须认证。业务 socket �
 TCP 不设置定时重连。UDP 的空闲期限由双向收发共同更新，持续单向上传、下载也保持会话。
 健康探测按当前隧道复用连接；隧道进程退出可立即中断正在进行的探测。UDP 控制连接关闭
 时同时取消未完成的拨号并释放会话。入口设置不会重启 OpenVPN，重复导出也不触发服务重启。
+新 UDP 目标异步解析，已有目标继续发送；每个关联限制 8 个并发拨号，每个等待目标最多 64 包，
+等待总负载最多 256 KiB，超限丢弃新包。接收缓冲按会话借用并归还，不为每个数据包创建协程或缓冲。
 
 只维护现代模板，旧内核、双模板和旧 geosite/geoip 数据库不再生成。旧配置先私有
 备份，再迁移五协议字段，保留端口、用户和 Reality 密钥。修改不依赖行号或数组
@@ -80,6 +83,7 @@ TCP 不设置定时重连。UDP 的空闲期限由双向收发共同更新，持
 - Go：危险 profile、国家/固定模式、ASN、内核规则、过期认证、TCP/UDP 和碎片。
 - Go 管理：两套五协议、迁移、独立设置、凭据隔离、链接恢复、非法配置保护、跳跃与手动组、核心回滚、订阅限制。
 - 持续会话：单向 UDP 上传和下载分别运行 65 秒，验证没有空闲误判或会话重建。
+- UDP 并发：慢 DNS 时已有目标继续收发、等待包按顺序转发、拨号/队列有界、关联关闭取消全部等待。
 - 实际协议：普通/VPNGate 五协议分别验证 TCP/UDP，共 20 条链路。
 - Linux：受控 OpenVPN TLS、隧道 DNS、TCP/UDP、杀隧道后的已有/新连接阻断、
   停用状态重启恢复、错误出口国家拒绝。

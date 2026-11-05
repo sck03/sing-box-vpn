@@ -34,11 +34,15 @@ func stableVersion(value string) (string, error) {
 		return "", errors.New("请输入正式稳定版，例如 1.14.4")
 	}
 	parts, minimum := strings.Split(value, "."), strings.Split(project.Versions.SingBox.Minimum, ".")
+	var numbers [3]uint64
 	for i := range parts {
 		n, err := strconv.ParseUint(parts[i], 10, 32)
 		if err != nil {
 			return "", errors.New("版本号超出范围")
 		}
+		numbers[i] = n
+	}
+	for i, n := range numbers {
 		m, _ := strconv.ParseUint(minimum[i], 10, 32)
 		if n > m {
 			return value, nil

@@ -18,7 +18,7 @@ SCRATCH=$(mktemp -d /tmp/sing-box-vpn.XXXXXXXX)
 cleanup() { case "$SCRATCH" in /tmp/sing-box-vpn.*) rm -rf -- "$SCRATCH";;esac; }
 trap cleanup EXIT
 curl -fLsS --retry 2 --connect-timeout 15 --max-time 180 "$REPOSITORY/releases/download/$VERSION/sing-box-vpn-$VERSION.tar.gz" -o "$SCRATCH/sing-box-vpn-$VERSION.tar.gz"
-curl -fLsS --retry 2 "$REPOSITORY/releases/download/$VERSION/SHA256SUMS" -o "$SCRATCH/SHA256SUMS"
+curl -fLsS --retry 2 --connect-timeout 15 --max-time 60 "$REPOSITORY/releases/download/$VERSION/SHA256SUMS" -o "$SCRATCH/SHA256SUMS"
 (cd "$SCRATCH" && grep "  sing-box-vpn-$VERSION.tar.gz$" SHA256SUMS | sha256sum -c -)
 tar -xzf "$SCRATCH/sing-box-vpn-$VERSION.tar.gz" -C "$SCRATCH"
 bash "$SCRATCH/sing-box-vpn/sb.sh" install

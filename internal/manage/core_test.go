@@ -32,7 +32,7 @@ func testRelease(version, digest string) coreRelease {
 }
 
 func TestStableCoreAssetValidation(t *testing.T) {
-	for _, version := range []string{"1.10.7", "1.13.0", "1.15.0-alpha.1"} {
+	for _, version := range []string{"1.10.7", "1.13.0", "1.15.0-alpha.1", "2.4294967296.0", "1.15.4294967296"} {
 		if _, err := stableVersion(version); err == nil {
 			t.Fatal("accepted", version)
 		}
