@@ -17,11 +17,10 @@ type ticket struct {
 	country string
 }
 type proxyAccess interface {
+	connectionTracker
 	authenticate(string, string) (ticket, bool)
 	allowed(ticket) bool
 	open(context.Context, ticket, string, string) (net.Conn, string, error)
-	track(net.Conn) bool
-	untrack(net.Conn)
 }
 
 func equalSecret(a, b string) bool { return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
@@ -39,21 +38,7 @@ func readSmallString(r io.Reader) (string, error) {
 }
 
 func serveProxy(ctx context.Context, ln net.Listener, access proxyAccess) error {
-	go func() { <-ctx.Done(); ln.Close() }()
-	for {
-		c, e := ln.Accept()
-		if e != nil {
-			if ctx.Err() != nil {
-				return nil
-			}
-			return e
-		}
-		if !access.track(c) {
-			c.Close()
-			continue
-		}
-		go func() { defer c.Close(); defer access.untrack(c); handleSocks(ctx, c, access) }()
-	}
+	return serveConnections(ctx, ln, access, func(ctx context.Context, c net.Conn) { handleSocks(ctx, c, access) })
 }
 
 func handleSocks(ctx context.Context, c net.Conn, a proxyAccess) {

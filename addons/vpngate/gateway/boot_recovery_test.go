@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -190,7 +191,7 @@ func TestRevokedTunnelCannotAppearReady(t *testing.T) {
 }
 
 func BenchmarkReconnectCandidates(b *testing.B) {
-	nodes, err := parseNodes(benchmarkNodes(1500))
+	nodes, err := parseNodes(bytes.NewReader(benchmarkNodes(1500)))
 	if err != nil {
 		b.Fatal(err)
 	}

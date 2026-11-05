@@ -108,7 +108,7 @@ func TestCSVRejectsMissingCountryAndKnownDatacenter(t *testing.T) {
 		_ = w.Write(append(row, "10", "100", base64.StdEncoding.EncodeToString([]byte(safeTestProfile))))
 	}
 	w.Flush()
-	nodes, e := parseNodes([]byte("\ufeff*vpn_servers*\n" + b.String()))
+	nodes, e := parseNodes(strings.NewReader("\ufeff*vpn_servers*\n" + b.String()))
 	if e != nil {
 		t.Fatal(e)
 	}

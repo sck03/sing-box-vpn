@@ -27,7 +27,7 @@ func BenchmarkParseNodes(b *testing.B) {
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		nodes, err := parseNodes(data)
+		nodes, err := parseNodes(bytes.NewReader(data))
 		if err != nil || len(nodes) != 250 {
 			b.Fatalf("parse: %d nodes, %v", len(nodes), err)
 		}
@@ -54,7 +54,7 @@ func BenchmarkUDPFrameRead(b *testing.B) {
 }
 
 func BenchmarkPinnedCandidates(b *testing.B) {
-	nodes, err := parseNodes(benchmarkNodes(250))
+	nodes, err := parseNodes(bytes.NewReader(benchmarkNodes(250)))
 	if err != nil {
 		b.Fatal(err)
 	}

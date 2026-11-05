@@ -2,19 +2,17 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"net"
 	"net/http"
-	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/sck03/sing-box-vpn/internal/manage"
 )
 
 type tunnel interface {
@@ -68,11 +66,13 @@ func newManager(c Config, path string) *manager {
 	m.hostClient = &http.Client{Timeout: 12 * time.Second, Transport: m.sourceClient.Transport, CheckRedirect: m.sourceClient.CheckRedirect}
 	m.geoCache = map[string]cachedGeo{}
 	m.failed = map[string]time.Time{}
-	if b, e := os.ReadFile(filepath.Join(c.DataDir, "last-node.json")); e == nil {
-		_ = json.Unmarshal(b, &m.previous)
+	var saved Node
+	if _, err := manage.ReadJSON(filepath.Join(c.DataDir, "last-node.json"), &saved); err == nil {
+		m.previous = saved
 	}
-	if b, e := os.ReadFile(filepath.Join(c.DataDir, "nodes.json")); e == nil {
-		_ = json.Unmarshal(b, &m.nodes)
+	var cached []Node
+	if _, err := manage.ReadJSON(filepath.Join(c.DataDir, "nodes.json"), &cached); err == nil && len(cached) <= maxNodes {
+		m.nodes = cached
 	}
 	return m
 }
@@ -245,35 +245,6 @@ func (m *manager) run(ctx context.Context) {
 	}
 }
 
-func directClient(timeout time.Duration) *http.Client {
-	return &http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: func(ctx context.Context, _ string, address string) (net.Conn, error) {
-		return (&net.Dialer{Timeout: 15 * time.Second}).DialContext(ctx, "tcp4", address)
-	}, TLSHandshakeTimeout: 8 * time.Second, IdleConnTimeout: 90 * time.Second, MaxIdleConns: 8, MaxIdleConnsPerHost: 2, ForceAttemptHTTP2: true, DisableCompression: true}, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
-}
-func readHTTP(ctx context.Context, client *http.Client, url string, limit int64) ([]byte, error) {
-	req, e := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if e != nil {
-		return nil, errors.New("invalid HTTP request")
-	}
-	req.Header.Set("User-Agent", "sing-box-vpn/"+version)
-	req.Header.Set("Accept-Encoding", "identity")
-	res, e := client.Do(req)
-	if e != nil {
-		return nil, errors.New("HTTP lookup unavailable")
-	}
-	defer res.Body.Close()
-	if res.StatusCode != 200 {
-		return nil, fmt.Errorf("HTTP response %d", res.StatusCode)
-	}
-	b, e := io.ReadAll(io.LimitReader(res.Body, limit+1))
-	if e != nil {
-		return nil, e
-	}
-	if int64(len(b)) > limit {
-		return nil, errors.New("HTTP response too large")
-	}
-	return b, nil
-}
 func (m *manager) refresh(ctx context.Context, c Config, force bool) []Node {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -295,16 +266,12 @@ func (m *manager) refresh(ctx context.Context, c Config, force bool) []Node {
 		if ctx.Err() != nil {
 			return nil
 		}
-		b, e := readHTTP(ctx, m.sourceClient, source, 16<<20)
-		if e != nil {
-			continue
-		}
-		nodes, e := parseNodes(b)
+		nodes, e := readNodeSource(ctx, m.sourceClient, source)
 		if e != nil {
 			continue
 		}
 		m.mu.Lock()
-		if !slices.Equal(c.Sources, m.cfg.Sources) {
+		if ctx.Err() != nil || !slices.Equal(c.Sources, m.cfg.Sources) {
 			m.mu.Unlock()
 			return nil
 		}
@@ -402,14 +369,6 @@ func candidates(c Config, nodes []Node, previous Node, swap bool, failed map[str
 		pool = pool[:1]
 	}
 	return pool
-}
-
-func tunnelClient(active tunnel) *http.Client {
-	transport := &http.Transport{DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
-		conn, _, e := dialWorker(ctx, active.socket(), "tcp", address)
-		return conn, e
-	}, TLSHandshakeTimeout: 8 * time.Second, IdleConnTimeout: 90 * time.Second, MaxIdleConns: 2, MaxIdleConnsPerHost: 1, ForceAttemptHTTP2: true, DisableCompression: true}
-	return &http.Client{Timeout: 12 * time.Second, Transport: transport, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 }
 
 func (m *manager) probe(ctx context.Context, c Config, active tunnel, client *http.Client) (Geo, error) {

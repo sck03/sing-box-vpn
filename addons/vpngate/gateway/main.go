@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -208,14 +209,18 @@ func runDaemon(path string) error {
 	api := http.Server{Handler: m.handler(ctx), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 15 * time.Second, MaxHeaderBytes: 16 << 10}
 	done := make(chan struct{})
 	serveErrors := make(chan error, 2)
+	var listeners sync.WaitGroup
+	listeners.Add(2)
 	go func() { defer close(done); m.run(ctx) }()
 	go func() {
+		defer listeners.Done()
 		if e := api.Serve(control); e != nil && !errors.Is(e, http.ErrServerClosed) {
 			serveErrors <- fmt.Errorf("control listener failed: %w", e)
 			cancel()
 		}
 	}()
 	go func() {
+		defer listeners.Done()
 		if e := serveProxy(ctx, proxy, m); e != nil {
 			serveErrors <- fmt.Errorf("proxy listener failed: %w", e)
 			cancel()
@@ -225,6 +230,7 @@ func runDaemon(path string) error {
 	m.revoke()
 	_ = api.Close()
 	<-done
+	listeners.Wait()
 	select {
 	case e := <-serveErrors:
 		return e

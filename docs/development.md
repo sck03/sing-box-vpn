@@ -20,6 +20,7 @@ go run ./cmd/release
 
 先准备官方 SHA256 校验的 sing-box。基础验证覆盖配置、迁移、更新回滚、认证、真实五协议
 TCP/UDP、持续单向 UDP 和资源边界；性能测量命令见[优化记录](optimization.md)。
+会话退出回归验证停止后不遗留握手/拨号；节点源回归覆盖断流、尾部错误、读取上限和损坏缓存。
 
 ```bash
 SING_BOX_BINARY=/path/to/sing-box RUN_UDP_IDLE_TESTS=1 go test -race -count=1 ./...

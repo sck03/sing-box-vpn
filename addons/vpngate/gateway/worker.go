@@ -93,8 +93,6 @@ func dialPublicTargets(ctx context.Context, network, port string, ips []net.IP, 
 }
 
 func (w *worker) serve(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	ln, e := net.Listen("unix", w.socket)
 	if e != nil {
 		return e
@@ -104,35 +102,7 @@ func (w *worker) serve(ctx context.Context) error {
 	if e = os.Chmod(w.socket, 0600); e != nil {
 		return e
 	}
-	var mu sync.Mutex
-	conns := map[net.Conn]bool{}
-	go func() {
-		<-ctx.Done()
-		ln.Close()
-		mu.Lock()
-		for c := range conns {
-			c.Close()
-		}
-		mu.Unlock()
-	}()
-	for {
-		c, e := ln.Accept()
-		if e != nil {
-			if ctx.Err() != nil {
-				return nil
-			}
-			return e
-		}
-		mu.Lock()
-		if ctx.Err() != nil {
-			mu.Unlock()
-			c.Close()
-			return nil
-		}
-		conns[c] = true
-		mu.Unlock()
-		go func() { defer func() { c.Close(); mu.Lock(); delete(conns, c); mu.Unlock() }(); w.handle(ctx, c) }()
-	}
+	return serveConnections(ctx, ln, nil, w.handle)
 }
 
 func (w *worker) handle(parent context.Context, c net.Conn) {

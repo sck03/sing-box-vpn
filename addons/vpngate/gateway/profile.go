@@ -4,7 +4,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/base64"
 	"encoding/csv"
 	"errors"
@@ -28,6 +27,12 @@ type Node struct {
 	Ping    int    `json:"ping"`
 	Profile string `json:"profile"`
 }
+
+const (
+	maxNodeSource = 16 << 20
+	maxProfile    = 1 << 20
+	maxNodes      = 1500
+)
 
 func publicIPv4(s string) bool {
 	ip, err := netip.ParseAddr(s)
@@ -56,7 +61,7 @@ var hostPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
 var columnReplacer = strings.NewReplacer("_", "", "-", "", " ", "", "\ufeff", "")
 
 func validateProfile(profile, expectedIP string) (string, int, string, error) {
-	if len(profile) == 0 || len(profile) > 1<<20 || !publicIPv4(expectedIP) {
+	if len(profile) == 0 || len(profile) > maxProfile || !publicIPv4(expectedIP) {
 		return "", 0, "", errors.New("invalid profile or node IPv4")
 	}
 	var output strings.Builder
@@ -183,17 +188,36 @@ func canonicalColumn(s string) string {
 	return strings.ToLower(columnReplacer.Replace(strings.TrimPrefix(s, "#")))
 }
 
-func parseNodes(data []byte) ([]Node, error) {
-	if len(data) > 16<<20 {
+func parseNodes(source io.Reader) ([]Node, error) {
+	input := &io.LimitedReader{R: source, N: maxNodeSource + 1}
+	nodes, err := parseNodeRecords(input)
+	if err == nil {
+		// Read the tail even after reaching the node limit: size and transport
+		// failures must reject the whole response, and successful bodies can reuse HTTP connections.
+		_, err = io.Copy(io.Discard, input)
+	}
+	if input.N == 0 {
 		return nil, errors.New("VPNGate response exceeds 16 MiB")
 	}
-	input := bufio.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	return nodes, nil
+}
+
+func parseNodeRecords(source io.Reader) ([]Node, error) {
+	input := bufio.NewReader(source)
 	var r *csv.Reader
+	var records *bufio.Reader
 	for {
 		line, err := input.ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return nil, err
+		}
 		lc := strings.ToLower(line)
 		if strings.Contains(lc, "openvpn_configdata_base64") && strings.Contains(lc, "country") {
-			r = csv.NewReader(io.MultiReader(strings.NewReader(strings.TrimPrefix(line, "\ufeff")), input))
+			records = bufio.NewReader(io.MultiReader(strings.NewReader(strings.TrimPrefix(line, "\ufeff")), input))
+			r = csv.NewReader(records)
 			break
 		}
 		if err != nil {
@@ -225,13 +249,17 @@ func parseNodes(data []byte) ([]Node, error) {
 	speedColumn, pingColumn := column("speed"), column("ping")
 	var out []Node
 	seen := map[string]bool{}
-	for len(out) < 1500 {
+	for len(out) < maxNodes {
 		row, err := r.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			continue
+			var syntax *csv.ParseError
+			if errors.As(err, &syntax) {
+				continue
+			}
+			return nil, err
 		}
 		get := func(i int) string {
 			if i >= 0 && i < len(row) {
@@ -250,7 +278,11 @@ func parseNodes(data []byte) ([]Node, error) {
 		if !hostPattern.MatchString(host) || seen[host] {
 			continue
 		}
-		raw, err := base64.StdEncoding.DecodeString(get(profileColumn))
+		encoded := get(profileColumn)
+		if len(encoded) > base64.StdEncoding.EncodedLen(maxProfile) {
+			continue
+		}
+		raw, err := base64.StdEncoding.DecodeString(encoded)
 		if err != nil {
 			continue
 		}
@@ -264,6 +296,14 @@ func parseNodes(data []byte) ([]Node, error) {
 		host = strings.Clone(host)
 		out = append(out, Node{Host: host, IP: strings.Clone(ip), Country: strings.Clone(cc), Port: port, Network: proto, Speed: speed, Ping: ping, Profile: profile})
 		seen[host] = true
+	}
+	if len(out) == maxNodes {
+		// Drain the CSV reader's shared buffer too: it may hold an upstream
+		// error returned together with the last bytes of the final accepted row.
+		// Read through the buffer; its WriteTo shortcut can skip a pending error.
+		if _, err := io.Copy(io.Discard, struct{ io.Reader }{records}); err != nil {
+			return nil, err
+		}
 	}
 	if len(out) == 0 {
 		return nil, errors.New("no valid VPNGate profiles")
