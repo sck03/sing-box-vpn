@@ -23,7 +23,7 @@ SRS 中国规则仍支持；它不是被移除的旧 geosite/geoip 数据库选�
 [resolve 动作](https://sing-box.sagernet.org/configuration/route/rule_action/#resolve)、
 [废弃功能清单](https://sing-box.sagernet.org/deprecated/)。
 
-Go 验收包含配置/迁移、认证代理、真实五协议 TCP/UDP，以及受控 Linux OpenVPN
+Go 验收包含当前配置初始化、认证代理、真实五协议 TCP/UDP，以及受控 Linux OpenVPN
 与命名空间测试。公共节点的可用性和特定 VPS 网络仍取决于实际运行环境。
 UDP 验收包含慢域名解析及阻塞写入期间其他端口继续转发、多个目标独立解析、队列上限和关联关闭取消。
 8 个目标端口的并发传输校验每个端口的回复、1024 个数据包的内容及按目标的发送顺序。
@@ -34,8 +34,9 @@ systemd 专项验收模拟内核防火墙规则丢失及配置提交中断，再
 这模拟了重启后的恢复状态，实际 VPS 断电及文件系统恢复仍须在目标机器验证。
 许可证与代码来源见 NOTICE.md。
 
-v1.2.0 将原 Python 管理实现迁移到 Go，保留状态 JSON 格式及旧 URI 编码。
-普通与各国家端口、凭据和 Reality 密钥延续；旧订阅服务在安装升级时改用 Go 入口。
+当前版本仅支持新部署及当前 Go 配置，不提供旧 sing-box-yg/Python 配置导入、旧防火墙链迁移
+或历史 URI 字节兼容。VMess 分享链接使用标准 JSON 和 Base64，中文与 emoji 按 UTF-8 编码。
+当前配置重装和国家切换继续保留各自端口、凭据与 Reality 密钥。
 配置与更新使用同一文件锁，客户端校验失败不会提前替换服务端配置。
 
 普通与 VPNGate 改为独立导出。根目录原订阅地址只返回普通节点；当前国家的 VPNGate

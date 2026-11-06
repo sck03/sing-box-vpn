@@ -18,9 +18,10 @@ go run ./cmd/release
 
 ## 验证
 
-先准备官方 SHA256 校验的 sing-box。基础验证覆盖配置、迁移、更新回滚、认证、真实五协议
+先准备官方 SHA256 校验的 sing-box。基础验证覆盖初始化、更新回滚、认证、真实五协议
 TCP/UDP、持续单向 UDP 和资源边界；性能测量命令见[优化记录](optimization.md)。
 会话退出回归验证停止后不遗留握手/拨号；节点源回归覆盖断流、尾部错误、读取上限和损坏缓存。
+订阅回归覆盖同秒更新与监听失败后的连接关闭；初始化回归覆盖拒绝旧配置、地址错误与重复执行。
 
 ```bash
 SING_BOX_BINARY=/path/to/sing-box RUN_UDP_IDLE_TESTS=1 go test -race -count=1 ./...
@@ -43,6 +44,23 @@ sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_SERVICE_TESTS=1 "$(command 
 
 隔离验收覆盖 OpenVPN、隧道 DNS、断线阻断、崩溃恢复和错误国家拒绝；防火墙验收覆盖 IPv4/IPv6
 多端口及所有权清理，systemd 验收覆盖启动恢复和意外退出重试。
+
+### Windows 本地工具与 Linux 验证环境
+
+工具统一放在项目 `.tools/`，构建产物位于 `.build/`，缓存、临时文件与日志位于 `.test/`，
+三者均不提交 Git。将 Go 1.27.3 Windows 解压到 `.tools/go/` 后，在 PowerShell 运行：
+
+```powershell
+. ./scripts/dev-env.ps1
+go test -race -count=1 ./...
+```
+
+脚本只设置当前进程及其子进程的环境，不改系统配置；Go 缓存、模块下载和临时目录均指向项目。
+`GOTOOLCHAIN=local` 防止自动下载工具链到其他目录。已下载的 Linux 验证环境使用 QEMU 和
+Ubuntu 24.04 cloud image，基础镜像、可写磁盘、seed ISO、SSH 密钥及 Linux Go 压缩包均位于
+`.tools/`。通过 `scripts/linux-vm.ps1 start` 启动、`scripts/linux-vm.ps1 stop` 关闭；
+SSH 仅绑定 `127.0.0.1:22222`，连接信息见 `.tools/README.md`。无硬件加速时使用 TCG，耗时
+不可用于推断生产性能。删除或移动虚拟机磁盘前先关闭它，工具和本地验证数据可整体手动清理。
 
 ## GitHub Actions 与 Release
 

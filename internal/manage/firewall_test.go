@@ -36,7 +36,7 @@ func TestFirewallUsesProtocolPortsAndSeparateHoppingChain(t *testing.T) {
 	f := firewall{execute: func(_ context.Context, binary string, args ...string) ([]byte, error) {
 		command := binary + " " + strings.Join(args, " ")
 		calls = append(calls, command)
-		if strings.Contains(command, " -C ") || strings.Contains(command, "-S "+legacyUDPChain) {
+		if strings.Contains(command, " -C ") {
 			return nil, firewallExit(1)
 		}
 		return nil, nil

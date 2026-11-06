@@ -1,3 +1,34 @@
+**订阅正确性、导出精简与当前配置边界 · 2026-11-07**
+
+基线提交 `11ebc87`。修改前回归复现：同一秒替换订阅文件后，带 `If-Modified-Since` 的
+请求错误返回 304；VMess URI 的 Host 使用 Profile 默认值，未采用传输配置的 WebSocket Host。
+现在订阅不提供秒精度缓存验证标记，始终读取当前文件；VMess 明确区分连接地址、SNI 与 Host。
+订阅监听失败时统一关闭活跃连接，取消使用 `context.AfterFunc`，不再常驻一个等待协程。
+
+- `init.go` 独立负责初始化和地址校验，`export.go` 负责两套导出与候选文件组装。
+- 按新部署要求删除旧配置导入、旧 IP 日志读取、旧 Reality 私钥转换和旧防火墙链迁移。
+  当前 `app.json` 重复初始化保留设置，缺少管理状态却已有 `sb.json` 时拒绝覆盖。
+- VMess 用标准 JSON 编码替代手写 Unicode 转义，移除历史 URI 字节一致性测试。
+- Windows 工具、Linux QEMU/Ubuntu、缓存、下载和构建产物集中在项目目录；PowerShell
+  开发环境脚本将 Go 缓存与临时目录固定到项目，避免后续落入用户系统盘。
+
+Windows amd64、Intel i5-9400F、Go 1.27.3、GOMAXPROCS=6，非 race 基准三次取中位数。
+输入为包含中文、emoji、独立 Host/SNI 与 WS 参数的一个 VMess 节点，基线和修改后使用相同输入。
+
+| VMess URI 局部指标 | 修改前 | 修改后 |
+| --- | ---: | ---: |
+| 耗时 | 10,043 ns/op | 3,703 ns/op |
+| 分配内存 | 3,555 B/op | 1,991 B/op |
+| 分配次数 | 29/op | 10/op |
+
+本输入下分配量减少约 44%，耗时减少约 63%。这只衡量分享链接生成，不代表整机 RSS、
+加密或 VPN 吞吐变化。复现：
+`go test -run '^$' -bench '^BenchmarkVMessURI$' -benchmem -count=3 ./internal/manage`。
+
+本轮新增回归覆盖同秒订阅更新、监听故障关闭请求、VMess Host/Unicode、拒绝旧配置和无效
+地址、初始化幂等。当前 Go 竞态、真实五协议 TCP/UDP、持续单向 UDP、vet、ShellCheck
+及 Linux amd64/arm64 发行包构建通过。以下为历史优化记录，旧迁移行为不再代表当前实现。
+
 **连接退出、节点源流式读取与模块整理 · 2026-11-05**
 
 基线提交 `326c0b6`。本轮修复并在修改前复现了代理停止后保留未完成握手、worker 在拨号

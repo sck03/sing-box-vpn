@@ -22,26 +22,23 @@ reload_main() { systemctl restart sing-box; }
 reload_vpngate() { systemctl try-restart sing-box-vpngate; }
 reload_scope() { if [[ "$1" == vpngate ]]; then reload_vpngate; else reload_main; fi; }
 arch_name() { case $(uname -m) in x86_64) echo amd64;; aarch64|arm64) echo arm64;; *) echo '仅支持 amd64/arm64' >&2; return 1;; esac; }
-archive_legacy_files() {
-    local file archive='' unused_arch
-    case "${1:-$(arch_name)}" in amd64) unused_arch=arm64;; arm64) unused_arch=amd64;; esac
-    for file in "$APP_HOME/lib/"{assets,config,core,firewall,remote,render,store,subscription}.py "$SB_ROOT/"{sb10,sb11}.json "$APP_HOME/.bin/linux-$unused_arch"; do
-        [[ -e "$file" || -L "$file" ]] || continue
-        if [[ -z "$archive" ]]; then
-            install -d -m 0700 "$SB_ROOT/待手动删除"
-            archive=$(mktemp -d "$SB_ROOT/待手动删除/迁移-XXXXXXXX")
-        fi
-        printf '%s\n' "$file" >> "$archive/原始路径.txt"
-        mv -- "$file" "$archive/"
-    done
-    if [[ -n "$archive" ]]; then ui_hint "旧文件已移至 $archive，可在确认迁移后手动删除。"; fi
+archive_unused_architecture() {
+    local file archive unused_arch
+    case "$1" in amd64) unused_arch=arm64;; arm64) unused_arch=amd64;; *) return 1;; esac
+    file="$APP_HOME/.bin/linux-$unused_arch"
+    [[ -e "$file" || -L "$file" ]] || return 0
+    install -d -m 0700 "$SB_ROOT/待手动删除"
+    archive=$(mktemp -d "$SB_ROOT/待手动删除/架构-XXXXXXXX")
+    printf '%s\n' "$file" > "$archive/原始路径.txt"
+    mv -- "$file" "$archive/"
+    ui_hint "未使用的架构文件已移至 $archive，可手动删除。"
 }
 install_main() {
     require_system
     local install_arch
     install_arch=$(arch_name)
     if [[ -d "$APP_HOME" && ! -f "$APP_HOME/.managed" ]]; then echo "$APP_HOME 已存在且无项目标记，停止安装" >&2; return 1; fi
-    if [[ -d "$SB_ROOT" && ! -f "$SB_ROOT/sb.json" && ! -f "$SB_ROOT/app.json" ]] && [[ -n $(find "$SB_ROOT" -mindepth 1 -maxdepth 1 -print -quit) ]]; then echo '配置目录已有非本项目文件，停止安装' >&2;return 1;fi
+    if [[ -d "$SB_ROOT" && ! -f "$SB_ROOT/app.json" ]] && [[ -n $(find "$SB_ROOT" -mindepth 1 -maxdepth 1 -print -quit) ]]; then echo '配置目录缺少 app.json，请恢复当前配置或使用空目录安装，不支持旧版迁移' >&2;return 1;fi
     if [[ ! -f "$SCRIPT_ROOT/.bin/linux-$install_arch/yg-vpngate" ]];then
         echo '请使用已验证的正式安装包；源码开发请先运行 go run ./cmd/release 并解压生成的安装包' >&2;return 1
     fi
@@ -82,7 +79,7 @@ install_main() {
     systemctl restart sing-box
     if systemctl is-enabled --quiet sb-subscription 2>/dev/null; then systemctl restart sb-subscription; fi
     if [[ -f "$SB_ROOT/vpngate/gateway.json" ]]; then systemctl restart yg-vpngate sing-box-vpngate; fi
-    archive_legacy_files "$install_arch"
+    archive_unused_architecture "$install_arch"
     ui_line "$UI_GREEN" ' 五协议普通节点已安装完成。'
     show_status
     ui_hint '输入 sb 打开管理菜单；菜单 9 查看节点，菜单 17 添加 VPNGate。'
@@ -397,7 +394,7 @@ address_action() {
 }
 main_menu_render() {
     ui_header 'Sing-box-vpn · 五协议共存管理'
-    ui_option 1 '一键安装 / 迁移 Sing-box 五协议'
+    ui_option 1 '一键安装 Sing-box 五协议'
     ui_option 2 '删除卸载 Sing-box'
     ui_rule
     ui_option 3 '变更配置（TLS / UUID / Argo / 订阅）'

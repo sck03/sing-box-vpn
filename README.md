@@ -24,7 +24,7 @@ curl -fsSL https://raw.githubusercontent.com/sck03/sing-box-vpn/main/install.sh 
 
 | 操作 | 菜单 |
 | --- | --- |
-| 安装 / 迁移；整套卸载 | 1；2 |
+| 安装；整套卸载 | 1；2 |
 | 凭据、Reality SNI、VMess WS/CDN、Argo、订阅 | 3 |
 | 主端口、Hy2 跳跃、TUIC 多端口 | 4 |
 | 普通节点域名分流；TLS 证书 | 5；12 |

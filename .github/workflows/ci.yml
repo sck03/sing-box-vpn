@@ -79,7 +79,7 @@ jobs:
           bash -c 'source ./lib/ui.sh; ui_secret value "test"; [[ "$value" == "  password  " ]]' <<< '  password  '
       - name: Build Linux management and gateway binary
         run: CGO_ENABLED=0 go build -trimpath -o "$GITHUB_WORKSPACE/.build/yg-vpngate" ./addons/vpngate/gateway
-      - name: Preserve legacy files and unused architecture during upgrade
+      - name: Archive unused architecture without touching other files
         run: |
           bash -c '
             source ./sb.sh
@@ -89,13 +89,11 @@ jobs:
             printf legacy-python > "$APP_HOME/lib/config.py"
             printf legacy-config > "$SB_ROOT/sb10.json"
             printf other-architecture > "$APP_HOME/.bin/linux-arm64/yg-vpngate"
-            archive_legacy_files amd64
+            archive_unused_architecture amd64
             archives=("$SB_ROOT/待手动删除/"*)
-            test ! -e "$APP_HOME/lib/config.py"
-            test ! -e "$SB_ROOT/sb10.json"
+            cmp <(printf legacy-python) "$APP_HOME/lib/config.py"
+            cmp <(printf legacy-config) "$SB_ROOT/sb10.json"
             test ! -e "$APP_HOME/.bin/linux-arm64"
-            cmp <(printf legacy-python) "${archives[0]}/config.py"
-            cmp <(printf legacy-config) "${archives[0]}/sb10.json"
             cmp <(printf other-architecture) "${archives[0]}/linux-arm64/yg-vpngate"
             test "$(stat -c %a "${archives[0]}")" = 700
           '

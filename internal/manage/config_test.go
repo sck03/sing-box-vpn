@@ -6,8 +6,6 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/pem"
 	"os"
 	"path/filepath"
@@ -56,17 +54,6 @@ func readBytes(t *testing.T, path string) []byte {
 	return value
 }
 
-func TestNativeRealityMatchesRFC7748(t *testing.T) {
-	private, _ := hex.DecodeString("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a")
-	public, err := derivePublic(base64.RawURLEncoding.EncodeToString(private))
-	if err != nil {
-		t.Fatal(err)
-	}
-	expected, _ := hex.DecodeString("8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a")
-	if public != base64.RawURLEncoding.EncodeToString(expected) {
-		t.Fatal("X25519 migration changed the public key")
-	}
-}
 func TestCertificateRejectsMismatchedAndMissingKeys(t *testing.T) {
 	a, b := t.TempDir(), t.TempDir()
 	cert, key := filepath.Join(a, "cert.pem"), filepath.Join(a, "key.pem")
@@ -240,36 +227,6 @@ func TestInvalidClientDoesNotCommitAnyWorkingConfig(t *testing.T) {
 		}
 	}
 }
-func TestImportPreservesPortsUsersAndRealityKey(t *testing.T) {
-	root, core, app := appFixture(t)
-	original := readObject(t, filepath.Join(root, "sb.json"))
-	objects(original["inbounds"])[0]["sniff"] = true
-	if err := AtomicJSON(filepath.Join(root, "sb.json"), original); err != nil {
-		t.Fatal(err)
-	}
-	p, imported, routing, warp, err := ImportExisting(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for i, old := range objects(original["inbounds"]) {
-		if !reflect.DeepEqual(old["users"], imported[i]["users"]) || old["listen_port"] != imported[i]["listen_port"] {
-			t.Fatal("migration changed port or credentials")
-		}
-	}
-	if _, exists := imported[0]["sniff"]; exists {
-		t.Fatal("obsolete option retained")
-	}
-	if p.Secrets.Reality.Public != app.Profile.Secrets.Reality.Public {
-		t.Fatal("Reality public key changed")
-	}
-	server, err := ServerConfig(imported, routing, warp, 40000)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = CheckJSON(context.Background(), core, root, server); err != nil {
-		t.Fatal(err)
-	}
-}
 func TestHoppingAndMihomoManualGroup(t *testing.T) {
 	root, core, app := appFixture(t)
 	app.Profile.Hopping = []string{"31000:31100", "31200"}
@@ -341,58 +298,6 @@ func TestPinsFollowIndividualProtocolCertificates(t *testing.T) {
 		}
 	}
 }
-func TestLegacyFixtureIsPreserved(t *testing.T) {
-	root := os.Getenv("LEGACY_FIXTURE")
-	if root == "" {
-		t.Skip("set LEGACY_FIXTURE for migration comparison")
-	}
-	core := coreBinary(t)
-	before := map[string][]byte{}
-	for _, name := range []string{"app.json", "vpngate/settings.json", "vpngate/secrets.json"} {
-		if data, err := os.ReadFile(filepath.Join(root, name)); err == nil {
-			before[name] = data
-		} else if !os.IsNotExist(err) {
-			t.Fatal(err)
-		}
-	}
-	if err := RunConfig(context.Background(), []string{"--root", root, "--core", core, "export"}, &bytes.Buffer{}); err != nil {
-		t.Fatal(err)
-	}
-	for name, data := range before {
-		if !bytes.Equal(data, readBytes(t, filepath.Join(root, name))) {
-			t.Fatalf("export changed legacy state %s", name)
-		}
-	}
-	expected := map[string]bool{}
-	for _, link := range strings.Split(strings.TrimSpace(string(readBytes(t, filepath.Join(root, "expected", "jhsub.txt")))), "\n") {
-		expected[link] = true
-	}
-	settings, _, err := loadVPN(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	share := readObject(t, filepath.Join(root, "expected", "share.json"))
-	for _, scope := range []string{normalScope, vpngateScope} {
-		if scope == vpngateScope && settings.ActiveCountry == "" {
-			continue
-		}
-		directory, _ := exportDirectory(root, scope)
-		links := strings.Split(strings.TrimSpace(string(readBytes(t, filepath.Join(directory, "jhsub.txt")))), "\n")
-		want := len(stringsValue(share["normal"]))
-		if scope == vpngateScope {
-			want = len(Protocols)
-		}
-		if len(links) != want {
-			t.Fatalf("legacy %s lost nodes: got %d, want %d", scope, len(links), want)
-		}
-		for _, link := range links {
-			if !expected[link] {
-				t.Fatalf("legacy %s URI changed", scope)
-			}
-		}
-	}
-}
-
 func TestBashFacingConfigurationCommands(t *testing.T) {
 	root, core, _ := appFixture(t)
 	run := func(args ...string) string {

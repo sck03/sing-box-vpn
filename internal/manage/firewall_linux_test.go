@@ -50,7 +50,7 @@ func TestLinuxMultiportFirewall(t *testing.T) {
 		return exec.CommandContext(c, "ip", append([]string{"netns", "exec", serverNS, binary}, args...)...).CombinedOutput()
 	}
 	for _, binary := range []string{"iptables", "ip6tables"} {
-		for _, args := range [][]string{{"-P", "INPUT", "DROP"}, {"-N", "FOREIGN_FILTER"}, {"-A", "INPUT", "-j", "FOREIGN_FILTER"}, {"-t", "nat", "-N", "FOREIGN_NAT"}, {"-t", "nat", "-A", "PREROUTING", "-j", "FOREIGN_NAT"}, {"-t", "nat", "-N", legacyUDPChain}, {"-t", "nat", "-A", legacyUDPChain, "-p", "udp", "--dport", "33333", "-j", "REDIRECT", "--to-ports", "20002"}, {"-t", "nat", "-I", "PREROUTING", "1", "-j", legacyUDPChain}} {
+		for _, args := range [][]string{{"-P", "INPUT", "DROP"}, {"-N", "FOREIGN_FILTER"}, {"-A", "INPUT", "-j", "FOREIGN_FILTER"}, {"-t", "nat", "-N", "FOREIGN_NAT"}, {"-t", "nat", "-A", "PREROUTING", "-j", "FOREIGN_NAT"}} {
 			if output, err := execute(ctx, binary, args...); err != nil {
 				t.Fatalf("seed %s: %v: %s", binary, err, output)
 			}
@@ -161,7 +161,7 @@ func TestLinuxMultiportFirewall(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, binary := range []string{"iptables", "ip6tables"} {
-		for _, chain := range []struct{ table, name string }{{"filter", inputChain}, {"nat", udpChain}, {"nat", legacyUDPChain}} {
+		for _, chain := range []struct{ table, name string }{{"filter", inputChain}, {"nat", udpChain}} {
 			if _, err := execute(ctx, binary, "-t", chain.table, "-S", chain.name); err == nil {
 				t.Fatal("owned chain remained after removal", chain.name)
 			}

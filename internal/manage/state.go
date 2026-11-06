@@ -2,7 +2,6 @@ package manage
 
 import (
 	"bytes"
-	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -89,18 +88,6 @@ func randomUUID() string {
 	b[6], b[8] = (b[6]&15)|64, (b[8]&63)|128
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
-func derivePublic(private string) (string, error) {
-	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(private, "="))
-	if err != nil {
-		return "", errors.New("旧 Reality 私钥格式错误")
-	}
-	key, err := ecdh.X25519().NewPrivateKey(raw)
-	if err != nil {
-		return "", errors.New("旧 Reality 私钥格式错误")
-	}
-	return base64.RawURLEncoding.EncodeToString(key.PublicKey().Bytes()), nil
-}
-
 func EnsureCertificate(certPath, keyPath, domain string) error {
 	_, certErr := os.Stat(certPath)
 	_, keyErr := os.Stat(keyPath)

@@ -166,7 +166,9 @@ func subscriptionHandler(root, token string) http.Handler {
 		w.Header().Set("Content-Type", item.mime+"; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		http.ServeContent(w, r, item.path, info.ModTime(), file)
+		// Atomic replacements can share a second-resolution mtime. Subscriptions
+		// are never cached, so omit a time validator that could hide a new config.
+		http.ServeContent(w, r, item.path, time.Time{}, file)
 	})
 }
 
@@ -192,19 +194,17 @@ func RunSubscription(ctx context.Context, args []string, output io.Writer) error
 	if err != nil {
 		return err
 	}
+	server := &http.Server{Handler: subscriptionHandler(*root, settings.Token), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 15 * time.Second, MaxHeaderBytes: 16 << 10}
+	return serveSubscription(ctx, listener, server)
+}
+
+func serveSubscription(ctx context.Context, listener net.Listener, server *http.Server) error {
 	limited := &limitedListener{Listener: listener, slots: make(chan struct{}, 32), done: make(chan struct{})}
 	defer limited.Close()
-	server := &http.Server{Handler: subscriptionHandler(*root, settings.Token), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 15 * time.Second, MaxHeaderBytes: 16 << 10}
-	done := make(chan struct{})
-	defer close(done)
-	go func() {
-		select {
-		case <-ctx.Done():
-			server.Close()
-		case <-done:
-		}
-	}()
-	err = server.Serve(limited)
+	defer server.Close()
+	stop := context.AfterFunc(ctx, func() { server.Close() })
+	defer stop()
+	err := server.Serve(limited)
 	if errors.Is(err, http.ErrServerClosed) || ctx.Err() != nil {
 		return nil
 	}

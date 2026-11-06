@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -72,9 +71,6 @@ func TestFirewallIPv6QueryFailureIsReported(t *testing.T) {
 	f := firewall{execute: func(_ context.Context, binary string, args ...string) ([]byte, error) {
 		if binary == "ip6tables" {
 			return nil, firewallExit(4)
-		}
-		if strings.Contains(strings.Join(args, " "), "-S "+legacyUDPChain) {
-			return nil, firewallExit(1)
 		}
 		return nil, nil
 	}, restore: func(context.Context, string, string) ([]byte, error) { changes++; return nil, nil }}

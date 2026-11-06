@@ -63,7 +63,6 @@ func missingFirewallChain(args []string, output string) bool {
 
 const inputChain = "SBVPN_INPUT"
 const udpChain = "SBVPN_UDP"
-const legacyUDPChain = "SBVPN_HY2"
 
 func (f firewall) apply(ctx context.Context, binary, rules string) error {
 	child, cancel := context.WithTimeout(ctx, 15*time.Second)
@@ -201,11 +200,10 @@ func firewallRules(app App, settings VPNSettings, gateway Object, subscription s
 
 type firewallPlan struct {
 	binary, rules string
-	legacy        bool
 }
 
 // Probe every required family before changing rules or claiming ownership.
-func (f firewall) plan(ctx context.Context, binary, input, udp string, owned bool) (firewallPlan, error) {
+func (f firewall) plan(ctx context.Context, binary, input, udp string) (firewallPlan, error) {
 	if binary == "ip6tables" {
 		available, err := f.command(ctx, false, binary, "-S", "INPUT")
 		if err != nil || !available {
@@ -248,14 +246,7 @@ func (f firewall) plan(ctx context.Context, binary, input, udp string, owned boo
 			fmt.Fprintf(&rules, "-X %s\nCOMMIT\n", udpChain)
 		}
 	}
-	legacy := false
-	if owned {
-		legacy, err = f.command(ctx, false, binary, "-t", "nat", "-S", legacyUDPChain)
-		if err != nil {
-			return firewallPlan{}, err
-		}
-	}
-	return firewallPlan{binary, rules.String(), legacy}, nil
+	return firewallPlan{binary, rules.String()}, nil
 }
 
 func (f firewall) families() ([]string, error) {
@@ -285,7 +276,7 @@ func (f firewall) sync(ctx context.Context, root string, remove bool) error {
 	}
 	if !owned {
 		for _, binary := range families {
-			for _, chain := range []struct{ table, name string }{{"filter", inputChain}, {"nat", udpChain}, {"nat", legacyUDPChain}} {
+			for _, chain := range []struct{ table, name string }{{"filter", inputChain}, {"nat", udpChain}} {
 				found, err := f.command(ctx, false, binary, "-t", chain.table, "-S", chain.name)
 				if err != nil {
 					return err
@@ -302,7 +293,7 @@ func (f firewall) sync(ctx context.Context, root string, remove bool) error {
 	if remove {
 		// Keep ownership until every query and owned-chain removal succeeds.
 		for _, binary := range families {
-			for _, chain := range []struct{ table, parent, name string }{{"filter", "INPUT", inputChain}, {"nat", "PREROUTING", udpChain}, {"nat", "PREROUTING", legacyUDPChain}} {
+			for _, chain := range []struct{ table, parent, name string }{{"filter", "INPUT", inputChain}, {"nat", "PREROUTING", udpChain}} {
 				if err := f.removeChain(ctx, binary, chain.table, chain.parent, chain.name); err != nil {
 					return err
 				}
@@ -328,7 +319,7 @@ func (f firewall) sync(ctx context.Context, root string, remove bool) error {
 	}
 	plans := make([]firewallPlan, 0, len(families))
 	for _, binary := range families {
-		plan, err := f.plan(ctx, binary, input, udp, owned)
+		plan, err := f.plan(ctx, binary, input, udp)
 		if err != nil {
 			return err
 		}
@@ -345,11 +336,6 @@ func (f firewall) sync(ctx context.Context, root string, remove bool) error {
 		// --noflush preserves unrelated rules; each table changes at COMMIT.
 		if err := f.apply(ctx, plan.binary, plan.rules); err != nil {
 			return err
-		}
-		if plan.legacy {
-			if err := f.removeKnownChain(ctx, plan.binary, "nat", "PREROUTING", legacyUDPChain); err != nil {
-				return err
-			}
 		}
 	}
 	return nil

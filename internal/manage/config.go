@@ -2,7 +2,6 @@ package manage
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
@@ -16,32 +15,6 @@ import (
 	"strings"
 	"time"
 )
-
-type fileBundle map[string][]byte
-
-const normalScope = "normal"
-const vpngateScope = "vpngate"
-
-var exportNames = []string{"sbox.json", "clmi.yaml", "jhsub.txt", "jhsub-base64.txt", "share.json"}
-
-func exportDirectory(root, scope string) (string, error) {
-	switch scope {
-	case normalScope:
-		return root, nil
-	case vpngateScope:
-		return filepath.Join(root, "vpngate"), nil
-	default:
-		return "", errors.New("节点类型必须为 normal 或 vpngate")
-	}
-}
-
-func (files fileBundle) json(name string, value any) error {
-	data, err := JSONBytes(value)
-	if err == nil {
-		files[name] = data
-	}
-	return err
-}
 
 func parseOptions(f *flag.FlagSet, args []string) error {
 	var options, positional []string
@@ -86,136 +59,6 @@ func loadVPN(root string) (VPNSettings, map[string]Secrets, error) {
 	_, err := ReadJSON(filepath.Join(root, "vpngate", "secrets.json"), &private)
 	return s, private, err
 }
-func exportBundle(ctx context.Context, root, core string, app App, settings VPNSettings, private map[string]Secrets) (fileBundle, map[string][]string, error) {
-	normal, vpn, mNormal, mVPN := []Object{}, []Object{}, []Object{}, []Object{}
-	links := map[string][]string{normalScope: {}, vpngateScope: {}}
-	cache := certificateCache{}
-	add := func(inbound Object, profile Profile, name string, gateway bool) error {
-		p, err := outboundProfile(inbound, profile, cache)
-		if err != nil {
-			return err
-		}
-		n, err := outboundWithCache(inbound, p, app.Address, name, cache)
-		if err != nil {
-			return err
-		}
-		if !gateway && text(n["type"]) == "vmess" && app.CDNAddress != "" {
-			n["server"] = app.CDNAddress
-		}
-		link, err := uriWithCache(n, p, cache)
-		if err != nil {
-			return err
-		}
-		if gateway {
-			links[vpngateScope] = append(links[vpngateScope], link)
-			vpn = append(vpn, n)
-			mVPN = append(mVPN, MihomoNode(n, p))
-		} else {
-			links[normalScope] = append(links[normalScope], link)
-			normal = append(normal, n)
-			mNormal = append(mNormal, MihomoNode(n, p))
-		}
-		return nil
-	}
-	for _, inbound := range app.Inbounds {
-		kind := text(inbound["type"])
-		if Labels[kind] == "" {
-			return nil, nil, errors.New("未知入口协议")
-		}
-		if err := add(inbound, app.Profile, Labels[kind]+"-普通-"+app.Name, false); err != nil {
-			return nil, nil, err
-		}
-	}
-	if domain := text(app.Argo["domain"]); domain != "" {
-		var vmess Object
-		for _, node := range normal {
-			if node["type"] == "vmess" {
-				vmess = clone(node).(Object)
-				break
-			}
-		}
-		if vmess == nil {
-			return nil, nil, errors.New("Argo 缺少 VMess 入口")
-		}
-		address := text(app.Argo["cdn_address"])
-		if address == "" {
-			address = domain
-		}
-		vmess["tag"], vmess["server"], vmess["server_port"] = "VMess-Argo-普通-"+app.Name, address, 443
-		vmess["tls"] = Object{"enabled": true, "server_name": domain}
-		ensureObject(vmess, "transport")["headers"] = Object{"Host": domain}
-		p := app.Profile
-		p.TLSSNI, p.SelfSigned = domain, false
-		link, err := uriWithCache(vmess, p, cache)
-		if err != nil {
-			return nil, nil, err
-		}
-		links[normalScope] = append(links[normalScope], link)
-		normal = append(normal, vmess)
-		mNormal = append(mNormal, MihomoNode(vmess, p))
-	}
-	if cc := settings.ActiveCountry; cc != "" {
-		p, exists := settings.Profiles[cc]
-		if !exists {
-			return nil, nil, errors.New("当前 VPNGate 国家缺少入口配置")
-		}
-		secret, exists := private[cc]
-		if !exists {
-			return nil, nil, fmt.Errorf("国家 %s 缺少独立凭据", cc)
-		}
-		p.Secrets = secret
-		label := Countries[cc]
-		if label == "" {
-			label = cc
-		}
-		for _, inbound := range MakeInbounds(p, "vg-"+cc+"-") {
-			if err := add(inbound, p, "VPNGate-"+cc+"-"+label+"-"+Labels[text(inbound["type"])]+"-家宽候选", true); err != nil {
-				return nil, nil, err
-			}
-		}
-	}
-	files := fileBundle{}
-	for _, set := range []struct {
-		scope         string
-		nodes, mihomo []Object
-	}{{normalScope, normal, mNormal}, {vpngateScope, vpn, mVPN}} {
-		gateway := set.scope == vpngateScope
-		prefix := ""
-		if gateway {
-			prefix = "vpngate/"
-			if len(set.nodes) == 0 {
-				for _, name := range exportNames {
-					files[prefix+name] = nil
-				}
-				continue
-			}
-		}
-		client := ClientConfig(set.nodes, gateway)
-		if err := CheckJSON(ctx, core, root, client); err != nil {
-			return nil, nil, err
-		}
-		if err := files.json(prefix+"sbox.json", client); err != nil {
-			return nil, nil, err
-		}
-		if err := files.json(prefix+"clmi.yaml", MihomoConfig(set.mihomo, gateway)); err != nil {
-			return nil, nil, err
-		}
-		joined := strings.Join(links[set.scope], "\n")
-		files[prefix+"jhsub.txt"] = []byte(joined + "\n")
-		files[prefix+"jhsub-base64.txt"] = []byte(base64.StdEncoding.EncodeToString([]byte(joined)) + "\n")
-		share := Object{"links": links[set.scope], "normal": []string{}, "vpngate": []string{}}
-		names := make([]string, 0, len(set.nodes))
-		for _, n := range set.nodes {
-			names = append(names, text(n["tag"]))
-		}
-		share[set.scope] = names
-		if err := files.json(prefix+"share.json", share); err != nil {
-			return nil, nil, err
-		}
-	}
-	return files, links, nil
-}
-
 func CommitApp(ctx context.Context, root, core string, app *App) error {
 	version, err := CheckCore(ctx, core)
 	if err != nil {
@@ -412,127 +255,6 @@ func usedPorts(app App, settings VPNSettings) map[int]bool {
 	return used
 }
 
-func ImportExisting(root string) (Profile, []Object, map[string][]string, Object, error) {
-	existing := Object{}
-	found, err := ReadJSON(filepath.Join(root, "sb.json"), &existing)
-	if err != nil {
-		return Profile{}, nil, nil, nil, err
-	}
-	used := map[int]bool{40000: true, 7928: true}
-	for _, inbound := range objects(existing["inbounds"]) {
-		used[number(inbound["listen_port"])] = true
-	}
-	if found {
-		if err = AtomicJSON(filepath.Join(root, "migration-backup.json"), existing); err != nil {
-			return Profile{}, nil, nil, nil, err
-		}
-	}
-	p, err := NewProfile(root, used, "")
-	if err != nil {
-		return p, nil, nil, nil, err
-	}
-	if !found {
-		return p, MakeInbounds(p, ""), map[string][]string{}, nil, nil
-	}
-	original, fresh := map[string]Object{}, map[string]Object{}
-	for _, in := range objects(existing["inbounds"]) {
-		original[text(in["type"])] = in
-	}
-	for _, in := range MakeInbounds(p, "") {
-		fresh[text(in["type"])] = in
-	}
-	keep := []string{"type", "tag", "listen", "listen_port", "users", "tls", "transport", "ignore_client_bandwidth", "congestion_control", "padding_scheme"}
-	result := []Object{}
-	for _, protocol := range Protocols {
-		old := original[protocol]
-		if old == nil {
-			result = append(result, fresh[protocol])
-			continue
-		}
-		in := Object{}
-		for _, key := range keep {
-			if value, exists := old[key]; exists {
-				in[key] = clone(value)
-			}
-		}
-		in["tag"] = Tags[protocol]
-		p.Ports[protocol] = number(in["listen_port"])
-		if protocol == "vless" {
-			tls := object(in["tls"])
-			reality := object(tls["reality"])
-			private := text(reality["private_key"])
-			public, err := derivePublic(private)
-			if err != nil {
-				return p, nil, nil, nil, err
-			}
-			ids := stringsValue(reality["short_id"])
-			shortID := ""
-			if len(ids) > 0 {
-				shortID = ids[0]
-			}
-			p.Secrets.Reality = Reality{private, public, shortID}
-			p.RealitySNI = text(tls["server_name"])
-		}
-		if protocol == "vmess" {
-			p.WSPath = text(object(in["transport"])["path"])
-			p.VMessTLS = object(in["tls"])["enabled"] == true
-		}
-		if protocol != "vless" && object(in["tls"])["enabled"] == true {
-			tls := object(in["tls"])
-			if _, err = os.Stat(text(tls["certificate_path"])); err != nil {
-				return p, nil, nil, nil, fmt.Errorf("旧节点证书缺失，已保留迁移备份: %w", err)
-			}
-			if _, err = os.Stat(text(tls["key_path"])); err != nil {
-				return p, nil, nil, nil, err
-			}
-		}
-		result = append(result, in)
-	}
-	routing := map[string][]string{}
-	for _, rule := range objects(object(existing["route"])["rules"]) {
-		target := text(rule["outbound"])
-		name := ""
-		switch {
-		case strings.Contains(target, "warp") || strings.Contains(target, "wireguard"):
-			name = "warp"
-		case strings.Contains(target, "socks"):
-			name = "socks"
-		case target == "vps-outbound-v4":
-			name = "direct4"
-		case target == "vps-outbound-v6":
-			name = "direct6"
-		}
-		if name != "" {
-			for _, domain := range stringsValue(rule["domain_suffix"]) {
-				if domain != "yg_kkk" {
-					routing[name] = append(routing[name], domain)
-				}
-			}
-		}
-	}
-	var warp Object
-	for _, endpoint := range objects(existing["endpoints"]) {
-		if endpoint["type"] == "wireguard" {
-			warp = clone(endpoint).(Object)
-			break
-		}
-	}
-	if warp == nil {
-		for _, old := range objects(existing["outbounds"]) {
-			if old["type"] == "wireguard" {
-				reserved := old["reserved"]
-				if reserved == nil {
-					reserved = []int{0, 0, 0}
-				}
-				warp = Object{"type": "wireguard", "tag": "warp-out", "address": old["local_address"], "private_key": old["private_key"], "peers": []Object{{"address": old["server"], "port": old["server_port"], "public_key": old["peer_public_key"], "allowed_ips": []string{"0.0.0.0/0", "::/0"}, "reserved": reserved}}}
-				break
-			}
-		}
-	}
-	syncProfileSecrets(&p, result)
-	return p, result, routing, warp, nil
-}
-
 func publicIP(ctx context.Context) (string, error) {
 	client := newHTTPClient(10 * time.Second)
 	defer client.CloseIdleConnections()
@@ -620,32 +342,13 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 			return err
 		}
 		if operation == "init" {
-			if _, err = CheckCore(ctx, *core); err != nil {
-				return err
-			}
 			if exists {
 				return CommitApp(ctx, *root, *core, &app)
 			}
-			profile, inbounds, routing, warp, err := ImportExisting(*root)
-			if err != nil {
-				return err
-			}
-			if *address == "" {
-				if data, err := os.ReadFile(filepath.Join(*root, "server_ipcl.log")); err == nil {
-					*address = strings.TrimSpace(string(data))
-				}
-			}
-			if *address == "" {
-				*address, err = publicIP(ctx)
-				if err != nil {
-					return err
-				}
-			}
-			app = App{Name: *name, Address: *address, Profile: profile, Inbounds: inbounds, Routing: routing, Warp: warp, SocksPort: 40000}
-			return CommitApp(ctx, *root, *core, &app)
+			return initializeApp(ctx, *root, *core, *address, *name)
 		}
 		if !exists {
-			return errors.New("请先安装或迁移普通节点")
+			return errors.New("请先安装普通节点")
 		}
 		settings, private, err := loadVPN(*root)
 		if err != nil {

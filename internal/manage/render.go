@@ -1,19 +1,16 @@
 package manage
 
 import (
-	"bytes"
 	"crypto/ecdh"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"unicode/utf16"
 )
 
 const anyTLSMinIdleSessions = 1
@@ -234,7 +231,11 @@ func uriWithCache(n Object, p Profile, cache certificateCache) (string, error) {
 		values = append(values, queryPair{"encryption", "none"}, queryPair{"flow", "xtls-rprx-vision"}, queryPair{"security", "reality"}, queryPair{"fp", "chrome"}, queryPair{"pbk", text(r["public_key"])}, queryPair{"sid", text(r["short_id"])}, queryPair{"type", "tcp"})
 		return "vless://" + text(n["uuid"]) + "@" + endpoint + "?" + query(values) + "#" + name, nil
 	case "vmess":
-		// Preserve the legacy field order and ASCII escaping so migrated URIs match.
+		transport := object(n["transport"])
+		host := text(object(transport["headers"])["Host"])
+		if host == "" {
+			host = p.TLSSNI
+		}
 		value := struct {
 			V    string `json:"v"`
 			PS   string `json:"ps"`
@@ -249,28 +250,15 @@ func uriWithCache(n Object, p Profile, cache certificateCache) (string, error) {
 			Path string `json:"path"`
 			TLS  string `json:"tls"`
 			SNI  string `json:"sni"`
-		}{"2", text(n["tag"]), text(n["server"]), strconv.Itoa(number(n["server_port"])), text(n["uuid"]), "0", "auto", "ws", "none", p.TLSSNI, text(object(n["transport"])["path"]), "", text(tls["server_name"])}
+		}{"2", text(n["tag"]), text(n["server"]), strconv.Itoa(number(n["server_port"])), text(n["uuid"]), "0", "auto", "ws", "none", host, text(transport["path"]), "", text(tls["server_name"])}
 		if tls["enabled"] == true {
 			value.TLS = "tls"
 		}
-		var raw bytes.Buffer
-		encoder := json.NewEncoder(&raw)
-		encoder.SetEscapeHTML(false)
-		if err := encoder.Encode(value); err != nil {
+		data, err := json.Marshal(value)
+		if err != nil {
 			return "", err
 		}
-		var ascii strings.Builder
-		for _, r := range strings.TrimSpace(raw.String()) {
-			if r < 128 {
-				ascii.WriteRune(r)
-			} else if r <= 0xffff {
-				fmt.Fprintf(&ascii, `\u%04x`, r)
-			} else {
-				hi, lo := utf16.EncodeRune(r)
-				fmt.Fprintf(&ascii, `\u%04x\u%04x`, hi, lo)
-			}
-		}
-		return "vmess://" + base64.StdEncoding.EncodeToString([]byte(ascii.String())), nil
+		return "vmess://" + base64.StdEncoding.EncodeToString(data), nil
 	case "hysteria2":
 		values = append(values, queryPair{"alpn", "h3"}, queryPair{"insecure", insecure})
 		if !p.SelfSigned {
