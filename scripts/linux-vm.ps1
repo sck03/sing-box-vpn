@@ -37,7 +37,10 @@ $vm = Start-Process -FilePath $qemu -ArgumentList @(
     '-drive', "`"file=$seed,format=raw,media=cdrom,readonly=on`"",
     '-netdev', 'user,id=net0,hostfwd=tcp:127.0.0.1:22222-:22',
     '-device', 'virtio-net-pci,netdev=net0', '-display', 'none',
-    '-serial', "`"file=$projectTest/linux-console.log`"", '-monitor', 'none'
+    '-serial', "`"file:$projectTest/linux-console.log`"", '-monitor', 'none'
 ) -WindowStyle Hidden -PassThru -RedirectStandardError "$projectTest/qemu-error.log"
+if ($vm.WaitForExit(1000)) {
+    throw "Linux VM exited during startup (code $($vm.ExitCode)); inspect .test/qemu-error.log."
+}
 [IO.File]::WriteAllText($pidFile, [string]$vm.Id)
 "Linux VM started: PID $($vm.Id), SSH 127.0.0.1:22222"

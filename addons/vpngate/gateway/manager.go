@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -38,7 +37,9 @@ type manager struct {
 	nodes          []Node
 	nodesUpdated   time.Time
 	refreshSlot    chan struct{}
-	refreshPending bool
+	refreshDone    chan struct{}
+	refreshCancel  context.CancelFunc
+	refreshStopped bool
 	sourceClient   *http.Client
 	hostClient     *http.Client
 	connections    map[net.Conn]bool
@@ -50,14 +51,6 @@ type manager struct {
 	geoCache       map[string]cachedGeo
 	failed         map[string]time.Time
 }
-type cachedGeo struct {
-	value   Geo
-	expires time.Time
-}
-
-type probeUnavailable string
-
-func (e probeUnavailable) Error() string { return string(e) }
 
 func newManager(c Config, path string) *manager {
 	m := &manager{cfg: c, configPath: path, status: Status{Version: version, State: "stopped", Country: c.Country, Mode: c.Mode, Updated: time.Now()}, connections: map[net.Conn]bool{}, wake: make(chan struct{}, 1), factory: func(c Config) tunnel { return &backend{cfg: c} }}
@@ -197,6 +190,7 @@ func (m *manager) apply(c Config, swap bool) error {
 
 func (m *manager) run(ctx context.Context) {
 	defer m.sourceClient.CloseIdleConnections()
+	defer m.stopRefresh()
 	var done chan struct{}
 	select {
 	case m.wake <- struct{}{}:
@@ -245,189 +239,6 @@ func (m *manager) run(ctx context.Context) {
 	}
 }
 
-func (m *manager) refresh(ctx context.Context, c Config, force bool) []Node {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	started := time.Now()
-	select {
-	case m.refreshSlot <- struct{}{}:
-		defer func() { <-m.refreshSlot }()
-	case <-ctx.Done():
-		return nil
-	}
-	m.mu.Lock()
-	nodes := m.nodes // Published node slices are immutable.
-	fresh := len(nodes) > 0 && time.Since(m.nodesUpdated) < time.Minute && (!force || m.nodesUpdated.After(started))
-	m.mu.Unlock()
-	if fresh {
-		return nodes
-	}
-	for _, source := range c.Sources {
-		if ctx.Err() != nil {
-			return nil
-		}
-		nodes, e := readNodeSource(ctx, m.sourceClient, source)
-		if e != nil {
-			continue
-		}
-		m.mu.Lock()
-		if ctx.Err() != nil || !slices.Equal(c.Sources, m.cfg.Sources) {
-			m.mu.Unlock()
-			return nil
-		}
-		m.nodes = nodes
-		m.nodesUpdated = time.Now()
-		m.mu.Unlock()
-		_ = atomicJSON(filepath.Join(c.DataDir, "nodes.json"), nodes)
-		return nodes
-	}
-	m.mu.Lock()
-	nodes = m.nodes
-	m.mu.Unlock()
-	return nodes
-}
-
-func (m *manager) scheduleRefresh(parent context.Context, c Config, force bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.refreshPending {
-		return
-	}
-	m.refreshPending = true
-	go func() {
-		defer func() { m.mu.Lock(); m.refreshPending = false; m.mu.Unlock() }()
-		m.refresh(parent, c, force)
-	}()
-}
-
-func candidates(c Config, nodes []Node, previous Node, swap bool, failed map[string]time.Time) []Node {
-	var pool []Node
-	seen := map[string]bool{}
-	accept := func(n Node) bool {
-		if c.Mode != "fixed" {
-			if _, blocked := failed[n.Host]; blocked {
-				return false
-			}
-		}
-		return n.Country == c.Country && countryPattern.MatchString(n.Country) && publicIPv4(n.IP) && (!c.ResidentialOnly || volunteer(n)) && (!swap || n.Host != previous.Host)
-	}
-	add := func(n Node) {
-		if !accept(n) || seen[n.Host] {
-			return
-		}
-		profile, port, proto, e := validateProfile(n.Profile, n.IP)
-		if e != nil {
-			return
-		}
-		n.Profile = profile
-		n.Port = port
-		n.Network = proto
-		pool = append(pool, n)
-		seen[n.Host] = true
-	}
-	if c.Mode == "fixed" {
-		host := c.FixedHost
-		if host == "" {
-			host = previous.Host
-		}
-		for _, n := range nodes {
-			if host != "" && n.Host == host {
-				add(n)
-				if len(pool) > 0 {
-					return pool
-				}
-			}
-		}
-		if host != "" && previous.Host == host {
-			add(previous)
-		}
-		if len(pool) > 0 {
-			return pool
-		}
-		if c.FixedHost != "" {
-			return nil
-		}
-	}
-	if !swap {
-		for _, n := range nodes {
-			if n.Host == previous.Host {
-				add(n)
-				break
-			}
-		}
-		if len(pool) == 0 {
-			add(previous)
-		}
-	}
-	for _, n := range nodes {
-		add(n)
-		if len(pool) >= 6 {
-			break
-		}
-	}
-	if c.Mode == "fixed" && len(pool) > 1 {
-		pool = pool[:1]
-	}
-	return pool
-}
-
-func (m *manager) probe(ctx context.Context, c Config, active tunnel, client *http.Client) (Geo, error) {
-	if m.probeOverride != nil {
-		return m.probeOverride(ctx, c, active)
-	}
-	b, e := readHTTP(ctx, client, c.ProbeURL, 512)
-	if e != nil {
-		return Geo{}, probeUnavailable("tunnel exit probe failed")
-	}
-	ip := strings.TrimSpace(string(b))
-	if !publicIPv4(ip) {
-		return Geo{}, errors.New("exit probe did not return public IPv4")
-	}
-	host, e := readHTTP(ctx, m.hostClient, c.ProbeURL, 512)
-	if e != nil {
-		return Geo{}, probeUnavailable("host exit verification unavailable")
-	}
-	hostIP := strings.TrimSpace(string(host))
-	if !publicIPv4(hostIP) {
-		return Geo{}, probeUnavailable("host exit probe did not return public IPv4")
-	}
-	if hostIP == ip {
-		return Geo{}, errors.New("tunnel exit equals VPS exit")
-	}
-	cacheKey := c.GeoURL + "\x00" + ip
-	m.mu.Lock()
-	cached, exists := m.geoCache[cacheKey]
-	m.mu.Unlock()
-	if exists && time.Now().Before(cached.expires) {
-		return cached.value, c.acceptGeo(cached.value)
-	}
-	metadata, e := readHTTP(ctx, m.hostClient, strings.Replace(c.GeoURL, "%s", ip, 1), 1<<20)
-	if e != nil {
-		return Geo{}, probeUnavailable("exit country verification unavailable")
-	}
-	g, e := parseGeo(metadata, ip)
-	if e != nil {
-		return g, probeUnavailable("exit country verification unavailable: " + e.Error())
-	}
-	m.mu.Lock()
-	now := time.Now()
-	oldestKey := ""
-	var oldest time.Time
-	for key, item := range m.geoCache {
-		if !now.Before(item.expires) {
-			delete(m.geoCache, key)
-		} else if oldest.IsZero() || item.expires.Before(oldest) {
-			oldestKey, oldest = key, item.expires
-		}
-	}
-	if len(m.geoCache) >= 128 {
-		delete(m.geoCache, oldestKey)
-	}
-	m.geoCache[cacheKey] = cachedGeo{value: g, expires: now.Add(15 * time.Minute)}
-	m.mu.Unlock()
-	return g, c.acceptGeo(g)
-}
-
 // Block forwarding on the first failure; transient lookups get two retries
 // on the existing tunnel before the connection loop tears it down.
 func (m *manager) recheck(ctx context.Context, c Config, active tunnel, n Node, client *http.Client) (Geo, error) {
@@ -462,18 +273,6 @@ func (m *manager) verifyExit(ctx context.Context, c Config, active tunnel, n Nod
 		case <-timer.C:
 		}
 	}
-}
-
-func (m *manager) reconnectCandidates(c Config, nodes []Node, swap bool) []Node {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	now := time.Now()
-	for host, until := range m.failed {
-		if !now.Before(until) {
-			delete(m.failed, host)
-		}
-	}
-	return candidates(c, nodes, m.previous, swap, m.failed)
 }
 
 func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {

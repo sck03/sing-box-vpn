@@ -22,6 +22,7 @@ go run ./cmd/release
 TCP/UDP、持续单向 UDP 和资源边界；性能测量命令见[优化记录](optimization.md)。
 会话退出回归验证停止后不遗留握手/拨号；节点源回归覆盖断流、尾部错误、读取上限和损坏缓存。
 订阅回归覆盖同秒更新与监听失败后的连接关闭；初始化回归覆盖拒绝旧配置、地址错误与重复执行。
+出口回归覆盖等价 IP 拒绝、Geo 缓存归一化和 ASN 数值边界；刷新回归覆盖退出等待及停止后拒绝新任务。
 
 ```bash
 SING_BOX_BINARY=/path/to/sing-box RUN_UDP_IDLE_TESTS=1 go test -race -count=1 ./...
@@ -61,6 +62,8 @@ Ubuntu 24.04 cloud image，基础镜像、可写磁盘、seed ISO、SSH 密钥�
 `.tools/`。通过 `scripts/linux-vm.ps1 start` 启动、`scripts/linux-vm.ps1 stop` 关闭；
 SSH 仅绑定 `127.0.0.1:22222`，连接信息见 `.tools/README.md`。无硬件加速时使用 TCG，耗时
 不可用于推断生产性能。删除或移动虚拟机磁盘前先关闭它，工具和本地验证数据可整体手动清理。
+启动信息表示 QEMU 进程已创建，SSH 需等待客体系统完成引导。串口日志使用 QEMU 的
+`file:` 后端；若进程启动后立即退出，脚本直接报错，详情见 `.test/qemu-error.log`。
 
 ## GitHub Actions 与 Release
 

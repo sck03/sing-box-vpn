@@ -31,6 +31,8 @@ ASSOCIATE，TCP/UDP 中继只监听回环地址，必须认证。业务 socket �
 未知或不匹配时阻断。默认排除已知自营机房与 hosting，支持 ISP 严格模式和 ASN
 允许列表。Geo/ASN 按源/IP 缓存 15 分钟且最多 128 项，默认健康间隔 10 秒。
 节点列表缓存一分钟，并发刷新合并；探测 HTTP 连接按隧道复用。
+出口 IP 归一化后再与 VPS 比较，同一地址的 IPv4/IPv4 映射写法不能绕过校验；
+Geo 查询和缓存也使用归一化地址。ASN 仅接受正的 32 位整数，不对小数作截断匹配。
 节点源采用流式 CSV 解析，保留 16 MiB/1500 候选上限；断流、超限或损坏缓存不会作为新列表启用。
 列表读取限制与实际代理流量独立，不限制单次下载、视频或累计传输量。
 健康探测遇到临时网络 / 元数据故障时先阻断，再在原隧道上间隔 2 秒重试两次。
@@ -54,6 +56,7 @@ ASSOCIATE，TCP/UDP 中继只监听回环地址，必须认证。业务 socket �
 | addons/vpngate/gateway/ | 节点/profile、国家/ISP、代理、worker、namespace |
 | addons/vpngate/gateway/{control,socks,udp,transport}.go | 控制 HTTP、SOCKS 握手、UDP 会话、共享 IPC 帧与 TCP 中继 |
 | addons/vpngate/gateway/{server,http}.go | 共用连接退出/准入、HTTP 请求边界与节点源流式读取 |
+| addons/vpngate/gateway/{nodes,geo}.go | 节点缓存/候选与后台刷新回收、出口及 Geo/ASN 校验 |
 | lib/services.sh | 统一服务单元、启动恢复和 3 秒意外退出重试策略 |
 | sing-box.service | 普通五协议 |
 | yg-vpngate.service | 出口管理器与认证 SOCKS5 |
@@ -72,6 +75,7 @@ TCP 不设置定时重连。UDP 的空闲期限由双向收发共同更新，持
 健康探测按当前隧道复用连接；隧道进程退出可立即中断正在进行的探测。UDP 控制连接关闭
 时同时取消未完成的拨号并释放会话。入口设置不会重启 OpenVPN，重复导出也不触发服务重启。
 代理和 worker 的监听停止或失败时取消全部会话，等待握手、拨号与中继退出后再完成清理。
+后台节点刷新也在释放守护进程锁前取消并等待；停止后不再接收刷新任务。
 新 UDP 目标异步解析，每个目标由独立协程按顺序发送，阻塞目标不拖住其他端口。每个关联限制
 8 个并发拨号，每个目标最多排队 64 包；排队及写入中的缓冲容量最多 256 KiB，单目标最多
 128 KiB，超限丢弃新包。接收与排队缓冲均复用，关闭时取消拨号及写入，等待协程退出后回收。

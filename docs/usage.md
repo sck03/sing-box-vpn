@@ -104,6 +104,8 @@ yg-vpngate ctl start
 
 高级设置位于 `/etc/s-box/vpngate/gateway.json`，修改后执行 `yg-vpngate ctl reload`。
 菜单 17 可配置镜像源和 ISP/hosting 筛选；默认使用官方 HTTPS 节点 API。
+ASN 允许列表填写 1–4294967295 的整数。出口与 VPS 地址相同、Geo 响应中的 ASN 无效或
+不符合筛选策略时不会开放转发；IP 的等价文本写法不会改变出口比较结果。
 更多隔离、校验与资源限制见[实施方案](../VPNGate-实施方案.md)和[架构说明](architecture.md)。
 
 菜单 **10** 查看运行日志，也可执行：

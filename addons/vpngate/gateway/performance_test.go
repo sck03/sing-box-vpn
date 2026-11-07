@@ -68,3 +68,19 @@ func BenchmarkPinnedCandidates(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkImplicitFixedCandidates(b *testing.B) {
+	nodes, err := parseNodes(bytes.NewReader(benchmarkNodes(250)))
+	if err != nil {
+		b.Fatal(err)
+	}
+	cfg := defaults()
+	cfg.Mode = "fixed"
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if pool := candidates(cfg, nodes, Node{}, false, nil); len(pool) != 1 {
+			b.Fatal("first fixed node was not selected")
+		}
+	}
+}
