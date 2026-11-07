@@ -175,7 +175,7 @@ func fingerprintFile(path string) (string, error) {
 		return "", err
 	}
 	if !info.Mode().IsRegular() {
-		return "", fmt.Errorf("恢复备份不是普通文件: %s", filepath.Base(path))
+		return "", fmt.Errorf("校验文件不是普通文件: %s", filepath.Base(path))
 	}
 	file, err := os.Open(path)
 	if err != nil {

@@ -246,7 +246,11 @@ func (systemServices) active(ctx context.Context) ([]string, error) {
 	for _, name := range []string{"sing-box", "sing-box-vpngate"} {
 		child, cancel := context.WithTimeout(ctx, 10*time.Second)
 		err := exec.CommandContext(child, "systemctl", "is-active", "--quiet", name).Run()
+		contextErr := child.Err()
 		cancel()
+		if contextErr != nil {
+			return nil, contextErr
+		}
 		if err == nil {
 			active = append(active, name)
 		} else {
@@ -413,39 +417,10 @@ func (u *coreUpdater) download(ctx context.Context, asset verifiedAsset, destina
 	return os.Rename(candidate, destination)
 }
 
-func checkConfigs(ctx context.Context, root, candidate string) error {
-	return validateConfigs(ctx, root, candidate, commandOutput)
-}
-
-func validateConfigs(ctx context.Context, root, candidate string, check func(context.Context, string, ...string) ([]byte, error)) error {
-	snapshots := map[string][32]byte{}
-	for _, name := range []string{"sb.json", "vpngate/server.json", "sbox.json", "vpngate/sbox.json"} {
-		path := filepath.Join(root, filepath.FromSlash(name))
-		data, err := os.ReadFile(path)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return err
-		}
-		if _, err = check(ctx, candidate, "check", "-c", path); err != nil {
-			return fmt.Errorf("新核心不兼容 %s，保留当前核心: %w", name, err)
-		}
-		snapshots[path] = sha256.Sum256(data)
-	}
-	for path, before := range snapshots {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if sha256.Sum256(data) != before {
-			return errors.New("校验期间配置发生变化，请重试更新")
-		}
-	}
-	return nil
-}
-
 func (u *coreUpdater) activate(ctx context.Context, root, candidate string, restart bool) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	stage, err := os.MkdirTemp(root, ".core-activate-")
 	if err != nil {
 		return "", err
@@ -473,6 +448,9 @@ func (u *coreUpdater) activate(ctx context.Context, root, candidate string, rest
 				return err
 			}
 		}
+		if err = ctx.Err(); err != nil {
+			return err
+		}
 		_, currentErr := os.Stat(current)
 		hadCurrent = currentErr == nil
 		if currentErr != nil && !errors.Is(currentErr, os.ErrNotExist) {
@@ -481,6 +459,9 @@ func (u *coreUpdater) activate(ctx context.Context, root, candidate string, rest
 		if hadCurrent {
 			backup := filepath.Join(stage, "previous")
 			if err = copyBinary(current, backup); err != nil {
+				return err
+			}
+			if err = ctx.Err(); err != nil {
 				return err
 			}
 			if err = os.Rename(backup, previous); err != nil {
