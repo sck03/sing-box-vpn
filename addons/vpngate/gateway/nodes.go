@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"maps"
-	"path/filepath"
 	"slices"
 	"time"
 )
@@ -11,6 +10,9 @@ import (
 func (m *manager) refresh(ctx context.Context, c Config, force bool) []Node {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	m.mu.Lock()
+	epoch := m.sourceEpoch
+	m.mu.Unlock()
 	started := time.Now()
 	select {
 	case m.refreshSlot <- struct{}{}:
@@ -19,6 +21,10 @@ func (m *manager) refresh(ctx context.Context, c Config, force bool) []Node {
 		return nil
 	}
 	m.mu.Lock()
+	if ctx.Err() != nil || epoch != m.sourceEpoch || !slices.Equal(c.Sources, m.cfg.Sources) {
+		m.mu.Unlock()
+		return nil
+	}
 	nodes := m.nodes // Published node slices are immutable.
 	fresh := len(nodes) > 0 && time.Since(m.nodesUpdated) < time.Minute && (!force || m.nodesUpdated.After(started))
 	m.mu.Unlock()
@@ -34,19 +40,22 @@ func (m *manager) refresh(ctx context.Context, c Config, force bool) []Node {
 			continue
 		}
 		m.mu.Lock()
-		if ctx.Err() != nil || !slices.Equal(c.Sources, m.cfg.Sources) {
+		if ctx.Err() != nil || epoch != m.sourceEpoch || !slices.Equal(c.Sources, m.cfg.Sources) {
 			m.mu.Unlock()
 			return nil
 		}
 		m.nodes = nodes
 		m.nodesUpdated = time.Now()
 		m.mu.Unlock()
-		_ = atomicJSON(filepath.Join(c.DataDir, "nodes.json"), nodes)
+		_ = saveSourceCache(c, "nodes.json", nodes)
 		return nodes
 	}
 	m.mu.Lock()
+	defer m.mu.Unlock()
+	if ctx.Err() != nil || epoch != m.sourceEpoch || !slices.Equal(c.Sources, m.cfg.Sources) {
+		return nil
+	}
 	nodes = m.nodes
-	m.mu.Unlock()
 	return nodes
 }
 
@@ -158,6 +167,10 @@ func candidates(c Config, nodes []Node, previous Node, swap bool, failed map[str
 
 func (m *manager) reconnectCandidates(c Config, nodes []Node, swap bool) []Node {
 	m.mu.Lock()
+	if !slices.Equal(c.Sources, m.cfg.Sources) {
+		m.mu.Unlock()
+		return nil
+	}
 	now := time.Now()
 	for host, until := range m.failed {
 		if !now.Before(until) {

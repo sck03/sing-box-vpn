@@ -10,8 +10,6 @@ import (
 	"slices"
 	"sync"
 	"time"
-
-	"github.com/sck03/sing-box-vpn/internal/manage"
 )
 
 type tunnel interface {
@@ -36,6 +34,7 @@ type manager struct {
 	previous       Node
 	nodes          []Node
 	nodesUpdated   time.Time
+	sourceEpoch    uint64
 	refreshSlot    chan struct{}
 	refreshDone    chan struct{}
 	refreshCancel  context.CancelFunc
@@ -59,12 +58,8 @@ func newManager(c Config, path string) *manager {
 	m.hostClient = &http.Client{Timeout: 12 * time.Second, Transport: m.sourceClient.Transport, CheckRedirect: m.sourceClient.CheckRedirect}
 	m.geoCache = map[string]cachedGeo{}
 	m.failed = map[string]time.Time{}
-	var saved Node
-	if _, err := manage.ReadJSON(filepath.Join(c.DataDir, "last-node.json"), &saved); err == nil {
-		m.previous = saved
-	}
-	var cached []Node
-	if _, err := manage.ReadJSON(filepath.Join(c.DataDir, "nodes.json"), &cached); err == nil && len(cached) <= maxNodes {
+	m.previous = loadSourceCache[Node](c, "last-node.json")
+	if cached := loadSourceCache[[]Node](c, "nodes.json"); len(cached) <= maxNodes {
 		m.nodes = cached
 	}
 	return m
@@ -169,7 +164,13 @@ func (m *manager) apply(c Config, swap bool) error {
 		return e
 	}
 	if !slices.Equal(c.Sources, m.cfg.Sources) {
+		m.sourceEpoch++
+		m.nodes, m.previous = nil, Node{}
 		m.nodesUpdated = time.Time{}
+		clear(m.failed)
+		if m.refreshCancel != nil {
+			m.refreshCancel()
+		}
 	}
 	m.cfg = c
 	m.swap = swap
@@ -343,7 +344,7 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 					m.mu.Unlock()
 					// An implicit fixed node is already persisted in last-node.json;
 					// rewriting gateway.json here could overwrite a concurrent menu edit.
-					_ = atomicJSON(filepath.Join(c.DataDir, "last-node.json"), n)
+					_ = saveSourceCache(c, "last-node.json", n)
 					m.setStatus("ready", "volunteer / residential candidate", n, &g)
 					backoff = 5 * time.Second
 					swap = false

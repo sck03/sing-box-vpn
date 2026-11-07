@@ -29,6 +29,16 @@ type action struct {
 	ClearASNs      bool     `json:"clear_asns,omitempty"`
 }
 
+// Keep the public list separate from cached profiles and their credentials.
+type nodeSummary struct {
+	Host    string `json:"host"`
+	IP      string `json:"ip"`
+	Country string `json:"country"`
+	Network string `json:"network"`
+	Speed   int64  `json:"speed"`
+	Ping    int    `json:"ping"`
+}
+
 func (m *manager) handler(parent context.Context) http.Handler {
 	mux := http.NewServeMux()
 	respond := func(w http.ResponseWriter, code int, v any) {
@@ -52,10 +62,16 @@ func (m *manager) handler(parent context.Context) http.Handler {
 		c := m.cfg
 		nodes := m.nodes
 		m.mu.Unlock()
-		var out []map[string]any
+		count := 0
+		for _, n := range nodes {
+			if n.Country == c.Country {
+				count++
+			}
+		}
+		out := make([]nodeSummary, 0, count)
 		for _, n := range nodes {
 			if n.Country == c.Country && (!c.ResidentialOnly || volunteer(n)) {
-				out = append(out, map[string]any{"host": n.Host, "ip": n.IP, "country": n.Country, "network": n.Network, "speed": n.Speed, "ping": n.Ping})
+				out = append(out, nodeSummary{Host: n.Host, IP: n.IP, Country: n.Country, Network: n.Network, Speed: n.Speed, Ping: n.Ping})
 			}
 		}
 		respond(w, 200, out)

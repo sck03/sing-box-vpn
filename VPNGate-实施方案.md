@@ -31,6 +31,8 @@ ASSOCIATE，TCP/UDP 中继只监听回环地址，必须认证。业务 socket �
 未知或不匹配时阻断。默认排除已知自营机房与 hosting，支持 ISP 严格模式和 ASN
 允许列表。Geo/ASN 按源/IP 缓存 15 分钟且最多 128 项，默认健康间隔 10 秒。
 节点列表缓存一分钟，并发刷新合并；探测 HTTP 连接按隧道复用。
+磁盘候选及上次节点按完整来源列表归属，切换来源清空候选和失败冷却、取消后台刷新。
+刷新按来源代次拒绝过期响应；新来源不可用时不复用已移除来源，重启也检查缓存归属。
 出口 IP 归一化后再与 VPS 比较，同一地址的 IPv4/IPv4 映射写法不能绕过校验；
 Geo 查询和缓存也使用归一化地址。ASN 仅接受正的 32 位整数，不对小数作截断匹配。
 节点源采用流式 CSV 解析，保留 16 MiB/1500 候选上限；断流、超限或损坏缓存不会作为新列表启用。
@@ -57,6 +59,7 @@ Geo 查询和缓存也使用归一化地址。ASN 仅接受正的 32 位整数�
 | addons/vpngate/gateway/{control,socks,udp,transport}.go | 控制 HTTP、SOCKS 握手、UDP 会话、共享 IPC 帧与 TCP 中继 |
 | addons/vpngate/gateway/{server,http}.go | 共用连接退出/准入、HTTP 请求边界与节点源流式读取 |
 | addons/vpngate/gateway/{nodes,geo}.go | 节点缓存/候选与后台刷新回收、出口及 Geo/ASN 校验 |
+| addons/vpngate/gateway/source_cache.go | 候选和已验证节点的来源归属、统一缓存读写 |
 | lib/services.sh | 统一服务单元、启动恢复和 3 秒意外退出重试策略 |
 | sing-box.service | 普通五协议 |
 | yg-vpngate.service | 出口管理器与认证 SOCKS5 |

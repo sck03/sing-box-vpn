@@ -174,6 +174,20 @@ func TestReadJSONLimitsAndTrailingData(t *testing.T) {
 	}
 }
 
+func TestReadJSONRejectsNullWithoutChangingTarget(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := os.WriteFile(path, []byte(" \n null\t\r\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	value := Object{"keep": true}
+	if found, err := ReadJSON(path, &value); !found || err == nil {
+		t.Fatal("null configuration was not reported as invalid", found, err)
+	}
+	if value["keep"] != true {
+		t.Fatal("invalid configuration cleared the destination map")
+	}
+}
+
 func BenchmarkPublishChanged(b *testing.B) {
 	root := b.TempDir()
 	values := [2][]byte{bytes.Repeat([]byte{'a'}, 256<<10), bytes.Repeat([]byte{'b'}, 256<<10)}

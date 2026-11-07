@@ -54,6 +54,9 @@ func ReadJSON(path string, target any) (bool, error) {
 	if len(data) > maxJSONFile {
 		return false, errors.New("配置文件超过 16 MiB")
 	}
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return true, errors.New("配置文件不能为 null")
+	}
 	return true, json.Unmarshal(data, target)
 }
 

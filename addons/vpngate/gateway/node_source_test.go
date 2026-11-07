@@ -74,7 +74,7 @@ func TestFailedNodeRefreshPreservesCache(t *testing.T) {
 	defer m.sourceClient.CloseIdleConnections()
 	saved := []Node{{Host: "saved-node"}}
 	m.nodes = saved
-	if err := atomicJSON(filepath.Join(cfg.DataDir, "nodes.json"), saved); err != nil {
+	if err := saveSourceCache(cfg, "nodes.json", saved); err != nil {
 		t.Fatal(err)
 	}
 	m.sourceClient.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
@@ -101,7 +101,7 @@ func TestManagerIgnoresInvalidNodeCaches(t *testing.T) {
 	if len(m.nodes) != 0 {
 		t.Fatal("oversized disk cache loaded")
 	}
-	if err := atomicJSON(path, make([]Node, maxNodes+1)); err != nil {
+	if err := saveSourceCache(cfg, "nodes.json", make([]Node, maxNodes+1)); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(cfg.DataDir, "last-node.json"), []byte(`{"host":"partial-node","ip":`), 0600); err != nil {

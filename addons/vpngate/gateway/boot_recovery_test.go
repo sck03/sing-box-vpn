@@ -20,7 +20,7 @@ func TestStartupUsesSavedNodeWithoutWaitingForSource(t *testing.T) {
 			cfg.DataDir, cfg.RunDir = t.TempDir(), t.TempDir()
 			cfg.ProxyUser, cfg.ProxyPass = "test", strings.Repeat("a", 64)
 			node := Node{Host: "saved-jp", IP: "203.0.113.5", Country: "JP", Profile: safeTestProfile}
-			if err := atomicJSON(filepath.Join(cfg.DataDir, "last-node.json"), node); err != nil {
+			if err := saveSourceCache(cfg, "last-node.json", node); err != nil {
 				t.Fatal(err)
 			}
 			m := newManager(cfg, filepath.Join(cfg.DataDir, "gateway.json"))
