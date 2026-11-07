@@ -166,12 +166,17 @@ func (u *udpAssociation) run(s *udpSession, client netip.AddrPort) {
 		u.mu.Unlock()
 		<-written
 	}()
-	frames := frameReader{source: c, buffer: header, prefix: len(header), limit: maxPacket - len(header)}
+	frames := frameReader{source: c, buffer: header, prefix: len(header), limit: maxPacket}
 	for {
 		_ = c.SetDeadline(time.Now().Add(udpIdleTimeout))
 		packet, err := frames.read()
 		if err != nil {
 			return
+		}
+		// The worker frame contains a valid IPv4 datagram, but its SOCKS header
+		// may exceed the client datagram limit. Consume and drop only this reply.
+		if len(packet) > maxPacket {
+			continue
 		}
 		_ = u.socket.SetDeadline(time.Now().Add(udpIdleTimeout))
 		if _, err = u.socket.WriteToUDPAddrPort(packet, client); err != nil {

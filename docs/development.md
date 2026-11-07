@@ -29,6 +29,8 @@ CSV 回归覆盖候选上限前后的损坏引号、合法多行字段、刷新�
 复用后的 profile 独立性；VMess 回归同时检查分享链接及 Mihomo 的独立 Host、SNI 和连接地址。
 代理容量回归覆盖 TCP/UDP 待拨号计数、并发满载拒绝、预约转为连接、各种失败后的容量释放，
 以及出口撤销时立即中断 worker 等待和新代次重新接入。
+UDP 大包回归覆盖 65,498/65,507 字节回复被丢弃后继续收发、65,497 字节边界及空包转发，
+并检查同一目标的源端口不变；profile 回归覆盖多余参数拒绝与合法三参数 remote。
 
 ```bash
 SING_BOX_BINARY=/path/to/sing-box RUN_UDP_IDLE_TESTS=1 go test -race -count=1 ./...

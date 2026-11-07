@@ -46,7 +46,9 @@ func validateProfile(profile, expectedIP string) (string, int, string, error) {
 	var output strings.Builder
 	// Normalization only removes bytes, apart from a possible final newline.
 	output.Grow(len(profile) + 1)
-	fields := make([]string, 0, 4)
+	// The longest allowed directive is remote with three arguments. Keep token
+	// storage fixed and reject excess fields before scanning an untrusted line.
+	var tokens [4]string
 	block, proto, remoteProto := "", "udp", ""
 	port, remotes := 0, 0
 	hasCA := false
@@ -81,8 +83,11 @@ func validateProfile(profile, expectedIP string) (string, int, string, error) {
 			output.WriteByte('\n')
 			continue
 		}
-		fields = fields[:0]
+		fields := tokens[:0]
 		for field := range strings.FieldsSeq(line) {
+			if len(fields) == len(tokens) {
+				return "", 0, "", errors.New("too many OpenVPN directive arguments")
+			}
 			fields = append(fields, field)
 		}
 		name, args := fields[0], fields[1:]
