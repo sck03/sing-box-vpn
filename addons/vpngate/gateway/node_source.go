@@ -51,13 +51,18 @@ func parseNodeRecords(source io.Reader) ([]Node, error) {
 	input := bufio.NewReader(source)
 	var r *csv.Reader
 	for {
-		line, err := input.ReadString('\n')
+		// Preamble and header lines fit in the 4 KiB reader buffer. ReadSlice
+		// rejects an unbounded line without growing an intermediate string.
+		line, err := input.ReadSlice('\n')
+		if errors.Is(err, bufio.ErrBufferFull) {
+			return nil, errors.New("VPNGate CSV preamble or header exceeds 4 KiB")
+		}
 		if err != nil && !errors.Is(err, io.EOF) {
 			return nil, err
 		}
-		lc := strings.ToLower(line)
+		lc := strings.ToLower(string(line))
 		if strings.Contains(lc, "openvpn_configdata_base64") && strings.Contains(lc, "country") {
-			r = csv.NewReader(io.MultiReader(strings.NewReader(strings.TrimPrefix(line, "\ufeff")), input))
+			r = csv.NewReader(&boundedCSVReader{source: io.MultiReader(strings.NewReader(strings.TrimPrefix(string(line), "\ufeff")), input)})
 			break
 		}
 		if err != nil {

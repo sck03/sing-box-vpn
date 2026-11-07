@@ -55,7 +55,7 @@ func TestNodeStreamSizeAndNodeLimits(t *testing.T) {
 	}
 	// Reaching the node cap must still reject an oversized response tail.
 	for _, extra := range []int{0, 1} {
-		padding := strings.NewReader(strings.Repeat(" ", maxNodeSource+extra-len(data)))
+		padding := strings.NewReader(strings.Repeat("\n", maxNodeSource+extra-len(data)))
 		nodes, err := parseNodes(io.MultiReader(bytes.NewReader(data), padding))
 		if extra == 0 && (err != nil || len(nodes) != maxNodes) {
 			t.Fatalf("exact-size response rejected: %d, %v", len(nodes), err)
