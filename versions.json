@@ -8,6 +8,10 @@
     "linux_amd64_sha256": "699a1b510aa4396b2176d32d1181920399ebf1e267835da6f3b598d0f7c24968",
     "linux_arm64_sha256": "436441f76ee2f7fe21b5b2d426d3cb261a480455a704865789ad533e4273ec26"
   },
+  "mihomo": {
+    "tested_version": "1.19.33",
+    "linux_amd64_sha256": "132f6f3edf9a65e62f04853aed3358472e0b2b7666daa8419edfa2ddf5bb6323"
+  },
   "upstream": {
     "sing_box_yg": "b13f9435c4792fccf04d4fbc73e24a1948abff1b",
     "fanout": "d7ce5224caf3469b19876982abdf8d1be16c4a8b",

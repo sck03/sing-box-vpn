@@ -5,7 +5,7 @@
 ## 构建环境
 
 工具链锁定 **Go 1.27.3**，模块只依赖标准库。版本与 sing-box 基线 SHA256 记录在
-[versions.json](../versions.json)，当前测试基线为 sing-box 1.14.4。
+[versions.json](../versions.json)，当前测试基线为 sing-box 1.14.4、Mihomo 1.19.33。
 安装包包含源码和 Linux amd64/arm64 静态管理/网关程序，VPS 无需开发环境。
 
 ```bash
@@ -18,7 +18,7 @@ go run ./cmd/release
 
 ## 验证
 
-先准备官方 SHA256 校验的 sing-box。基础验证覆盖初始化、更新回滚、认证、真实五协议
+先准备官方 SHA256 校验的 sing-box 和 Mihomo。基础验证覆盖初始化、更新回滚、认证、真实五协议
 TCP/UDP、持续单向 UDP 和资源边界；性能测量命令见[优化记录](optimization.md)。
 会话退出回归验证停止后不遗留握手/拨号；节点源回归覆盖断流、尾部错误、读取上限和损坏缓存。
 订阅回归覆盖同秒更新与监听失败后的连接关闭；初始化回归覆盖拒绝旧配置、地址错误与重复执行。
@@ -33,9 +33,12 @@ UDP 大包回归覆盖 65,498/65,507 字节回复被丢弃后继续收发、65,4
 并检查同一目标的源端口不变；profile 回归覆盖多余参数拒绝与合法三参数 remote。
 核心更新回归覆盖校验期间配置新增、删除与修改、非普通文件拒绝，以及激活前取消时
 当前核心和上一版本均保持不变；Linux 回归使用受控的服务查询超时验证错误不会被吞掉。
+订阅协议验收读取实际发布文件，覆盖两套 sing-box/Mihomo 原生节点及三协议 URI 导入，
+共 52 条 TCP/UDP 链路。Mihomo URI 自签 TLS 的两项限制见[兼容性说明](compatibility.md)。
+Mihomo 启动检测等待一次真实请求成功，避免监听已开启但路由仍处于初始化阶段的误报。
 
 ```bash
-SING_BOX_BINARY=/path/to/sing-box RUN_UDP_IDLE_TESTS=1 go test -race -count=1 ./...
+SING_BOX_BINARY=/path/to/sing-box MIHOMO_BINARY=/path/to/mihomo RUN_UDP_IDLE_TESTS=1 go test -race -count=1 ./...
 go vet ./...
 gofmt -l manifest.go internal cmd addons/vpngate/gateway
 shellcheck --severity=warning sb.sh install.sh addons/vpngate/vpngate.sh lib/*.sh
@@ -67,6 +70,7 @@ go test -race -count=1 ./...
 ```
 
 脚本只设置当前进程及其子进程的环境，不改系统配置；Go 缓存、模块下载和临时目录均指向项目。
+已验证的 Mihomo Windows 程序放入 `.tools/mihomo-1.19.33/` 时自动设置 `MIHOMO_BINARY`。
 `GOTOOLCHAIN=local` 防止自动下载工具链到其他目录。已下载的 Linux 验证环境使用 QEMU 和
 Ubuntu 24.04 cloud image，基础镜像、可写磁盘、seed ISO、SSH 密钥及 Linux Go 压缩包均位于
 `.tools/`。通过 `scripts/linux-vm.ps1 start` 启动、`scripts/linux-vm.ps1 stop` 关闭；

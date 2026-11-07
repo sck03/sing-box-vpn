@@ -43,7 +43,9 @@ sb tuic-link 31200 vpngate
 
 菜单 **12** 导入 PEM 证书/私钥或使用 Certbot；VPNGate 统一 TLS 证书位于 **17 → 14 → 5**。
 导入文件必须存在、密钥匹配，证书须覆盖填写的域名且在有效期内。VLESS 继续使用 Reality。
-自签证书的 URI/Mihomo 使用对应客户端模式，sing-box 配置使用公钥指纹。
+自签证书的 sing-box 配置使用公钥指纹，Mihomo 配置明确启用 `skip-cert-verify`。
+Hysteria2 分享链接同时携带 `insecure=1` 和叶证书 SHA256 指纹；CA 证书使用系统信任校验，
+不固定叶证书，避免正常续期后旧链接失效。更换自签证书后须重新获取订阅。
 
 ## 节点与订阅
 
@@ -60,6 +62,12 @@ sb tuic-link 31200 vpngate
 本地订阅在 **3 → 8** 启用或重置，两套地址使用同一令牌；重置令牌后需更新客户端订阅地址。
 HTTP 的 `jhsub.txt` 路径提供 Base64 聚合，`links.txt` 提供原始 URI。公网加密传输需 HTTPS 反向代理。
 GitLab 的 VPNGate 文件放在 `vpngate/`，普通订阅继续使用原路径。
+
+推荐使用客户端原生配置：sing-box 导入 `sbox.json`，Mihomo 导入 `clmi.yaml`。
+聚合 URI 不是完整客户端配置，导入器对证书选项的支持存在差异：VMess JSON 使用当前
+v2rayN 的 `insecure` 字段，TUIC 使用 `allow_insecure`。Mihomo 1.19.33 的 URI 导入器
+忽略这两个字段，因此自签 TLS 的 VMess/TUIC 请直接使用 `clmi.yaml`；不要仅因链接能
+导入就判定能连接。默认未启用 TLS 的 VMess 不受此证书限制，Argo 使用公网 CA 证书。
 
 ```bash
 sb links normal

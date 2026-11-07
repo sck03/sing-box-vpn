@@ -66,7 +66,14 @@ jobs:
           echo '699a1b510aa4396b2176d32d1181920399ebf1e267835da6f3b598d0f7c24968  .build/core/core.tar.gz' | sha256sum -c -
           tar -xzf .build/core/core.tar.gz -C .build/core
           echo "SING_BOX_BINARY=$PWD/.build/core/sing-box-1.14.4-linux-amd64/sing-box" >> "$GITHUB_ENV"
-      - name: Go tests, race detection and twenty real TCP/UDP links
+      - name: Download verified Mihomo 1.19.33 for subscription acceptance
+        run: |
+          curl -fLsS --retry 2 https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-linux-amd64-v1.19.33.gz -o .build/core/mihomo.gz
+          echo '132f6f3edf9a65e62f04853aed3358472e0b2b7666daa8419edfa2ddf5bb6323  .build/core/mihomo.gz' | sha256sum -c -
+          gzip -dc .build/core/mihomo.gz > .build/core/mihomo
+          chmod +x .build/core/mihomo
+          echo "MIHOMO_BINARY=$PWD/.build/core/mihomo" >> "$GITHUB_ENV"
+      - name: Go tests, race detection and 52 real subscription TCP/UDP links
         run: RUN_UDP_IDLE_TESTS=1 go test -race -count=1 -v ./...
       - name: Formatting, vet and shell checks
         run: |
@@ -103,6 +110,8 @@ jobs:
           cp "$SING_BOX_BINARY" .test/core-updater/sing-box
           .build/yg-vpngate config --root "$PWD/.test/core-updater" --core "$SING_BOX_BINARY" init --address 127.0.0.1 --name updater-test
           .build/yg-vpngate config --root "$PWD/.test/core-updater" --core "$SING_BOX_BINARY" vpngate JP
+          "$MIHOMO_BINARY" -t -d "$PWD/.test/mihomo" -f "$PWD/.test/core-updater/clmi.yaml"
+          "$MIHOMO_BINARY" -t -d "$PWD/.test/mihomo" -f "$PWD/.test/core-updater/vpngate/clmi.yaml"
           sudo .build/yg-vpngate core --root "$PWD/.test/core-updater" prepare --output "$PWD/.test/core-updater/sing-box.candidate"
           sudo .build/yg-vpngate core --root "$PWD/.test/core-updater" activate "$PWD/.test/core-updater/sing-box.candidate" --no-restart
           sudo .build/yg-vpngate core --root "$PWD/.test/core-updater" rollback

@@ -18,3 +18,7 @@ $projectCore = Join-Path $projectTools 'sing-box-1.14.4-windows-amd64/sing-box.e
 if (Test-Path -LiteralPath $projectCore) {
     $env:SING_BOX_BINARY = $projectCore
 }
+$projectMihomo = Join-Path $projectTools 'mihomo-1.19.33/mihomo-windows-amd64.exe'
+if (Test-Path -LiteralPath $projectMihomo) {
+    $env:MIHOMO_BINARY = $projectMihomo
+}

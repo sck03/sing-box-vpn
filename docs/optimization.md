@@ -1,3 +1,39 @@
+**订阅证书修复、真实客户端验收与导出模块拆分 · 2026-11-07**
+
+基线提交 `e828c78`。新增回归先复现 Hysteria2 URI 的指纹条件反转和 VMess 自签 TLS
+缺少证书选项，再修复：Hy2 只为自签证书导出 `pinSHA256`，CA 证书不固定续期会变化的
+叶证书；VMess 使用当前 v2rayN JSON 的 `insecure=1`。Mihomo URI 导入器的字段限制已
+写入使用及兼容性文档，自签 TLS 的 VMess/TUIC 使用原生配置。
+
+`client.go`、`mihomo.go`、`uri.go` 分别维护三类导出，`render.go` 保留入口、服务端和
+sing-box 出站构造。普通/VPNGate 客户端按需生成规则及选择器，不再分配随后丢弃的
+规则集和自动测速组；没有增加运行时依赖、旧版本兼容或后台任务。
+
+Windows amd64、Intel i5-9400F、Go 1.27.3、GOMAXPROCS=6，输入为五协议节点标签，
+同机非 race 各三次测量分配量：
+
+| 客户端构造 | 修改前 | 修改后 |
+| --- | ---: | ---: |
+| 普通节点分配内存 | 9,288 B/op | 8,872 B/op |
+| 普通节点分配次数 | 79/op | 76/op |
+| VPNGate 分配内存 | 9,592 B/op | 5,856 B/op |
+| VPNGate 分配次数 | 83/op | 48/op |
+
+VPNGate 构造分配量下降约 39%。这是配置生成的局部指标，不代表转发吞吐或整机 RSS。
+复现：`go test -run '^$' -bench '^BenchmarkClientConfig$' -benchmem -count=3 ./internal/manage`。
+
+官方最新稳定核心确认仍为 sing-box 1.14.4；新增 Mihomo 1.19.33 官方 SHA256 校验及 CI
+验收。真实测试读取发布后的文件，覆盖普通/VPNGate 的两类原生五协议和三协议 URI 导入，
+共 52 条 TCP/UDP 链路，连续三轮通过。Mihomo 打开端口时可能尚未完成路由初始化，
+测试先等待真实 HTTP 请求成功，再进行 SOCKS TCP/UDP 验收；HTTP 按完整响应体读取。
+完整 race、持续单向 UDP、证书回归、两套完整 Mihomo 配置校验、vet、gofmt、Bash 语法和
+ShellCheck 通过；最终测试调整后的协议 race 再次通过。两架构发行包构建成功。
+Linux netns、防火墙和 systemd 专项沿用 CI，本次本地没有启动 Linux 虚拟机。
+
+旧清理目录包含 34 个无运行依赖的历史文件，约 156 MiB；递归删除被执行策略拦截，保留
+在 `待手动删除/`，本次验证临时文件也归档至该目录。有效源码、许可证、最新发行包和
+可复用开发工具、缓存保留。
+
 **核心更新校验、取消保护与内存收敛 · 2026-11-07**
 
 基线提交 `37613c9`。新增回归在修改前复现两项问题：校验过程中新增的配置可能未经候选

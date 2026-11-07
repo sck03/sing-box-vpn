@@ -64,7 +64,8 @@ OpenVPN 指令最多三个参数，校验使用固定四字段存储；发现多
 | `config.go` / `credentials.go` | 管理命令、配置变更、独立国家设置与凭据 |
 | `init.go` | 当前配置初始化、地址校验、端口预留及拒绝覆盖无管理状态的目录 |
 | `export.go` | 普通/VPNGate 导出集合、客户端校验及发布文件组装 |
-| `state.go` / `render.go` | 原生证书/密钥、服务端与客户端配置、分享链接编码 |
+| `state.go` / `render.go` | 原生证书/密钥、服务端配置与 sing-box 协议出站 |
+| `client.go` / `mihomo.go` / `uri.go` | sing-box 客户端策略、Mihomo 配置和 URI 编码，三种格式各自维护 |
 | `storage.go` | 有界文件读取、统一原子写入、JSON 格式和可复用流式缓冲 |
 | `publish.go` | 单次多文件提交快照、恢复校验、失败恢复和启动等待 |
 | `ports.go` / `firewall.go` | 按节点类型预留端口、共用端口变更、规则计划与防火墙批量提交 |
@@ -79,6 +80,11 @@ OpenVPN 指令最多三个参数，校验使用固定四字段存储；发现多
 缺少管理状态但已有服务端文件时拒绝初始化，保留原文件；当前配置重复初始化保留端口和凭据。
 VMess 分享链接直接编码标准 UTF-8 JSON；链接与 Mihomo 导出共用 WebSocket Host 选择，
 优先采用传输配置中的 Host，缺省才使用 Profile 的默认值，连接地址、TLS SNI 与 Host 独立。
+客户端策略按普通/VPNGate 范围直接构造；VPNGate 不创建随后丢弃的中国规则集、Clash
+直连模式规则与自动测速选择器。共享节点列表预留容量，避免构建期间重复扩容。
+URI 的证书字段遵循目标导入格式：Hysteria2 只为自签证书固定叶证书指纹，CA 证书不固定；
+VMess 自签 TLS 使用 `insecure=1`。客户端不支持的字段不能通过额外兼容分支保证生效，
+原生订阅及真实核心导入测试是验收依据，已知格式限制须在使用文档中明确说明。
 
 订阅流式读取最新文件，不发送基于秒精度修改时间的缓存验证标记，避免同秒变更误返回 304。
 监听异常或取消时统一关闭服务器及现有连接；取消回调代替常驻等待协程。32 连接及读写超时仍有效。
@@ -126,5 +132,5 @@ TCP 半关闭、UDP 双向续期、稳定源端口、认证代次和未经验证
 
 新增协议须同时覆盖入口、凭据、端口、sing-box/Mihomo/URI 导出及真实 TCP/UDP 验收。
 改动连接或并发逻辑时运行 `go test -race ./...`，改动 UDP 生命周期时启用
-`RUN_UDP_IDLE_TESTS=1`；实际协议测试同时设置 `SING_BOX_BINARY`。Linux netns、防火墙与
+`RUN_UDP_IDLE_TESTS=1`；完整订阅协议测试同时设置 `SING_BOX_BINARY` 和 `MIHOMO_BINARY`。Linux netns、防火墙与
 systemd 专项由 CI 执行。性能结论应提供同机基线、输入与 `-benchmem`，并区分局部分配和整机资源。
