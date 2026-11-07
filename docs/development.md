@@ -38,6 +38,9 @@ UDP 大包回归覆盖 65,498/65,507 字节回复被丢弃后继续收发、65,4
 Mihomo 启动检测等待一次真实请求成功，避免监听已开启但路由仍处于初始化阶段的误报。
 WS 回归覆盖错误路径在修改和发布前被拒绝、两类节点独立保存、UTF-8 与长度边界，
 真实五协议测试使用两套不同的中文 WS 路径。HTTP 订阅另验证 IPv4/IPv6 URL 的实际可达性。
+监听回归注入 `EMFILE`、`ENFILE`、`ENOBUFS` 和 `ENOMEM`，验证已有连接仍可通信；
+使用 `testing/synctest` 的虚拟时间检查退避上限、成功接入后重置和取消时立即退出，
+无需实际耗尽宿主机资源，也不等待真实的秒级退避。永久监听错误仍须返回调用方。
 
 ```bash
 SING_BOX_BINARY=/path/to/sing-box MIHOMO_BINARY=/path/to/mihomo RUN_UDP_IDLE_TESTS=1 go test -race -count=1 ./...

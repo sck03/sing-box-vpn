@@ -1,12 +1,6 @@
 .tools/
 .build/
 .test/
-待手动删除/
-compat-audit/
-sing-box-yg/
-sing-box-core-reference/
-conduitvpn/
-fanout/
 __pycache__/
 *.pyc
 *.log
