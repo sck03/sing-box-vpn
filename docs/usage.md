@@ -137,5 +137,8 @@ yg-vpngate ctl status
 journalctl -u sing-box -u yg-vpngate -u sing-box-vpngate -n 100 --no-pager
 ```
 
+OpenVPN 握手日志位于 `/var/lib/yg-vpngate/openvpn.log`，每次连接尝试重建，最多保存前
+2 MiB 原始输出。达到上限或日志写入失败后仍继续读取进程输出、检测就绪，不因日志停止而卡住连接。
+
 已启用服务在开机启动时恢复配置和防火墙；主动停止或暂停会保留。VPNGate 为志愿者网络，
 家宽筛选不代表住宅接入认证，节点在线和固定 IP 无法保证；未经出口校验不会转发。

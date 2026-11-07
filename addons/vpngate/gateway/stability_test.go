@@ -410,7 +410,8 @@ func TestProcessExitIsBroadcastAndCleanupDoesNotWaitAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	done, exited := make(chan error, 1), make(chan error, 1)
-	go waitProcess(cmd, done, exited)
+	cleaned := false
+	go waitProcess(cmd, done, exited, func() { cleaned = true })
 	select {
 	case <-exited:
 	case <-time.After(5 * time.Second):
@@ -418,6 +419,9 @@ func TestProcessExitIsBroadcastAndCleanupDoesNotWaitAgain(t *testing.T) {
 		t.Fatal("process exit was not reported to the monitor")
 	}
 	<-done
+	if !cleaned {
+		t.Fatal("process exit was reported before output cleanup")
+	}
 	finished := make(chan struct{})
 	go func() { stopProcess(cmd, done); close(finished) }()
 	select {

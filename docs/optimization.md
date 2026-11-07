@@ -3,33 +3,32 @@
 [返回项目首页](../README.md) · [验证命令](development.md) · [模块边界](architecture.md)
 
 本文记录当前实现和验证边界；以往的分配测量与修复记录见
-[17deecd 时的优化日志](https://github.com/sck03/sing-box-vpn/blob/17deecd/docs/optimization.md)。
+[3cfeb31 时的优化日志](https://github.com/sck03/sing-box-vpn/blob/3cfeb31/docs/optimization.md)。
 
 ## 本轮修复 · 2026-11-08
 
-基线提交 `17deecd`。节点源已有 16 MiB 响应限制，但标准 CSV 解析器会按字段数量扩容。
-一个有效节点后附加约 256 KiB 的逗号行，即可产生约 38.5 MB 临时分配；旧实现还会将该
-异常来源当作刷新成功，替换原缓存。单条超长记录和前导行也会产生不必要的分配。
+基线提交 `3cfeb31`。OpenVPN 日志使用最大 1 MiB 的逐行扫描器，遇到更长的单行后停止读取，
+剩余输出会填满管道，导致握手或运行过程阻塞。扫描协程与 `Cmd.Wait` 分离，还可能在退出时
+丢失尾部日志。原日志上限按整行判断，最后一行可能令文件超过 2 MiB。
 
-新增独立的 `csv_bounds.go`，在标准库解析之前限制记录最多 2 MiB、64 列；前导和表头
-改用固定 4 KiB 缓冲读取。超限拒绝整份来源，沿用已有内存/磁盘缓存回退。引号转义、
-多行字段、CRLF 和前导 Unicode 空白仍由标准库解析；边界模块仅跟踪结构，不重复实现语法。
-扫描按引号、换行分段，并批量统计逗号，减少正常 Base64 profile 的逐字节处理开销。
+新增独立的 `openvpn_output.go`，直接消费进程输出块，跨块检测就绪标记，仅保留固定长度尾部。
+stdout/stderr 共用接收器，`os/exec` 等待输出消费后再返回；关闭日志后才通知进程退出。
+日志严格截取前 2 MiB，保留原始换行和未换行尾部；磁盘错误、短写或达到上限后仍消费输出。
+不再使用逐行扫描协程，也不逐行构造字符串和补换行。
 
 同机 Windows amd64、Go 1.27.3、i5-9400F、默认并行度 6，`-benchmem -count=3` 中位数：
 
 | 输入 | 修改前 | 修改后 |
 | --- | --- | --- |
-| 一个有效节点 + 262,144 个逗号 | 约 313.7 ms / 38,532,764 B | 约 7.32 µs / 10,795 B |
-| 250 个节点，每个证书占位内容 8 KiB | 约 4.52 ms / 7,991,929 B | 约 4.62 ms / 7,992,037 B |
+| 4,096 条诊断日志，最后附就绪标记 | 429.8 µs / 397,586 B / 8,198 次分配 | 5.61 µs / 112 B / 1 次分配 |
 
-异常多列输入分配下降约 99.97%，正常列表耗时中位数增加约 2.1%，分配基本持平。
-异常输入的旧实现完整解析后成功返回，新实现提前拒绝，因此耗时反映拒绝路径的改进；
-这不是代理转发吞吐或整机 RSS 测量。复现命令：
+临时分配下降约 99.97%。基准写入 `io.Discard`，新实现按 32 KiB 块输入；旧实现按基线代码
+使用 Scanner、字符串转换及逐行写入。测量不包括磁盘、进程启动或管道复制缓冲，不能用于
+推断整机 RSS、实际磁盘吞吐或代理转发速度。生产中的进程管道仍使用 `os/exec` 的复制缓冲。
+当前实现复现命令：
 
 ```bash
-go test ./addons/vpngate/gateway -run '^$' \
-  -bench 'BenchmarkNodeSourceExcessColumns$|BenchmarkNodeSource$/Streaming$' -benchmem -count=3
+go test ./addons/vpngate/gateway -run '^$' -bench '^BenchmarkOpenVPNOutput$' -benchmem -count=3
 ```
 
 本地全量 `go test -race -count=1 ./...`（启用持续单向 UDP）、52 条真实协议链路、
@@ -40,6 +39,7 @@ Linux netns、防火墙和 systemd 专项由推送后的 GitHub CI 执行。
 
 | 流程 | 约束与可用基准 |
 | --- | --- |
+| OpenVPN 日志 | 持续消费、固定标记缓冲、严格 2 MiB 文件预算、退出等待；`BenchmarkOpenVPNOutput` |
 | 连接接入 | 临时错误有限退避，保留已有会话；`TestAcceptRetryBackoffAndCancellation` |
 | 连接准入 | 已接入连接与待拨号共用容量，满载直接拒绝；`BenchmarkManagerOpenAtCapacity` |
 | UDP 转发 | 独立目标队列、缓冲复用、有界字节预算；`BenchmarkSOCKSUDPRoundTrip`、`BenchmarkSOCKSUDPTargetBatch` |

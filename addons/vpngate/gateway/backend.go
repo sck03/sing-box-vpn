@@ -1,12 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/netip"
 	"os"
@@ -15,7 +13,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -247,38 +244,25 @@ func (b *backend) start(ctx context.Context, n Node) error {
 	}
 	args := []string{"netns", "exec", namespace, "openvpn", "--config", profilePath, "--dev", "tun0", "--dev-type", "tun", "--proto", proto, "--auth-user-pass", authPath, "--auth-nocache", "--mark", packetMark, "--redirect-gateway", "def1", "--connect-retry-max", "1", "--connect-timeout", "15", "--data-ciphers", "AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-128-CBC:AES-256-CBC", "--data-ciphers-fallback", "AES-128-CBC", "--verb", "3"}
 	b.ovpn = exec.CommandContext(ctx, "ip", args...)
-	pipe, e := b.ovpn.StdoutPipe()
-	if e != nil {
-		return e
+	ready := make(chan struct{})
+	output := &openVPNOutput{ready: ready}
+	log, _ := os.OpenFile(filepath.Join(b.cfg.DataDir, "openvpn.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if log != nil {
+		output.log = log
 	}
+	closeLog := func() {
+		if log != nil {
+			_ = log.Close()
+		}
+	}
+	b.ovpn.Stdout = output
 	b.ovpn.Stderr = b.ovpn.Stdout
-	if e = b.ovpn.Start(); e != nil {
+	if e := b.ovpn.Start(); e != nil {
+		closeLog()
 		return e
 	}
 	b.ovpnDone = make(chan error, 1)
-	ready := make(chan struct{})
-	var once sync.Once
-	go func() {
-		scanner := bufio.NewScanner(pipe)
-		scanner.Buffer(make([]byte, 4096), 1<<20)
-		logPath := filepath.Join(b.cfg.DataDir, "openvpn.log")
-		file, _ := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
-		if file != nil {
-			defer file.Close()
-		}
-		written := 0
-		for scanner.Scan() {
-			line := scanner.Text()
-			if strings.Contains(line, "Initialization Sequence Completed") {
-				once.Do(func() { close(ready) })
-			}
-			if file != nil && written < 2<<20 {
-				n, _ := io.WriteString(file, line+"\n")
-				written += n
-			}
-		}
-	}()
-	go waitProcess(b.ovpn, b.ovpnDone, b.exited)
+	go waitProcess(b.ovpn, b.ovpnDone, b.exited, closeLog)
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -301,7 +285,7 @@ func (b *backend) start(ctx context.Context, n Node) error {
 		return e
 	}
 	b.workerDone = make(chan error, 1)
-	go waitProcess(b.worker, b.workerDone, b.exited)
+	go waitProcess(b.worker, b.workerDone, b.exited, nil)
 	deadline := time.NewTimer(8 * time.Second)
 	defer deadline.Stop()
 	tick := time.NewTicker(50 * time.Millisecond)
@@ -326,8 +310,11 @@ func (b *backend) start(ctx context.Context, n Node) error {
 	}
 }
 
-func waitProcess(cmd *exec.Cmd, done, exited chan error) {
+func waitProcess(cmd *exec.Cmd, done, exited chan error, cleanup func()) {
 	e := cmd.Wait()
+	if cleanup != nil {
+		cleanup()
+	}
 	done <- e
 	close(done)
 	select {

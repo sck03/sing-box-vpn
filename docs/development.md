@@ -42,6 +42,8 @@ WS 回归覆盖错误路径在修改和发布前被拒绝、两类节点独立�
 监听回归注入 `EMFILE`、`ENFILE`、`ENOBUFS` 和 `ENOMEM`，验证已有连接仍可通信；
 使用 `testing/synctest` 的虚拟时间检查退避上限、成功接入后重置和取消时立即退出，
 无需实际耗尽宿主机资源，也不等待真实的秒级退避。永久监听错误仍须返回调用方。
+OpenVPN 日志回归使用真实子进程输出超过 3 MiB 的单行，验证 stdout/stderr 跨分块就绪标记、
+严格 2 MiB 文件上限和退出前关闭文件；另覆盖逐字节输入、未换行尾部、磁盘错误和短写。
 
 ```bash
 SING_BOX_BINARY=/path/to/sing-box MIHOMO_BINARY=/path/to/mihomo RUN_UDP_IDLE_TESTS=1 go test -race -count=1 ./...
