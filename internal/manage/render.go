@@ -207,6 +207,13 @@ func query(values []queryPair) string {
 }
 func quote(value string) string { return strings.ReplaceAll(url.QueryEscape(value), "+", "%20") }
 
+func webSocketHost(transport Object, fallback string) string {
+	if host := text(object(transport["headers"])["Host"]); host != "" {
+		return host
+	}
+	return fallback
+}
+
 func URI(n Object, p Profile) (string, error) { return uriWithCache(n, p, certificateCache{}) }
 func uriWithCache(n Object, p Profile, cache certificateCache) (string, error) {
 	kind, address := text(n["type"]), text(n["server"])
@@ -232,10 +239,7 @@ func uriWithCache(n Object, p Profile, cache certificateCache) (string, error) {
 		return "vless://" + text(n["uuid"]) + "@" + endpoint + "?" + query(values) + "#" + name, nil
 	case "vmess":
 		transport := object(n["transport"])
-		host := text(object(transport["headers"])["Host"])
-		if host == "" {
-			host = p.TLSSNI
-		}
+		host := webSocketHost(transport, p.TLSSNI)
 		value := struct {
 			V    string `json:"v"`
 			PS   string `json:"ps"`
@@ -326,7 +330,8 @@ func MihomoNode(n Object, p Profile) Object {
 	case "vless":
 		out = merge(out, Object{"network": "tcp", "tls": true, "flow": "xtls-rprx-vision", "servername": tls["server_name"], "client-fingerprint": "chrome", "reality-opts": Object{"public-key": object(tls["reality"])["public_key"], "short-id": object(tls["reality"])["short_id"]}})
 	case "vmess":
-		out = merge(out, Object{"network": "ws", "tls": tls["enabled"], "cipher": "auto", "alterId": 0, "servername": tls["server_name"], "ws-opts": Object{"path": object(n["transport"])["path"], "headers": Object{"Host": p.TLSSNI}}, "skip-cert-verify": p.SelfSigned})
+		transport := object(n["transport"])
+		out = merge(out, Object{"network": "ws", "tls": tls["enabled"], "cipher": "auto", "alterId": 0, "servername": tls["server_name"], "ws-opts": Object{"path": transport["path"], "headers": Object{"Host": webSocketHost(transport, p.TLSSNI)}}, "skip-cert-verify": p.SelfSigned})
 	default:
 		out["sni"], out["skip-cert-verify"] = sni, p.SelfSigned
 		if kind == "hysteria2" || kind == "tuic" {

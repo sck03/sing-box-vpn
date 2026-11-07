@@ -49,3 +49,22 @@ func BenchmarkVMessURI(b *testing.B) {
 		}
 	}
 }
+
+func TestVMessMihomoKeepsWebSocketHost(t *testing.T) {
+	node, profile := vmessURIFixture()
+	for _, host := range []string{"ws.example.com", ""} {
+		object(object(node["transport"])["headers"])["Host"] = host
+		got := MihomoNode(node, profile)
+		want := host
+		if want == "" {
+			want = profile.TLSSNI
+		}
+		ws := object(got["ws-opts"])
+		if object(ws["headers"])["Host"] != want || ws["path"] != object(node["transport"])["path"] {
+			t.Errorf("WebSocket transport changed: %#v", ws)
+		}
+		if got["server"] != "cdn.example.com" || got["servername"] != "tls.example.com" {
+			t.Errorf("server or SNI changed: %#v", got)
+		}
+	}
+}

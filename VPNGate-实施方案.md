@@ -35,7 +35,8 @@ ASSOCIATE，TCP/UDP 中继只监听回环地址，必须认证。业务 socket �
 刷新按来源代次拒绝过期响应；新来源不可用时不复用已移除来源，重启也检查缓存归属。
 出口 IP 归一化后再与 VPS 比较，同一地址的 IPv4/IPv4 映射写法不能绕过校验；
 Geo 查询和缓存也使用归一化地址。ASN 仅接受正的 32 位整数，不对小数作截断匹配。
-节点源采用流式 CSV 解析，保留 16 MiB/1500 候选上限；断流、超限或损坏缓存不会作为新列表启用。
+节点源采用流式 CSV 解析，保留 16 MiB/1500 候选上限；断流、超限或 CSV 引号结构损坏时
+拒绝新列表，保留同来源有效缓存。达到候选上限后继续检查后续 CSV，不再解码额外 profile。
 列表读取限制与实际代理流量独立，不限制单次下载、视频或累计传输量。
 健康探测遇到临时网络 / 元数据故障时先阻断，再在原隧道上间隔 2 秒重试两次。
 错误国家或筛选策略不符直接拒绝；重复启动或重载相同设置保持已验证隧道。
@@ -60,6 +61,7 @@ Geo 查询和缓存也使用归一化地址。ASN 仅接受正的 32 位整数�
 | addons/vpngate/gateway/{server,http}.go | 共用连接退出/准入、HTTP 请求边界与节点源流式读取 |
 | addons/vpngate/gateway/{nodes,geo}.go | 节点缓存/候选与后台刷新回收、出口及 Geo/ASN 校验 |
 | addons/vpngate/gateway/source_cache.go | 候选和已验证节点的来源归属、统一缓存读写 |
+| addons/vpngate/gateway/node_source.go | CSV 完整性、候选去重排序和 Base64 解码缓冲复用 |
 | lib/services.sh | 统一服务单元、启动恢复和 3 秒意外退出重试策略 |
 | sing-box.service | 普通五协议 |
 | yg-vpngate.service | 出口管理器与认证 SOCKS5 |
