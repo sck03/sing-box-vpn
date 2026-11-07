@@ -270,6 +270,8 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 		}
 	}
 	for _, args := range [][]string{
+		{"ws", "/普通/连接-._~"},
+		{"ws", "/VPNGate/日本-._~", "--scope", "vpngate"},
 		{"credentials", "all", "01234567-89ab-4cde-8f01-23456789abcd"},
 		{"credentials", "all", "12345678-9abc-4def-8012-3456789abcde", "--scope", "vpngate"},
 		{"credentials", "tuic", "23456789-abcd-4ef0-8123-456789abcdef", "independent TUIC @:/?# password", "--scope", "vpngate"},

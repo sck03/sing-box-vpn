@@ -36,6 +36,8 @@ UDP 大包回归覆盖 65,498/65,507 字节回复被丢弃后继续收发、65,4
 订阅协议验收读取实际发布文件，覆盖两套 sing-box/Mihomo 原生节点及三协议 URI 导入，
 共 52 条 TCP/UDP 链路。Mihomo URI 自签 TLS 的两项限制见[兼容性说明](compatibility.md)。
 Mihomo 启动检测等待一次真实请求成功，避免监听已开启但路由仍处于初始化阶段的误报。
+WS 回归覆盖错误路径在修改和发布前被拒绝、两类节点独立保存、UTF-8 与长度边界，
+真实五协议测试使用两套不同的中文 WS 路径。HTTP 订阅另验证 IPv4/IPv6 URL 的实际可达性。
 
 ```bash
 SING_BOX_BINARY=/path/to/sing-box MIHOMO_BINARY=/path/to/mihomo RUN_UDP_IDLE_TESTS=1 go test -race -count=1 ./...
@@ -62,7 +64,8 @@ sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_SERVICE_TESTS=1 "$(command 
 ### Windows 本地工具与 Linux 验证环境
 
 工具统一放在项目 `.tools/`，构建产物位于 `.build/`，缓存、临时文件与日志位于 `.test/`，
-三者均不提交 Git。将 Go 1.27.3 Windows 解压到 `.tools/go/` 后，在 PowerShell 运行：
+三者均不提交 Git。临时上游源码也必须放在这些点号目录中：`.gitignore` 不会阻止
+`go test ./...` 扫描普通目录。将 Go 1.27.3 Windows 解压到 `.tools/go/` 后，在 PowerShell 运行：
 
 ```powershell
 . ./scripts/dev-env.ps1

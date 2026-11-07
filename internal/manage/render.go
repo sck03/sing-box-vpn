@@ -172,8 +172,12 @@ func outboundWithCache(inbound Object, p Profile, address, name string, cache ce
 	}
 	switch kind {
 	case "vmess":
+		path := text(object(inbound["transport"])["path"])
+		if err := validateWebSocketPath(path); err != nil {
+			return nil, err
+		}
 		n["security"] = "auto"
-		n["transport"] = Object{"type": "ws", "path": object(inbound["transport"])["path"], "headers": Object{"Host": p.TLSSNI}}
+		n["transport"] = Object{"type": "ws", "path": path, "headers": Object{"Host": p.TLSSNI}}
 	case "tuic":
 		n["congestion_control"], n["udp_relay_mode"], n["zero_rtt_handshake"], n["heartbeat"] = "bbr", "native", false, "10s"
 	case "anytls":
@@ -191,11 +195,4 @@ func outboundWithCache(inbound Object, p Profile, address, name string, cache ce
 		}
 	}
 	return n, nil
-}
-
-func webSocketHost(transport Object, fallback string) string {
-	if host := text(object(transport["headers"])["Host"]); host != "" {
-		return host
-	}
-	return fallback
 }

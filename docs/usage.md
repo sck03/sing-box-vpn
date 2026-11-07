@@ -16,6 +16,9 @@ UUID，同时用于 VLESS、VMess、TUIC 的 UUID 和 Hy2、TUIC、AnyTLS 的密
 修改，TUIC 可另填密码；回车或“随机重置”自动生成凭据。修改后从菜单 9 获取新链接。
 
 普通 VMess 支持 WS/CDN 和 Argo；VPNGate VMess 使用独立 WS 入口。
+WS 路径以 `/` 开头，最多 255 个 UTF-8 字节，例如 `/ws-01`、`/节点/连接`。
+填写原始路径，不填写完整 URL、`?ed=2048` 等查询参数、`#` 片段或 `%2F` 等转义；
+空白、控制字符和反斜杠也会被拒绝。错误输入不会覆盖现有配置或订阅。
 
 ## 端口、跳跃与复用
 
@@ -61,6 +64,7 @@ Hysteria2 分享链接同时携带 `insecure=1` 和叶证书 SHA256 指纹；CA 
 
 本地订阅在 **3 → 8** 启用或重置，两套地址使用同一令牌；重置令牌后需更新客户端订阅地址。
 HTTP 的 `jhsub.txt` 路径提供 Base64 聚合，`links.txt` 提供原始 URI。公网加密传输需 HTTPS 反向代理。
+默认通配监听在系统支持时同时接受 IPv4/IPv6；生成的 IPv6 URL 自动使用方括号。
 GitLab 的 VPNGate 文件放在 `vpngate/`，普通订阅继续使用原路径。
 
 推荐使用客户端原生配置：sing-box 导入 `sbox.json`，Mihomo 导入 `clmi.yaml`。

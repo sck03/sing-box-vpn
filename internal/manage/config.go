@@ -545,8 +545,8 @@ func mutateApp(app *App, settings VPNSettings, operation string, values []string
 		if err := count(1); err != nil {
 			return err
 		}
-		if len(values[0]) == 0 || len(values[0]) > 255 || strings.ContainsAny(values[0], "\r\n") {
-			return errors.New("路径格式错误")
+		if err := validateWebSocketPath(values[0]); err != nil {
+			return err
 		}
 		for _, in := range app.Inbounds {
 			if in["type"] == "vmess" {

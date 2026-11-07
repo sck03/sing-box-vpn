@@ -66,6 +66,7 @@ OpenVPN 指令最多三个参数，校验使用固定四字段存储；发现多
 | `export.go` | 普通/VPNGate 导出集合、客户端校验及发布文件组装 |
 | `state.go` / `render.go` | 原生证书/密钥、服务端配置与 sing-box 协议出站 |
 | `client.go` / `mihomo.go` / `uri.go` | sing-box 客户端策略、Mihomo 配置和 URI 编码，三种格式各自维护 |
+| `websocket.go` | 本地 WebSocket 路径约束及客户端 Host 选择 |
 | `storage.go` | 有界文件读取、统一原子写入、JSON 格式和可复用流式缓冲 |
 | `publish.go` | 单次多文件提交快照、恢复校验、失败恢复和启动等待 |
 | `ports.go` / `firewall.go` | 按节点类型预留端口、共用端口变更、规则计划与防火墙批量提交 |
@@ -80,6 +81,10 @@ OpenVPN 指令最多三个参数，校验使用固定四字段存储；发现多
 缺少管理状态但已有服务端文件时拒绝初始化，保留原文件；当前配置重复初始化保留端口和凭据。
 VMess 分享链接直接编码标准 UTF-8 JSON；链接与 Mihomo 导出共用 WebSocket Host 选择，
 优先采用传输配置中的 Host，缺省才使用 Profile 的默认值，连接地址、TLS SNI 与 Host 独立。
+路径校验同时用于菜单修改和订阅构造，阻止手改状态绕过检查。服务端按解码后的 URL.Path 匹配，
+因此本地路径不接受查询、片段或百分号转义；普通/VPNGate 都保留合法原始 UTF-8 路径。
+URI 查询参数直接写入 Builder，省去逐项拼接和临时切片；VMess 单独编码 JSON，不生成无用的
+URI authority、转义名称或查询参数。新增格式应维护自身编码约束并接受真实核心验证。
 客户端策略按普通/VPNGate 范围直接构造；VPNGate 不创建随后丢弃的中国规则集、Clash
 直连模式规则与自动测速选择器。共享节点列表预留容量，避免构建期间重复扩容。
 URI 的证书字段遵循目标导入格式：Hysteria2 只为自签证书固定叶证书指纹，CA 证书不固定；
