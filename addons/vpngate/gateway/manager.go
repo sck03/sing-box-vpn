@@ -42,6 +42,7 @@ type manager struct {
 	sourceClient   *http.Client
 	hostClient     *http.Client
 	connections    map[net.Conn]bool
+	pendingDials   map[*pendingDial]struct{}
 	wake           chan struct{}
 	cancel         context.CancelFunc
 	swap           bool
@@ -54,6 +55,7 @@ type manager struct {
 func newManager(c Config, path string) *manager {
 	m := &manager{cfg: c, configPath: path, status: Status{Version: version, State: "stopped", Country: c.Country, Mode: c.Mode, Updated: time.Now()}, connections: map[net.Conn]bool{}, wake: make(chan struct{}, 1), factory: func(c Config) tunnel { return &backend{cfg: c} }}
 	m.refreshSlot = make(chan struct{}, 1)
+	m.pendingDials = map[*pendingDial]struct{}{}
 	m.sourceClient = directClient(25 * time.Second)
 	m.hostClient = &http.Client{Timeout: 12 * time.Second, Transport: m.sourceClient.Transport, CheckRedirect: m.sourceClient.CheckRedirect}
 	m.geoCache = map[string]cachedGeo{}
@@ -90,62 +92,6 @@ func (m *manager) setStatus(state, reason string, node Node, geo *Geo) {
 		_ = atomicJSON(filepath.Join(dir, "state.json"), s)
 	}
 }
-func (m *manager) revoke() {
-	m.mu.Lock()
-	m.ready = false
-	m.epoch++
-	all := m.connections
-	m.connections = map[net.Conn]bool{}
-	m.mu.Unlock()
-	for c := range all {
-		c.Close()
-	}
-}
-func (m *manager) track(c net.Conn) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if len(m.connections) >= m.cfg.MaxConnections {
-		return false
-	}
-	m.connections[c] = true
-	return true
-}
-func (m *manager) untrack(c net.Conn) { m.mu.Lock(); delete(m.connections, c); m.mu.Unlock() }
-func (m *manager) authenticate(user, pass string) (ticket, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return ticket{epoch: m.epoch, country: m.cfg.Country}, equalSecret(user, m.cfg.ProxyUser) && equalSecret(pass, m.cfg.ProxyPass)
-}
-func (m *manager) allowed(t ticket) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.ready && t.epoch == m.epoch && t.country == m.cfg.Country
-}
-func (m *manager) open(ctx context.Context, t ticket, network, address string) (net.Conn, string, error) {
-	m.mu.Lock()
-	ok := m.ready && t.epoch == m.epoch && t.country == m.cfg.Country
-	active := m.current
-	m.mu.Unlock()
-	if !ok || active == nil {
-		return nil, "", errors.New("verified tunnel is unavailable")
-	}
-	c, target, e := dialWorker(ctx, active.socket(), network, address)
-	if e != nil {
-		return nil, "", e
-	}
-	m.mu.Lock()
-	ok = ctx.Err() == nil && m.ready && t.epoch == m.epoch && t.country == m.cfg.Country && len(m.connections) < m.cfg.MaxConnections
-	if ok {
-		m.connections[c] = true
-	}
-	m.mu.Unlock()
-	if !ok {
-		c.Close()
-		return nil, "", errors.New("tunnel changed during dial")
-	}
-	return c, target, nil
-}
-
 func (m *manager) apply(c Config, swap bool) error {
 	if e := c.validate(); e != nil {
 		return e

@@ -27,6 +27,8 @@ TCP/UDP、持续单向 UDP 和资源边界；性能测量命令见[优化记录]
 顶层 `null` 的错误返回、凭据映射保护及拒绝前不生成证书。候选摘要验证过滤、字段隔离及空数组。
 CSV 回归覆盖候选上限前后的损坏引号、合法多行字段、刷新失败保留内存/磁盘缓存和解码缓冲
 复用后的 profile 独立性；VMess 回归同时检查分享链接及 Mihomo 的独立 Host、SNI 和连接地址。
+代理容量回归覆盖 TCP/UDP 待拨号计数、并发满载拒绝、预约转为连接、各种失败后的容量释放，
+以及出口撤销时立即中断 worker 等待和新代次重新接入。
 
 ```bash
 SING_BOX_BINARY=/path/to/sing-box RUN_UDP_IDLE_TESTS=1 go test -race -count=1 ./...

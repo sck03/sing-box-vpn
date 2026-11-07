@@ -103,6 +103,8 @@ yg-vpngate ctl start
 ```
 
 高级设置位于 `/etc/s-box/vpngate/gateway.json`，修改后执行 `yg-vpngate ctl reload`。
+`max_connections` 默认 128，范围 1–1024，统计代理套接字及正在建立的目标连接，并非客户端人数。
+达到上限会拒绝新连接或新 UDP 目标；降低并发或按 VPS 资源调整该值后重试。
 菜单 17 可配置镜像源和 ISP/hosting 筛选；默认使用官方 HTTPS 节点 API。
 ASN 允许列表填写 1–4294967295 的整数。出口与 VPS 地址相同、Geo 响应中的 ASN 无效或
 不符合筛选策略时不会开放转发；IP 的等价文本写法不会改变出口比较结果。

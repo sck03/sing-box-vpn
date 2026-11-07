@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -12,18 +11,6 @@ import (
 	"time"
 )
 
-type ticket struct {
-	epoch   uint64
-	country string
-}
-type proxyAccess interface {
-	connectionTracker
-	authenticate(string, string) (ticket, bool)
-	allowed(ticket) bool
-	open(context.Context, ticket, string, string) (net.Conn, string, error)
-}
-
-func equalSecret(a, b string) bool { return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
 func readSmallString(r io.Reader) (string, error) {
 	var n [1]byte
 	if _, e := io.ReadFull(r, n[:]); e != nil {

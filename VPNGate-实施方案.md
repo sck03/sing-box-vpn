@@ -59,6 +59,7 @@ Geo 查询和缓存也使用归一化地址。ASN 仅接受正的 32 位整数�
 | addons/vpngate/gateway/ | 节点/profile、国家/ISP、代理、worker、namespace |
 | addons/vpngate/gateway/{control,socks,udp,transport}.go | 控制 HTTP、SOCKS 握手、UDP 会话、共享 IPC 帧与 TCP 中继 |
 | addons/vpngate/gateway/{server,http}.go | 共用连接退出/准入、HTTP 请求边界与节点源流式读取 |
+| addons/vpngate/gateway/access.go | 认证代次、连接和待拨号的统一容量、出口撤销 |
 | addons/vpngate/gateway/{nodes,geo}.go | 节点缓存/候选与后台刷新回收、出口及 Geo/ASN 校验 |
 | addons/vpngate/gateway/source_cache.go | 候选和已验证节点的来源归属、统一缓存读写 |
 | addons/vpngate/gateway/node_source.go | CSV 完整性、候选去重排序和 Base64 解码缓冲复用 |
@@ -81,6 +82,8 @@ TCP 不设置定时重连。UDP 的空闲期限由双向收发共同更新，持
 时同时取消未完成的拨号并释放会话。入口设置不会重启 OpenVPN，重复导出也不触发服务重启。
 代理和 worker 的监听停止或失败时取消全部会话，等待握手、拨号与中继退出后再完成清理。
 后台节点刷新也在释放守护进程锁前取消并等待；停止后不再接收刷新任务。
+代理套接字与待完成 worker 拨号共用容量上限，先预约再拨号；成功时原位转为连接，失败时释放。
+出口撤销会取消正在等待 worker 的请求，旧代次的拨号不能在新出口恢复后重新接入。
 新 UDP 目标异步解析，每个目标由独立协程按顺序发送，阻塞目标不拖住其他端口。每个关联限制
 8 个并发拨号，每个目标最多排队 64 包；排队及写入中的缓冲容量最多 256 KiB，单目标最多
 128 KiB，超限丢弃新包。接收与排队缓冲均复用，关闭时取消拨号及写入，等待协程退出后回收。
