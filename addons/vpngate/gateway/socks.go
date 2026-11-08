@@ -114,7 +114,7 @@ func handleSocks(ctx context.Context, c net.Conn, a proxyAccess) {
 		return
 	}
 	_ = c.SetDeadline(time.Time{})
-	relay(c, remote)
+	relay(ctx, c, remote)
 }
 
 func readSocksAddress(r io.Reader, kind byte) (string, error) {

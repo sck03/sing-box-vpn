@@ -139,8 +139,9 @@ func writeStaged(path string, write func(io.Writer) error) error {
 func copyFileContent(output io.Writer, input io.Reader) (int64, error) {
 	buffer := fileBuffers.Get().(*fileBuffer)
 	defer fileBuffers.Put(buffer)
-	// Suppress File.WriteTo so CopyBuffer actually uses this reusable buffer.
-	return io.CopyBuffer(output, struct{ io.Reader }{input}, buffer[:])
+	// Suppress both fast-path interfaces: File.ReadFrom can otherwise bypass the
+	// borrowed buffer and allocate another one after File.WriteTo is hidden.
+	return io.CopyBuffer(struct{ io.Writer }{output}, struct{ io.Reader }{input}, buffer[:])
 }
 
 func fileEquals(file *os.File, info os.FileInfo, expected []byte) (bool, error) {

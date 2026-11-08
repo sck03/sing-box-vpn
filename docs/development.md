@@ -51,6 +51,8 @@ OpenVPN 日志回归使用真实子进程输出超过 3 MiB 的单行，验证 s
 Geo 响应回归验证浮点舍入边界、已知字段类型、多个服务商字段形态，以及错误响应不进入
 策略缓存、修正后恢复验证；基准覆盖常见响应和大量无关元数据。控制客户端通过真实 Unix
 socket 验证恰好 1 MiB、已知长度及分块超限、断流、重定向和缺少错误字段的失败响应。
+TCP 退出回归让独立 worker 在收到请求 EOF 后保持响应流打开，分别验证主动取消和监听失败
+均能退出并清空连接跟踪；另保留半关闭后完整接收响应的验收，防止用提前截断响应规避等待。
 
 ```bash
 SING_BOX_BINARY=/path/to/sing-box MIHOMO_BINARY=/path/to/mihomo RUN_UDP_IDLE_TESTS=1 go test -race -count=1 ./...

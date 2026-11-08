@@ -229,3 +229,42 @@ func BenchmarkReadJSON(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkCopyFileContent(b *testing.B) {
+	for _, tc := range []struct {
+		name string
+		size int
+	}{{"8KiB", 8 << 10}, {"128KiB", 128 << 10}} {
+		b.Run(tc.name, func(b *testing.B) {
+			root := b.TempDir()
+			data := bytes.Repeat([]byte{'x'}, tc.size)
+			path := filepath.Join(root, "source")
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				b.Fatal(err)
+			}
+			input, err := os.Open(path)
+			if err != nil {
+				b.Fatal(err)
+			}
+			defer input.Close()
+			output, err := os.Create(filepath.Join(root, "destination"))
+			if err != nil {
+				b.Fatal(err)
+			}
+			defer output.Close()
+			b.ReportAllocs()
+			b.SetBytes(int64(tc.size))
+			for b.Loop() {
+				if _, err := input.Seek(0, io.SeekStart); err != nil {
+					b.Fatal(err)
+				}
+				if _, err := output.Seek(0, io.SeekStart); err != nil {
+					b.Fatal(err)
+				}
+				if n, err := copyFileContent(output, input); err != nil || n != int64(tc.size) {
+					b.Fatal("copy failed", n, err)
+				}
+			}
+		})
+	}
+}

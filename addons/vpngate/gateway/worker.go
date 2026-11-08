@@ -123,16 +123,16 @@ func (w *worker) handle(parent context.Context, c net.Conn) {
 		return
 	}
 	defer remote.Close()
-	stop := context.AfterFunc(parent, func() { c.Close(); remote.Close() })
-	defer stop()
 	if e = writeObject(c, dialResponse{Address: remote.RemoteAddr().String()}); e != nil {
 		return
 	}
 	_ = c.SetDeadline(time.Time{})
 	if req.Network == "tcp" {
-		relay(c, remote)
+		relay(parent, c, remote)
 		return
 	}
+	stop := context.AfterFunc(parent, func() { c.Close(); remote.Close() })
+	defer stop()
 	done := make(chan struct{}, 1)
 	go func() {
 		defer func() { done <- struct{}{}; c.Close() }()

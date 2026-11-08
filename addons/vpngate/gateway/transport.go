@@ -112,7 +112,13 @@ type packetBuffer [maxPacket + 2]byte
 // UDP receives need a full datagram buffer; reuse it across completed sessions.
 var packetBuffers = sync.Pool{New: func() any { return new(packetBuffer) }}
 
-func relay(a, b net.Conn) {
+// EOF half-closes only the destination so the reply can finish. Cancellation
+// must close both ends even when one copy has already completed successfully.
+func relay(ctx context.Context, a, b net.Conn) {
+	closeConnections := func() { a.Close(); b.Close() }
+	stop := context.AfterFunc(ctx, closeConnections)
+	defer stop()
+	defer closeConnections()
 	copyTo := func(dst, src net.Conn) {
 		_, e := io.Copy(dst, src)
 		if e == nil {
@@ -123,16 +129,13 @@ func relay(a, b net.Conn) {
 			}
 		}
 		if e != nil {
-			a.Close()
-			b.Close()
+			closeConnections()
 		}
 	}
-	done := make(chan struct{}, 1)
-	go func() { copyTo(a, b); done <- struct{}{} }()
+	done := make(chan struct{})
+	go func() { defer close(done); copyTo(a, b) }()
 	copyTo(b, a)
 	<-done
-	a.Close()
-	b.Close()
 }
 
 func dialWorker(ctx context.Context, socket, network, address string) (net.Conn, string, error) {
