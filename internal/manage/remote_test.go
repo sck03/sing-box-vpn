@@ -53,11 +53,26 @@ func TestGitLabRefusesPublicProjectsAndCommitsFilesTogether(t *testing.T) {
 				if vpn.Load() && action["content"] != "vpn-content" {
 					t.Error("VPNGate push read ordinary files")
 				}
+				want := "create"
+				if strings.HasSuffix(text(action["file_path"]), "sbox.json") {
+					want = "update"
+				}
+				if action["action"] != want {
+					t.Error("wrong GitLab file action", action["action"], want)
+				}
 			}
 			io.WriteString(w, `{}`)
 			return
 		}
 		if strings.Contains(r.URL.Path, "/repository/files/") {
+			if r.Method != http.MethodHead {
+				t.Error("existence check must use HEAD")
+			}
+			if strings.HasSuffix(r.URL.Path, "sbox.json") {
+				// HEAD describes the file without sending its large response body.
+				w.Header().Set("Content-Length", "8000000")
+				return
+			}
 			w.WriteHeader(404)
 			return
 		}

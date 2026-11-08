@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -56,11 +55,19 @@ func remoteRequest(ctx context.Context, client *http.Client, endpoint, method st
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return httpStatusError(response.StatusCode)
 	}
-	data, err := io.ReadAll(io.LimitReader(response.Body, (4<<20)+1))
+	input = io.LimitReader(response.Body, (4<<20)+1)
+	var data []byte
+	var size int64
+	if target == nil {
+		size, err = copyFileContent(io.Discard, input)
+	} else {
+		data, err = io.ReadAll(input)
+		size = int64(len(data))
+	}
 	if err != nil {
 		return errors.New("远端响应读取失败")
 	}
-	if len(data) > 4<<20 {
+	if size > 4<<20 {
 		return errors.New("远端响应过大")
 	}
 	if target == nil {
@@ -69,35 +76,26 @@ func remoteRequest(ctx context.Context, client *http.Client, endpoint, method st
 	return json.Unmarshal(data, target)
 }
 
-func pushTelegram(ctx context.Context, client *http.Client, baseURL, root string, settings remoteSettings) error {
+func pushTelegram(ctx context.Context, client *http.Client, baseURL, root, scope string, settings remoteSettings) error {
 	if settings.Telegram == nil {
 		return errors.New("先配置 Telegram")
 	}
-	data, err := os.ReadFile(filepath.Join(root, "jhsub.txt"))
+	files, err := readRemoteExports(ctx, root, scope, "jhsub.txt")
 	if err != nil {
 		return err
 	}
-	var chunks []string
-	chunk := ""
-	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
-		if len(line) > 3500 {
-			return errors.New("单个节点链接超过 Telegram 消息长度，请使用本地订阅")
-		}
-		if len(chunk)+len(line)+1 > 3500 {
-			chunks = append(chunks, chunk)
-			chunk = ""
-		}
-		chunk += line + "\n"
-	}
-	if chunk != "" {
-		chunks = append(chunks, chunk)
+	chunks, err := telegramMessages(files[0].content)
+	if err != nil {
+		return err
 	}
 	for _, value := range chunks {
-		var response Object
+		var response struct {
+			OK bool `json:"ok"`
+		}
 		if err := remoteRequest(ctx, client, baseURL+"/bot"+settings.Telegram.Token+"/sendMessage", "POST", Object{"chat_id": settings.Telegram.ChatID, "text": value, "disable_web_page_preview": true}, nil, &response); err != nil {
 			return err
 		}
-		if response["ok"] != true {
+		if !response.OK {
 			return errors.New("Telegram 拒绝了推送请求")
 		}
 	}
@@ -108,34 +106,26 @@ func pushGitLab(ctx context.Context, client *http.Client, baseURL, root, scope s
 	if settings.GitLab == nil {
 		return errors.New("先配置 GitLab")
 	}
-	directory, err := exportDirectory(root, scope)
+	files, err := readRemoteExports(ctx, root, scope, "sbox.json", "clmi.yaml", "jhsub.txt")
 	if err != nil {
 		return err
-	}
-	prefix := ""
-	if scope == vpngateScope {
-		prefix = "vpngate/"
 	}
 	cfg := settings.GitLab
 	base := baseURL + "/api/v4/projects/" + url.PathEscape(cfg.Project)
 	headers := map[string]string{"PRIVATE-TOKEN": cfg.Token}
-	var meta Object
+	var meta struct {
+		Visibility string `json:"visibility"`
+	}
 	if err := remoteRequest(ctx, client, base, "GET", nil, headers, &meta); err != nil {
 		return err
 	}
-	if meta["visibility"] != "private" {
+	if meta.Visibility != "private" {
 		return errors.New("节点订阅只允许写入私有 GitLab 项目")
 	}
-	actions := []Object{}
-	for _, name := range []string{"sbox.json", "clmi.yaml", "jhsub.txt"} {
-		content, err := os.ReadFile(filepath.Join(directory, name))
-		if err != nil {
-			return err
-		}
-		name = prefix + name
+	actions := make([]Object, 0, len(files))
+	for _, file := range files {
 		action := "update"
-		var existing Object
-		err = remoteRequest(ctx, client, base+"/repository/files/"+url.PathEscape(name)+"?ref="+url.QueryEscape(cfg.Branch), "GET", nil, headers, &existing)
+		err = remoteRequest(ctx, client, base+"/repository/files/"+url.PathEscape(file.path)+"?ref="+url.QueryEscape(cfg.Branch), http.MethodHead, nil, headers, nil)
 		if err != nil {
 			var status httpStatusError
 			if !errors.As(err, &status) || status != 404 {
@@ -143,7 +133,7 @@ func pushGitLab(ctx context.Context, client *http.Client, baseURL, root, scope s
 			}
 			action = "create"
 		}
-		actions = append(actions, Object{"action": action, "file_path": name, "content": string(content)})
+		actions = append(actions, Object{"action": action, "file_path": file.path, "content": file.content})
 	}
 	return remoteRequest(ctx, client, base+"/repository/commits", "POST", Object{"branch": cfg.Branch, "commit_message": "更新 sing-box-vpn 订阅", "actions": actions}, headers, nil)
 }
@@ -169,8 +159,7 @@ func RunRemote(ctx context.Context, args []string, input io.Reader, output io.Wr
 	if err := parseOptions(options, args[1:]); err != nil {
 		return err
 	}
-	directory, err := exportDirectory(*root, *scope)
-	if err != nil {
+	if _, err := exportDirectory(*root, *scope); err != nil {
 		return err
 	}
 	if operation == "telegram-config" || operation == "gitlab-config" {
@@ -218,7 +207,7 @@ func RunRemote(ctx context.Context, args []string, input io.Reader, output io.Wr
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	switch operation {
 	case "telegram-push":
-		if err := pushTelegram(ctx, client, "https://api.telegram.org", directory, settings); err != nil {
+		if err := pushTelegram(ctx, client, "https://api.telegram.org", *root, *scope, settings); err != nil {
 			return err
 		}
 		_, err := fmt.Fprintln(output, "节点已发送到配置的 Telegram 会话")

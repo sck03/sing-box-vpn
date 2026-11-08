@@ -66,6 +66,9 @@ Hysteria2 分享链接同时携带 `insecure=1` 和叶证书 SHA256 指纹；CA 
 HTTP 的 `jhsub.txt` 路径提供 Base64 聚合，`links.txt` 提供原始 URI。公网加密传输需 HTTPS 反向代理。
 默认通配监听在系统支持时同时接受 IPv4/IPv6；生成的 IPv6 URL 自动使用方括号。
 GitLab 的 VPNGate 文件放在 `vpngate/`，普通订阅继续使用原路径。
+推送使用开始时的一份订阅快照；期间修改配置不会混入本次内容，需再次推送才能更新。
+Telegram 保留完整链接，按每条消息最多 3500 字节分段；空订阅或单个链接过长时会在发送前
+报错。若发送多条消息途中网络失败，已发送部分会保留，重试可能产生重复消息。
 
 推荐使用客户端原生配置：sing-box 导入 `sbox.json`，Mihomo 导入 `clmi.yaml`。
 聚合 URI 不是完整客户端配置，导入器对证书选项的支持存在差异：VMess JSON 使用当前

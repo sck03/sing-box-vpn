@@ -44,6 +44,10 @@ WS 回归覆盖错误路径在修改和发布前被拒绝、两类节点独立�
 无需实际耗尽宿主机资源，也不等待真实的秒级退避。永久监听错误仍须返回调用方。
 OpenVPN 日志回归使用真实子进程输出超过 3 MiB 的单行，验证 stdout/stderr 跨分块就绪标记、
 严格 2 MiB 文件上限和退出前关闭文件；另覆盖逐字节输入、未换行尾部、磁盘错误和短写。
+远端推送回归使用本地 HTTP 服务和替代传输，覆盖 Telegram 分段边界、空列表及超长尾部的
+发送前拒绝；GitLab 验证 HEAD 的 create/update 分派、网络请求期间修改配置仍使用原快照。
+另覆盖发布中断恢复、普通/VPNGate 范围、配置锁等待取消、16 MiB 文件和 4 MiB 响应边界；
+这些测试不调用真实 Telegram 或 GitLab 账户。
 
 ```bash
 SING_BOX_BINARY=/path/to/sing-box MIHOMO_BINARY=/path/to/mihomo RUN_UDP_IDLE_TESTS=1 go test -race -count=1 ./...

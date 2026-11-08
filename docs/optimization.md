@@ -3,32 +3,31 @@
 [返回项目首页](../README.md) · [验证命令](development.md) · [模块边界](architecture.md)
 
 本文记录当前实现和验证边界；以往的分配测量与修复记录见
-[3cfeb31 时的优化日志](https://github.com/sck03/sing-box-vpn/blob/3cfeb31/docs/optimization.md)。
+[def8757 时的优化日志](https://github.com/sck03/sing-box-vpn/blob/def8757/docs/optimization.md)。
 
 ## 本轮修复 · 2026-11-08
 
-基线提交 `3cfeb31`。OpenVPN 日志使用最大 1 MiB 的逐行扫描器，遇到更长的单行后停止读取，
-剩余输出会填满管道，导致握手或运行过程阻塞。扫描协程与 `Cmd.Wait` 分离，还可能在退出时
-丢失尾部日志。原日志上限按整行判断，最后一行可能令文件超过 2 MiB。
+基线提交 `def8757`。Telegram 对恰好 3500 字节的链接先发送空消息，再添加多余尾部换行；
+空订阅也会发出空白消息。GitLab 在多个网络请求之间逐个读取订阅文件，期间本地配置更新
+可能让一次提交混入两批内容；文件存在性检查还会下载并解析不需要的完整远端文件内容。
 
-新增独立的 `openvpn_output.go`，直接消费进程输出块，跨块检测就绪标记，仅保留固定长度尾部。
-stdout/stderr 共用接收器，`os/exec` 等待输出消费后再返回；关闭日志后才通知进程退出。
-日志严格截取前 2 MiB，保留原始换行和未换行尾部；磁盘错误、短写或达到上限后仍消费输出。
-不再使用逐行扫描协程，也不逐行构造字符串和补换行。
+新增 `remote_payload.go`，集中处理文件快照和消息分段。推送前在配置锁内恢复未完成发布并
+读取同一批订阅，每个文件限制 16 MiB，释放锁后再请求网络。Telegram 使用逐行迭代与 Builder，
+先验证全部链接，精确计算分隔符，避免空消息及反复拼接。GitLab 改用 HEAD 判断文件存在性，
+成功响应不需要解析时流式消费，保留 4 MiB 上限、读取错误检查及响应体关闭。
 
 同机 Windows amd64、Go 1.27.3、i5-9400F、默认并行度 6，`-benchmem -count=3` 中位数：
 
 | 输入 | 修改前 | 修改后 |
 | --- | --- | --- |
-| 4,096 条诊断日志，最后附就绪标记 | 429.8 µs / 397,586 B / 8,198 次分配 | 5.61 µs / 112 B / 1 次分配 |
+| 无需解析的约 1 MiB 成功响应 | 387.44 µs / 2,237,923 B / 40 次分配 | 23.09 µs / 1,786 B / 17 次分配 |
 
-临时分配下降约 99.97%。基准写入 `io.Discard`，新实现按 32 KiB 块输入；旧实现按基线代码
-使用 Scanner、字符串转换及逐行写入。测量不包括磁盘、进程启动或管道复制缓冲，不能用于
-推断整机 RSS、实际磁盘吞吐或代理转发速度。生产中的进程管道仍使用 `os/exec` 的复制缓冲。
-当前实现复现命令：
+临时分配下降约 99.92%。同一基准先在原 `remoteRequest` 实现上运行，再在修复后运行；
+响应通过内存中的替代 HTTP 传输提供。结果仅衡量响应确认处理，不包括网络、TLS、文件
+快照或请求 JSON 编码，不能据此推断整机 RSS 或代理转发速度。当前实现复现命令：
 
 ```bash
-go test ./addons/vpngate/gateway -run '^$' -bench '^BenchmarkOpenVPNOutput$' -benchmem -count=3
+go test ./internal/manage -run '^$' -bench '^BenchmarkRemoteAcknowledgement$' -benchmem -count=3
 ```
 
 本地全量 `go test -race -count=1 ./...`（启用持续单向 UDP）、52 条真实协议链路、
@@ -46,6 +45,7 @@ Linux netns、防火墙和 systemd 专项由推送后的 GitHub CI 执行。
 | 节点源 | 流式读取、记录/列数/候选上限、解码缓冲复用；`BenchmarkNodeSource/Streaming`、`BenchmarkNodeSourceExcessColumns` |
 | profile 校验 | 固定字段数，过量参数及时拒绝；`BenchmarkProfileValidation` |
 | 配置发布 | 单份事务快照、相同内容不重写；`BenchmarkPublishChanged`、`BenchmarkPublishUnchanged` |
+| 远端推送 | 同批快照、单文件 16 MiB、响应 4 MiB、HEAD 存在性检查；`BenchmarkRemoteAcknowledgement` |
 | 核心更新 | 流式摘要，不持有完整配置副本；`BenchmarkCoreConfigValidation` |
 | 客户端配置 | 只创建当前范围需要的规则和选择器；`BenchmarkClientConfig` |
 | VMess URI | 直接编码 JSON，省去无用的 URI 字段构造；`BenchmarkVMessURI` |
