@@ -48,6 +48,9 @@ OpenVPN 日志回归使用真实子进程输出超过 3 MiB 的单行，验证 s
 发送前拒绝；GitLab 验证 HEAD 的 create/update 分派、网络请求期间修改配置仍使用原快照。
 另覆盖发布中断恢复、普通/VPNGate 范围、配置锁等待取消、16 MiB 文件和 4 MiB 响应边界；
 这些测试不调用真实 Telegram 或 GitLab 账户。
+Geo 响应回归验证浮点舍入边界、已知字段类型、多个服务商字段形态，以及错误响应不进入
+策略缓存、修正后恢复验证；基准覆盖常见响应和大量无关元数据。控制客户端通过真实 Unix
+socket 验证恰好 1 MiB、已知长度及分块超限、断流、重定向和缺少错误字段的失败响应。
 
 ```bash
 SING_BOX_BINARY=/path/to/sing-box MIHOMO_BINARY=/path/to/mihomo RUN_UDP_IDLE_TESTS=1 go test -race -count=1 ./...

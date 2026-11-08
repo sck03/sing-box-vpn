@@ -10,10 +10,12 @@ import (
 	"time"
 )
 
+func rejectHTTPRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+
 func directClient(timeout time.Duration) *http.Client {
 	return &http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: func(ctx context.Context, _ string, address string) (net.Conn, error) {
 		return (&net.Dialer{Timeout: 15 * time.Second}).DialContext(ctx, "tcp4", address)
-	}, TLSHandshakeTimeout: 8 * time.Second, IdleConnTimeout: 90 * time.Second, MaxIdleConns: 8, MaxIdleConnsPerHost: 2, ForceAttemptHTTP2: true, DisableCompression: true}, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
+	}, TLSHandshakeTimeout: 8 * time.Second, IdleConnTimeout: 90 * time.Second, MaxIdleConns: 8, MaxIdleConnsPerHost: 2, ForceAttemptHTTP2: true, DisableCompression: true}, CheckRedirect: rejectHTTPRedirect}
 }
 
 func tunnelClient(active tunnel) *http.Client {
@@ -21,7 +23,7 @@ func tunnelClient(active tunnel) *http.Client {
 		conn, _, err := dialWorker(ctx, active.socket(), "tcp", address)
 		return conn, err
 	}, TLSHandshakeTimeout: 8 * time.Second, IdleConnTimeout: 90 * time.Second, MaxIdleConns: 2, MaxIdleConnsPerHost: 1, ForceAttemptHTTP2: true, DisableCompression: true}
-	return &http.Client{Timeout: 12 * time.Second, Transport: transport, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
+	return &http.Client{Timeout: 12 * time.Second, Transport: transport, CheckRedirect: rejectHTTPRedirect}
 }
 
 func openHTTP(ctx context.Context, client *http.Client, url string, limit int64) (io.ReadCloser, error) {
@@ -52,6 +54,10 @@ func readHTTP(ctx context.Context, client *http.Client, url string, limit int64)
 		return nil, err
 	}
 	defer body.Close()
+	return readHTTPBody(body, limit)
+}
+
+func readHTTPBody(body io.Reader, limit int64) ([]byte, error) {
 	data, err := io.ReadAll(io.LimitReader(body, limit+1))
 	if err != nil {
 		return nil, err

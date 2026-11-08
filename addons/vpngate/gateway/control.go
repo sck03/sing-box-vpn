@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -219,7 +221,7 @@ func runCTLWithOutput(args []string, output io.Writer) error {
 		return (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "unix", filepath.Join(c.RunDir, "control.sock"))
 	}}
 	defer transport.CloseIdleConnections()
-	client := &http.Client{Timeout: *requestTimeout, Transport: transport}
+	client := &http.Client{Timeout: *requestTimeout, Transport: transport, CheckRedirect: rejectHTTPRedirect}
 	method, url := http.MethodGet, "http://unix/v1/"+op
 	var body io.Reader
 	if op != "status" && op != "nodes" {
@@ -248,7 +250,7 @@ func runCTLWithOutput(args []string, output io.Writer) error {
 			}
 		})
 		b, _ := json.Marshal(a)
-		body = strings.NewReader(string(b))
+		body = bytes.NewReader(b)
 		method = http.MethodPost
 		url = "http://unix/v1/actions"
 	}
@@ -266,16 +268,18 @@ func runCTLWithOutput(args []string, output io.Writer) error {
 		return errors.New("gateway control socket unavailable; check yg-vpngate service")
 	}
 	defer res.Body.Close()
-	b, e := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	b, e := readHTTPBody(res.Body, 1<<20)
 	if e != nil {
 		return e
 	}
-	if res.StatusCode >= 400 {
-		var v map[string]string
-		if json.Unmarshal(b, &v) == nil {
-			return errors.New(v["error"])
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		var reply struct {
+			Error string `json:"error"`
 		}
-		return errors.New("control operation failed")
+		if json.Unmarshal(b, &reply) == nil && strings.TrimSpace(reply.Error) != "" {
+			return errors.New(reply.Error)
+		}
+		return fmt.Errorf("control operation failed: HTTP response %d", res.StatusCode)
 	}
 	if op == "status" && *format == "text" {
 		var status Status
