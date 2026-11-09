@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/sck03/sing-box-vpn/internal/command"
 )
 
 type firewallExit int
@@ -87,6 +89,18 @@ func TestFirewallQueryReportsCancellation(t *testing.T) {
 	_, err := f.command(context.Background(), false, "iptables", "-S", inputChain)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatal("firewall query hid cancellation", err)
+	}
+}
+
+func TestFirewallQueryRejectsTruncatedDiagnostic(t *testing.T) {
+	for _, code := range []firewallExit{1, 2} {
+		f := firewall{execute: func(context.Context, string, ...string) ([]byte, error) {
+			return []byte("Chain 'SBVPN_INPUT' does not exist"), errors.Join(code, command.ErrOutputLimit)
+		}}
+		found, err := f.command(t.Context(), false, "iptables", "-S", inputChain)
+		if found || !errors.Is(err, command.ErrOutputLimit) {
+			t.Fatalf("truncated diagnostic was treated as an absent chain: found=%v err=%v", found, err)
+		}
 	}
 }
 

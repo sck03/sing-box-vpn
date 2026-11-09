@@ -22,6 +22,7 @@ import (
 	"time"
 
 	project "github.com/sck03/sing-box-vpn"
+	"github.com/sck03/sing-box-vpn/internal/command"
 )
 
 var stablePattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
@@ -57,8 +58,7 @@ func stableVersion(value string) (string, error) {
 func commandOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
 	child, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(child, name, args...)
-	output, err := cmd.CombinedOutput()
+	output, err := command.Output(child, nil, name, args...)
 	if err != nil {
 		return output, fmt.Errorf("%s: %w: %s", filepath.Base(name), err, strings.TrimSpace(string(output)))
 	}
@@ -265,7 +265,7 @@ func (systemServices) active(ctx context.Context) ([]string, error) {
 func (systemServices) restart(ctx context.Context, name string) error {
 	child, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	if output, err := exec.CommandContext(child, "systemctl", "restart", name).CombinedOutput(); err != nil {
+	if output, err := command.Output(child, nil, "systemctl", "restart", name); err != nil {
 		return fmt.Errorf("%s: %w: %s", name, err, output)
 	}
 	timer := time.NewTimer(500 * time.Millisecond)

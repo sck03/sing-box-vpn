@@ -7,13 +7,14 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/sck03/sing-box-vpn/internal/command"
 )
 
 type firewall struct {
@@ -30,13 +31,13 @@ func (f firewall) command(ctx context.Context, required bool, binary string, arg
 	if f.execute != nil {
 		output, err = f.execute(child, binary, full...)
 	} else {
-		output, err = exec.CommandContext(child, binary, full...).CombinedOutput()
+		output, err = command.Output(child, nil, binary, full...)
 	}
 	if err == nil {
 		return true, nil
 	}
 	var exit interface{ ExitCode() int }
-	if !required && child.Err() == nil && errors.As(err, &exit) {
+	if !required && child.Err() == nil && !errors.Is(err, command.ErrOutputLimit) && errors.As(err, &exit) {
 		if exit.ExitCode() == 1 || exit.ExitCode() == 2 && missingFirewallChain(args, string(output)) {
 			return false, nil
 		}
@@ -73,9 +74,7 @@ func (f firewall) apply(ctx context.Context, binary, rules string) error {
 	if f.restore != nil {
 		output, err = f.restore(child, binary, rules)
 	} else {
-		command := exec.CommandContext(child, binary, "-w", "5", "--noflush")
-		command.Stdin = strings.NewReader(rules)
-		output, err = command.CombinedOutput()
+		output, err = command.Output(child, strings.NewReader(rules), binary, "-w", "5", "--noflush")
 	}
 	if err != nil {
 		return fmt.Errorf("防火墙批量提交失败: %s: %w: %s", binary, err, strings.TrimSpace(string(output)))

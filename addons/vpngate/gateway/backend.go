@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/sck03/sing-box-vpn/internal/command"
 )
 
 const namespace = "ygvg0"
@@ -44,7 +46,7 @@ type backend struct {
 func runCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
 	deadline, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	out, e := exec.CommandContext(deadline, name, args...).CombinedOutput()
+	out, e := command.Output(deadline, nil, name, args...)
 	if e != nil {
 		return out, fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), e)
 	}
