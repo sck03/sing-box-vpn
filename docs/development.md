@@ -35,7 +35,8 @@ UDP 大包回归覆盖 65,498/65,507 字节回复被丢弃后继续收发、65,4
 核心更新回归覆盖校验期间配置新增、删除与修改、非普通文件拒绝，以及激活前取消时
 当前核心和上一版本均保持不变；Linux 回归使用受控的服务查询超时验证错误不会被吞掉。
 订阅协议验收读取实际发布文件，覆盖两套 sing-box/Mihomo 原生节点及三协议 URI 导入，
-共 52 条 TCP/UDP 链路。Mihomo URI 自签 TLS 的两项限制见[兼容性说明](compatibility.md)。
+以及 Mihomo 从真实 HTTP 订阅加载原生 provider，共 72 条 TCP/UDP 链路。
+Mihomo URI 自签 TLS 的两项限制见[兼容性说明](compatibility.md)。
 Mihomo 启动检测等待一次真实请求成功，避免监听已开启但路由仍处于初始化阶段的误报。
 WS 回归覆盖错误路径在修改和发布前被拒绝、两类节点独立保存、UTF-8 与长度边界，
 真实五协议测试使用两套不同的中文 WS 路径。HTTP 订阅另验证 IPv4/IPv6 URL 的实际可达性。
@@ -56,6 +57,9 @@ TCP 退出回归让独立 worker 在收到请求 EOF 后保持响应流打开，
 外部命令回归使用真实子进程验证 stdin、合并 stdout/stderr、恰好 1 MiB 与超限输出、退出码
 及取消/超时错误；继承输出管道的子进程不能无限阻塞等待。另验证超限防火墙诊断不能被当作
 规则不存在；测试会回收专门创建的管道持有进程，不调用实际防火墙。
+UDP 空闲回归通过真实套接字持续发送短包、分片、零目标端口及其他源端口的包，验证关联仍在
+60 秒空闲后退出；与合法单向上传/下载测试并行执行。HTTP 订阅验证空文件及超限文件返回 503，
+原生 provider 验证普通/VPNGate 隔离、令牌访问、节点字段一致性及卸载清理。
 
 ```bash
 SING_BOX_BINARY=/path/to/sing-box MIHOMO_BINARY=/path/to/mihomo RUN_UDP_IDLE_TESTS=1 go test -race -count=1 ./...

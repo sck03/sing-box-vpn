@@ -280,6 +280,31 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 			t.Fatal("custom protocol credentials", err)
 		}
 	}
+	subscriptionPort, err := manage.AvailablePort(used)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := strings.Repeat("a", 43)
+	if err := manage.AtomicJSON(filepath.Join(root, "subscription.json"), manage.Object{"enabled": true, "port": subscriptionPort, "token": token, "listen": "127.0.0.1"}); err != nil {
+		t.Fatal(err)
+	}
+	subscriptionCtx, stopSubscription := context.WithCancel(ctx)
+	subscriptionDone := make(chan error, 1)
+	go func() {
+		subscriptionDone <- manage.RunSubscription(subscriptionCtx, []string{"--root", root}, io.Discard)
+	}()
+	t.Cleanup(func() {
+		stopSubscription()
+		select {
+		case err := <-subscriptionDone:
+			if err != nil {
+				t.Error(err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Error("protocol subscription server did not stop")
+		}
+	})
+	subscriptionURL := "http://127.0.0.1:" + strconv.Itoa(subscriptionPort) + "/" + token + "/"
 	if _, err := manage.ReadJSON(filepath.Join(root, "app.json"), &app); err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +358,7 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 			if exported.Outbounds[index]["type"] != kind || mihomo.Proxies[index]["type"] != kind || exported.Outbounds[index]["tag"] != mihomo.Proxies[index]["name"] {
 				t.Fatal("subscription protocol or name mismatch", kind)
 			}
-			for _, format := range []string{"sing-box", "mihomo", "uri"} {
+			for _, format := range []string{"sing-box", "mihomo", "provider", "uri"} {
 				t.Run(group.label+"/"+format+"/"+kind, func(t *testing.T) {
 					mihomoBinary := os.Getenv("MIHOMO_BINARY")
 					if format != "sing-box" && mihomoBinary == "" {
@@ -355,9 +380,17 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 						protocolCore(t, root, name, binary, client, port)
 					} else {
 						client := manage.Object{"mixed-port": port, "bind-address": "127.0.0.1", "mode": "rule", "log-level": "debug", "rules": []string{"MATCH," + node["tag"].(string)}, "proxies": []manage.Object{mihomo.Proxies[index]}}
-						if format == "uri" {
+						if format == "uri" || format == "provider" {
 							delete(client, "proxies")
-							client["proxy-providers"] = manage.Object{"subscription": manage.Object{"type": "file", "path": filepath.ToSlash(filepath.Join(directory, "jhsub-base64.txt"))}}
+							provider := manage.Object{"type": "file", "path": filepath.ToSlash(filepath.Join(directory, "jhsub-base64.txt"))}
+							if format == "provider" {
+								endpoint := subscriptionURL
+								if group.label == "vpngate" {
+									endpoint += "vpngate/"
+								}
+								provider = manage.Object{"type": "http", "url": endpoint + "proxies.yaml", "path": "./" + name + "-provider.yaml", "interval": 3600}
+							}
+							client["proxy-providers"] = manage.Object{"subscription": provider}
 							client["proxy-groups"] = []manage.Object{{"name": "selected", "type": "select", "use": []string{"subscription"}, "filter": "^" + regexp.QuoteMeta(node["tag"].(string)) + "$"}}
 							client["rules"] = []string{"MATCH,selected"}
 						}

@@ -319,7 +319,7 @@ share_action() {
     if [[ "$scope" == vpngate ]]; then export_dir="$SB_ROOT/vpngate"; fi
     case "$choice" in
     1) cfg links --scope "$scope"; if command -v qrencode >/dev/null;then while IFS= read -r link;do qrencode -t ANSIUTF8 "$link";done < "$export_dir/jhsub.txt";fi;;
-    2) cfg export --scope "$scope";echo "Sing-box: $export_dir/sbox.json";echo "Mihomo: $export_dir/clmi.yaml";subscription_urls "$scope";;
+    2) cfg export --scope "$scope";echo "Sing-box: $export_dir/sbox.json";echo "Mihomo / OpenClash 完整配置: $export_dir/clmi.yaml";echo "OpenClash 节点订阅: $export_dir/proxies.yaml";subscription_urls "$scope";;
     3) cfg export --scope "$scope";"$MANAGER" remote --root "$SB_ROOT" telegram-push --scope "$scope";;
     4) cfg export --scope "$scope";"$MANAGER" remote --root "$SB_ROOT" gitlab-push --scope "$scope";;
     esac

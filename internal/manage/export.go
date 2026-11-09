@@ -14,7 +14,7 @@ type fileBundle map[string][]byte
 const normalScope = "normal"
 const vpngateScope = "vpngate"
 
-var exportNames = []string{"sbox.json", "clmi.yaml", "jhsub.txt", "jhsub-base64.txt", "share.json"}
+var exportNames = []string{"sbox.json", "clmi.yaml", "proxies.yaml", "jhsub.txt", "jhsub-base64.txt", "share.json"}
 
 func exportDirectory(root, scope string) (string, error) {
 	switch scope {
@@ -147,6 +147,11 @@ func exportBundle(ctx context.Context, root, core string, app App, settings VPNS
 			return nil, nil, err
 		}
 		if err := files.json(prefix+"clmi.yaml", MihomoConfig(set.mihomo, gateway)); err != nil {
+			return nil, nil, err
+		}
+		// A provider carries only native nodes; OpenClash owns router DNS, TUN,
+		// policy groups and routing. Reuse the same nodes as the full config.
+		if err := files.json(prefix+"proxies.yaml", Object{"proxies": set.mihomo}); err != nil {
 			return nil, nil, err
 		}
 		joined := strings.Join(links[set.scope], "\n")

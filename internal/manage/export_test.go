@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -43,6 +44,11 @@ func TestSeparateExports(t *testing.T) {
 			t.Fatal("scoped aggregate subscription changed its links", err)
 		}
 		client := readObject(t, filepath.Join(directory, "sbox.json"))
+		provider := readObject(t, filepath.Join(directory, "proxies.yaml"))
+		mihomo := readObject(t, filepath.Join(directory, "clmi.yaml"))
+		if len(provider) != 1 || !reflect.DeepEqual(provider["proxies"], mihomo["proxies"]) {
+			t.Fatal("provider must contain only the matching native nodes", scope)
+		}
 		protocols := map[string]bool{}
 		for _, node := range objects(client["outbounds"]) {
 			if Labels[text(node["type"])] != "" {

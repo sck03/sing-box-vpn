@@ -87,7 +87,7 @@ func subscriptionURLs(root, address, scope string, output io.Writer) error {
 	if scope == vpngateScope {
 		prefix = "vpngate/"
 	}
-	for _, name := range []string{"sbox.json", "clmi.yaml", "jhsub.txt"} {
+	for _, name := range []string{"sbox.json", "clmi.yaml", "proxies.yaml", "jhsub.txt"} {
 		if _, err = fmt.Fprintf(output, "http://%s:%d/%s/%s%s\n", address, settings.Port, settings.Token, prefix, name); err != nil {
 			return err
 		}
@@ -133,6 +133,7 @@ func subscriptionHandler(root, token string) http.Handler {
 	for _, prefix := range []string{"", "vpngate/"} {
 		files[prefix+"sbox.json"] = exportedFile{prefix + "sbox.json", "application/json"}
 		files[prefix+"clmi.yaml"] = exportedFile{prefix + "clmi.yaml", "application/yaml"}
+		files[prefix+"proxies.yaml"] = exportedFile{prefix + "proxies.yaml", "application/yaml"}
 		files[prefix+"jhsub.txt"] = exportedFile{prefix + "jhsub-base64.txt", "text/plain"}
 		files[prefix+"links.txt"] = exportedFile{prefix + "jhsub.txt", "text/plain"}
 	}
@@ -159,7 +160,7 @@ func subscriptionHandler(root, token string) http.Handler {
 		}
 		defer file.Close()
 		info, err := file.Stat()
-		if err != nil || !info.Mode().IsRegular() {
+		if err != nil || !info.Mode().IsRegular() || info.Size() == 0 || info.Size() > maxJSONFile {
 			http.Error(w, "subscription unavailable", 503)
 			return
 		}

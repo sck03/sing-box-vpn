@@ -73,7 +73,7 @@ jobs:
           gzip -dc .build/core/mihomo.gz > .build/core/mihomo
           chmod +x .build/core/mihomo
           echo "MIHOMO_BINARY=$PWD/.build/core/mihomo" >> "$GITHUB_ENV"
-      - name: Go tests, race detection and 52 real subscription TCP/UDP links
+      - name: Go tests, race detection and 72 real subscription TCP/UDP links
         run: RUN_UDP_IDLE_TESTS=1 go test -race -count=1 -v ./...
       - name: Formatting, vet and shell checks
         run: |

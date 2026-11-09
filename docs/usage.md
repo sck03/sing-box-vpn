@@ -59,12 +59,14 @@ Hysteria2 分享链接同时携带 `insecure=1` 和叶证书 SHA256 指纹；CA 
 | --- | --- | --- |
 | 导出目录 | `/etc/s-box/` | `/etc/s-box/vpngate/` |
 | 客户端配置 | `sbox.json` / `clmi.yaml` | 同名文件 |
+| OpenClash/Mihomo 节点 provider | `proxies.yaml` | 同名文件，只含当前国家节点 |
 | URI / Base64 聚合 | `jhsub.txt` / `jhsub-base64.txt` | 同名文件 |
 | HTTP 订阅 | `/<令牌>/sbox.json` 等 | `/<令牌>/vpngate/sbox.json` 等 |
 
 本地订阅在 **3 → 8** 启用或重置，两套地址使用同一令牌；重置令牌后需更新客户端订阅地址。
 HTTP 的 `jhsub.txt` 路径提供 Base64 聚合，`links.txt` 提供原始 URI。公网加密传输需 HTTPS 反向代理。
 默认通配监听在系统支持时同时接受 IPv4/IPv6；生成的 IPv6 URL 自动使用方括号。
+文件缺失、为空或超过 16 MiB 时返回 503，避免把无效内容当作成功订阅；此上限不限制代理流量。
 GitLab 的 VPNGate 文件放在 `vpngate/`，普通订阅继续使用原路径。
 推送使用开始时的一份订阅快照；期间修改配置不会混入本次内容，需再次推送才能更新。
 Telegram 保留完整链接，按每条消息最多 3500 字节分段；空订阅或单个链接过长时会在发送前
@@ -82,6 +84,44 @@ sb links vpngate
 sb export normal
 sb export vpngate
 ```
+
+### OpenClash
+
+使用当前 OpenClash 的 **Mihomo（Meta）核心**。菜单 **9 → 选择节点类型 → 2** 显示文件与
+HTTP 地址，普通和 VPNGate 订阅分开使用。两种导入方式：
+
+- 新建完整客户端配置：在 OpenClash 配置订阅中添加 `clmi.yaml` 地址，或上传这个文件。
+  使用原生配置，无需第三方订阅转换；OpenClash 负责路由器监听、DNS 和透明代理设置。
+- 保留现有路由器配置：将 `proxies.yaml` 地址配置为 `proxy-providers`，再由现有策略组引用。
+  文件只包含 `proxies`，不会带入 DNS、TUN、端口或分流规则；它不能单独作为完整配置启动。
+
+例如将 VPNGate 的节点 provider 合并到现有 Mihomo 配置中，替换下方 URL 为菜单显示的实际地址：
+
+```yaml
+proxy-providers:
+  VPNGate:
+    type: http
+    url: "http://服务器:订阅端口/令牌/vpngate/proxies.yaml"
+    path: ./proxy_provider/vpngate.yaml
+    interval: 3600
+    proxy: DIRECT
+    health-check:
+      enable: false
+proxy-groups:
+  - name: VPNGate出口
+    type: select
+    use: [VPNGate]
+```
+
+`proxy: DIRECT` 只指定订阅下载路径，避免依赖尚未加载的节点。业务分流由路由器配置决定：
+将指定设备或域名指向 `VPNGate出口`；如需全部公网流量使用该出口，将最终规则设为
+`MATCH,VPNGate出口`，并检查之前的 DIRECT 规则及 OpenClash 覆写。此组不要加入 DIRECT、
+普通节点或自动回退组。暂停 VPNGate 时节点文件仍保留，但公网转发被服务端阻断。
+
+普通节点使用不带 `/vpngate/` 的 `proxies.yaml` 地址；两种 provider 使用不同的名称和缓存路径。
+这两个 YAML 文件采用 JSON 语法（属于 YAML 可接受的格式），Mihomo 可直接读取，无需改格式。
+自签 VMess/TUIC 请使用原生文件，避免聚合 URI 丢失证书设置。当前验收覆盖 Mihomo HTTP provider
+导入五协议的真实 TCP/UDP；OpenWrt 设备和 LuCI 覆写界面需在实际路由器上验证。
 
 ## 核心更新与配置恢复
 
@@ -124,6 +164,8 @@ yg-vpngate ctl start
 高级设置位于 `/etc/s-box/vpngate/gateway.json`，修改后执行 `yg-vpngate ctl reload`。
 `max_connections` 默认 128，范围 1–1024，统计代理套接字及正在建立的目标连接，并非客户端人数。
 达到上限会拒绝新连接或新 UDP 目标；降低并发或按 VPS 资源调整该值后重试。
+UDP 关联空闲 60 秒后回收；合法单向上传或下载可续期，无效包、分片、零目标端口和其他
+源端口的流量不延长空闲期限。退出会等待控制连接读取及目标转发完成回收。
 菜单 17 可配置镜像源和 ISP/hosting 筛选；默认使用官方 HTTPS 节点 API。
 ASN 允许列表填写 1–4294967295 的整数。自定义 Geo 服务的 ASN 也须返回此范围的 JSON
 十进制整数，不接受小数、指数、字符串或 null；`hosting` / `is_datacenter` 使用布尔值。

@@ -314,7 +314,7 @@ func TestBashFacingConfigurationCommands(t *testing.T) {
 		t.Fatal("menu could not clear CDN address")
 	}
 	run("subscription-init", "--port", "0")
-	if len(strings.Split(strings.TrimSpace(run("subscription-urls")), "\n")) != 3 {
+	if len(strings.Split(strings.TrimSpace(run("subscription-urls")), "\n")) != 4 {
 		t.Fatal("missing subscription URLs")
 	}
 	run("subscription-stop")

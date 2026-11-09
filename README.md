@@ -4,6 +4,7 @@
 普通节点使用 VPS 出口，可选 VPNGate 提供指定国家的家宽候选出口。
 
 支持域名分流、Argo/CDN、TLS 证书、Hy2 跳跃、TUIC 多端口和订阅导出。
+支持使用 Mihomo 核心的 OpenClash：可导入完整配置，或只更新节点、保留路由器自己的分流。
 
 ## 安装与使用
 
@@ -18,10 +19,11 @@ curl -fsSL https://raw.githubusercontent.com/sck03/sing-box-vpn/main/install.sh 
 
 1. 菜单 **9** 查看普通五协议节点、二维码和客户端配置。
 2. 需要 VPNGate 时，菜单 **17** 选择国家并启动出口，再从菜单 **9** 选择 VPNGate 节点。
-3. 菜单 **3 → 8** 配置本地订阅，支持 sing-box、Mihomo 和聚合链接。
+3. 菜单 **3 → 8** 配置本地订阅，支持 sing-box、Mihomo/OpenClash 和聚合链接。
 
 推荐导入对应核心的 `sbox.json` 或 `clmi.yaml`。聚合 URI 的证书选项支持因客户端而异，
 Mihomo 的 VMess/TUIC 自签 TLS 节点请使用 `clmi.yaml`，详见[订阅说明](docs/usage.md#节点与订阅)。
+OpenClash 的 `proxy-providers` 使用 `proxies.yaml`，见[OpenClash 设置](docs/usage.md#openclash)。
 
 ## 常用菜单
 
@@ -51,6 +53,7 @@ Mihomo 的 VMess/TUIC 自签 TLS 节点请使用 `clmi.yaml`，详见[订阅说�
 - [使用指南](docs/usage.md)：凭据、端口、证书、两套订阅、出口控制与故障排查。
 - [开发与发布](docs/development.md)：构建、测试、GitHub Actions 和 Release。
 - [架构与维护](docs/architecture.md)：模块边界、资源限制和扩展约定。
+- [上游技术与协议](docs/upstream.md)：sing-box 新协议、OpenClash 和 VPNGate 更新及项目接入范围。
 - [实施方案](VPNGate-实施方案.md) · [性能与优化记录](docs/optimization.md)。
 
 许可证 GPL-3.0，第三方来源与授权见 [NOTICE.md](NOTICE.md)。

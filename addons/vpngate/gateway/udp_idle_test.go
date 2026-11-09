@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -10,10 +11,71 @@ import (
 	"time"
 )
 
+// Use the real socket deadlines: rejected traffic must not extend an idle
+// association, while TestUDPActiveOneWay verifies either valid direction does.
+func TestUDPRejectedTrafficDoesNotExtendIdleTimeout(t *testing.T) {
+	if os.Getenv("RUN_UDP_IDLE_TESTS") != "1" {
+		t.Skip("set RUN_UDP_IDLE_TESTS=1 for the UDP idle timeout regression")
+	}
+	t.Parallel()
+	for _, kind := range []string{"short", "fragment", "foreign-port", "zero-port"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+			server, _ := udpLifecycleEcho(t)
+			_, access, _ := startProxyFixture(t)
+			control, client := udpAssociationFixture(t, access)
+			packet := udpTestPacket(server.LocalAddr().String(), "initial")
+			if _, err := client.Write(packet); err != nil {
+				t.Fatal(err)
+			}
+			receiveUDPPayload(t, client, "initial")
+			sender := client
+			switch kind {
+			case "short":
+				packet = packet[:3]
+			case "fragment":
+				packet[2] = 1
+			case "zero-port":
+				packet[8], packet[9] = 0, 0
+			case "foreign-port":
+				var err error
+				sender, err = net.DialUDP("udp4", nil, client.RemoteAddr().(*net.UDPAddr))
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer sender.Close()
+			}
+			stop, done := make(chan struct{}), make(chan struct{})
+			go func() {
+				defer close(done)
+				ticker := time.NewTicker(100 * time.Millisecond)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-stop:
+						return
+					case <-ticker.C:
+						if _, err := sender.Write(packet); err != nil {
+							return
+						}
+					}
+				}
+			}()
+			defer func() { close(stop); <-done }()
+			_ = control.SetReadDeadline(time.Now().Add(udpIdleTimeout + 5*time.Second))
+			var buf [1]byte
+			if _, err := control.Read(buf[:]); !errors.Is(err, io.EOF) {
+				t.Fatalf("rejected %s traffic kept idle association open: %v", kind, err)
+			}
+		})
+	}
+}
+
 func TestUDPActiveOneWay(t *testing.T) {
 	if os.Getenv("RUN_UDP_IDLE_TESTS") != "1" {
 		t.Skip("set RUN_UDP_IDLE_TESTS=1 for the 65-second UDP lifetime test")
 	}
+	t.Parallel()
 	for _, direction := range []string{"upload", "download"} {
 		t.Run(direction, func(t *testing.T) {
 			t.Parallel()

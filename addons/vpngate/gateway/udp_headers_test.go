@@ -20,6 +20,11 @@ func TestUDPHeaderBounds(t *testing.T) {
 		if size, err := udpHeaderSize(header); err != nil || size != len(header) {
 			t.Fatal("valid UDP header rejected", size, err)
 		}
+		zeroPort := bytes.Clone(header)
+		zeroPort[len(zeroPort)-2], zeroPort[len(zeroPort)-1] = 0, 0
+		if _, err := udpHeaderSize(zeroPort); err == nil {
+			t.Fatal("zero target port accepted", zeroPort)
+		}
 	}
 	for _, header := range [][]byte{nil, ip[:9], domain[:len(domain)-1], {0, 0, 0, 3, 0, 0, 53}, {0, 0, 0, 4}} {
 		if _, err := udpHeaderSize(header); err == nil {

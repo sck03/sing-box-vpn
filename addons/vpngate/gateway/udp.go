@@ -212,36 +212,41 @@ func serveUDP(parent context.Context, control net.Conn, t ticket, access proxyAc
 	u := &udpAssociation{ctx: ctx, access: access, ticket: t, socket: socket, sessions: map[string]*udpSession{}, headers: map[string]*udpSession{}}
 	closeAssociation := func() { control.Close(); u.close() }
 	stop := context.AfterFunc(ctx, closeAssociation)
+	controlDone := make(chan struct{})
 	defer func() {
 		cancel()
 		stop()
 		closeAssociation()
+		<-controlDone
 		u.workers.Wait()
 	}()
-	go func() { var b [1]byte; _, _ = control.Read(b[:]); cancel() }()
+	go func() { defer close(controlDone); var b [1]byte; _, _ = control.Read(b[:]); cancel() }()
 	buffer := packetBuffers.Get().(*packetBuffer)
 	defer packetBuffers.Put(buffer)
 	var clientAddr netip.AddrPort
+	_ = socket.SetReadDeadline(time.Now().Add(udpIdleTimeout))
 	for {
-		_ = socket.SetReadDeadline(time.Now().Add(udpIdleTimeout))
 		n, source, err := socket.ReadFromUDPAddrPort(buffer[:maxPacket])
 		if err != nil {
 			return
 		}
 		packet := buffer[:n]
-		if source.Addr() != clientIP || !access.allowed(t) || n < 7 || packet[0] != 0 || packet[1] != 0 || packet[2] != 0 {
+		if source.Addr() != clientIP || n < 7 || packet[0] != 0 || packet[1] != 0 || packet[2] != 0 {
 			continue
 		}
 		if clientAddr.IsValid() && source != clientAddr {
 			continue
 		}
 		offset, err := udpHeaderSize(packet)
-		if err != nil {
+		if err != nil || !access.allowed(t) {
 			continue
 		}
 		if !clientAddr.IsValid() {
 			clientAddr = source
 		}
+		// Invalid packets and other source ports cannot keep an idle association
+		// alive. Replies independently renew this deadline in udpAssociation.run.
+		_ = socket.SetReadDeadline(time.Now().Add(udpIdleTimeout))
 		u.dispatch(packet, offset, source)
 	}
 }
@@ -263,6 +268,9 @@ func udpHeaderSize(b []byte) (int, error) {
 	}
 	if len(b) < size {
 		return 0, io.ErrUnexpectedEOF
+	}
+	if binary.BigEndian.Uint16(b[size-2:size]) == 0 {
+		return 0, errors.New("invalid UDP target port")
 	}
 	return size, nil
 }

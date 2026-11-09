@@ -2,7 +2,8 @@
 
 测试基线为官方 sing-box 1.14.4，工具链为 Go 1.27.3；基线 SHA256 记录在 versions.json。
 安装与菜单更新从官方 API 获取最新稳定核心，1.14.4 不构成版本锁定。
-2026-11-07 核对官方最新稳定版本仍为 1.14.4；Mihomo 验收基线为 1.19.33。
+2026-11-10 核对官方最新稳定版本仍为 1.14.4；Mihomo 验收基线为 1.19.33。
+新协议、OpenClash 和 VPNGate 技术核对见[上游说明](upstream.md)。
 研究阶段检查了 sing-box-yg 的新版服务端、四种客户端分支和 Hy2 跳跃格式。
 实现统一使用现代 DNS、WireGuard endpoint、HTTP client、route action 和 SRS 规则集。
 
@@ -25,10 +26,12 @@ SRS 中国规则仍支持；它不是被移除的旧 geosite/geoip 数据库选�
 [废弃功能清单](https://sing-box.sagernet.org/deprecated/)。
 
 Go 验收直接读取管理命令发布的普通/VPNGate 订阅文件，包含 sing-box 五协议和 Mihomo
-五协议的真实 TCP/UDP（各 20 条），以及 Mihomo 从 Base64 URI 导入 VLESS、Hysteria2、
-AnyTLS 后的 TCP/UDP（12 条）。VMess 开启自签 TLS，TUIC 包含特殊字符密码。
+五协议的真实 TCP/UDP（各 20 条）、Mihomo 通过 HTTP provider 获取 `proxies.yaml` 的五协议
+TCP/UDP（20 条），以及 Base64 URI 导入 VLESS、Hysteria2、AnyTLS 后的 TCP/UDP（12 条）。
+VMess 开启自签 TLS，TUIC 包含特殊字符密码。原生 provider 是 OpenClash 的节点接入路径，
+不包含路由器策略；本地验证不代表已经验收实体 OpenWrt 和 LuCI 覆写。
 Mihomo 的 URI 导入器忽略 VMess `insecure` 和 TUIC `allow_insecure`，这两项自签 TLS
-URI 不计入 52 条验收；它们的原生配置已覆盖。格式能解析不等于证书验证策略能完整导入。
+URI 不计入 72 条验收；它们的原生配置已覆盖。格式能解析不等于证书验证策略能完整导入。
 CI 另检查普通/VPNGate 完整 Mihomo 配置；普通配置首次校验会下载 GeoIP 数据库。
 普通/VPNGate 的 VMess 原生配置已验证中文 WS 路径。当前核心的服务端按 `URL.Path`
 匹配，而客户端会解析路径里的查询与转义；因此管理程序在保存和导出时拒绝 `?`、`#`、`%`

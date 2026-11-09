@@ -67,6 +67,98 @@ func TestSubscriptionAuthenticationAndFreshFileContent(t *testing.T) {
 		t.Fatal("HEAD response invalid")
 	}
 }
+
+func TestSubscriptionRejectsUnavailableFiles(t *testing.T) {
+	root, token := t.TempDir(), strings.Repeat("a", 43)
+	handler := subscriptionHandler(root, token)
+	for _, scope := range []string{normalScope, vpngateScope} {
+		directory, err := exportDirectory(root, scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(directory, 0700); err != nil {
+			t.Fatal(err)
+		}
+		prefix := ""
+		if scope == vpngateScope {
+			prefix = "vpngate/"
+		}
+		for _, name := range []string{"sbox.json", "clmi.yaml", "proxies.yaml", "jhsub.txt"} {
+			filename := name
+			if name == "jhsub.txt" {
+				filename = "jhsub-base64.txt"
+			}
+			path := filepath.Join(directory, filename)
+			for _, size := range []int64{0, maxJSONFile + 1} {
+				file, err := os.Create(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				err = file.Truncate(size)
+				file.Close()
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, method := range []string{http.MethodGet, http.MethodHead} {
+					response := httptest.NewRecorder()
+					handler.ServeHTTP(response, httptest.NewRequest(method, "/"+token+"/"+prefix+name, nil))
+					if response.Code != http.StatusServiceUnavailable {
+						t.Errorf("%s %s%s with %d bytes returned %d", method, prefix, name, size, response.Code)
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestNativeProviderSubscription(t *testing.T) {
+	root, core, app := appFixture(t)
+	if _, err := PrepareVPN(context.Background(), root, core, app, "JP"); err != nil {
+		t.Fatal(err)
+	}
+	if err := configureSubscription(root, app, VPNSettings{}, 0); err != nil {
+		t.Fatal(err)
+	}
+	var settings subscriptionSettings
+	if _, err := ReadJSON(filepath.Join(root, "subscription.json"), &settings); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(subscriptionHandler(root, settings.Token))
+	defer server.Close()
+	for _, scope := range []string{normalScope, vpngateScope} {
+		var urls strings.Builder
+		if err := subscriptionURLs(root, "127.0.0.1", scope, &urls); err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for endpoint := range strings.FieldsSeq(urls.String()) {
+			if !strings.HasSuffix(endpoint, "/proxies.yaml") {
+				continue
+			}
+			found = true
+			prefix := strings.Index(endpoint, "/"+settings.Token+"/")
+			if prefix < 0 {
+				t.Fatal("provider URL omitted authentication")
+			}
+			response, err := server.Client().Get(server.URL + endpoint[prefix:])
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := io.ReadAll(response.Body)
+			response.Body.Close()
+			directory, _ := exportDirectory(root, scope)
+			if err != nil || response.StatusCode != http.StatusOK || string(data) != string(readBytes(t, filepath.Join(directory, "proxies.yaml"))) {
+				t.Fatal("provider subscription returned incorrect scope or content", scope, err)
+			}
+			if response.Header.Get("Content-Type") != "application/yaml; charset=utf-8" {
+				t.Fatal("provider content type missing")
+			}
+		}
+		if !found {
+			t.Fatal("provider URL not advertised", scope)
+		}
+	}
+}
 func TestSubscriptionConnectionLimitAndShutdown(t *testing.T) {
 	base, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
