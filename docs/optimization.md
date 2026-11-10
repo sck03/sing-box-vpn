@@ -5,7 +5,37 @@
 本文记录当前实现和验证边界；以往的分配测量与修复记录见
 [5c272d4 时的优化日志](https://github.com/sck03/sing-box-vpn/blob/5c272d4/docs/optimization.md)。
 
-## 本轮修复 · 2026-11-10
+## 资源清单与隧道归属 · 2026-11-11
+
+基线提交 `b313039`。新增回归在旧实现上复现：网卡或防火墙查询失败仍写入所有权并创建
+资源；无关链名或规则注释包含 `YGVG_FWD` / `YGVG_NAT` 时，清理误报资源残留。
+
+启动与清理统一使用 `resource_inventory.go`。完整清单查询成功后才判断资源是否存在，
+权限、超时及输出超限错误全部保留；网卡 JSON 拒绝 null、损坏结构和缺少接口名称的记录。
+启动拒绝接管无归属的同名资源，清理查询失败保留恢复记录。防火墙按完整链名匹配，避免
+无关规则影响清理。移除两处重复检查，文本扫描改用字节迭代，不再逐行创建字段切片。
+
+Windows amd64、Go 1.27.3、i5-9400F、默认并行度 6，4096 条命名空间记录三轮测量：
+
+| 指标 | 修改前 | 修改后 |
+| --- | --- | --- |
+| 每次分配字节 | 278,529 B | 0 B |
+| 每次分配次数 | 4,097 | 0 |
+| 每次耗时 | 0.435–0.451 ms | 0.0872–0.0873 ms |
+
+扫描耗时降低约 80%。测量只包含内存清单解析，不包含系统命令，不代表整机资源占用或
+代理转发吞吐。复现命令：
+
+```bash
+go test ./addons/vpngate/gateway -run '^$' -bench '^BenchmarkNamespaceListed$' -benchmem -count=3
+```
+
+全量 `go test -race -count=1 ./...` 通过，启用真实 sing-box/Mihomo 核心及
+`RUN_UDP_IDLE_TESTS=1`；Ubuntu 24.04 虚拟机通过 OpenVPN/netns 隔离、崩溃恢复和资源清单
+回归。另通过 `go vet`、格式检查、ShellCheck 和 Linux amd64/arm64 打包。专用多端口防火墙
+及 systemd 验收由推送后的 GitHub CI 执行。
+
+## 端口分配与所有权恢复 · 2026-11-10
 
 基线提交 `1c4db32`。回归在旧实现上复现：只剩一个未预留端口时随机分配误报耗尽；所有权
 记录不完整、超限或不可读取时仍进入资源命令流程；损坏的系统套接字记录被静默跳过。
@@ -117,6 +147,7 @@ go test ./internal/manage -run '^$' -bench '^BenchmarkCoreDownload$' -benchmem -
 | 核心配置校验 | JSON 直接编码到临时文件；`BenchmarkValidationJSONEncoding` |
 | 客户端配置 | 只创建当前范围需要的规则和选择器；`BenchmarkClientConfig` |
 | 端口清单 | 只解析前四列，逐行复用缓冲；`BenchmarkPortInventory` |
+| 隧道资源清单 | 查询失败拒绝登记归属、精确链名匹配、字节迭代；`BenchmarkNamespaceListed` |
 | VMess URI | 直接编码 JSON，省去无用的 URI 字段构造；`BenchmarkVMessURI` |
 
 测量时固定输入、工具链、机器及并行度；性能测试与 race 分开执行。并发与网络变更须保留

@@ -133,23 +133,12 @@ func (b *backend) setup(ctx context.Context, n Node) error {
 	if err := b.recoverOwnership(); err != nil {
 		return err
 	}
-	list, e := b.run(ctx, "ip", "netns", "list")
+	resources, e := b.inventory(ctx)
 	if e != nil {
 		return e
 	}
-	for _, line := range strings.Split(string(list), "\n") {
-		f := strings.Fields(line)
-		if len(f) > 0 && f[0] == namespace {
-			return errors.New("ygvg0 already exists without this service's ownership")
-		}
-	}
-	if _, e := b.run(ctx, "ip", "link", "show", hostVeth); e == nil {
-		return errors.New("gateway veth name is already occupied")
-	}
-	for _, args := range [][]string{{"-S", "YGVG_FWD"}, {"-t", "nat", "-S", "YGVG_NAT"}} {
-		if _, e := b.run(ctx, "iptables", args...); e == nil {
-			return errors.New("gateway firewall chain already exists without ownership")
-		}
+	if resources.occupied() {
+		return errors.New("gateway namespace, veth or firewall chain already exists without ownership")
 	}
 	routes, e := b.run(ctx, "ip", "-j", "-4", "route", "show", "table", "all")
 	if e != nil {
@@ -362,41 +351,19 @@ func (b *backend) stop() {
 	} {
 		_, _ = b.run(ctx, "iptables", append([]string{"-w", "5"}, args...)...)
 	}
-	names, err := b.run(ctx, "ip", "netns", "list")
-	if err != nil {
-		b.cleanupErr = errors.Join(orphanErr, err)
-		return
-	}
-	links, err := b.run(ctx, "ip", "-j", "link", "show")
-	if err != nil {
-		b.cleanupErr = errors.Join(orphanErr, err)
-		return
-	}
-	var interfaces []struct{ Ifname string }
-	if err := json.Unmarshal(links, &interfaces); err != nil {
+	resources, err := b.inventory(ctx)
+	if err := errors.Join(orphanErr, err); err != nil {
 		b.cleanupErr = err
 		return
 	}
-	filter, filterErr := b.run(ctx, "iptables", "-w", "5", "-S")
-	nat, natErr := b.run(ctx, "iptables", "-w", "5", "-t", "nat", "-S")
-	if err := errors.Join(orphanErr, filterErr, natErr); err != nil {
-		b.cleanupErr = err
-		return
-	}
-	remaining := namespaceListed(names) || strings.Contains(string(filter), "YGVG_FWD") || strings.Contains(string(nat), "YGVG_NAT")
-	for _, link := range interfaces {
-		remaining = remaining || link.Ifname == hostVeth
-	}
-	if remaining {
+	if resources.occupied() {
 		b.cleanupErr = errors.New("gateway cleanup incomplete; ownership retained for retry")
 		return
 	}
-	if b.owner.ForwardBefore == "0" {
-		if strings.TrimSpace(string(names)) == "" && !strings.Contains(string(nat), "MASQUERADE") {
-			if _, err := b.run(ctx, "sysctl", "-qw", "net.ipv4.ip_forward=0"); err != nil {
-				b.cleanupErr = err
-				return
-			}
+	if b.owner.ForwardBefore == "0" && !resources.forwardingShared {
+		if _, err := b.run(ctx, "sysctl", "-qw", "net.ipv4.ip_forward=0"); err != nil {
+			b.cleanupErr = err
+			return
 		}
 	}
 	if err := os.Remove(filepath.Join(b.cfg.RunDir, "worker.sock")); err != nil && !os.IsNotExist(err) {
@@ -408,15 +375,6 @@ func (b *backend) stop() {
 		return
 	}
 	b.claimed = false
-}
-
-func namespaceListed(data []byte) bool {
-	for line := range strings.SplitSeq(string(data), "\n") {
-		if fields := strings.Fields(line); len(fields) > 0 && fields[0] == namespace {
-			return true
-		}
-	}
-	return false
 }
 
 // SIGKILL of the daemon bypasses stopProcess. Only processes still attached to
