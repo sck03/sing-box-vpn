@@ -202,6 +202,21 @@ func TestAllocationAndSubscriptionRespectForwardRanges(t *testing.T) {
 	}
 }
 
+func TestAvailablePortFindsOnlyUnreservedPort(t *testing.T) {
+	port, err := AvailablePort(map[int]bool{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ranges := []portRange{{20000, port - 1}, {port + 1, 59999}}
+	for attempt := 0; attempt < 3; attempt++ {
+		used := map[int]bool{}
+		got, err := AvailablePort(used, ranges...)
+		if err != nil || got != port || len(used) != 1 || !used[port] {
+			t.Fatalf("only available port %d was missed: port=%d, used=%v, err=%v", port, got, used, err)
+		}
+	}
+}
+
 func BenchmarkPortRangeNormalization(b *testing.B) {
 	values := []string{"1:65535", "31000:32000", "65535"}
 	b.ReportAllocs()

@@ -1,10 +1,11 @@
 package manage
 
 import (
-	"bufio"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"os"
 	"path/filepath"
@@ -17,6 +18,40 @@ import (
 )
 
 type portRange struct{ first, last int }
+
+// Visit each candidate at most once from a random starting point. Reserved
+// ranges skip directly to their end and never consume the OS probe budget.
+func AvailablePort(used map[int]bool, excluded ...portRange) (int, error) {
+	const first, count, maxProbes = 20000, 40000, 200
+	start, err := rand.Int(rand.Reader, big.NewInt(count))
+	if err != nil {
+		return 0, err
+	}
+	probes := 0
+	startOffset := int(start.Int64())
+	for offset := 0; offset < count; {
+		port := first + (startOffset+offset)%count
+		skip := 0
+		for _, r := range excluded {
+			if port >= r.first && port <= r.last {
+				skip = max(skip, min(r.last, first+count-1)-port+1)
+			}
+		}
+		offset += max(1, skip)
+		if skip > 0 || used[port] {
+			continue
+		}
+		if err = probePort(port); err == nil {
+			used[port] = true
+			return port, nil
+		}
+		probes++
+		if probes == maxProbes {
+			return 0, fmt.Errorf("探测 %d 个未预留端口均不可用: %w", probes, err)
+		}
+	}
+	return 0, errors.New("自动分配范围 20000-59999 内没有可用入口端口")
+}
 
 var hoppingPattern = regexp.MustCompile(`^\d+(?::\d+)?$`)
 
@@ -251,23 +286,10 @@ func checkSystemPorts(ranges []portRange, ownPort int) error {
 		if err != nil {
 			return err
 		}
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() {
-			fields := strings.Fields(scanner.Text())
-			if len(fields) < 4 || strings.HasPrefix(table, "tcp") && fields[3] != "0A" {
-				continue
-			}
-			_, rawPort, valid := strings.Cut(fields[1], ":")
-			port, err := strconv.ParseInt(rawPort, 16, 32)
-			if valid && err == nil && int(port) != ownPort && portInRanges(int(port), ranges) {
-				file.Close()
-				return fmt.Errorf("端口 %d 已被其他程序使用", port)
-			}
-		}
-		err = scanner.Err()
+		err = checkPortInventory(file, strings.HasPrefix(table, "tcp"), ranges, ownPort)
 		file.Close()
 		if err != nil {
-			return err
+			return fmt.Errorf("%s: %w", table, err)
 		}
 	}
 	return nil

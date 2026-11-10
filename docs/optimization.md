@@ -7,6 +7,35 @@
 
 ## 本轮修复 · 2026-11-10
 
+基线提交 `1c4db32`。回归在旧实现上复现：只剩一个未预留端口时随机分配误报耗尽；所有权
+记录不完整、超限或不可读取时仍进入资源命令流程；损坏的系统套接字记录被静默跳过。
+
+端口分配从随机位置遍历候选，直接跳过预留范围，只有实际绑定失败才计入 200 次预算。
+分配逻辑归入 `ports.go`；Linux 清单解析拆为 `port_inventory.go`，只读取前四列并复用扫描
+缓冲，错误记录终止检查。启动恢复和手动清理共用 `ownership.go`，读取与字段校验全部通过
+后才允许资源操作，失败保留记录；复用有界 JSON 存储层，删除两处重复的无界读取逻辑。
+
+Windows amd64、Go 1.27.3、i5-9400F、默认并行度 6，4096 条套接字记录三轮测量：
+
+| 指标 | 修改前 | 修改后 |
+| --- | --- | --- |
+| 每次分配字节 | 1,708,357–1,708,366 B | 4,128 B |
+| 每次分配次数 | 8,196 | 2 |
+| 每次耗时 | 2.12–2.19 ms | 0.65–0.69 ms |
+
+解析阶段分配字节减少约 99.8%，耗时降低约 68%–70%。输入与机器一致，测试只计内存中的
+清单解析，不含读取 `/proc`、系统绑定或防火墙操作，不代表整机 RSS 或代理吞吐。复现命令：
+
+```bash
+go test ./internal/manage -run '^$' -bench '^BenchmarkPortInventory$' -benchmem -count=3
+```
+
+全量 `go test -race -count=1 ./...` 通过，启用真实 sing-box/Mihomo 与
+`RUN_UDP_IDLE_TESTS=1`。Ubuntu 24.04 虚拟机通过实际 UDP 占用检查、所有权恢复回归及
+OpenVPN/netns 隔离验收；另通过 `go vet`、格式检查、ShellCheck 和 Linux 双架构打包。
+
+## 控制取消与服务查询 · 2026-11-10
+
 基线提交 `f9432f3`。新增回归在旧实现上复现了两类错误：取消的控制请求仍修改配置；
 `systemctl` 的总线、权限及其他查询错误被当作服务未运行，可能导致更新核心后漏重启。
 
@@ -87,6 +116,7 @@ go test ./internal/manage -run '^$' -bench '^BenchmarkCoreDownload$' -benchmem -
 | 核心更新 | 下载 256 MiB、完整展开 512 MiB、取消与校验后发布；`BenchmarkCoreDownload`、`BenchmarkCoreConfigValidation` |
 | 核心配置校验 | JSON 直接编码到临时文件；`BenchmarkValidationJSONEncoding` |
 | 客户端配置 | 只创建当前范围需要的规则和选择器；`BenchmarkClientConfig` |
+| 端口清单 | 只解析前四列，逐行复用缓冲；`BenchmarkPortInventory` |
 | VMess URI | 直接编码 JSON，省去无用的 URI 字段构造；`BenchmarkVMessURI` |
 
 测量时固定输入、工具链、机器及并行度；性能测试与 race 分开执行。并发与网络变更须保留

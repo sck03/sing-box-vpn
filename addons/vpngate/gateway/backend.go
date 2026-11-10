@@ -24,13 +24,7 @@ const peerVeth = "ygvg-peer"
 
 // OpenVPN parses --mark with atoi(), so its CLI must receive decimal.
 const packetMark = "1498826497"
-const ownerID = "sck03/sing-box-vpn:v1"
 
-type ownerState struct {
-	Owner         string `json:"owner"`
-	Subnet        string `json:"subnet"`
-	ForwardBefore string `json:"forward_before"`
-}
 type backend struct {
 	cfg                  Config
 	runCommand           func(context.Context, string, ...string) ([]byte, error)
@@ -136,15 +130,8 @@ func guardRules(n Node) [][]string {
 
 func (b *backend) setup(ctx context.Context, n Node) error {
 	marker := filepath.Join(b.cfg.DataDir, "namespace-owner.json")
-	if data, e := os.ReadFile(marker); e == nil {
-		if json.Unmarshal(data, &b.owner) != nil || b.owner.Owner != ownerID {
-			return errors.New("namespace ownership file is invalid")
-		}
-		b.claimed = true
-		b.stop()
-		if b.cleanupErr != nil {
-			return b.cleanupErr
-		}
+	if err := b.recoverOwnership(); err != nil {
+		return err
 	}
 	list, e := b.run(ctx, "ip", "netns", "list")
 	if e != nil {
@@ -177,6 +164,9 @@ func (b *backend) setup(ctx context.Context, n Node) error {
 		return e
 	}
 	b.owner = ownerState{Owner: ownerID, Subnet: subnet, ForwardBefore: strings.TrimSpace(string(forward))}
+	if e = b.owner.validate(); e != nil {
+		return e
+	}
 	if e = atomicJSON(marker, b.owner); e != nil {
 		return e
 	}

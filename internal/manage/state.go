@@ -174,21 +174,6 @@ func (cache certificateCache) get(path string) (certificateInfo, error) {
 	return info, nil
 }
 
-func AvailablePort(used map[int]bool, excluded ...portRange) (int, error) {
-	for i := 0; i < 200; i++ {
-		value, err := rand.Int(rand.Reader, big.NewInt(40000))
-		if err != nil {
-			return 0, err
-		}
-		port := 20000 + int(value.Int64())
-		if !used[port] && !portInRanges(port, excluded) && probePort(port) == nil {
-			used[port] = true
-			return port, nil
-		}
-	}
-	return 0, errors.New("没有可用入口端口")
-}
-
 var domainLabelPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
 var countryPattern = regexp.MustCompile(`^[A-Z]{2}$`)
 

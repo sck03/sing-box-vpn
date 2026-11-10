@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -116,20 +115,7 @@ func entry(args []string) error {
 			return lockErr
 		}
 		defer unlock()
-		b := &backend{cfg: c}
-		data, e := os.ReadFile(filepath.Join(c.DataDir, "namespace-owner.json"))
-		if os.IsNotExist(e) {
-			return nil
-		}
-		if e != nil {
-			return e
-		}
-		if json.Unmarshal(data, &b.owner) != nil || b.owner.Owner != ownerID {
-			return errors.New("resource ownership cannot be verified")
-		}
-		b.claimed = true
-		b.stop()
-		return b.cleanupErr
+		return (&backend{cfg: c}).recoverOwnership()
 	default:
 		return errors.New("unknown command")
 	}
