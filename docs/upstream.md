@@ -10,6 +10,8 @@
 最新稳定版仍为 [1.14.4](https://github.com/SagerNet/sing-box/releases/tag/v1.14.4)，
 最新预发布为 [1.15.0-alpha.13](https://github.com/SagerNet/sing-box/releases/tag/v1.15.0-alpha.13)。
 本项目安装与更新使用稳定渠道，当前验收基线不变，不为旧配置增加迁移层。
+本轮重新查询官方 Releases API，稳定版与预发布均未变化；Go 官方下载列表的最新稳定工具链
+仍为 [Go 1.27.3](https://go.dev/dl/)，无需修改现有锁定版本。
 
 [1.14 官方变更记录](https://github.com/SagerNet/sing-box/blob/v1.14.4/docs/changelog.md)
 中与本项目相关的新增能力：
@@ -44,6 +46,13 @@ Mihomo 更新包括 DNS 拨号收敛、代理循环检查性能及重载保留 f
 本项目提供完整 `clmi.yaml` 和仅含原生节点的 `proxies.yaml`。普通与 VPNGate 分开发布、
 使用同一套协议转换，避免为 OpenClash 另维护一套节点字段。HTTP provider 已用 Mihomo 验收
 五协议 TCP/UDP，涵盖自签 VMess/TUIC 与中文 WS 路径；尚未做实体 OpenWrt/LuCI 端到端验收。
+
+## Argo / cloudflared
+
+官方最新稳定版为 [2026.10.7](https://github.com/cloudflare/cloudflared/releases/tag/2026.10.7)，
+发布于 2026-10-30。项目下载时动态查询官方稳定发行并校验资产 SHA256，不固定旧版本。
+本轮将其下载校验与核心归档下载合并到同一实现，统一响应大小、缓冲复用与取消处理；
+该发布页主要提供校验值，不据此宣称特定性能提升或新增协议支持。
 
 ## VPNGate 与相关项目
 

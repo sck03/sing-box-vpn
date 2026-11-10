@@ -3,35 +3,36 @@
 [返回项目首页](../README.md) · [验证命令](development.md) · [模块边界](architecture.md)
 
 本文记录当前实现和验证边界；以往的分配测量与修复记录见
-[4012897 时的优化日志](https://github.com/sck03/sing-box-vpn/blob/4012897/docs/optimization.md)。
+[5c272d4 时的优化日志](https://github.com/sck03/sing-box-vpn/blob/5c272d4/docs/optimization.md)。
 
 ## 本轮修复 · 2026-11-10
 
-基线提交 `4012897`。UDP 关联原先在每次读取前刷新空闲期限，短包、分片以及其他源端口的
-数据也能让空闲关联持续占用连接、套接字和接收缓冲。新增真实网络回归在修改前复现四类
-流量持续 65 秒后连接仍未退出；修复后只由合法请求或回复续期，空闲 60 秒后正常回收。
-零目标端口提前拒绝，不再为这类包反复创建队列、协程或 worker 连接。丢弃明显无效的包
-发生在认证锁之前，也不再为它们刷新套接字计时器。退出等待控制连接读取与全部目标转发结束。
+基线提交 `5c272d4`。核心下载原先找到二进制后立即结束解包，未检查后续条目与 gzip 尾部。
+回归在修改前复现了截断 gzip、错误 CRC、重复核心仍被接受，以及版本检查中取消后仍覆盖
+候选文件。现在完成整份归档检查后才执行核心版本检查，发布前再次检查取消状态。
 
-合法单向上传和下载仍分别持续 65 秒验证，保留稳定源端口。测试没有缩短生产空闲期限。
-本轮不增加流量统计协程、全局缓存或第三方 Go 依赖。
+解包不再只约束选中的二进制：全部展开数据最多 512 MiB，包含跳过条目、tar 元数据和尾部
+gzip 成员；单个核心最多 256 MiB。超大条目声明提前拒绝，读取过程按块检查预算和取消。
+失败保留原候选并清理暂存目录。归档处理独立于版本选择、服务更新和回滚，便于单独维护。
 
-HTTP 订阅原先把空文件和超过存储层 16 MiB 边界的文件返回为成功；回归覆盖两类节点、
-GET/HEAD 和四种订阅文件。现在返回 503，避免空订阅被客户端当作有效更新。
-文件仍以流式方式发送，检查大小不读入完整内容。
+核心与 cloudflared 共用下载大小、哈希校验和取消检查，已知超过 256 MiB 的响应不开始读取。
+下载和解包复用存储层 32 KiB 缓冲，删除重复校验实现与逐次复制分配。私有暂存文件直接写入，
+不引入多余的原子重写；不增加后台协程、兼容层或第三方 Go 依赖。
 
-OpenClash 新增原生 `proxies.yaml`，与完整 Mihomo 配置共享节点转换，只输出 `proxies`。
-两套文件沿用现有原子发布、访问令牌和卸载流程，避免引入独立配置状态与转换依赖。
-验收通过项目自身 HTTP 订阅加载 provider，使两套五协议的真实 TCP/UDP 总数由 52 增至 72。
-详细支持边界和上游核对见[兼容性说明](compatibility.md)与[技术说明](upstream.md)。
+Windows amd64、Go 1.27.3、i5-9400F、默认并行度 6，4 MiB 核心样本经内存 HTTP 传输、
+解包和文件落盘，前后三轮测量如下。样本包含核心前后的其他文件，版本检查使用替代实现。
 
-Windows amd64、Go 1.27.3、i5-9400F、默认并行度 6，当前 UDP 基准连续三轮均为
-**0 allocs/op**。其中单目标 1400 字节往返为 0 B/op；8 目标批次测得 1–19 B/op，
-含会话与后台工作摊销。修改前也为 0 allocs/op，本次改善的是无效流量下的资源持有与
-无用操作，不据此宣称正常代理吞吐或整机 RSS 提升。复现命令：
+| 指标 | 修改前 | 修改后 |
+| --- | --- | --- |
+| 每次分配字节 | 125,315–127,110 B | 57,911–58,971 B |
+| 每次分配次数 | 122–123 | 143–144 |
+| 每次耗时 | 5.37–7.72 ms | 4.70–5.45 ms |
+
+分配字节减少约 54%；完整读取后续条目增加了一些小对象分配。磁盘耗时受缓存影响，
+本测量不代表公网下载速度、代理吞吐或整机 RSS。复现命令：
 
 ```bash
-go test ./addons/vpngate/gateway -run '^$' -bench '^BenchmarkSOCKSUDP(RoundTrip|TargetBatch)$' -benchmem -count=3
+go test ./internal/manage -run '^$' -bench '^BenchmarkCoreDownload$' -benchmem -count=3
 ```
 
 测试、竞态检查和构建与测量分开执行；Linux netns、防火墙和 systemd 专项由 GitHub CI 执行。
@@ -53,7 +54,7 @@ go test ./addons/vpngate/gateway -run '^$' -bench '^BenchmarkSOCKSUDP(RoundTrip|
 | 配置发布 | 单份事务快照、相同内容不重写；`BenchmarkPublishChanged`、`BenchmarkPublishUnchanged` |
 | 文件复制 | 输入与输出共用 32 KiB 池化缓冲；`BenchmarkCopyFileContent` |
 | 远端推送 | 同批快照、单文件 16 MiB、响应 4 MiB、HEAD 存在性检查；`BenchmarkRemoteAcknowledgement` |
-| 核心更新 | 流式摘要，不持有完整配置副本；`BenchmarkCoreConfigValidation` |
+| 核心更新 | 下载 256 MiB、完整展开 512 MiB、取消与校验后发布；`BenchmarkCoreDownload`、`BenchmarkCoreConfigValidation` |
 | 客户端配置 | 只创建当前范围需要的规则和选择器；`BenchmarkClientConfig` |
 | VMess URI | 直接编码 JSON，省去无用的 URI 字段构造；`BenchmarkVMessURI` |
 

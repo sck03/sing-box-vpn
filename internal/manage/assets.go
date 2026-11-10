@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+const maxAssetSize = 256 << 20
+
 func RunAsset(ctx context.Context, args []string, output io.Writer) error {
 	f := flag.NewFlagSet("asset", flag.ContinueOnError)
 	f.SetOutput(output)
@@ -44,26 +46,37 @@ func RunAsset(ctx context.Context, args []string, output io.Writer) error {
 }
 
 func downloadAsset(ctx context.Context, client *http.Client, asset releaseAsset, destination string) error {
+	return atomicWrite(destination, 0755, func(output io.Writer) error {
+		return copyVerifiedAsset(ctx, client, asset, output)
+	})
+}
+
+// Core archives and standalone assets share download limits and verification.
+func copyVerifiedAsset(ctx context.Context, client *http.Client, asset releaseAsset, output io.Writer) error {
 	if !digestPattern.MatchString(asset.Digest) {
 		return errors.New("发行资产缺少 SHA256")
 	}
-	return atomicWrite(destination, 0755, func(output io.Writer) error {
-		response, err := httpRequest(ctx, client, asset.URL)
-		if err != nil {
-			return err
-		}
-		defer response.Body.Close()
-		digest := sha256.New()
-		size, err := copyFileContent(io.MultiWriter(output, digest), io.LimitReader(response.Body, (256<<20)+1))
-		if err != nil {
-			return err
-		}
-		if size > 256<<20 {
-			return errors.New("资源超过大小限制")
-		}
-		if hex.EncodeToString(digest.Sum(nil)) != strings.ToLower(asset.Digest[7:]) {
-			return errors.New("SHA256 不匹配")
-		}
-		return nil
-	})
+	response, err := httpRequest(ctx, client, asset.URL)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.ContentLength > maxAssetSize {
+		return errors.New("资源超过 256 MiB")
+	}
+	digest := sha256.New()
+	size, err := copyFileContent(io.MultiWriter(output, digest), io.LimitReader(response.Body, maxAssetSize+1))
+	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if size > maxAssetSize {
+		return errors.New("资源超过 256 MiB")
+	}
+	if hex.EncodeToString(digest.Sum(nil)) != strings.ToLower(asset.Digest[7:]) {
+		return errors.New("SHA256 不匹配")
+	}
+	return nil
 }

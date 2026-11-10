@@ -1,11 +1,7 @@
 package manage
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -211,6 +207,9 @@ func httpRequest(ctx context.Context, client *http.Client, url string) (*http.Re
 	req.Header.Set("User-Agent", "sing-box-vpn/"+strings.TrimPrefix(project.Versions.Release, "v"))
 	response, err := client.Do(req)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, errors.New("远端请求失败，检查网络与服务状态")
 	}
 	if response.StatusCode != 200 {
@@ -338,74 +337,23 @@ func (u *coreUpdater) download(ctx context.Context, asset verifiedAsset, destina
 		return err
 	}
 	defer os.RemoveAll(stage)
-	archive, err := os.Create(filepath.Join(stage, "core.tar.gz"))
-	if err != nil {
+	archive := filepath.Join(stage, "core.tar.gz")
+	if err := writeCoreStage(archive, 0600, func(output io.Writer) error {
+		return copyVerifiedAsset(ctx, u.client, releaseAsset{URL: asset.URL, Digest: "sha256:" + asset.SHA256}, output)
+	}); err != nil {
 		return err
 	}
-	response, err := httpRequest(ctx, u.client, asset.URL)
-	if err != nil {
-		archive.Close()
-		return err
-	}
-	digest := sha256.New()
-	size, err := io.Copy(io.MultiWriter(archive, digest), io.LimitReader(response.Body, (256<<20)+1))
-	response.Body.Close()
-	if closeErr := archive.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	if size > 256<<20 {
-		return errors.New("核心归档超过大小限制")
-	}
-	if hex.EncodeToString(digest.Sum(nil)) != asset.SHA256 {
-		return errors.New("核心归档 SHA256 不匹配")
-	}
-	in, err := os.Open(filepath.Join(stage, "core.tar.gz"))
+	in, err := os.Open(archive)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	gz, err := gzip.NewReader(in)
-	if err != nil {
-		return err
-	}
-	defer gz.Close()
-	tarReader := tar.NewReader(gz)
 	expected := "sing-box-" + asset.Version + "-linux-" + asset.Arch + "/sing-box"
 	candidate := filepath.Join(stage, "binary")
-	found := false
-	for {
-		header, err := tarReader.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return err
-		}
-		if header.Name != expected {
-			continue
-		}
-		if (header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA) || header.Size < 0 || header.Size > 256<<20 {
-			return errors.New("归档中的核心文件无效")
-		}
-		out, err := os.OpenFile(candidate, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0755)
-		if err != nil {
-			return err
-		}
-		_, err = io.CopyN(out, tarReader, header.Size)
-		if closeErr := out.Close(); err == nil {
-			err = closeErr
-		}
-		if err != nil {
-			return err
-		}
-		found = true
-		break
-	}
-	if !found {
-		return errors.New("归档缺少预期核心文件")
+	if err := writeCoreStage(candidate, 0755, func(output io.Writer) error {
+		return extractCore(ctx, in, output, expected)
+	}); err != nil {
+		return err
 	}
 	version, err := u.check(ctx, candidate)
 	if err != nil {
@@ -413,6 +361,9 @@ func (u *coreUpdater) download(ctx context.Context, asset verifiedAsset, destina
 	}
 	if version != asset.Version {
 		return errors.New("下载核心与发行版本不符")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	return os.Rename(candidate, destination)
 }
