@@ -24,7 +24,7 @@ func (b *backend) died() <-chan error { return b.exited }
 
 type manager struct {
 	mu             sync.Mutex
-	actionsMu      sync.Mutex
+	actionSlot     chan struct{}
 	cfg            Config
 	configPath     string
 	status         Status
@@ -55,6 +55,7 @@ type manager struct {
 func newManager(c Config, path string) *manager {
 	m := &manager{cfg: c, configPath: path, status: Status{Version: version, State: "stopped", Country: c.Country, Mode: c.Mode, Updated: time.Now()}, connections: map[net.Conn]bool{}, wake: make(chan struct{}, 1), factory: func(c Config) tunnel { return &backend{cfg: c} }}
 	m.refreshSlot = make(chan struct{}, 1)
+	m.actionSlot = make(chan struct{}, 1)
 	m.pendingDials = map[*pendingDial]struct{}{}
 	m.sourceClient = directClient(25 * time.Second)
 	m.hostClient = &http.Client{Timeout: 12 * time.Second, Transport: m.sourceClient.Transport, CheckRedirect: m.sourceClient.CheckRedirect}

@@ -94,10 +94,18 @@ func (m *manager) handler(parent context.Context) http.Handler {
 			respond(w, 400, map[string]string{"error": "invalid action"})
 			return
 		}
-		// Serialize the snapshot and apply together so concurrent actions cannot
-		// overwrite settings changed by another request.
-		m.actionsMu.Lock()
-		defer m.actionsMu.Unlock()
+		// Keep snapshot and apply serial, but let abandoned requests and daemon
+		// shutdown leave the queue without waiting for another disk commit.
+		select {
+		case m.actionSlot <- struct{}{}:
+			defer func() { <-m.actionSlot }()
+		case <-r.Context().Done():
+		case <-parent.Done():
+		}
+		if r.Context().Err() != nil || parent.Err() != nil {
+			respond(w, http.StatusServiceUnavailable, map[string]string{"error": "control action cancelled"})
+			return
+		}
 		m.mu.Lock()
 		c := m.cfg
 		s := m.status
@@ -118,6 +126,12 @@ func (m *manager) handler(parent context.Context) http.Handler {
 			root = filepath.Dir(root)
 		}
 		e := manage.ConfigTransaction(root, func() error {
+			if err := r.Context().Err(); err != nil {
+				return err
+			}
+			if err := parent.Err(); err != nil {
+				return err
+			}
 			// Menu configuration may have changed while the daemon still holds its
 			// previous snapshot. Merge this action into the latest published file.
 			latest, err := readConfig(m.configPath)

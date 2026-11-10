@@ -7,6 +7,35 @@
 
 ## 本轮修复 · 2026-11-10
 
+基线提交 `f9432f3`。新增回归在旧实现上复现了两类错误：取消的控制请求仍修改配置；
+`systemctl` 的总线、权限及其他查询错误被当作服务未运行，可能导致更新核心后漏重启。
+
+控制动作改用可取消的串行槽位，客户端取消或守护进程停止后，排队处理器立即退出且不写
+内存/磁盘策略；取得槽位后再次检查取消，正常并发动作仍合并最新配置。服务查询与重启
+移至 `services.go`，共用有界命令输出；仅无诊断输出的退出码 3/4 表示未运行/不存在。
+查询失败保留服务名与原因，中止激活，保留当前核心、上一核心和候选，并清理暂存目录。
+
+配置校验改为直接编码到临时文件，复用存储层编码器，去掉完整 JSON 的额外字节副本。
+Windows amd64、Go 1.27.3、i5-9400F、默认并行度 6，合成大域名规则三轮结果如下：
+
+| 指标 | 先生成字节再写入 | 直接编码到 writer |
+| --- | --- | --- |
+| 每次分配字节 | 4,990,886–5,758,440 B | 1,907,231–1,950,394 B |
+| 每次分配次数 | 29–31 | 17 |
+
+编码阶段分配字节减少约 61%–67%。基准使用同一对象与 `io.Discard`，隔离编码而不计磁盘
+及核心子进程；本机耗时波动明显，不据此推断端到端速度、代理吞吐或整机 RSS。复现命令：
+
+```bash
+go test ./internal/manage -run '^$' -bench '^BenchmarkValidationJSONEncoding$' -benchmem -count=3
+```
+
+全量 `go test -race -count=1 ./...` 已通过，启用真实 sing-box/Mihomo 核心与
+`RUN_UDP_IDLE_TESTS=1`；另通过 Linux 服务查询/激活文件保留回归、`go vet`、格式检查及
+Linux amd64/arm64 打包。本轮未修改 netns、防火墙和 systemd 单元，相关完整专项仍由 CI 执行。
+
+## 核心归档与下载缓冲 · 2026-11-10
+
 基线提交 `5c272d4`。核心下载原先找到二进制后立即结束解包，未检查后续条目与 gzip 尾部。
 回归在修改前复现了截断 gzip、错误 CRC、重复核心仍被接受，以及版本检查中取消后仍覆盖
 候选文件。现在完成整份归档检查后才执行核心版本检查，发布前再次检查取消状态。
@@ -50,11 +79,13 @@ go test ./internal/manage -run '^$' -bench '^BenchmarkCoreDownload$' -benchmem -
 | 节点源 | 流式读取、记录/列数/候选上限、解码缓冲复用；`BenchmarkNodeSource/Streaming`、`BenchmarkNodeSourceExcessColumns` |
 | Geo 响应 | 1 MiB 响应上限、按需字段解析、整数精确校验；`BenchmarkGeoResponse` |
 | 控制客户端 | 1 MiB 完整响应上限、拒绝截断成功和重定向；`TestControlResponseBoundaries` |
+| 控制动作 | 串行合并与可取消等待；`TestControlQueueCancellation` |
 | profile 校验 | 固定字段数，过量参数及时拒绝；`BenchmarkProfileValidation` |
 | 配置发布 | 单份事务快照、相同内容不重写；`BenchmarkPublishChanged`、`BenchmarkPublishUnchanged` |
 | 文件复制 | 输入与输出共用 32 KiB 池化缓冲；`BenchmarkCopyFileContent` |
 | 远端推送 | 同批快照、单文件 16 MiB、响应 4 MiB、HEAD 存在性检查；`BenchmarkRemoteAcknowledgement` |
 | 核心更新 | 下载 256 MiB、完整展开 512 MiB、取消与校验后发布；`BenchmarkCoreDownload`、`BenchmarkCoreConfigValidation` |
+| 核心配置校验 | JSON 直接编码到临时文件；`BenchmarkValidationJSONEncoding` |
 | 客户端配置 | 只创建当前范围需要的规则和选择器；`BenchmarkClientConfig` |
 | VMess URI | 直接编码 JSON，省去无用的 URI 字段构造；`BenchmarkVMessURI` |
 

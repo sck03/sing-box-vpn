@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -82,10 +81,7 @@ func CheckJSON(ctx context.Context, binary, directory string, value any) error {
 		return err
 	}
 	defer os.Remove(f.Name())
-	data, err := JSONBytes(value)
-	if err == nil {
-		_, err = f.Write(data)
-	}
+	err = jsonEncoder(f).Encode(value)
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
 	}
@@ -232,50 +228,6 @@ func getJSON(ctx context.Context, client *http.Client, url string, target any) e
 		return errors.New("HTTP response too large")
 	}
 	return json.Unmarshal(data, target)
-}
-
-type serviceManager interface {
-	active(context.Context) ([]string, error)
-	restart(context.Context, string) error
-}
-type systemServices struct{}
-
-func (systemServices) active(ctx context.Context) ([]string, error) {
-	var active []string
-	for _, name := range []string{"sing-box", "sing-box-vpngate"} {
-		child, cancel := context.WithTimeout(ctx, 10*time.Second)
-		err := exec.CommandContext(child, "systemctl", "is-active", "--quiet", name).Run()
-		contextErr := child.Err()
-		cancel()
-		if contextErr != nil {
-			return nil, contextErr
-		}
-		if err == nil {
-			active = append(active, name)
-		} else {
-			var exit *exec.ExitError
-			if !errors.As(err, &exit) {
-				return nil, err
-			}
-		}
-	}
-	return active, nil
-}
-func (systemServices) restart(ctx context.Context, name string) error {
-	child, cancel := context.WithTimeout(ctx, 45*time.Second)
-	defer cancel()
-	if output, err := command.Output(child, nil, "systemctl", "restart", name); err != nil {
-		return fmt.Errorf("%s: %w: %s", name, err, output)
-	}
-	timer := time.NewTimer(500 * time.Millisecond)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-	_, err := commandOutput(ctx, "systemctl", "is-active", "--quiet", name)
-	return err
 }
 
 type coreUpdater struct {
