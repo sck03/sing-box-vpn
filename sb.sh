@@ -8,6 +8,7 @@ CORE="$SB_ROOT/sing-box"
 MANAGER="${SB_MANAGER:-/usr/local/bin/yg-vpngate}"
 source "$SCRIPT_ROOT/lib/ui.sh"
 source "$SCRIPT_ROOT/lib/services.sh"
+source "$SCRIPT_ROOT/lib/node-settings.sh"
 cfg() { "$MANAGER" config --root "$SB_ROOT" --core "$CORE" "$@"; }
 require_root() { [[ $(id -u) == 0 ]] || { echo '需要 root 权限' >&2; return 1; }; }
 require_system() {
@@ -119,13 +120,6 @@ gitlab_config() {
     printf '%s' "$token" | "$MANAGER" remote --root "$SB_ROOT" gitlab-config --project "$project" --branch "${branch:-main}"
     echo '配置已保存；在菜单 9 分别选择要推送的普通或 VPNGate 订阅。'
 }
-protocol_pick() {
-    local -a labels=('VLESS Reality' 'VMess WS' 'Hysteria-2' 'TUIC-v5' 'AnyTLS')
-    local -a protocols=(vless vmess hysteria2 tuic anytls)
-    if [[ "${1:-}" == all ]]; then labels+=('全部协议'); protocols+=(all); fi
-    ui_choose '选择要修改的协议' "${labels[@]}" || return 1
-    PROTOCOL=${protocols[REPLY-1]}
-}
 core_menu() {
     ui_submenu 'Sing-box 稳定版核心管理' core_action \
         '查询当前版本 / 最新稳定版' '更新到最新稳定版' \
@@ -163,70 +157,6 @@ settings_action() {
     6) ui_input value '新版 WireGuard endpoint JSON 文件' || return "$UI_CANCEL"; cfg warp "$value"; reload_main;;
     7) gitlab_config;;
     9) ui_input value 'CDN 地址，回车清除' || return "$UI_CANCEL"; cfg cdn "$value";;
-    esac
-}
-credentials_menu() {
-    local scope=${1:-normal} title='普通五协议 · UUID / 密码'
-    if [[ "$scope" == vpngate ]]; then title='VPNGate 五协议 · UUID / 密码'; fi
-    while ui_choose "$title" '自定义 UUID / 密码' '随机重置 UUID / 密码'; do
-        ui_perform credentials_action "$REPLY" "$scope"
-    done
-}
-credentials_action() {
-    local choice=$1 scope=$2 value password=''
-    protocol_pick all || return "$UI_CANCEL"
-    if [[ "$choice" == 2 ]]; then
-        cfg reset "$PROTOCOL" --scope "$scope"
-    else
-        case "$PROTOCOL" in
-            all) ui_hint '统一 UUID 会用于 VLESS、VMess、TUIC，并作为 Hy2、TUIC、AnyTLS 的密码。'
-                 ui_secret value '统一 UUID，回车随机重置' || return "$UI_CANCEL";;
-            hysteria2|anytls) ui_secret value '协议密码，回车随机重置' || return "$UI_CANCEL";;
-            *) ui_secret value 'UUID，回车随机重置' || return "$UI_CANCEL";;
-        esac
-        if [[ -z "$value" ]]; then
-            cfg reset "$PROTOCOL" --scope "$scope"
-        else
-            if [[ "$PROTOCOL" == tuic ]]; then
-                ui_secret password 'TUIC 密码，回车使用上述 UUID' || return "$UI_CANCEL"
-            fi
-            if [[ -n "$password" ]]; then
-                printf '%s\n%s' "$value" "$password" | cfg credentials "$PROTOCOL" --stdin --scope "$scope"
-            else
-                printf '%s' "$value" | cfg credentials "$PROTOCOL" --stdin --scope "$scope"
-            fi
-        fi
-    fi
-    reload_scope "$scope"
-    ui_hint '凭据已更新，请从菜单 9 获取新的节点和订阅。'
-}
-port_menu() {
-    local scope=${1:-normal} title='普通五协议端口管理'
-    if [[ "$scope" == vpngate ]]; then title='VPNGate 五协议端口管理'; fi
-    while ui_choose "$title" '更改协议主端口' '设置 Hysteria-2 多端口 / 跳跃' \
-        '清除 Hysteria-2 多端口' '设置 TUIC-v5 多端口复用' '清除 TUIC-v5 多端口' \
-        '生成指定 TUIC 端口的分享链接' '查看当前端口'; do
-        ui_perform port_action "$REPLY" "$scope"
-    done
-}
-port_action() {
-    local value scope=${2:-normal} protocol=hysteria2
-    local -a ports=()
-    case "$1" in
-    1) protocol_pick || return "$UI_CANCEL"; ui_input value '新端口' || return "$UI_CANCEL"
-       cfg port "$PROTOCOL" "$value" --scope "$scope";firewall;reload_scope "$scope";;
-    2|3|4|5)
-       if [[ "$1" == 4 || "$1" == 5 ]]; then protocol=tuic; fi
-       if [[ "$1" == 2 || "$1" == 4 ]]; then
-           ui_hint '端口或范围用空格分隔，例如：31000:31100 31200；本次输入替换已有设置。'
-           ui_input value '端口 / 范围，回车清空' || return "$UI_CANCEL"
-           read -r -a ports <<< "$value"
-       fi
-       cfg multiport "$protocol" "${ports[@]}" --scope "$scope";firewall
-       show_status "$scope";;
-    6) ui_input value 'TUIC 主端口或已设置的复用端口' || return "$UI_CANCEL"
-       cfg links --scope "$scope" --tuic-port "$value";;
-    7) show_status "$scope";;
     esac
 }
 route_menu() {
@@ -355,7 +285,7 @@ show_status() {
 main_status() {
     local release='未安装' congestion
     if [[ -x "$MANAGER" ]]; then release=$("$MANAGER" --version 2>/dev/null) || release='未知'; fi
-    ui_field '当前脚本版本' "$release（菜单 7 更新）"
+    ui_field '当前程序版本' "$release（菜单 7 更新正式包）"
     ui_rule
     ui_line "$UI_WHITE" ' VPS 与服务状态：'
     ui_field '系统' "${PRETTY_NAME:-Linux}"
@@ -440,6 +370,8 @@ main_action() {
             ui_line "$UI_WHITE" ' 项目：https://github.com/sck03/sing-box-vpn'
             ui_hint '菜单 9：分别查看普通节点与 VPNGate 节点。'
             ui_hint '菜单 3 → 8：配置本地订阅。'
+            ui_hint '菜单 3 → 2：自定义五协议 UUID / 密码；随机重置为独立选项。'
+            ui_hint '菜单 4 → 4：设置 TUIC 多端口；菜单 4 → 6：生成指定端口链接。'
             ui_hint '菜单 17：选择 VPNGate 国家，管理临时出口。'
             ui_hint '各级子菜单输入 0 返回；填写参数时也可输入 0 取消。'
             ui_hint '普通节点与 VPNGate 使用独立的端口和凭据。';;

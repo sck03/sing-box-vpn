@@ -52,6 +52,17 @@ func TestMultiportPersistsAndProducesScopedTUICLinks(t *testing.T) {
 	}
 	normalServer := readBytes(t, filepath.Join(root, "sb.json"))
 	vpnServer := readBytes(t, filepath.Join(root, "vpngate", "server.json"))
+	// TUIC forwarding and link selection must work without launching the core.
+	// Full main-port changes below still require the real core validator.
+	validatedCore := core
+	core = filepath.Join(root, "must-not-run-sing-box")
+	unchanged := fileBundle{}
+	for _, prefix := range []string{"", "vpngate/"} {
+		for _, name := range exportNames {
+			unchanged[prefix+name] = readBytes(t, filepath.Join(root, prefix, name))
+		}
+	}
+	unchanged["vpngate/secrets.json"] = readBytes(t, filepath.Join(root, "vpngate", "secrets.json"))
 	for _, set := range []struct {
 		scope string
 		port  int
@@ -76,6 +87,11 @@ func TestMultiportPersistsAndProducesScopedTUICLinks(t *testing.T) {
 	if !bytes.Equal(normalServer, readBytes(t, filepath.Join(root, "sb.json"))) || !bytes.Equal(vpnServer, readBytes(t, filepath.Join(root, "vpngate", "server.json"))) {
 		t.Fatal("forwarding created extra listeners or changed a running server")
 	}
+	for name, before := range unchanged {
+		if !bytes.Equal(before, readBytes(t, filepath.Join(root, name))) {
+			t.Fatal("TUIC forwarding changed unrelated configuration", name)
+		}
+	}
 	var current App
 	if _, err := ReadJSON(filepath.Join(root, "app.json"), &current); err != nil {
 		t.Fatal(err)
@@ -88,6 +104,7 @@ func TestMultiportPersistsAndProducesScopedTUICLinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	core = validatedCore
 	if _, err := run(normalScope, "port", "tuic", strconv.Itoa(newPort)); err != nil {
 		t.Fatal(err)
 	}

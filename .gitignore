@@ -1,6 +1,7 @@
 .tools/
 .build/
 .test/
+.待手动删除/
 __pycache__/
 *.pyc
 *.log

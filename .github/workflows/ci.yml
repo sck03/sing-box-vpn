@@ -79,10 +79,11 @@ jobs:
         run: |
           test -z "$(gofmt -l manifest.go internal cmd addons/vpngate/gateway)"
           go vet ./...
-          for script in sb.sh install.sh addons/vpngate/vpngate.sh lib/*.sh; do
+          for script in sb.sh install.sh addons/vpngate/vpngate.sh lib/*.sh scripts/*.sh; do
             bash -n "$script"
           done
-          shellcheck --severity=warning sb.sh install.sh addons/vpngate/vpngate.sh lib/*.sh
+          shellcheck --severity=warning sb.sh install.sh addons/vpngate/vpngate.sh lib/*.sh scripts/*.sh
+          bash scripts/test-node-settings.sh
           bash -c 'source ./lib/ui.sh; ui_secret value "test"; [[ "$value" == "  password  " ]]' <<< '  password  '
       - name: Build Linux management and gateway binary
         run: CGO_ENABLED=0 go build -trimpath -o "$GITHUB_WORKSPACE/.build/yg-vpngate" ./addons/vpngate/gateway

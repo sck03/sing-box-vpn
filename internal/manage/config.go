@@ -452,6 +452,9 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 			if err := validatePortMutation(*root, app, settings, *scope, operation, values); err != nil {
 				return err
 			}
+			if operation == "multiport" && values[0] == "tuic" {
+				return commitTUICPorts(*root, app, settings, *scope, values[1:])
+			}
 		}
 		if *scope == vpngateScope {
 			if err := mutateVPN(app, settings, private, operation, values); err != nil {

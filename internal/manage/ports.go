@@ -358,6 +358,36 @@ func applyPorts(app *App, operation, protocol string, ranges []portRange) error 
 	return nil
 }
 
+// TUIC forwarding changes only firewall metadata. Its single server listener,
+// credentials and exported primary node stay identical, so no core process or
+// subscription regeneration is needed. The caller holds the configuration lock
+// and validates reservations and system sockets before entering this path.
+func commitTUICPorts(root string, app App, settings VPNSettings, scope string, values []string) error {
+	ranges, err := parsePortRanges(values)
+	if err != nil {
+		return err
+	}
+	current := &app
+	name := "app.json"
+	if scope == vpngateScope {
+		current = &App{Profile: settings.Profiles[settings.ActiveCountry]}
+		name = "vpngate/settings.json"
+	}
+	if err := applyPorts(current, "multiport", "tuic", ranges); err != nil {
+		return err
+	}
+	var value any = app
+	if scope == vpngateScope {
+		settings.Profiles[settings.ActiveCountry] = current.Profile
+		value = settings
+	}
+	files := fileBundle{}
+	if err := files.json(name, value); err != nil {
+		return err
+	}
+	return publish(root, files)
+}
+
 func writeTUICLink(output io.Writer, app App, settings VPNSettings, private map[string]Secrets, scope string, port int) error {
 	profile, inbounds := app.Profile, app.Inbounds
 	name := Labels["tuic"] + "-普通-" + app.Name

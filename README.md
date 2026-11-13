@@ -3,7 +3,7 @@
 基于 sing-box 的五协议节点管理程序，支持 VLESS Reality、VMess WS、Hysteria-2、TUIC-v5 和 AnyTLS。
 普通节点使用 VPS 出口，可选 VPNGate 提供指定国家的家宽候选出口。
 
-支持域名分流、Argo/CDN、TLS 证书、Hy2 跳跃、TUIC 多端口和订阅导出。
+支持五协议自定义凭据、域名分流、Argo/CDN、TLS 证书、Hy2 跳跃、TUIC 多端口和订阅导出。
 支持使用 Mihomo 核心的 OpenClash：可导入完整配置，或只更新节点、保留路由器自己的分流。
 
 ## 安装与使用
@@ -20,6 +20,11 @@ curl -fsSL https://raw.githubusercontent.com/sck03/sing-box-vpn/main/install.sh 
 1. 菜单 **9** 查看普通五协议节点、二维码和客户端配置。
 2. 需要 VPNGate 时，菜单 **17** 选择国家并启动出口，再从菜单 **9** 选择 VPNGate 节点。
 3. 菜单 **3 → 8** 配置本地订阅，支持 sing-box、Mihomo/OpenClash 和聚合链接。
+4. 菜单 **3 → 2 → 1** 自定义五协议 UUID / 密码，TUIC 的 UUID 和密码可分别修改。
+5. 菜单 **4 → 4** 设置 TUIC 多端口，**4 → 6** 获取指定端口链接。
+
+若仍看到“重置 UUID / 密码”或端口菜单只有 Hysteria-2，请用菜单 **7** 更新至 **v2.1.0 或更新版本**，
+完成后退出并重新运行 `sb`。安装器下载最新正式 Release；仅推送源码不会更新 VPS 的菜单。
 
 推荐导入对应核心的 `sbox.json` 或 `clmi.yaml`。聚合 URI 的证书选项支持因客户端而异，
 Mihomo 的 VMess/TUIC 自签 TLS 节点请使用 `clmi.yaml`，详见[订阅说明](docs/usage.md#节点与订阅)。

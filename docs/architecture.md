@@ -4,6 +4,13 @@
 配置、导出、凭据、更新与网关运行逻辑由 Go 管理。使用说明见 [README](../README.md)，
 测试与测量记录见 [optimization.md](optimization.md)。
 
+`lib/ui.sh` 负责通用终端交互，`lib/node-settings.sh` 负责普通/VPNGate 共用的协议选择、
+凭据表单和多端口菜单，`sb.sh` 负责顶层导航和服务编排。表单只传递参数，凭据与端口校验
+仍归 `internal/manage/credentials.go` 和 `ports.go`；新增协议时不要复制两套节点表单。
+TUIC 复用端口只影响防火墙元数据，由 `commitTUICPorts` 在配置锁内完成冲突检查后的持久化，
+复用同一发布日志和恢复机制。它不修改服务端入口、凭据或主节点订阅，也不启动核心校验进程；
+Hy2 跳跃会影响客户端配置，仍走完整导出与校验流程。
+
 | 网关模块（`addons/vpngate/gateway/`） | 职责与边界 |
 | --- | --- |
 | `main.go` / `server.go` | 命令入口、守护进程锁、监听器启动、连接准入和会话退出协调 |

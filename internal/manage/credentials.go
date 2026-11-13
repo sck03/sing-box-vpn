@@ -11,7 +11,7 @@ import (
 
 var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
-// One line contains the UUID/password, with an optional second line for TUIC.
+// One line contains the UUID/password, with a second line for TUIC or all.
 // Menus use stdin so credentials do not appear in child-process arguments.
 func readCredentials(input io.Reader) ([]string, error) {
 	data, err := io.ReadAll(io.LimitReader(input, 2050))
@@ -23,7 +23,7 @@ func readCredentials(input io.Reader) ([]string, error) {
 	}
 	values := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
 	if len(values) > 2 {
-		return nil, errors.New("凭据最多两行：UUID / 密码，以及可选的 TUIC 密码")
+		return nil, errors.New("凭据最多两行：UUID / 密码，以及可选的 TUIC 或统一密码")
 	}
 	for i := range values {
 		values[i] = strings.TrimSuffix(values[i], "\r")
@@ -36,23 +36,31 @@ func changeCredentials(app *App, operation string, values []string) error {
 		return errors.New("请选择有效协议或 all")
 	}
 	custom := operation == "credentials"
-	if !custom && len(values) != 1 || custom && (len(values) < 2 || len(values) > 3 || len(values) == 3 && values[0] != "tuic") {
-		return errors.New("credentials 需要协议和 UUID / 密码，TUIC 可再指定独立密码；reset 只需要协议")
+	kind := values[0]
+	if !custom && len(values) != 1 || custom && (len(values) < 2 || len(values) > 3 || len(values) == 3 && kind != "tuic" && kind != "all") {
+		return errors.New("credentials 需要协议和 UUID / 密码，TUIC 或 all 可再指定密码；reset 只需要协议")
 	}
 	value, password := "", ""
 	if custom {
 		value = values[1]
-		if slices.Contains([]string{"all", "vless", "vmess", "tuic"}, values[0]) {
+		// Empty TUIC fields keep their current values; randomization is explicit.
+		if (kind != "tuic" || value != "") && slices.Contains([]string{"all", "vless", "vmess", "tuic"}, kind) {
 			if !uuidPattern.MatchString(value) {
 				return errors.New("UUID 格式错误，请使用 xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")
 			}
 			value = strings.ToLower(value)
 		}
 		password = value
+		if kind == "tuic" {
+			password = ""
+		}
 		if len(values) == 3 {
 			password = values[2]
 		}
-		if len(password) == 0 || len(password) > 1024 || !utf8.ValidString(password) || strings.ContainsAny(password, "\x00\r\n") {
+		if value == "" && password == "" {
+			return errors.New("请填写要修改的 UUID 或密码；随机生成请使用 reset")
+		}
+		if password == "" && kind != "tuic" || len(password) > 1024 || !utf8.ValidString(password) || strings.ContainsAny(password, "\x00\r\n") {
 			return errors.New("密码须为 1-1024 字节的有效文本，不能包含空字符或换行")
 		}
 	}
@@ -71,13 +79,13 @@ func changeCredentials(app *App, operation string, values []string) error {
 			users = users[:1]
 		}
 		for _, user := range users {
-			if _, ok := user["uuid"]; ok {
+			if _, ok := user["uuid"]; ok && (!custom || value != "") {
 				user["uuid"] = value
 				if !custom {
 					user["uuid"] = randomUUID()
 				}
 			}
-			if _, ok := user["password"]; ok {
+			if _, ok := user["password"]; ok && (!custom || password != "") {
 				user["password"] = password
 				if !custom {
 					user["password"] = randomSecret()

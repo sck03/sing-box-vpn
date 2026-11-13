@@ -117,7 +117,7 @@ func TestCustomCredentialsPersistAndStayScoped(t *testing.T) {
 func TestInvalidCredentialsLeaveConfigurationIntact(t *testing.T) {
 	root, core, _ := appFixture(t)
 	before := readBytes(t, filepath.Join(root, "app.json"))
-	for _, values := range [][]string{{"all", "not-a-uuid"}, {"tuic", customUUID, ""}, {"tuic", customUUID, "a\nb"}, {"anytls", strings.Repeat("a", 1025)}, {"vmess", customUUID, "extra"}, {"unknown", customUUID}} {
+	for _, values := range [][]string{{"all", "not-a-uuid"}, {"tuic", "", ""}, {"tuic", customUUID, "a\nb"}, {"anytls", strings.Repeat("a", 1025)}, {"vmess", customUUID, "extra"}, {"unknown", customUUID}} {
 		err := RunConfig(context.Background(), append([]string{"--root", root, "--core", core, "credentials"}, values...), &bytes.Buffer{})
 		if err == nil || !bytes.Equal(before, readBytes(t, filepath.Join(root, "app.json"))) {
 			t.Fatal("invalid credentials were committed", values[0], err)
@@ -147,5 +147,57 @@ func TestCredentialInputAndImportedUsers(t *testing.T) {
 	users := objects(app.Inbounds[0]["users"])
 	if users[0]["uuid"] != customUUID || users[1]["uuid"] != old || app.Profile.Secrets.UUID["vmess"] != customUUID {
 		t.Fatal("customization overwrote an imported additional user")
+	}
+}
+
+func TestTUICCredentialsCanChangeIndependently(t *testing.T) {
+	const oldUUID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+	const oldPassword = "existing password"
+	for _, tc := range []struct {
+		name           string
+		input          []string
+		uuid, password string
+	}{
+		{"uuid only", []string{customUUID}, customUUID, oldPassword},
+		{"blank password", []string{customUUID, ""}, customUUID, oldPassword},
+		{"password only", []string{"", "  密码 @:/?#%  "}, oldUUID, "  密码 @:/?#%  "},
+		{"both", []string{strings.ToUpper(customUUID), "new password"}, customUUID, "new password"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app := App{Inbounds: []Object{{"type": "tuic", "users": []Object{{"uuid": oldUUID, "password": oldPassword}}}}}
+			if err := changeCredentials(&app, "credentials", append([]string{"tuic"}, tc.input...)); err != nil {
+				t.Fatal(err)
+			}
+			user := objects(app.Inbounds[0]["users"])[0]
+			if user["uuid"] != tc.uuid || user["password"] != tc.password || app.Profile.Secrets.UUID["tuic"] != tc.uuid || app.Profile.Secrets.Passwords["tuic"] != tc.password {
+				t.Fatal("independent credential update changed the omitted field or lost metadata")
+			}
+		})
+	}
+}
+
+func TestAllCredentialsAllowSeparatePassword(t *testing.T) {
+	root, core, app := appFixture(t)
+	const password = "  统一密码 @:/?#%  "
+	if err := RunConfig(context.Background(), []string{"--root", root, "--core", core, "credentials", "all", customUUID, password}, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadJSON(filepath.Join(root, "app.json"), &app); err != nil {
+		t.Fatal(err)
+	}
+	client := readObject(t, filepath.Join(root, "sbox.json"))
+	for _, entries := range [][]Object{app.Inbounds, objects(client["outbounds"])} {
+		for _, entry := range entries {
+			user := entry
+			if users := objects(entry["users"]); len(users) > 0 {
+				user = users[0]
+			}
+			if value, ok := user["uuid"]; ok && value != customUUID {
+				t.Fatal("UUID not propagated to server/client")
+			}
+			if value, ok := user["password"]; ok && value != password {
+				t.Fatal("password not propagated to server/client")
+			}
+		}
 	}
 }

@@ -78,7 +78,8 @@ UDP 空闲回归通过真实套接字持续发送短包、分片、零目标端�
 SING_BOX_BINARY=/path/to/sing-box MIHOMO_BINARY=/path/to/mihomo RUN_UDP_IDLE_TESTS=1 go test -race -count=1 ./...
 go vet ./...
 gofmt -l manifest.go internal cmd addons/vpngate/gateway
-shellcheck --severity=warning sb.sh install.sh addons/vpngate/vpngate.sh lib/*.sh
+shellcheck --severity=warning sb.sh install.sh addons/vpngate/vpngate.sh lib/*.sh scripts/*.sh
+bash scripts/test-node-settings.sh
 ```
 
 Linux 专项要求 root、OpenVPN、iproute2、iptables 和可用 TUN/netns；在独立测试环境执行：
@@ -121,6 +122,8 @@ SSH 仅绑定 `127.0.0.1:22222`，连接信息见 `.tools/README.md`。无硬件
 
 [CI 工作流](../.github/workflows/ci.yml)对普通分支与 PR 执行验证并上传构建产物。
 推送 `v主版本.次版本.补丁` 标签时，用标签版本构建，全部检查通过后发布源码、安装包和 SHA256。
+菜单 7 和 `install.sh` 使用 GitHub 最新正式 Release；推送 `main` 本身不会更新安装包。
+面向用户的菜单或功能变更需要发布新版本，并在 `versions.json.release` 同步维护源码基线。
 
 也可在 **Actions → CI → Run workflow** 手动运行：
 
