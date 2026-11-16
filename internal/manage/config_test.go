@@ -315,7 +315,7 @@ func TestBashFacingConfigurationCommands(t *testing.T) {
 	}
 	run("subscription-init", "--port", "0")
 	urls := run("subscription-urls")
-	if len(strings.Split(strings.TrimSpace(urls), "\n")) != 5 || !strings.Contains(urls, "/normal-uri") {
+	if len(strings.Split(strings.TrimSpace(urls), "\n")) != 5 || !strings.Contains(urls, "normal-uri") || strings.Contains(urls, "/s/") {
 		t.Fatal("missing subscription URLs")
 	}
 	run("subscription-stop")

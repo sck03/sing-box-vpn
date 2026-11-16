@@ -1,11 +1,11 @@
 package manage
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"net"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +23,10 @@ func TestSubscriptionURLsReachBothAddressFamilies(t *testing.T) {
 	}
 	const body = `{"subscription":"current"}`
 	writeTestSnapshot(t, root, body)
+	var settings subscriptionSettings
+	ReadJSON(filepath.Join(root, "subscription.json"), &settings)
+	token := strings.Repeat("a", 64)
+	seedOutputGrant(t, root, token, []string{"normal-sing-box"}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- RunSubscription(ctx, []string{"--root", root}, io.Discard) }()
@@ -42,11 +46,7 @@ func TestSubscriptionURLsReachBothAddressFamilies(t *testing.T) {
 	client := &http.Client{Transport: transport, Timeout: time.Second}
 	for _, address := range []string{"127.0.0.1", "::1"} {
 		t.Run(address, func(t *testing.T) {
-			var urls bytes.Buffer
-			if err := subscriptionURLs(root, address, normalScope, &urls); err != nil {
-				t.Fatal(err)
-			}
-			endpoint := strings.Split(urls.String(), "\n")[0]
+			endpoint := subscriptionBase(settings, address) + "/s/" + token + "/normal-sing-box"
 			deadline := time.Now().Add(3 * time.Second)
 			for {
 				response, err := client.Get(endpoint)

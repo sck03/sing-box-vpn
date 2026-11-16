@@ -12,7 +12,7 @@ type SubscriptionCommand struct {
 	Kind         string
 	Outputs      []string
 	Expires      time.Duration
-	MaxDownloads uint64
+	MaxDownloads *int64
 	Config       json.RawMessage
 	Apply        bool
 	ProbeURL     string

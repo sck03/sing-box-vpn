@@ -83,15 +83,16 @@ func (c *stream) Read(p []byte) (int, error) {
 	if n == 0 {
 		return n, err
 	}
-	limit, denied := c.handle.Take(n)
-	if denied != nil {
-		c.Close()
-		return 0, denied
-	}
-	c.handle.Complete(limit, limit, true)
-	if limit < n {
-		c.Close()
-		return limit, accounting.ErrDenied
+	// A short reservation is a pool boundary, not necessarily quota exhaustion.
+	// Account for every byte already read before handing it to the router.
+	for accepted := 0; accepted < n; {
+		limit, denied := c.handle.Take(n - accepted)
+		if denied != nil {
+			c.Close()
+			return accepted, denied
+		}
+		c.handle.Complete(limit, limit, true)
+		accepted += limit
 	}
 	return n, err
 }

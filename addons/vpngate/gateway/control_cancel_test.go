@@ -24,7 +24,7 @@ func TestCancelledControlActionDoesNotPublish(t *testing.T) {
 			} else {
 				request = ctx
 			}
-			r := httptest.NewRequestWithContext(request, http.MethodPost, "/v1/actions", strings.NewReader(`{"op":"policy","require_isp":true}`))
+			r := httptest.NewRequestWithContext(request, http.MethodPost, "/v1/actions", strings.NewReader(`{"op":"reload"}`))
 			m.handler(parent).ServeHTTP(httptest.NewRecorder(), r)
 			if m.cfg.RequireISP != cfg.RequireISP {
 				t.Fatal("cancelled action changed live policy")
@@ -57,7 +57,7 @@ func TestControlQueueCancellation(t *testing.T) {
 				response := httptest.NewRecorder()
 				go func() {
 					defer close(done)
-					r := httptest.NewRequestWithContext(request, http.MethodPost, "/v1/actions", strings.NewReader(`{"op":"policy","require_isp":true}`))
+					r := httptest.NewRequestWithContext(request, http.MethodPost, "/v1/actions", strings.NewReader(`{"op":"reload"}`))
 					m.handler(parent).ServeHTTP(response, r)
 				}()
 				synctest.Wait()

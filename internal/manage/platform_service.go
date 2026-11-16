@@ -104,8 +104,7 @@ func (s *PlatformService) Initialize(ctx context.Context, address, name, admin, 
 	config.Sources = []sub.Source{}
 	config.Collections = []sub.Collection{}
 	config.Outputs = []sub.Output{}
-	config.Grants = []sub.Grant{}
-	v := PlatformConfig{Schema: 4, App: app, VPN: VPNSettings{ProxyPort: 7928, Profiles: map[string]Profile{}}, VPNSecrets: map[string]Secrets{}, Gateway: Object{}, Subscriptions: config, Certificates: []CertificateAsset{}, Argo: TunnelSettings{Mode: "off"}, Listener: subscriptionSettings{Listen: "127.0.0.1", Port: 2097, Token: randomSecret()}}
+	v := PlatformConfig{Schema: 4, App: app, VPN: VPNSettings{ProxyPort: 7928, Profiles: map[string]Profile{}}, VPNSecrets: map[string]Secrets{}, Gateway: Object{}, Subscriptions: config, Certificates: []CertificateAsset{}, Argo: TunnelSettings{Mode: "off"}, Listener: subscriptionSettings{Listen: "127.0.0.1", Port: 2097}}
 	data, err := encodePlatform(v)
 	if err != nil {
 		return err
@@ -163,9 +162,6 @@ func redactPlatform(v any) {
 func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revision int64, actor string) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if c.Listener.Token == "" {
-		c.Listener.Token = randomSecret()
-	}
 	if c.Argo.Mode == "fixed" {
 		c.App.Argo = Object{"domain": c.Argo.Domain, "inbound": c.Argo.Inbound}
 	} else if c.Argo.Mode == "off" || c.Argo.Mode == "" {
@@ -210,6 +206,35 @@ func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revi
 }
 
 func (s *PlatformService) Queue(ctx context.Context, a PlatformAction, actor string) (int64, error) {
+	if a.Operation == "gateway" {
+		var command struct {
+			Op string `json:"op"`
+		}
+		if err := strictSubscriptionJSON(a.Config, &command); err != nil {
+			return 0, err
+		}
+		if command.Op == "start" || command.Op == "stop" {
+			state, err := s.Store.State(ctx)
+			if err != nil {
+				return 0, err
+			}
+			if state.Revision != state.AppliedRevision {
+				return 0, errors.New("apply or resolve the pending configuration before changing gateway state")
+			}
+			c, err := decodePlatform(state.Applied)
+			if err != nil {
+				return 0, err
+			}
+			if c.VPN.ActiveCountry == "" {
+				return 0, errors.New("configure a gateway country first")
+			}
+			c.Gateway["enabled"] = command.Op == "start"
+			return s.QueueApply(ctx, c, state.Revision, actor)
+		}
+		if command.Op != "swap" && command.Op != "refresh" {
+			return 0, errors.New("unsupported gateway action")
+		}
+	}
 	if !slices.Contains([]string{"service", "gateway", "account", "subscription", "certificate-renew", "bbr", "program-upgrade", "runtime-rollback", "outbound-probe"}, a.Operation) {
 		return 0, errors.New("unknown platform action")
 	}
@@ -275,8 +300,9 @@ func (s *PlatformService) Run(ctx context.Context) error {
 		if errors.Is(e, sql.ErrNoRows) {
 			if time.Now().After(nextSubscriptions) {
 				nextSubscriptions = time.Now().Add(time.Minute)
-				_, _ = s.Queue(ctx, PlatformAction{Operation: "subscription", Automatic: true, Subscription: application.SubscriptionCommand{Operation: "refresh"}}, "scheduler")
-				_, _ = s.Queue(ctx, PlatformAction{Operation: "subscription", Automatic: true, Subscription: application.SubscriptionCommand{Operation: "deliver"}}, "scheduler")
+				if e := s.scheduleSubscriptions(ctx); e != nil {
+					_ = s.Auth.Audit(ctx, "scheduler", "subscription-schedule", "", "failed")
+				}
 			}
 			if !s.NoSystem && time.Now().After(nextMaintenance) {
 				nextMaintenance = time.Now().Add(30 * time.Second)
@@ -464,7 +490,7 @@ func (s *PlatformService) execute(ctx context.Context, id int64, a PlatformActio
 			}
 		}
 		var out bytes.Buffer
-		err := (AccountService{Root: s.Root}).Execute(ctx, a.Account, &out)
+		err := (AccountService{Root: s.Root, Store: s.Accounts}).Execute(ctx, a.Account, &out)
 		if err != nil {
 			return err
 		}

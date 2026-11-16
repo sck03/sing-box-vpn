@@ -2,6 +2,7 @@ package manage
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -13,23 +14,42 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sck03/sing-box-vpn/internal/accounting"
+	"github.com/sck03/sing-box-vpn/internal/database"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
 func subscriptionFixture(t *testing.T, root, token, body string) sub.Config {
 	t.Helper()
 	c := sub.DefaultConfig()
-	if err := ensureSubscriptionGrant(&c, token); err != nil {
-		t.Fatal(err)
-	}
+	seedOutputGrant(t, root, token, []string{"normal-sing-box", "vpngate-sing-box"}, nil)
 	if err := AtomicJSON(filepath.Join(root, subscriptionsConfig), c); err != nil {
 		t.Fatal(err)
 	}
-	if err := AtomicJSON(filepath.Join(root, "subscription.json"), subscriptionSettings{Enabled: true, Port: 12345, Token: token, Listen: "::"}); err != nil {
+	if err := AtomicJSON(filepath.Join(root, "subscription.json"), subscriptionSettings{Enabled: true, Port: 12345, Listen: "::"}); err != nil {
 		t.Fatal(err)
 	}
 	writeTestSnapshot(t, root, body)
 	return c
+}
+
+func seedOutputGrant(t *testing.T, root, token string, outputs []string, limit *int64) {
+	t.Helper()
+	s, err := accounting.Open(filepath.Join(root, database.Filename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	db, err := database.Open(filepath.Join(root, database.Filename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	raw, _ := json.Marshal(outputs)
+	_, err = db.Exec(`INSERT INTO download_grants(id,scope,clients,outputs,max_downloads,hash) VALUES('fixture','','[]',?,?,?) ON CONFLICT(id) DO UPDATE SET outputs=excluded.outputs,max_downloads=excluded.max_downloads,hash=excluded.hash`, string(raw), limit, sub.Digest([]byte(token)))
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func writeTestSnapshot(t *testing.T, root, body string) {
@@ -41,8 +61,8 @@ func writeTestSnapshot(t *testing.T, root, body string) {
 }
 
 func TestSubscriptionAuthenticationETagRevocation(t *testing.T) {
-	root, token := t.TempDir(), strings.Repeat("a", 43)
-	c := subscriptionFixture(t, root, token, `{"version":1}`)
+	root, token := t.TempDir(), strings.Repeat("a", 64)
+	subscriptionFixture(t, root, token, `{"version":1}`)
 	handler := subscriptionHandler(root)
 	for _, path := range []string{"/s/wrong/normal-sing-box", "/s/" + token + "/app.json", "/s/" + token + "/../app.json", "/s/" + token + "/vpngate/secrets.json", "/s/" + token + "/normal-sing-box?url=http://localhost"} {
 		r := httptest.NewRecorder()
@@ -68,8 +88,12 @@ func TestSubscriptionAuthenticationETagRevocation(t *testing.T) {
 	if r.Code != 304 || r.Body.Len() != 0 {
 		t.Fatal(r)
 	}
-	c.Grants[0].Revoked = true
-	if err := AtomicJSON(filepath.Join(root, subscriptionsConfig), c); err != nil {
+	store, err := accounting.Open(filepath.Join(root, database.Filename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.RevokeGrant(t.Context(), "fixture"); err != nil {
 		t.Fatal(err)
 	}
 	r = httptest.NewRecorder()
@@ -80,7 +104,7 @@ func TestSubscriptionAuthenticationETagRevocation(t *testing.T) {
 }
 
 func TestSubscriptionUpdateWithinSameSecond(t *testing.T) {
-	root, token := t.TempDir(), strings.Repeat("a", 43)
+	root, token := t.TempDir(), strings.Repeat("a", 64)
 	subscriptionFixture(t, root, token, `{"version":1}`)
 	handler := subscriptionHandler(root)
 	modified := time.Now().Add(-time.Minute).Truncate(time.Second)
@@ -102,13 +126,10 @@ func TestSubscriptionUpdateWithinSameSecond(t *testing.T) {
 }
 
 func TestSubscriptionLimitsAndScope(t *testing.T) {
-	root, token := t.TempDir(), strings.Repeat("a", 43)
-	c := subscriptionFixture(t, root, token, `{"version":1}`)
-	c.Grants[0].Outputs = []string{"normal-sing-box"}
-	c.Grants[0].MaxDownloads = 1
-	if err := AtomicJSON(filepath.Join(root, subscriptionsConfig), c); err != nil {
-		t.Fatal(err)
-	}
+	root, token := t.TempDir(), strings.Repeat("a", 64)
+	subscriptionFixture(t, root, token, `{"version":1}`)
+	limit := int64(1)
+	seedOutputGrant(t, root, token, []string{"normal-sing-box"}, &limit)
 	handler := subscriptionHandler(root)
 	for _, tc := range []struct {
 		method, path string
@@ -128,7 +149,7 @@ func TestSubscriptionLimitsAndScope(t *testing.T) {
 }
 
 func TestSubscriptionRejectsUnavailableSnapshot(t *testing.T) {
-	root, token := t.TempDir(), strings.Repeat("a", 43)
+	root, token := t.TempDir(), strings.Repeat("a", 64)
 	subscriptionFixture(t, root, token, `{"version":1}`)
 	handler := subscriptionHandler(root)
 	if err := AtomicBytes(filepath.Join(root, subscriptionsSnapshot), []byte(`{}`), 0600); err != nil {
@@ -151,16 +172,18 @@ func TestNativeProviderSubscription(t *testing.T) {
 	}
 	var settings subscriptionSettings
 	ReadJSON(filepath.Join(root, "subscription.json"), &settings)
+	token := strings.Repeat("a", 64)
+	seedOutputGrant(t, root, token, []string{"normal-provider", "vpngate-provider"}, nil)
 	for _, scope := range []string{normalScope, vpngateScope} {
 		var urls strings.Builder
 		if err := subscriptionURLs(root, "127.0.0.1", scope, &urls); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(urls.String(), "/s/"+settings.Token+"/"+scope+"-provider") {
-			t.Fatal("missing provider URL")
+		if strings.Contains(urls.String(), "/s/") {
+			t.Fatal("read-only display leaked a token")
 		}
 		r := httptest.NewRecorder()
-		subscriptionHandler(root).ServeHTTP(r, httptest.NewRequest("GET", "/s/"+settings.Token+"/"+scope+"-provider", nil))
+		subscriptionHandler(root).ServeHTTP(r, httptest.NewRequest("GET", "/s/"+token+"/"+scope+"-provider", nil))
 		if r.Code != 200 || !strings.Contains(r.Body.String(), `"proxies"`) {
 			t.Fatal(r.Code, r.Body.String())
 		}
@@ -181,15 +204,11 @@ func TestSubscriptionEnablePreservesAddress(t *testing.T) {
 		t.Fatal(err)
 	}
 	ReadJSON(filepath.Join(root, "subscription.json"), &second)
-	if first.Token != second.Token || first.Port != second.Port || first.PublicBaseURL != second.PublicBaseURL {
+	if first.Port != second.Port || first.PublicBaseURL != second.PublicBaseURL {
 		t.Fatal("ordinary enable rotated address")
 	}
-	if err := resetSubscriptionToken(root); err != nil {
-		t.Fatal(err)
-	}
-	ReadJSON(filepath.Join(root, "subscription.json"), &second)
-	if first.Token == second.Token {
-		t.Fatal("reset did not rotate")
+	if err := resetSubscriptionToken(root); err == nil {
+		t.Fatal("obsolete default-token operation accepted")
 	}
 }
 
@@ -241,7 +260,7 @@ func TestSubscriptionConnectionLimitAndShutdown(t *testing.T) {
 
 func TestDisabledSubscriptionDoesNotListen(t *testing.T) {
 	root := t.TempDir()
-	if err := AtomicJSON(filepath.Join(root, "subscription.json"), subscriptionSettings{Enabled: false, Port: 12345, Token: strings.Repeat("a", 43), Listen: "127.0.0.1"}); err != nil {
+	if err := AtomicJSON(filepath.Join(root, "subscription.json"), subscriptionSettings{Enabled: false, Port: 12345, Listen: "127.0.0.1"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := RunSubscription(context.Background(), []string{"--root", root}, io.Discard); err == nil {

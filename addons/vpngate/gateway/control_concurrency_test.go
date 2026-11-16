@@ -27,8 +27,8 @@ func TestConcurrentControlActionsPreserveIndependentSettings(t *testing.T) {
 				<-start
 				response := httptest.NewRecorder()
 				handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/actions", strings.NewReader(body)))
-				if response.Code != http.StatusAccepted {
-					t.Errorf("control action failed: %s", response.Body)
+				if response.Code != http.StatusBadRequest {
+					t.Errorf("obsolete write action accepted: %s", response.Body)
 				}
 			}(body)
 		}
@@ -38,7 +38,7 @@ func TestConcurrentControlActionsPreserveIndependentSettings(t *testing.T) {
 		current := m.cfg
 		m.mu.Unlock()
 		m.sourceClient.CloseIdleConnections()
-		if current.Mode != "fixed" || !current.RequireISP || current.ExcludeHosting {
+		if current.Mode != cfg.Mode || current.RequireISP != cfg.RequireISP || current.ExcludeHosting != cfg.ExcludeHosting {
 			t.Fatalf("concurrent action lost another setting on trial %d: mode=%s require_isp=%v exclude_hosting=%v", trial, current.Mode, current.RequireISP, current.ExcludeHosting)
 		}
 	}

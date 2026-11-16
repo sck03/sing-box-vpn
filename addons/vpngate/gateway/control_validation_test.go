@@ -37,7 +37,10 @@ func TestControlBodyAtSizeLimit(t *testing.T) {
 	cfg := auditConfig(t)
 	m := newManager(cfg, cfg.DataDir+"/config.json")
 	defer m.sourceClient.CloseIdleConnections()
-	body := `{"op":"stop"}`
+	body := `{"op":"reload"}`
+	if err := atomicJSON(m.configPath, cfg); err != nil {
+		t.Fatal(err)
+	}
 	body += strings.Repeat(" ", (16<<10)-len(body))
 	response := httptest.NewRecorder()
 	m.handler(context.Background()).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/actions", strings.NewReader(body)))

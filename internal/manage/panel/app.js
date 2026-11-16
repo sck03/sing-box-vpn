@@ -28,6 +28,8 @@ let page = "overview",
   draft = null,
   original = null,
   revision = 0,
+  draftGeneration = 0,
+  configLoad = null,
   loading = 0,
   refreshTimer,
   events;
@@ -37,13 +39,23 @@ const ctx = {
   dirty: false,
   async config() {
     if (!draft) {
-      const response = await api(
+      const generation = draftGeneration;
+      configLoad ??= api(
         ctx.session.role === "admin" ? "/api/config" : "/api/state",
-      );
-      draft = response.config;
-      original = structuredClone(draft);
-      revision = response.revision;
-      ctx.root = response.root;
+      )
+        .then((response) => {
+          if (generation !== draftGeneration)
+            throw new DOMException("草稿已重新载入", "AbortError");
+          draft = response.config;
+          original = structuredClone(draft);
+          revision = response.revision;
+          ctx.root = response.root;
+          return draft;
+        })
+        .finally(() => {
+          if (generation === draftGeneration) configLoad = null;
+        });
+      return configLoad;
     }
     return draft;
   },
@@ -68,9 +80,11 @@ const ctx = {
   },
   render: renderPage,
   logoutLocal() {
+    ++loading;
     ctx.session = null;
-    draft = null;
-    ctx.dirty = false;
+    resetDraft();
+    ctx.overview = null;
+    ctx.updateOverview = null;
     setCSRF("");
     clearTimeout(refreshTimer);
     events?.close();
@@ -78,11 +92,23 @@ const ctx = {
     $("#shell").hidden = true;
     $("#login").hidden = false;
     $("#login-form").reset();
+    $("#content").replaceChildren();
+    $("#dialog").replaceChildren();
+    $("#dialog").close();
   },
 };
+function resetDraft() {
+  draftGeneration++;
+  draft = null;
+  original = null;
+  configLoad = null;
+  ctx.dirty = false;
+  $("#draft").hidden = true;
+}
 async function renderPage() {
   if (!ctx.session) return;
   const generation = ++loading;
+  ctx.updateOverview = null;
   const definition = pages.find((v) => v[0] === page) || pages[0];
   $("#page-title").textContent = definition[1];
   document.title = definition[1] + " · sing-box-vpn";
@@ -108,11 +134,18 @@ async function renderPage() {
           el("pre", {}, JSON.stringify(data.config, null, 2)),
         ),
       ];
-    } else content = await definition[2](ctx);
+    } else {
+      // Each render owns its callback; a late render cannot replace the live one.
+      const view = Object.create(ctx);
+      content = await definition[2](view);
+      if (generation === loading) ctx.updateOverview = view.updateOverview;
+    }
     if (generation !== loading) return;
     $("#content").replaceChildren(...content);
     schedule();
   } catch (error) {
+    if (generation !== loading || !ctx.session || error.name === "AbortError")
+      return;
     if (error.status === 401) {
       ctx.logoutLocal();
       notice("会话已失效，请重新登录", true);
@@ -133,20 +166,23 @@ function schedule() {
     return;
   }
   if (!events) {
-    events = new EventSource("/api/events");
-    events.addEventListener("overview", (event) => {
+    const source = new EventSource("/api/events");
+    events = source;
+    source.addEventListener("overview", (event) => {
+      if (events !== source || !ctx.session || page !== "overview") return;
       ctx.overview = JSON.parse(event.data);
-      renderPage();
+      ctx.updateOverview?.(ctx.overview);
     });
-    events.onerror = () => {
-      events?.close();
+    source.onerror = () => {
+      if (events !== source) return;
+      source.close();
       events = null;
       refreshTimer = setTimeout(async () => {
         try {
           await api("/api/auth/session");
           schedule();
-        } catch {
-          ctx.logoutLocal();
+        } catch (error) {
+          if (error.name !== "AbortError") ctx.logoutLocal();
         }
       }, 5000);
     };
@@ -201,11 +237,22 @@ $("#logout").addEventListener(
     ctx.logoutLocal();
   }),
 );
-$("#refresh").addEventListener("click", action(renderPage));
+$("#refresh").addEventListener(
+  "click",
+  action(() => {
+    ctx.overview = null;
+    return renderPage();
+  }),
+);
 $("#preview").addEventListener(
   "click",
   action(async () => {
-    const result = await api("/api/config/preview", draft);
+    if (!draft) throw new Error("没有可校验的配置");
+    const submitted = structuredClone(draft);
+    const baseline = original;
+    const generation = draftGeneration;
+    const result = await api("/api/config/preview", submitted);
+    if (generation !== draftGeneration) return;
     const changed = [];
     function diff(a, b, path = "") {
       if (JSON.stringify(a) === JSON.stringify(b)) return;
@@ -221,7 +268,7 @@ $("#preview").addEventListener(
           diff(a[key], b[key], path + "/" + key);
       } else changed.push(path);
     }
-    diff(original, draft);
+    diff(baseline, submitted);
     showResult("配置校验与变更字段", { changed, ...result });
   }),
 );
@@ -229,9 +276,8 @@ $("#discard").addEventListener(
   "click",
   action(async () => {
     if (ctx.dirty && !confirm("丢弃未保存的配置草稿？")) return;
-    draft = null;
-    ctx.dirty = false;
-    $("#draft").hidden = true;
+    resetDraft();
+    $("#dialog").close();
     await renderPage();
   }),
 );
@@ -239,10 +285,19 @@ $("#save").addEventListener(
   "click",
   action(async () => {
     if (!draft) throw new Error("没有可保存的配置");
-    const response = await api("/api/config", { revision, config: draft });
-    revision++;
-    ctx.dirty = false;
-    $("#draft").hidden = true;
+    const submitted = structuredClone(draft);
+    const submittedRevision = revision;
+    const generation = draftGeneration;
+    const response = await api("/api/config", {
+      revision: submittedRevision,
+      config: submitted,
+    });
+    if (generation !== draftGeneration) return;
+    revision = submittedRevision + 1;
+    original = submitted;
+    ctx.dirty = JSON.stringify(draft) !== JSON.stringify(original);
+    $("#draft").hidden = !ctx.dirty;
+    if (ctx.dirty) ctx.changed();
     notice(
       "校验通过，应用任务 #" +
         response.task_id +
@@ -268,4 +323,6 @@ window.addEventListener("hashchange", () => {
 });
 api("/api/auth/session")
   .then(connected)
-  .catch(() => ctx.logoutLocal());
+  .catch((error) => {
+    if (error.name !== "AbortError") ctx.logoutLocal();
+  });

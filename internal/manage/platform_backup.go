@@ -10,6 +10,7 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/adminauth"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	"github.com/sck03/sing-box-vpn/internal/database"
+	strict "github.com/sck03/sing-box-vpn/internal/encoding"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,8 +19,11 @@ import (
 	"time"
 )
 
-const platformBackupMagic = "SBVPNV04"
+const platformBackupMagic = "SBVPNV05"
 const maxPlatformBackup = 96 << 20
+
+// Base64 expands the binary archive by 4/3; leave room for the JSON envelope.
+const maxPlatformBackupRequest = (maxPlatformBackup+2)/3*4 + (16 << 10)
 
 type platformBackup struct {
 	Version  int               `json:"version"`
@@ -49,14 +53,15 @@ func (s *PlatformService) Backup(ctx context.Context, password []byte) ([]byte, 
 	if _, err = db.ExecContext(ctx, `VACUUM INTO ?`, snapshot); err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(snapshot)
+	data, err := readLimitedRegularFile(snapshot, 48<<20)
 	if err != nil {
 		return nil, err
 	}
 	if len(data) > 48<<20 {
 		return nil, errors.New("database exceeds backup budget")
 	}
-	backup := platformBackup{Version: 4, Root: s.Root, Database: data, Files: map[string][]byte{}, Created: time.Now().UTC()}
+	backup := platformBackup{Version: 5, Root: s.Root, Database: data, Files: map[string][]byte{}, Created: time.Now().UTC()}
+	rawBytes := len(data)
 	copyDB, err := database.Open(snapshot)
 	if err != nil {
 		return nil, err
@@ -80,7 +85,7 @@ func (s *PlatformService) Backup(ctx context.Context, password []byte) ([]byte, 
 			if _, ok := backup.Files[rel]; ok {
 				continue
 			}
-			value, e := os.ReadFile(path)
+			value, e := readLimitedRegularFile(path, 1<<20)
 			if errors.Is(e, os.ErrNotExist) && pendingCertificatePath(c, path) {
 				continue
 			}
@@ -91,6 +96,10 @@ func (s *PlatformService) Backup(ctx context.Context, password []byte) ([]byte, 
 				return nil, errors.New("certificate backup budget exceeded")
 			}
 			backup.Files[rel] = value
+			rawBytes += len(value)
+			if rawBytes > (maxPlatformBackup-(1<<20))*3/4 {
+				return nil, errors.New("backup exceeds encoded size budget")
+			}
 		}
 	}
 	plain, err := json.Marshal(backup)
@@ -154,7 +163,7 @@ func certificatePaths(c PlatformConfig) []string {
 func decodePlatformBackup(data, password []byte) (platformBackup, error) {
 	var backup platformBackup
 	if len(password) < 12 || len(password) > 1024 || len(data) < 52 || len(data) > maxPlatformBackup || string(data[:8]) != platformBackupMagic {
-		return backup, errors.New("invalid v4 encrypted backup")
+		return backup, errors.New("invalid schema-5 encrypted backup")
 	}
 	cipher, err := backupCipher(password, data[8:24])
 	if err != nil {
@@ -164,10 +173,10 @@ func decodePlatformBackup(data, password []byte) (platformBackup, error) {
 	if err != nil {
 		return backup, errors.New("backup password incorrect or archive damaged")
 	}
-	if err = strictSubscriptionJSON(plain, &backup); err != nil {
+	if err = strict.JSON(plain, &backup, maxPlatformBackup); err != nil {
 		return backup, err
 	}
-	if backup.Version != 4 || len(backup.Database) > 48<<20 || len(backup.Files) > 2048 {
+	if backup.Version != 5 || len(backup.Database) > 48<<20 || len(backup.Files) > 2048 {
 		return backup, errors.New("unsupported backup format or size")
 	}
 	for path, value := range backup.Files {
@@ -246,7 +255,7 @@ func inspectBackupDatabase(ctx context.Context, path string, data []byte) (Platf
 		return c, nil, err
 	}
 	summary := Object{}
-	for _, table := range []string{"accounts", "credentials", "account_grants", "administrators", "usage_periods"} {
+	for _, table := range []string{"accounts", "credentials", "download_grants", "administrators", "usage_periods"} {
 		var count int
 		if err = db.QueryRowContext(ctx, `SELECT count(*) FROM `+table).Scan(&count); err != nil {
 			return c, nil, err
@@ -321,7 +330,7 @@ func (s *PlatformService) servePlatformBackup(w http.ResponseWriter, r *http.Req
 		Apply    bool   `json:"apply"`
 		Revision int64  `json:"revision"`
 	}
-	if err := decodeRequest(w, r, &v, 128<<20); err != nil {
+	if err := decodeRequest(w, r, &v, maxPlatformBackupRequest); err != nil {
 		platformError(w, err)
 		return
 	}
@@ -391,18 +400,6 @@ func (s *PlatformService) servePlatformBackup(w http.ResponseWriter, r *http.Req
 	}
 	if err == nil {
 		var id int64
-		current, e := s.Store.State(r.Context())
-		if e != nil {
-			platformError(w, e)
-			return
-		}
-		live, e := decodePlatform(current.Desired)
-		if e != nil {
-			platformError(w, e)
-			return
-		}
-		// Download revocations are security state, even for third-party outputs.
-		c.Subscriptions.Grants = live.Subscriptions.Grants
 		id, err = s.QueueApply(r.Context(), c, v.Revision, actor)
 		if err == nil {
 			jsonResponse(w, Object{"task_id": id, "ledger": "current ledger and revocations retained"})
@@ -441,9 +438,6 @@ func RestoreDisaster(ctx context.Context, root string, data, password []byte, ad
 	if err = relocateBackup(&c, b, root); err != nil {
 		return err
 	}
-	for i := range c.Subscriptions.Grants {
-		c.Subscriptions.Grants[i].Revoked = true
-	}
 	for name, value := range b.Files {
 		if err = AtomicBytes(filepath.Join(stage, filepath.FromSlash(name)), value, 0600); err != nil {
 			return err
@@ -453,7 +447,7 @@ func RestoreDisaster(ctx context.Context, root string, data, password []byte, ad
 	if err != nil {
 		return err
 	}
-	_, err = db.ExecContext(ctx, `DELETE FROM admin_sessions; DELETE FROM administrators; UPDATE accounts SET disabled=1,revision=revision+1; UPDATE account_grants SET revoked=1; DELETE FROM control_tasks; DELETE FROM runtime_state;`)
+	_, err = db.ExecContext(ctx, `DELETE FROM admin_sessions; DELETE FROM administrators; UPDATE accounts SET disabled=1,revision=revision+1; UPDATE download_grants SET revoked=1; DELETE FROM control_tasks; DELETE FROM runtime_state;`)
 	if err == nil {
 		raw, e := encodePlatform(c)
 		err = e

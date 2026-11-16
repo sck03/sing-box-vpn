@@ -25,7 +25,7 @@ func RunSubscriptions(ctx context.Context, args []string, input io.Reader, outpu
 	}
 	args = f.Args()
 	if len(args) == 0 {
-		return errors.New("subscriptions: show, clients, preview, apply, refresh, grant, revoke, export, logs, archive, restore, trash, backup, restore-backup, serve, check, deliver")
+		return errors.New("subscriptions: show, clients, preview, apply, refresh, grant, revoke, export, logs, archive, restore, trash, serve, check, deliver")
 	}
 	if *core == "" {
 		*core = filepath.Join(*root, "sing-box")
@@ -37,7 +37,7 @@ func RunSubscriptions(ctx context.Context, args []string, input io.Reader, outpu
 	kind := opts.String("kind", "", "source, collection, template, output or rules")
 	outputs := opts.String("outputs", "", "comma-separated output IDs")
 	expires := opts.Duration("expires", 0, "grant lifetime; zero is unlimited")
-	maxDownloads := opts.Uint64("max-downloads", 0, "zero is unlimited")
+	maxDownloads := opts.Int64("max-downloads", -1, "omit for unlimited; zero disables downloads")
 	apply := opts.Bool("apply", false, "apply a validated backup")
 	listen := opts.String("listen", "127.0.0.1:9099", "local administration listener")
 	probeURL := opts.String("probe-url", "https://www.gstatic.com/generate_204", "HTTP(S) target for on-demand protocol checks")
@@ -51,10 +51,12 @@ func RunSubscriptions(ctx context.Context, args []string, input io.Reader, outpu
 	if platformOwned(*root) && !slices.Contains([]string{"show", "clients", "preview", "export", "logs", "check", "refresh", "deliver"}, operation) {
 		return errors.New("subscription configuration is owned by control.db; use the unified panel")
 	}
-	if operation == "backup" || operation == "restore-backup" {
-		return subscriptionBackupCommand(ctx, *root, *core, operation, *file, *apply, input, output)
-	}
-	command := application.SubscriptionCommand{Operation: operation, ID: *id, Kind: *kind, Outputs: strings.Split(*outputs, ","), Expires: *expires, MaxDownloads: *maxDownloads, Apply: *apply, ProbeURL: *probeURL}
+	command := application.SubscriptionCommand{Operation: operation, ID: *id, Kind: *kind, Outputs: strings.Split(*outputs, ","), Expires: *expires, Apply: *apply, ProbeURL: *probeURL}
+	opts.Visit(func(f *flag.Flag) {
+		if f.Name == "max-downloads" {
+			command.MaxDownloads = maxDownloads
+		}
+	})
 	if *file != "" && (operation == "preview" || operation == "apply") {
 		data, err := readSubscriptionFile(*file)
 		if err != nil {

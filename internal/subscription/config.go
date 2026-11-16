@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"time"
 )
 
 type Source struct {
@@ -67,16 +66,6 @@ type Output struct {
 	SkipUnsupported bool   `json:"skip_unsupported,omitempty"`
 }
 
-type Grant struct {
-	ID           string    `json:"id"`
-	Name         string    `json:"name"`
-	TokenHash    string    `json:"token_hash"`
-	Outputs      []string  `json:"outputs"`
-	ExpiresAt    time.Time `json:"expires_at,omitzero"`
-	MaxDownloads uint64    `json:"max_downloads,omitempty"`
-	Revoked      bool      `json:"revoked,omitempty"`
-}
-
 type Config struct {
 	Version     int          `json:"version"`
 	Revision    uint64       `json:"revision"`
@@ -85,7 +74,6 @@ type Config struct {
 	Templates   []Template   `json:"templates"`
 	RuleSets    []RuleSet    `json:"rule_sets"`
 	Outputs     []Output     `json:"outputs"`
-	Grants      []Grant      `json:"grants"`
 	Webhook     string       `json:"webhook,omitempty"`
 	Deliveries  []Delivery   `json:"deliveries,omitempty"`
 }
@@ -103,7 +91,6 @@ type Delivery struct {
 }
 
 var domainRulePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
-var tokenHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var gistPathPattern = regexp.MustCompile(`^/gists/[a-fA-F0-9]+$`)
 var telegramTokenPattern = regexp.MustCompile(`^[0-9]+:[A-Za-z0-9_-]+$`)
 
@@ -323,24 +310,6 @@ func (c Config) Validate() error {
 		}
 		if !collections[o.Collection] || !templates[o.Template] {
 			return fmt.Errorf("output %s has a missing collection or template", o.ID)
-		}
-	}
-	grants, tokens := map[string]bool{}, map[string]bool{}
-	for _, g := range c.Grants {
-		if err := add(grants, g.ID); err != nil {
-			return err
-		}
-		if !tokenHashPattern.MatchString(g.TokenHash) || tokens[g.TokenHash] {
-			return errors.New("invalid or duplicate grant token hash")
-		}
-		tokens[g.TokenHash] = true
-		if len(g.Outputs) == 0 {
-			return errors.New("empty grant")
-		}
-		for _, id := range g.Outputs {
-			if !g.Revoked && !outputs[id] {
-				return fmt.Errorf("grant references unknown output %s", id)
-			}
 		}
 	}
 	if c.Webhook != "" {

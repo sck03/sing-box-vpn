@@ -106,10 +106,6 @@ func (m *manager) apply(c Config, swap bool) error {
 		m.mu.Unlock()
 		return nil
 	}
-	if e := atomicJSON(m.configPath, c); e != nil {
-		m.mu.Unlock()
-		return e
-	}
 	if !slices.Equal(c.Sources, m.cfg.Sources) {
 		m.sourceEpoch++
 		m.nodes, m.previous = nil, Node{}

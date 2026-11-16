@@ -18,6 +18,9 @@ const common = [
 export async function subscriptions(ctx) {
   const c = await ctx.config(),
     s = c.subscriptions;
+  const outputGrants = (await api("/api/grants")).filter(
+    (g) => g.outputs?.length,
+  );
   s.rule_sets ??= [];
   const change = () => {
     ctx.changed();
@@ -272,7 +275,7 @@ export async function subscriptions(ctx) {
     card(
       "输出下载授权",
       help(
-        "允许下载所选输出。次数上限 0 表示不限；本机权益分享请使用「下载授权」。创建或撤销后需应用配置。",
+        "允许下载已应用的输出。留空表示不限，0 禁止下载。创建和撤销立即生效；授权与计数保存在数据库。",
       ),
       button("创建输出分享", () =>
         formDialog(
@@ -283,43 +286,22 @@ export async function subscriptions(ctx) {
             { key: "expires_at", label: "下载到期", type: "date" },
             {
               key: "max_downloads",
-              label: "下载次数（0 不限）",
+              label: "下载次数（留空不限，0 禁止）",
               type: "number",
+              nullable: true,
               min: 0,
             },
           ],
-          { id: "", outputs: [], max_downloads: 0 },
+          { id: "", outputs: [], max_downloads: null },
           async (v) => {
-            if (s.grants.some((g) => g.id === v.id))
-              throw new Error("授权 ID 已存在");
             if (
               !v.outputs.length ||
               v.outputs.some((id) => !s.outputs.some((o) => o.id === id))
             )
               throw new Error("请选择存在的输出");
-            const token = Array.from(
-              crypto.getRandomValues(new Uint8Array(32)),
-              (v) => v.toString(16).padStart(2, "0"),
-            ).join("");
-            const hash = Array.from(
-              new Uint8Array(
-                await crypto.subtle.digest(
-                  "SHA-256",
-                  new TextEncoder().encode(token),
-                ),
-              ),
-              (v) => v.toString(16).padStart(2, "0"),
-            ).join("");
-            if (!v.expires_at) delete v.expires_at;
-            s.grants.push({ ...v, name: v.id, token_hash: hash });
-            change();
-            const base =
-              c.listener.public_base_url ||
-              `http://${c.app.address.includes(":") ? "[" + c.app.address + "]" : c.app.address}:${c.listener.port}`;
-            showResult(
-              "请保存链接，并应用配置启用下载监听",
-              v.outputs.map((id) => `${base}/s/${token}/${id}`).join("\n"),
-            );
+            const result = await api("/api/grants", v);
+            showResult("请保存分享链接", result.urls.join("\n"));
+            ctx.render();
           },
         ),
       ),
@@ -329,13 +311,13 @@ export async function subscriptions(ctx) {
           { label: "输出", value: (g) => g.outputs.join(", ") },
           { label: "状态", value: (g) => (g.revoked ? "已撤销" : "有效") },
         ],
-        s.grants,
+        outputGrants,
         (g) => [
           button(
             "撤销",
-            () => {
-              g.revoked = true;
-              change();
+            async () => {
+              await api("/api/grants/revoke", { id: g.id });
+              ctx.render();
             },
             "danger",
           ),

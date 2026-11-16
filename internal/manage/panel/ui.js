@@ -30,7 +30,7 @@ export function action(fn) {
       if (button) button.disabled = true;
       await fn(event);
     } catch (error) {
-      notice(error.message, true);
+      if (error.name !== "AbortError") notice(error.message, true);
     } finally {
       if (button?.isConnected) button.disabled = false;
     }
@@ -226,7 +226,7 @@ export function formDialog(title, fields, value, save) {
   dialog.showModal();
 }
 export function table(columns, items, actions) {
-  const wrapper = el("div"),
+  const wrapper = el("div", { class: "data-table" }),
     search = el("input", {
       class: "search",
       placeholder: "搜索…",
@@ -289,6 +289,10 @@ export function table(columns, items, actions) {
     render();
   });
   wrapper.append(search, body, pager);
+  wrapper.updateItems = (next) => {
+    items = next;
+    render();
+  };
   render();
   return wrapper;
 }

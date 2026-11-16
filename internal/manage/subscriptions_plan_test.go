@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"testing/synctest"
 	"time"
 
 	"github.com/sck03/sing-box-vpn/internal/application"
@@ -70,26 +69,4 @@ func TestPreviewSummaryAndHTTPConflict(t *testing.T) {
 	if w.Code != 409 {
 		t.Fatal("revision conflict status", w.Code, w.Body.String())
 	}
-}
-
-func TestScheduledTasksSeparateCancellationAndDeadlines(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		var refresh int
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			runScheduledTasks(ctx, time.Second, 10*time.Second,
-				func(context.Context) { refresh++ }, func(ctx context.Context) { <-ctx.Done() },
-			)
-		}()
-		time.Sleep(3 * time.Second)
-		synctest.Wait()
-		if refresh < 3 {
-			t.Fatal("blocked delivery postponed refresh", refresh)
-		}
-		cancel()
-		<-done
-	})
 }

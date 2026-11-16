@@ -30,11 +30,10 @@ func TestControlActionPreservesPublishedMenuConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := httptest.NewRecorder()
-	m.handler(context.Background()).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/actions", strings.NewReader(`{"op":"policy","require_isp":true}`)))
+	m.handler(context.Background()).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/actions", strings.NewReader(`{"op":"reload"}`)))
 	if response.Code != http.StatusAccepted {
 		t.Fatal(response.Code, response.Body.String())
 	}
-	latest.RequireISP = true
 	persisted, err := readConfig(path)
 	if err != nil || !reflect.DeepEqual(persisted, latest) || !reflect.DeepEqual(m.cfg, latest) {
 		t.Fatal("daemon action overwrote menu country, credentials or sources", persisted, err)

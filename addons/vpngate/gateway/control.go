@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -20,15 +19,8 @@ import (
 )
 
 type action struct {
-	Op             string   `json:"op"`
-	Country        string   `json:"country,omitempty"`
-	Mode           string   `json:"mode,omitempty"`
-	FixedHost      string   `json:"fixed_host,omitempty"`
-	Sources        []string `json:"sources,omitempty"`
-	RequireISP     *bool    `json:"require_isp,omitempty"`
-	ExcludeHosting *bool    `json:"exclude_hosting,omitempty"`
-	AllowASNs      []int    `json:"allow_asns,omitempty"`
-	ClearASNs      bool     `json:"clear_asns,omitempty"`
+	Op      string `json:"op"`
+	Country string `json:"country,omitempty"`
 }
 
 // Keep the public list separate from cached profiles and their credentials.
@@ -132,8 +124,7 @@ func (m *manager) handler(parent context.Context) http.Handler {
 			if err := parent.Err(); err != nil {
 				return err
 			}
-			// Menu configuration may have changed while the daemon still holds its
-			// previous snapshot. Merge this action into the latest published file.
+			// Reload the latest projection published by the platform.
 			latest, err := readConfig(m.configPath)
 			if err == nil {
 				c = latest
@@ -145,44 +136,24 @@ func (m *manager) handler(parent context.Context) http.Handler {
 				return errors.New("configure that country's independent entries through sb first")
 			}
 			switch a.Op {
-			case "start":
-				c.Enabled = true
-			case "stop":
-				c.Enabled = false
+			case "start", "stop":
+				return errors.New("change persistent gateway state through panel tasks")
 			case "swap":
+				if !c.Enabled {
+					return errors.New("start the gateway before swapping")
+				}
 				if c.Mode == "fixed" {
 					return errors.New("switch to sticky mode before swapping")
 				}
 				if s.State == "connecting" || s.State == "verifying" {
 					return errors.New("a tunnel is already connecting")
 				}
-				c.Enabled = true
 				swap = true
 			case "mode":
-				if a.Mode != "sticky" && a.Mode != "fixed" {
-					return errors.New("mode must be sticky or fixed")
-				}
-				c.Mode, c.FixedHost = a.Mode, a.FixedHost
-				if c.Mode == "fixed" && c.FixedHost == "" && s.Country == c.Country {
-					c.FixedHost = s.Node
-				}
-				if c.Mode == "sticky" {
-					c.FixedHost = ""
-				}
+				return errors.New("edit gateway policy through panel configuration")
 			case "reload":
 			case "policy":
-				if a.RequireISP != nil {
-					c.RequireISP = *a.RequireISP
-				}
-				if a.ExcludeHosting != nil {
-					c.ExcludeHosting = *a.ExcludeHosting
-				}
-				if a.Sources != nil {
-					c.Sources = a.Sources
-				}
-				if a.AllowASNs != nil || a.ClearASNs {
-					c.AllowASNs = a.AllowASNs
-				}
+				return errors.New("edit gateway policy through panel configuration")
 			default:
 				return errors.New("unknown action")
 			}
@@ -210,12 +181,6 @@ func runCTLWithOutput(args []string, output io.Writer) error {
 	f.SetOutput(output)
 	path := f.String("config", defaultConfig, "configuration file")
 	country := f.String("country", "", "configured country")
-	mode := f.String("mode", "", "sticky or fixed")
-	fixed := f.String("node", "", "fixed node")
-	sources := f.String("sources", "", "comma-separated source URLs")
-	asns := f.String("asns", "", "comma-separated ISP ASN allowlist")
-	require := f.Bool("require-isp", false, "require confirmed ISP classification")
-	hosting := f.Bool("exclude-hosting", true, "reject known hosting exits")
 	format := f.String("format", "json", "status output: json or text")
 	requestTimeout := f.Duration("timeout", 10*time.Second, "local control request timeout")
 	if e := f.Parse(args[1:]); e != nil {
@@ -239,30 +204,7 @@ func runCTLWithOutput(args []string, output io.Writer) error {
 	method, url := http.MethodGet, "http://unix/v1/"+op
 	var body io.Reader
 	if op != "status" && op != "nodes" {
-		a := action{Op: op, Country: *country, Mode: *mode, FixedHost: *fixed}
-		if *sources != "" {
-			a.Sources = strings.Split(*sources, ",")
-		}
-		if *asns != "" {
-			for _, s := range strings.Split(*asns, ",") {
-				n, e := strconv.Atoi(strings.TrimSpace(s))
-				if e != nil || n <= 0 {
-					return errors.New("invalid ASN allowlist")
-				}
-				a.AllowASNs = append(a.AllowASNs, n)
-			}
-		}
-		f.Visit(func(v *flag.Flag) {
-			if v.Name == "asns" && *asns == "" {
-				a.ClearASNs = true
-			}
-			if v.Name == "require-isp" {
-				a.RequireISP = require
-			}
-			if v.Name == "exclude-hosting" {
-				a.ExcludeHosting = hosting
-			}
-		})
+		a := action{Op: op, Country: *country}
 		b, _ := json.Marshal(a)
 		body = bytes.NewReader(b)
 		method = http.MethodPost

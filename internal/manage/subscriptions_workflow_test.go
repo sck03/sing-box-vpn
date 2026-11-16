@@ -3,7 +3,6 @@ package manage
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -106,7 +105,8 @@ func TestSubscriptionResourceScheduleAndRejection(t *testing.T) {
 	c.RuleSets = []sub.RuleSet{{ID: "rules", URL: server.URL}}
 	now := time.Now()
 	changed, state, _ := refreshSubscriptionResources(context.Background(), server.Client(), &c, nil, now, false)
-	if !changed || count != 1 || len(c.RuleSets[0].Rules) != 1 {
+	effective, err := sub.ResolveResources(c, state)
+	if !changed || count != 1 || err != nil || len(effective.RuleSets[0].Rules) != 1 || len(c.RuleSets[0].Rules) != 0 {
 		t.Fatal("scheduled resource did not refresh")
 	}
 	changed, next, _ := refreshSubscriptionResources(context.Background(), server.Client(), &c, state, now.Add(time.Minute), false)
@@ -119,7 +119,8 @@ func TestSubscriptionResourceScheduleAndRejection(t *testing.T) {
 	}
 	bad = true
 	changed, next, events := refreshSubscriptionResources(context.Background(), server.Client(), &c, next, now.Add(2*time.Hour), false)
-	if changed || len(c.RuleSets[0].Rules) != 1 || next["rules:rules"].Failures != 1 || len(events) != 1 {
+	effective, err = sub.ResolveResources(c, next)
+	if changed || err != nil || len(effective.RuleSets[0].Rules) != 1 || next["rules:rules"].Failures != 1 || len(events) != 1 {
 		t.Fatal("bad rules replaced valid rules")
 	}
 }
@@ -141,7 +142,7 @@ func (s *fakeSubscriptionService) restore(_ context.Context, active, enabled boo
 
 func TestSubscriptionServiceRollback(t *testing.T) {
 	root := t.TempDir()
-	subscriptionFixture(t, root, strings.Repeat("a", 43), "old")
+	subscriptionFixture(t, root, strings.Repeat("a", 64), "old")
 	before := readBytes(t, filepath.Join(root, "subscription.json"))
 	configBefore := readBytes(t, filepath.Join(root, subscriptionsConfig))
 	service := &fakeSubscriptionService{fail: errors.New("start failed")}
@@ -194,63 +195,5 @@ func TestSubscriptionRestoreTransaction(t *testing.T) {
 				t.Fatal("restore state invalid", err)
 			}
 		})
-	}
-}
-
-func TestSubscriptionEncryptedBackupRoundtrip(t *testing.T) {
-	root, core, app := appFixture(t)
-	if _, err := PrepareVPN(context.Background(), root, core, app, "JP"); err != nil {
-		t.Fatal(err)
-	}
-	if err := configureSubscription(root, app, VPNSettings{}, 54321, "127.0.0.1", "https://example.com/sub"); err != nil {
-		t.Fatal(err)
-	}
-	b, err := collectSubscriptionBackup(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	plain, err := json.Marshal(b)
-	if err != nil {
-		t.Fatal(err)
-	}
-	password := []byte("correct horse battery staple")
-	encrypted, err := encryptSubscriptionBackup(plain, password)
-	if err != nil {
-		t.Fatal(err)
-	}
-	decoded, err := decryptSubscriptionBackup(encrypted, password)
-	if err != nil || !bytes.Equal(plain, decoded) {
-		t.Fatal("backup roundtrip", err)
-	}
-	if _, err := decryptSubscriptionBackup(encrypted, []byte("incorrect password")); err == nil {
-		t.Fatal("wrong password accepted")
-	}
-	encrypted[len(encrypted)-1] ^= 1
-	if _, err := decryptSubscriptionBackup(encrypted, password); err == nil {
-		t.Fatal("damaged backup accepted")
-	}
-	destination := t.TempDir()
-	files, err := prepareSubscriptionRestore(context.Background(), destination, core, b)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := publish(destination, files); err != nil {
-		t.Fatal(err)
-	}
-	var restored App
-	if _, err := ReadJSON(filepath.Join(destination, "app.json"), &restored); err != nil {
-		t.Fatal(err)
-	}
-	if len(restored.Inbounds) != 5 || !strings.HasPrefix(restored.Profile.Certificate, filepath.ToSlash(destination)) {
-		t.Fatal("restored certificate paths or nodes invalid")
-	}
-	var listener subscriptionSettings
-	_, _ = ReadJSON(filepath.Join(destination, "subscription.json"), &listener)
-	if listener.Enabled {
-		t.Fatal("backup restored live sharing")
-	}
-	b.Files["../escaped.json"] = []byte("bad")
-	if _, err := prepareSubscriptionRestore(context.Background(), destination, core, b); err == nil {
-		t.Fatal("backup path traversal accepted")
 	}
 }

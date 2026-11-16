@@ -95,17 +95,16 @@ jobs:
           bash scripts/test-program-upgrade.sh
       - name: Build Linux management and gateway binary
         run: CGO_ENABLED=0 go build -trimpath -o "$GITHUB_WORKSPACE/.build/yg-vpngate" ./addons/vpngate/gateway
-      - name: Online stable-core update and rollback
+      - name: Online validator download and current platform CLI
         run: |
           mkdir -p .test/core-updater
           cp "$SING_BOX_BINARY" .test/core-updater/sing-box
-          .build/yg-vpngate config --root "$PWD/.test/core-updater" --core "$SING_BOX_BINARY" init --address 127.0.0.1 --name updater-test
-          .build/yg-vpngate config --root "$PWD/.test/core-updater" --core "$SING_BOX_BINARY" vpngate JP
-          "$MIHOMO_BINARY" -t -d "$PWD/.test/mihomo" -f "$PWD/.test/core-updater/clmi.yaml"
-          "$MIHOMO_BINARY" -t -d "$PWD/.test/mihomo" -f "$PWD/.test/core-updater/vpngate/clmi.yaml"
-          sudo .build/yg-vpngate core --root "$PWD/.test/core-updater" prepare --output "$PWD/.test/core-updater/sing-box.candidate"
-          sudo .build/yg-vpngate core --root "$PWD/.test/core-updater" activate "$PWD/.test/core-updater/sing-box.candidate" --no-restart
-          sudo .build/yg-vpngate core --root "$PWD/.test/core-updater" rollback
+          sudo .build/yg-vpngate core --root "$PWD/.test/core-updater" prepare --version 1.14.4 --output "$PWD/.test/core-updater/sing-box.candidate"
+          printf '%s\n' '{"username":"ci-validator","password":"isolated-validator-test"}' | sudo .build/yg-vpngate panel \
+            --root "$PWD/.test/core-updater" --core "$PWD/.test/core-updater/sing-box.candidate" \
+            --runtime "$PWD/.build/managed-core" --address 127.0.0.1 --name validator-test --no-system init
+          sudo .build/yg-vpngate panel --root "$PWD/.test/core-updater" \
+            --core "$PWD/.test/core-updater/sing-box.candidate" --runtime "$PWD/.build/managed-core" --no-system validate
           .build/yg-vpngate core --root "$PWD/.test/core-updater" check
       - name: OpenVPN, tunnel DNS and fail-closed namespace acceptance
         run: sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_NETNS_TESTS=1 "$(command -v go)" test -run '^TestLinuxNamespaceIsolation$' -count=1 -v -timeout=6m ./addons/vpngate/gateway

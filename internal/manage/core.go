@@ -433,11 +433,13 @@ func RunCore(ctx context.Context, args []string, output io.Writer) error {
 		return errors.New("缺少核心操作")
 	}
 	operation := args[0]
+	if operation != "prepare" && operation != "check" {
+		return errors.New("core supports prepare/check for the validator; update managed runtimes through panel tasks")
+	}
 	options := flag.NewFlagSet(operation, flag.ContinueOnError)
 	options.SetOutput(output)
 	version := options.String("version", "", "stable version")
 	destination := options.String("output", "", "candidate path")
-	noRestart := options.Bool("no-restart", false, "do not restart services")
 	format := options.String("format", "json", "output: json or text")
 	if err := parseOptions(options, args[1:]); err != nil {
 		return err
@@ -491,54 +493,6 @@ func RunCore(ctx context.Context, args []string, output io.Writer) error {
 			}
 			_, err = fmt.Fprintln(output, asset.Version)
 			return err
-		case "activate", "rollback":
-			candidate := filepath.Join(*root, "sing-box.previous")
-			if operation == "activate" {
-				if len(options.Args()) != 1 {
-					return errors.New("需要候选核心文件")
-				}
-				candidate = options.Args()[0]
-			}
-			installed, err := u.activate(ctx, *root, candidate, !*noRestart)
-			if err != nil {
-				return err
-			}
-			_, err = fmt.Fprintln(output, installed)
-			return err
-		case "update":
-			asset, err := u.release(ctx, *version)
-			if err != nil {
-				return err
-			}
-			current := filepath.Join(*root, "sing-box")
-			if installed, err := u.check(ctx, current); err == nil && installed == asset.Version {
-				if err = withStartupLock(ctx, *root, func() error { return u.validate(ctx, *root, current) }); err != nil {
-					return err
-				}
-				if *format == "text" {
-					_, err := fmt.Fprintf(output, " 当前已安装此稳定版本：%s\n", installed)
-					return err
-				}
-				return json.NewEncoder(output).Encode(Object{"version": installed, "changed": false})
-			}
-			stage, err := os.MkdirTemp(*root, ".core-update-")
-			if err != nil {
-				return err
-			}
-			defer os.RemoveAll(stage)
-			candidate := filepath.Join(stage, "sing-box")
-			if err = u.download(ctx, asset, candidate); err != nil {
-				return err
-			}
-			installed, err := u.activate(ctx, *root, candidate, !*noRestart)
-			if err != nil {
-				return err
-			}
-			if *format == "text" {
-				_, err := fmt.Fprintf(output, " Sing-box 核心已更新：%s\n", installed)
-				return err
-			}
-			return json.NewEncoder(output).Encode(Object{"version": installed, "changed": true})
 		}
 		return errors.New("未知核心操作")
 	})

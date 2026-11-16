@@ -1,6 +1,7 @@
 package manage
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,8 +14,13 @@ import (
 // Resources refresh hourly with independent ETags and bounded failure backoff.
 // Failed updates leave the previously validated template/rules in place.
 func refreshSubscriptionResources(ctx context.Context, client *http.Client, config *sub.Config, old map[string]sub.ResourceCache, now time.Time, force bool) (bool, map[string]sub.ResourceCache, []sub.Run) {
+	old = sub.PruneRuntime(*config, sub.Runtime{Resources: old}).Resources
 	changed := false
 	results := map[string]sub.ResourceCache{}
+	cacheBytes := 0
+	for _, entry := range old {
+		cacheBytes += len(entry.Body)
+	}
 	var events []sub.Run
 	refresh := func(id, endpoint string, apply func([]byte) error) {
 		if endpoint == "" {
@@ -24,16 +30,23 @@ func refreshSubscriptionResources(ctx context.Context, client *http.Client, conf
 		if cache.URL != endpoint {
 			cache = sub.ResourceCache{URL: endpoint}
 		}
+		if len(cache.Body) == 0 {
+			cache.ETag = ""
+		}
 		if !force && now.Before(cache.Next) {
 			return
 		}
 		priorError := cache.Error
 		data, headers, unchanged, err := fetchSubscription(ctx, client, endpoint, cache.ETag)
-		if err == nil && unchanged && cache.ETag == "" {
+		if err == nil && unchanged && (cache.ETag == "" || len(cache.Body) == 0) {
 			err = errors.New("resource returned 304 without cache")
 		}
 		if err == nil && !unchanged {
-			err = apply(data)
+			if cacheBytes-len(old[id].Body)+len(data) > sub.MaxResourceBytes {
+				err = errors.New("combined resource cache limit exceeded")
+			} else {
+				err = apply(data)
+			}
 		}
 		if err != nil {
 			cache.Failures = min(cache.Failures+1, 10)
@@ -43,6 +56,9 @@ func refreshSubscriptionResources(ctx context.Context, client *http.Client, conf
 			cache.Failures, cache.Error = 0, ""
 			cache.Next = now.Add(time.Hour)
 			if !unchanged {
+				changed = changed || !bytes.Equal(cache.Body, data)
+				cacheBytes += len(data) - len(old[id].Body)
+				cache.Body = json.RawMessage(data)
 				cache.ETag = headers.Get("ETag")
 			}
 		}
@@ -55,7 +71,7 @@ func refreshSubscriptionResources(ctx context.Context, client *http.Client, conf
 			events = append(events, sub.Run{Time: now, Operation: "resource", ObjectID: id, Message: message})
 		}
 	}
-	for i, t := range config.Templates {
+	for _, t := range config.Templates {
 		refresh("template:"+t.ID, t.URL, func(data []byte) error {
 			var updated sub.Template
 			if err := strictSubscriptionJSON(data, &updated); err != nil {
@@ -68,14 +84,10 @@ func refreshSubscriptionResources(ctx context.Context, client *http.Client, conf
 			if err := updated.Validate(); err != nil {
 				return err
 			}
-			before, _ := json.Marshal(t)
-			after, _ := json.Marshal(updated)
-			config.Templates[i] = updated
-			changed = changed || string(before) != string(after)
 			return nil
 		})
 	}
-	for i, r := range config.RuleSets {
+	for _, r := range config.RuleSets {
 		refresh("rules:"+r.ID, r.URL, func(data []byte) error {
 			var rules []sub.Rule
 			if err := strictSubscriptionJSON(data, &rules); err != nil {
@@ -89,10 +101,6 @@ func refreshSubscriptionResources(ctx context.Context, client *http.Client, conf
 					return err
 				}
 			}
-			before, _ := json.Marshal(r.Rules)
-			after, _ := json.Marshal(rules)
-			config.RuleSets[i].Rules = rules
-			changed = changed || string(before) != string(after)
 			return nil
 		})
 	}

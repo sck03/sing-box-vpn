@@ -28,11 +28,12 @@ type SourceCache struct {
 }
 
 type ResourceCache struct {
-	URL      string    `json:"url"`
-	ETag     string    `json:"etag,omitempty"`
-	Next     time.Time `json:"next"`
-	Failures int       `json:"failures,omitempty"`
-	Error    string    `json:"error,omitempty"`
+	Body     json.RawMessage `json:"body,omitempty"`
+	URL      string          `json:"url"`
+	ETag     string          `json:"etag,omitempty"`
+	Next     time.Time       `json:"next"`
+	Failures int             `json:"failures,omitempty"`
+	Error    string          `json:"error,omitempty"`
 }
 
 type Run struct {
@@ -70,7 +71,7 @@ type Snapshot struct {
 func SourceHash(source Source) string { data, _ := json.Marshal(source); return Digest(data) }
 
 func DefaultConfig() Config {
-	c := Config{Version: SchemaVersion, Revision: 1, RuleSets: []RuleSet{}, Grants: []Grant{}}
+	c := Config{Version: SchemaVersion, Revision: 1, RuleSets: []RuleSet{}}
 	for _, scope := range []string{"normal", "vpngate"} {
 		c.Sources = append(c.Sources, Source{ID: scope, Name: scope, Kind: "local", Scope: scope, Required: scope == "normal"})
 		c.Collections = append(c.Collections, Collection{ID: scope, Name: scope, Sources: []string{scope}, Processor: Processor{Deduplicate: true}})
@@ -101,6 +102,11 @@ func BuildAvailable(c Config, runtime Runtime, local map[string][]Node, now time
 }
 
 func build(c Config, runtime Runtime, local map[string][]Node, now time.Time, available bool) (Snapshot, map[string]Preview, error) {
+	var err error
+	c, err = ResolveResources(c, runtime.Resources)
+	if err != nil {
+		return Snapshot{}, nil, err
+	}
 	result := Snapshot{Version: SchemaVersion, Revision: c.Revision, Artifacts: map[string]Artifact{}, Diagnostics: map[string][]Diagnostic{}, Usage: map[string]Usage{}, SourceTimes: map[string]time.Time{}}
 	previews := map[string]Preview{}
 	if err := c.Validate(); err != nil {

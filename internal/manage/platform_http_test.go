@@ -25,7 +25,7 @@ func platformFixture(t *testing.T, root, core string) (*PlatformService, Platfor
 	if e != nil {
 		t.Fatal(e)
 	}
-	c := PlatformConfig{Schema: 4, App: app, Subscriptions: subs, VPN: VPNSettings{ProxyPort: 7928, Profiles: map[string]Profile{}}, VPNSecrets: map[string]Secrets{}, Gateway: Object{}, Listener: subscriptionSettings{Listen: "127.0.0.1", Port: 2097, Token: randomSecret()}, Argo: TunnelSettings{Mode: "off"}, Certificates: []CertificateAsset{}}
+	c := PlatformConfig{Schema: 4, App: app, Subscriptions: subs, VPN: VPNSettings{ProxyPort: 7928, Profiles: map[string]Profile{}}, VPNSecrets: map[string]Secrets{}, Gateway: Object{}, Listener: subscriptionSettings{Listen: "127.0.0.1", Port: 2097}, Argo: TunnelSettings{Mode: "off"}, Certificates: []CertificateAsset{}}
 	if e = s.Store.Initialize(t.Context(), mustJSON(t, c)); e != nil {
 		t.Fatal(e)
 	}

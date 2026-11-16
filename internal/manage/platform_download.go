@@ -1,17 +1,14 @@
 package manage
 
 import (
-	"bytes"
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
-	"github.com/sck03/sing-box-vpn/internal/database"
 	"net/http"
-	"path/filepath"
 	"slices"
 	"strings"
 )
 
-func serveAccountDownload(root string, w http.ResponseWriter, r *http.Request) {
+func serveAccountDownload(root string, w http.ResponseWriter, r *http.Request, stores ...*accounting.Store) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -25,12 +22,20 @@ func serveAccountDownload(root string, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token, resource := parts[0], parts[1]
-	store, err := accounting.Open(filepath.Join(root, database.Filename))
+	if len(token) != 64 || !slices.Contains([]string{"usage", "sing-box", "mihomo", "uri"}, resource) {
+		http.NotFound(w, r)
+		return
+	}
+	service := AccountService{Root: root}
+	if len(stores) > 0 {
+		service.Store = stores[0]
+	}
+	store, closeStore, err := service.openStore()
 	if err != nil {
 		http.Error(w, "account service unavailable", 503)
 		return
 	}
-	defer store.Close()
+	defer closeStore()
 	grant, usage, err := store.Grant(r.Context(), token)
 	if err != nil {
 		http.NotFound(w, r)
@@ -44,8 +49,11 @@ func serveAccountDownload(root string, w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	var out bytes.Buffer
-	err = (AccountService{Root: root}).Execute(r.Context(), application.AccountCommand{Operation: "export", ID: grant.AccountID, Scope: grant.Scope, Client: resource}, &out)
+	if grant.MaxDownloads != nil && grant.Downloads >= *grant.MaxDownloads {
+		http.Error(w, "download allowance exhausted", 403)
+		return
+	}
+	artifact, err := (AccountService{Root: root, Store: store}).Export(r.Context(), application.AccountCommand{ID: grant.AccountID, Scope: grant.Scope, Client: resource})
 	if err != nil {
 		http.Error(w, "account output unavailable", 503)
 		return
@@ -63,15 +71,15 @@ func serveAccountDownload(root string, w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Disposition", `attachment; filename="account-`+resource+`.txt"`)
 	if r.Method == "GET" {
-		_, _ = w.Write(out.Bytes())
+		_, _ = w.Write(artifact.Data)
 	}
 }
 
-func unifiedDownloadHandler(root string) http.Handler {
-	legacy := subscriptionHandler(root)
+func unifiedDownloadHandler(root string, stores ...*accounting.Store) http.Handler {
+	outputs := subscriptionHandler(root, stores...)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/u/") {
-			serveAccountDownload(root, w, r)
+			serveAccountDownload(root, w, r, stores...)
 			return
 		}
 		if r.URL.Path == "/user" || r.URL.Path == "/panel/user.js" || r.URL.Path == "/panel/style.css" {
@@ -97,6 +105,6 @@ func unifiedDownloadHandler(root string) http.Handler {
 			_, _ = w.Write(data)
 			return
 		}
-		legacy.ServeHTTP(w, r)
+		outputs.ServeHTTP(w, r)
 	})
 }

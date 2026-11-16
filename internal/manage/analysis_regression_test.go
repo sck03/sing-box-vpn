@@ -16,11 +16,15 @@ import (
 func TestDefaultGrantRejectsPrefixImpersonation(t *testing.T) {
 	c := sub.DefaultConfig()
 	c.Outputs = append(c.Outputs, sub.Output{ID: "normal-private", Collection: "normal", Template: "normal-sing-box"})
-	if err := ensureSubscriptionGrant(&c, strings.Repeat("a", 43)); err != nil {
+	root, token := t.TempDir(), strings.Repeat("a", 64)
+	subscriptionFixture(t, root, token, "body")
+	if err := AtomicJSON(filepath.Join(root, subscriptionsConfig), c); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := findGrant(c, strings.Repeat("a", 43), "normal-private", time.Now()); ok {
-		t.Fatal("custom output was implicitly granted")
+	response := httptest.NewRecorder()
+	subscriptionHandler(root).ServeHTTP(response, httptest.NewRequest("GET", "/s/"+token+"/normal-private", nil))
+	if response.Code != 404 {
+		t.Fatal("custom output implicitly granted", response.Code)
 	}
 }
 

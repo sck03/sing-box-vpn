@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"github.com/sck03/sing-box-vpn/internal/domain"
+	strict "github.com/sck03/sing-box-vpn/internal/encoding"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 	"net"
+	"net/url"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -92,6 +94,10 @@ func (c PlatformConfig) Validate() error {
 	if c.Listener.PublicBaseURL != "" {
 		if err := sub.HTTPURL(c.Listener.PublicBaseURL); err != nil {
 			return err
+		}
+		u, _ := url.Parse(c.Listener.PublicBaseURL)
+		if u.RawQuery != "" || u.ForceQuery || u.RawPath != "" {
+			return errors.New("download public URL cannot contain a query or escaped path")
 		}
 	}
 	if err = c.Subscriptions.Validate(); err != nil {
@@ -324,7 +330,7 @@ func (s *PlatformService) build(ctx context.Context, c PlatformConfig) (fileBund
 	if err != nil {
 		return nil, err
 	}
-	files, _, _, err := compileSubscriptions(context.WithValue(ctx, accountExportConfigKey{}, c), s.Root, s.Core, c.Subscriptions, r, local, true)
+	files, _, _, err := compileSubscriptions(context.WithValue(ctx, accountExportConfigKey{}, c), s.Root, s.Core, c.Subscriptions, r, local, true, s.Accounts)
 	if err != nil {
 		return nil, err
 	}
@@ -350,7 +356,7 @@ func (s *PlatformService) build(ctx context.Context, c PlatformConfig) (fileBund
 
 func decodePlatform(data []byte) (PlatformConfig, error) {
 	var c PlatformConfig
-	err := strictSubscriptionJSON(data, &c)
+	err := strict.JSON(data, &c, maxJSONFile)
 	return c, err
 }
 func encodePlatform(c PlatformConfig) ([]byte, error) { return json.Marshal(c) }

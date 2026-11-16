@@ -8,15 +8,27 @@ import (
 	"io"
 	"path/filepath"
 	"slices"
-	"time"
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/domain"
-	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
-type AccountService struct{ Root string }
+type AccountService struct {
+	Root  string
+	Store *accounting.Store
+}
+
+func (s AccountService) openStore() (*accounting.Store, func(), error) {
+	if s.Store != nil {
+		return s.Store, func() {}, nil
+	}
+	store, err := accounting.Open(filepath.Join(s.Root, "control.db"))
+	if err != nil {
+		return nil, func() {}, err
+	}
+	return store, func() { _ = store.Close() }, nil
+}
 
 func (s AccountService) Execute(ctx context.Context, c application.AccountCommand, out io.Writer) error {
 	if c.UUID != "" {
@@ -27,22 +39,17 @@ func (s AccountService) Execute(ctx context.Context, c application.AccountComman
 	if c.Password != "" && (len(c.Password) < 16 || len(c.Password) > 128) {
 		return errors.New("custom password must contain 16–128 bytes")
 	}
-	store, err := accounting.Open(filepath.Join(s.Root, "control.db"))
+	store, closeStore, err := s.openStore()
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer closeStore()
+	s.Store = store
 	switch c.Operation {
 	case "list":
-		accounts, err := store.Accounts(ctx)
+		accounts, err := s.List(ctx)
 		if err != nil {
 			return err
-		}
-		for i := range accounts {
-			accounts[i], err = store.Advance(ctx, accounts[i].ID, time.Now(), false)
-			if err != nil {
-				return err
-			}
 		}
 		return jsonEncoder(out).Encode(accounts)
 	case "save":
@@ -118,18 +125,9 @@ func (s AccountService) Execute(ctx context.Context, c application.AccountComman
 			return jsonEncoder(out).Encode(Object{"status": "saved", "runtime": c.Scope, "accounts": len(ids), "created": len(pending)})
 		})
 	case "credentials":
-		if !slices.Contains([]string{normalScope, vpngateScope}, c.Scope) {
-			return errors.New("invalid runtime scope")
-		}
-		all, err := store.Credentials(ctx, c.Scope)
+		result, err := s.Credentials(ctx, c.ID, c.Scope)
 		if err != nil {
 			return err
-		}
-		result := []Object{}
-		for _, v := range all {
-			if v.AccountID == c.ID {
-				result = append(result, Object{"id": v.ID, "account_id": v.AccountID, "runtime_id": v.RuntimeID, "inbound_id": v.InboundID, "protocol": v.Protocol, "generation": v.Generation})
-			}
 		}
 		return jsonEncoder(out).Encode(result)
 	case "rotate":
@@ -143,30 +141,7 @@ func (s AccountService) Execute(ctx context.Context, c application.AccountComman
 	case "unbind":
 		return store.Unbind(ctx, c.ID, c.Generation)
 	case "export":
-		usage, err := store.Account(ctx, c.ID)
-		if err != nil {
-			return err
-		}
-		if usage.Disabled || (usage.ExpiresAt != nil && !time.Now().Before(*usage.ExpiresAt)) {
-			return accounting.ErrDenied
-		}
-		if !slices.Contains([]string{"sing-box", "mihomo", "uri"}, c.Client) {
-			return errors.New("unsupported account client format")
-		}
-		var nodes []sub.Node
-		err = withStartupLock(ctx, s.Root, func() error {
-			var e error
-			nodes, e = s.accountNodes(ctx, c.ID, c.Scope, c.TUICPort)
-			return e
-		})
-		if err != nil {
-			return err
-		}
-		mode := "config"
-		if c.Client == "uri" {
-			mode = "nodes"
-		}
-		artifact, _, err := sub.Render(nodes, sub.Template{ID: "account", Version: 1, Client: c.Client, Mode: mode, Preset: "proxy"}, false)
+		artifact, err := s.Export(ctx, c)
 		if err != nil {
 			return err
 		}

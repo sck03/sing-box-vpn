@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -131,7 +132,7 @@ func matchesETag(header, tag string) bool {
 	return false
 }
 
-func subscriptionHandler(root string) http.Handler {
+func subscriptionHandler(root string, stores ...*accounting.Store) http.Handler {
 	view := &subscriptionView{}
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet && request.Method != http.MethodHead {
@@ -147,7 +148,17 @@ func subscriptionHandler(root string) http.Handler {
 		status := http.StatusServiceUnavailable
 		var artifact sub.Artifact
 		var usage *sub.Usage
-		err := withStartupLock(request.Context(), root, func() error {
+		service := AccountService{Root: root}
+		if len(stores) > 0 {
+			service.Store = stores[0]
+		}
+		store, closeStore, err := service.openStore()
+		if err != nil {
+			http.Error(w, "subscription unavailable", 503)
+			return
+		}
+		defer closeStore()
+		err = withStartupLock(request.Context(), root, func() error {
 			view.mu.Lock()
 			defer view.mu.Unlock()
 			if err := view.load(root); err != nil {
@@ -157,12 +168,12 @@ func subscriptionHandler(root string) http.Handler {
 				status = http.StatusNotFound
 				return errors.New("subscription disabled")
 			}
-			grant, ok := findGrant(view.config, parts[2], parts[3], time.Now())
-			if !ok {
+			grant, err := store.LookupGrant(request.Context(), parts[2])
+			if err != nil || grant.AccountID != "" || !slices.Contains(grant.Outputs, parts[3]) || (grant.MaxDownloads != nil && grant.Downloads >= *grant.MaxDownloads) {
 				status = http.StatusNotFound
 				return errors.New("invalid authorization")
 			}
-			if err := checkOutputAccounts(request.Context(), root, view.config, parts[3]); err != nil {
+			if err := checkOutputAccounts(request.Context(), root, view.config, parts[3], store); err != nil {
 				status = http.StatusNotFound
 				return err
 			}
@@ -171,20 +182,10 @@ func subscriptionHandler(root string) http.Handler {
 			if !found || !subscriptionFresh(view.config, view.snapshot, parts[3], time.Now()) {
 				return errors.New("subscription unavailable")
 			}
-			if grant.MaxDownloads > 0 {
-				var count uint64
-				usagePath := filepath.Join(root, "subscriptions", "usage", grant.TokenHash+".json")
-				if _, err := ReadJSON(usagePath, &count); err != nil {
-					return err
-				}
-				if count >= grant.MaxDownloads {
+			if request.Method == http.MethodGet && !matchesETag(request.Header.Get("If-None-Match"), artifact.ETag) {
+				if err := store.CountDownload(request.Context(), parts[2], parts[3]); err != nil {
 					status = http.StatusNotFound
-					return errors.New("download allowance exhausted")
-				}
-				if request.Method == http.MethodGet && !matchesETag(request.Header.Get("If-None-Match"), artifact.ETag) {
-					if err := AtomicJSON(usagePath, count+1); err != nil {
-						return err
-					}
+					return err
 				}
 			}
 			// Only expose upstream quota when exactly one remote account contributes.

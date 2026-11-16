@@ -3,7 +3,6 @@ package manage
 import (
 	"context"
 	"errors"
-	"github.com/sck03/sing-box-vpn/internal/accounting"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 	"path/filepath"
 	"time"
@@ -14,17 +13,14 @@ type accountExportConfigKey struct{}
 // accountNodes is shared by direct downloads, account subscription sources and
 // previews. Callers own the publication lock; this function never acquires it.
 func (s AccountService) accountNodes(ctx context.Context, id, scope string, tuicPort int) ([]sub.Node, error) {
-	store, err := accounting.Open(filepath.Join(s.Root, "control.db"))
+	store, closeStore, err := s.openStore()
 	if err != nil {
 		return nil, err
 	}
-	defer store.Close()
-	usage, err := store.Advance(ctx, id, time.Now(), false)
+	defer closeStore()
+	usage, err := store.DownloadAccount(ctx, id, time.Now())
 	if err != nil {
 		return nil, err
-	}
-	if usage.Disabled || (usage.ExpiresAt != nil && !time.Now().Before(*usage.ExpiresAt)) {
-		return nil, accounting.ErrDenied
 	}
 	var app App
 	if _, err = ReadJSON(filepath.Join(s.Root, "app.json"), &app); err != nil {

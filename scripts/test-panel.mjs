@@ -26,7 +26,8 @@ const { subscriptions } =
   await import("../internal/manage/panel/subscriptions.js");
 const { overview, maintenance, admins } =
   await import("../internal/manage/panel/maintenance.js");
-const { resourceEditor } = await import("../internal/manage/panel/ui.js");
+const { resourceEditor, table, notice } =
+  await import("../internal/manage/panel/ui.js");
 const config = {
   app: {
     name: "test",
@@ -45,7 +46,6 @@ const config = {
     collections: [],
     templates: [],
     outputs: [],
-    grants: [],
     rule_sets: [],
     deliveries: [],
   },
@@ -144,7 +144,146 @@ assert(
     .join()
     .includes("下载全量备份"),
 );
+const list = table(
+  [{ key: "name", label: "Name" }],
+  Array.from({ length: 51 }, (_, i) => ({ name: "row " + i })),
+);
+document.querySelector("#content").replaceChildren(list);
+document.querySelector("#shell").hidden = false;
+const search = list.querySelector("input");
+search.value = "row";
+search.dispatchEvent(new Event("input"));
+[...list.querySelectorAll("button")]
+  .find((b) => b.textContent === "下一页")
+  .click();
+search.focus();
+list.updateItems(Array.from({ length: 52 }, (_, i) => ({ name: "row " + i })));
+assert.equal(list.querySelector("input"), search);
+assert.equal(search.value, "row");
+assert.equal(document.activeElement, search);
+assert.match(list.querySelector(".pager").textContent, /2 \/ 3/);
+
+const { api, setCSRF } = await import("../internal/manage/panel/api.js");
+let release;
+globalThis.fetch = () =>
+  new Promise((resolve) => {
+    release = resolve;
+  });
+setCSRF("old-session");
+const pending = api("/api/config");
+setCSRF("");
+release({ ok: true, json: async () => ({ secret: "old" }) });
+await assert.rejects(pending, { name: "AbortError" });
+
+// Exercise the application through its controls while requests are in flight.
+globalThis.location = dom.window.location;
+location.hash = "inbounds";
+const configReads = [],
+  configWrites = [],
+  previews = [];
+const reply = (value) => ({ ok: true, json: async () => value });
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+globalThis.fetch = (path, options) => {
+  if (path === "/api/auth/session")
+    return Promise.resolve(
+      reply({ id: "admin", role: "admin", csrf: "current" }),
+    );
+  const queue =
+    path === "/api/config/preview"
+      ? previews
+      : path === "/api/config"
+        ? options.method === "GET"
+          ? configReads
+          : configWrites
+        : null;
+  assert(queue, `unexpected application request: ${path}`);
+  return new Promise((resolve) =>
+    queue.push({
+      body: options.body ? JSON.parse(options.body) : undefined,
+      resolve: (value) => resolve(reply(value)),
+    }),
+  );
+};
+await import("../internal/manage/panel/app.js");
+await tick();
+document.querySelector("#refresh").click();
+await tick();
+assert.equal(
+  configReads.length,
+  1,
+  "concurrent renders must share the config load",
+);
+configReads[0].resolve({
+  config: structuredClone(config),
+  revision: 1,
+  root: "/tmp/test",
+});
+await tick();
+async function editPublish(label, value) {
+  [...document.querySelectorAll("#content button")]
+    .find((b) => b.textContent === "编辑发布信息")
+    .click();
+  document.querySelector(`#dialog input[aria-label="${label}"]`).value = value;
+  document
+    .querySelector("#dialog form")
+    .dispatchEvent(new Event("submit", { cancelable: true }));
+  await tick();
+}
+await editPublish("节点名称", "submitted");
+document.querySelector("#save").click();
+assert.equal(configWrites[0].body.config.app.name, "submitted");
+await editPublish("节点名称", "edited-during-save");
+configWrites[0].resolve({ task_id: 1 });
+await tick();
+assert.equal(
+  document.querySelector("#draft").hidden,
+  false,
+  "edits made during a save must remain unsaved",
+);
+document.querySelector("#save").click();
+assert.equal(configWrites[1].body.revision, 2);
+assert.equal(configWrites[1].body.config.app.name, "edited-during-save");
+configWrites[1].resolve({ task_id: 2 });
+await tick();
+assert.equal(document.querySelector("#draft").hidden, true);
+
+document.querySelector("#preview").click();
+await editPublish("IP / 域名", "changed.example.com");
+previews[0].resolve({ valid: true });
+await tick();
+assert.deepEqual(
+  JSON.parse(document.querySelector("#dialog pre").textContent).changed,
+  [],
+  "preview diff must describe the validated snapshot",
+);
+document.querySelector("#save").click();
+document.querySelector("#discard").click();
+await tick();
+configReads[1].resolve({
+  config: structuredClone(config),
+  revision: 10,
+  root: "/tmp/test",
+});
+await tick();
+await editPublish("节点名称", "after-reload");
+configWrites[2].resolve({ task_id: 3 });
+await tick();
+assert.equal(
+  document.querySelector("#draft").hidden,
+  false,
+  "a stale save must not clear a reloaded draft",
+);
+document.querySelector("#save").click();
+assert.equal(
+  configWrites[3].body.revision,
+  10,
+  "a stale save must not overwrite the revision",
+);
+assert.equal(configWrites[3].body.config.app.name, "after-reload");
+configWrites[3].resolve({ task_id: 4 });
+await tick();
+clearTimeout(notice.timer);
 console.log(
-  "Panel DOM checks passed: 12 pages, view-only drafts, resource copy, operator scope.",
+  "Panel DOM checks passed: 12 pages, drafts, role scope, live table state, stale session responses, concurrent config loading/saving/preview/reload.",
 );
 dom.window.close();

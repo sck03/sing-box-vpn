@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/manage"
 )
 
@@ -285,7 +286,15 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	token := strings.Repeat("a", 43)
+	grantStore, err := accounting.Open(filepath.Join(root, "control.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := grantStore.CreateGrant(ctx, accounting.Grant{ID: "providers", Outputs: []string{"normal-provider", "vpngate-provider"}})
+	grantStore.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := manage.AtomicJSON(filepath.Join(root, "subscription.json"), manage.Object{"enabled": true, "port": subscriptionPort, "token": token, "listen": "127.0.0.1"}); err != nil {
 		t.Fatal(err)
 	}

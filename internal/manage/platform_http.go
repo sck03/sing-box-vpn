@@ -137,7 +137,7 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 			return
 		}
 		if strings.HasPrefix(path, "/u/") {
-			serveAccountDownload(s.Root, w, r)
+			serveAccountDownload(s.Root, w, r, s.Accounts)
 			return
 		}
 		if path == "/api/auth/login" && r.Method == "POST" {
@@ -290,12 +290,12 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 				return
 			}
 			v.Operation = "export"
-			var out bytes.Buffer
-			if err = (AccountService{Root: s.Root}).Execute(ctx, v, &out); err != nil {
-				platformError(w, err)
+			artifact, e := (AccountService{Root: s.Root, Store: s.Accounts}).Export(ctx, v)
+			if e != nil {
+				platformError(w, e)
 				return
 			}
-			jsonResponse(w, Object{"content": out.String()})
+			jsonResponse(w, Object{"content": string(artifact.Data)})
 			return
 		}
 		if path == "/api/auth/session" && r.Method == "GET" {
@@ -398,7 +398,7 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 				platformError(w, e)
 				return
 			}
-			if !require(admin || v.Kind == "service" || v.Kind == "gateway") {
+			if !require(admin || v.Kind == "service" || v.Kind == "gateway" || (v.Kind == "apply" && v.Actor == session.ID)) {
 				return
 			}
 			jsonResponse(w, v)
@@ -443,11 +443,10 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 		}
 		if path == "/api/accounts" {
 			if r.Method == "GET" {
-				var out bytes.Buffer
-				err = (AccountService{Root: s.Root}).Execute(ctx, application.AccountCommand{Operation: "list"}, &out)
+				var accounts []accounting.Usage
+				accounts, err = (AccountService{Root: s.Root, Store: s.Accounts}).List(ctx)
 				if err == nil {
-					w.Header().Set("Content-Type", "application/json")
-					_, _ = w.Write(out.Bytes())
+					jsonResponse(w, accounts)
 					return
 				}
 			} else if r.Method == "POST" {
@@ -504,13 +503,12 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 			if !require(admin) {
 				return
 			}
-			var out bytes.Buffer
-			err = (AccountService{Root: s.Root}).Execute(ctx, application.AccountCommand{Operation: "credentials", ID: r.URL.Query().Get("id"), Scope: r.URL.Query().Get("scope")}, &out)
+			var credentials []CredentialSummary
+			credentials, err = (AccountService{Root: s.Root, Store: s.Accounts}).Credentials(ctx, r.URL.Query().Get("id"), r.URL.Query().Get("scope"))
 			if err != nil {
 				platformError(w, err)
 			} else {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write(out.Bytes())
+				jsonResponse(w, credentials)
 			}
 			return
 		}
@@ -543,9 +541,24 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 						return
 					}
 					var token string
-					token, err = s.Accounts.CreateGrant(ctx, g)
+					var origin string
+					origin, err = s.downloadOrigin(ctx, options.PublicURL)
+					if err == nil && len(g.Outputs) > 0 {
+						err = s.validateOutputGrant(ctx, g.Outputs)
+					}
 					if err == nil {
-						jsonResponse(w, Object{"token": token, "user_url": options.PublicURL + "/user#" + token})
+						token, err = s.Accounts.CreateGrant(ctx, g)
+					}
+					if err == nil {
+						urls := []string{}
+						for _, id := range g.Outputs {
+							urls = append(urls, origin+"/s/"+token+"/"+id)
+						}
+						userURL := ""
+						if g.AccountID != "" {
+							userURL = origin + "/user#" + token
+						}
+						jsonResponse(w, Object{"token": token, "user_url": userURL, "urls": urls})
 						return
 					}
 				}

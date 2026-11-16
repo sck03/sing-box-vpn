@@ -147,6 +147,7 @@ func (s *Store) Subscribers(ctx context.Context) ([]Subscriber, error) {
 }
 
 func (s *Store) SaveSubscriber(ctx context.Context, v Subscriber) error {
+	defer s.authorizationEpoch.Add(1)
 	if !domain.ResourceID.MatchString(v.ID) || len(v.Name) == 0 || len(v.Name) > 128 {
 		return errors.New("invalid subscriber")
 	}

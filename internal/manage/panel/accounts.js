@@ -500,7 +500,10 @@ export async function grants(ctx) {
       table(
         [
           { key: "id", label: "授权 ID" },
-          { key: "account_id", label: "权益" },
+          {
+            label: "权益 / 输出",
+            value: (g) => g.account_id || (g.outputs || []).join(", "),
+          },
           {
             label: "下载次数",
             value: (g) => `${g.downloads} / ${g.max_downloads ?? "不限"}`,

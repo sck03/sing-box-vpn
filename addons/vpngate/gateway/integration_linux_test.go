@@ -364,6 +364,13 @@ func TestLinuxNamespaceIsolation(t *testing.T) {
 		}
 		return status
 	}
+	setEnabled := func(enabled bool) {
+		cfg.Enabled = enabled
+		if err := atomicJSON(configPath, cfg); err != nil {
+			t.Fatal(err)
+		}
+		_ = ctl("reload")
+	}
 	linuxWait(t, 90*time.Second, func() bool { status, err := tryCTL("status"); return err == nil && status.State == "ready" })
 	if linuxCommand(t, "ip", "-4", "route", "show", "default") != originalRoute {
 		t.Fatal("host default route changed")
@@ -528,7 +535,7 @@ func TestLinuxNamespaceIsolation(t *testing.T) {
 	fresh.Close()
 	c.Close()
 	control.Close()
-	_ = ctl("stop")
+	setEnabled(false)
 	stopDaemon()
 	stopRestart := linuxProcess(t, root, "restart", environment, gateway, "daemon", "--config", configPath)
 	linuxWait(t, 10*time.Second, func() bool { status, err := tryCTL("status"); return err == nil && status.State == "stopped" })
@@ -536,7 +543,7 @@ func TestLinuxNamespaceIsolation(t *testing.T) {
 		t.Fatal("disabled daemon recreated tunnel")
 	}
 	country.Store("KR")
-	_ = ctl("start")
+	setEnabled(true)
 	var lastStatus Status
 	defer func() {
 		if t.Failed() {
@@ -553,6 +560,6 @@ func TestLinuxNamespaceIsolation(t *testing.T) {
 	if ctl("status").State == "ready" {
 		t.Fatal("wrong-country tunnel enabled")
 	}
-	_ = ctl("stop")
+	setEnabled(false)
 	stopRestart()
 }

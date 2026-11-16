@@ -9,42 +9,80 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
-// Meter lives in the proxy runtime, not the panel or subscription listener.
-// One scheduler checks all sessions; no account starts a background goroutine.
+const AuthorizationInterval = 250 * time.Millisecond
+
+// Meter owns topology only. Each account/period pool serializes its own
+// reservations; neither SQLite nor socket I/O holds the topology lock.
 type Meter struct {
 	mu             sync.Mutex
+	maintenance    sync.Mutex
 	store          *Store
 	runtime, epoch string
 	pools          map[string]*pool
 	handles        map[*Handle]struct{}
+	auth           map[string]*authorization
 	closed         bool
 	pending        sync.WaitGroup
-	changed        chan struct{}
-	waiters        int
 	poolSequence   uint64
+	retired        uint64
+	detached       []*pool // idle pools retained until their final checkpoint succeeds
 }
 type pool struct {
+	mu                                    sync.Mutex
 	id, account                           string
 	available, inflight, upload, download int64
+	savedUpload, savedDownload            int64
 	reserved                              bool
 	period                                int64
+	sequence                              uint64
+	refs                                  int // protected by Meter.mu
+	changed                               chan struct{}
+	waiters                               int
 }
-type Handle struct {
-	meter      *Meter
-	pool       *pool
+type authorization struct {
+	mu         sync.Mutex
 	credential string
 	generation int64
-	closer     io.Closer
-	denied     bool
+	usage      Usage
+	until      time.Time
+	epoch      uint64
+	err        error
+}
+type Handle struct {
+	meter  *Meter
+	pool   *pool
+	auth   *authorization
+	closer io.Closer
+	denied atomic.Bool
 }
 
 func NewMeter(store *Store, runtime string) *Meter {
 	var id [16]byte
 	_, _ = rand.Read(id[:])
-	return &Meter{store: store, runtime: runtime, epoch: hex.EncodeToString(id[:]), pools: map[string]*pool{}, handles: map[*Handle]struct{}{}, changed: make(chan struct{})}
+	return &Meter{store: store, runtime: runtime, epoch: hex.EncodeToString(id[:]), pools: map[string]*pool{}, handles: map[*Handle]struct{}{}, auth: map[string]*authorization{}}
+}
+
+func (a *authorization) check(ctx context.Context, store *Store, force bool) (Usage, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	now := time.Now()
+	epoch := store.authorizationEpoch.Load()
+	if force || epoch != a.epoch || !now.Before(a.until) {
+		query, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		a.usage, a.err = store.authorize(query, a.credential, a.generation, now, false)
+		a.epoch, a.until = epoch, now.Add(AuthorizationInterval)
+		for _, deadline := range []*time.Time{a.usage.ExpiresAt, a.usage.NextReset} {
+			if deadline != nil && deadline.Before(a.until) {
+				a.until = *deadline
+			}
+		}
+	}
+	return a.usage, a.err
 }
 
 func (m *Meter) Open(ctx context.Context, user, inbound string, closer io.Closer) (*Handle, error) {
@@ -53,65 +91,77 @@ func (m *Meter) Open(ctx context.Context, user, inbound string, closer io.Closer
 	if !ok || err != nil {
 		return nil, ErrDenied
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.closed || len(m.handles) >= 10000 {
-		return nil, ErrDenied
-	}
 	var binding int
-	err = m.store.db.QueryRowContext(ctx, `SELECT 1 FROM credentials WHERE id=? AND generation=? AND runtime=? AND inbound=?`, credential, generation, m.runtime, inbound).Scan(&binding)
-	if err != nil {
+	if err = m.store.db.QueryRowContext(ctx, `SELECT 1 FROM credentials WHERE id=? AND generation=? AND runtime=? AND inbound=?`, credential, generation, m.runtime, inbound).Scan(&binding); err != nil {
 		return nil, ErrDenied
 	}
 	u, err := m.store.authorize(ctx, credential, generation, time.Now(), true)
 	if err != nil {
 		return nil, err
 	}
-	account := u.ID
-	key := account + "-" + strconv.FormatInt(u.PeriodID, 10)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed || len(m.handles) >= 10000 {
+		return nil, ErrDenied
+	}
+	key := u.ID + "-" + strconv.FormatInt(u.PeriodID, 10)
 	p := m.pools[key]
 	if p == nil {
 		m.poolSequence++
-		p = &pool{id: m.epoch + "-" + key + "-" + strconv.FormatUint(m.poolSequence, 10), account: account, period: u.PeriodID}
+		p = &pool{id: m.epoch + "/" + strconv.FormatUint(m.poolSequence, 10), sequence: m.poolSequence, account: u.ID, period: u.PeriodID, changed: make(chan struct{})}
 		m.pools[key] = p
 	}
-	h := &Handle{meter: m, pool: p, credential: credential, generation: generation, closer: closer}
+	a := m.auth[user]
+	if a == nil {
+		a = &authorization{credential: credential, generation: generation}
+		m.auth[user] = a
+	}
+	h := &Handle{meter: m, pool: p, auth: a, closer: closer}
+	p.refs++
 	m.handles[h] = struct{}{}
 	return h, nil
 }
 
-// Take grants at most want bytes; Complete returns unused bytes and records
-// successful payload I/O. Neither the network nor SQLite lock is held together.
-func (h *Handle) Take(want int) (int, error) {
-	return h.take(want, false)
+func (h *Handle) authorized(ctx context.Context, force bool) error {
+	if h.denied.Load() {
+		return ErrDenied
+	}
+	u, err := h.auth.check(ctx, h.meter.store, force)
+	if err == nil && u.PeriodID != h.pool.period {
+		err = ErrDenied
+	}
+	if err != nil {
+		h.denied.Store(true)
+	}
+	return err
 }
-
-func (h *Handle) TakePacket(want int) (int, error) {
-	return h.take(want, true)
-}
+func (h *Handle) Take(want int) (int, error)       { return h.take(want, false) }
+func (h *Handle) TakePacket(want int) (int, error) { return h.take(want, true) }
 
 func (h *Handle) take(want int, exact bool) (int, error) {
-	m := h.meter
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if h.denied || m.closed {
+	if want < 0 || (exact && int64(want) > ReservationBytes) {
 		return 0, ErrDenied
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	// Checking at the byte boundary makes expiry independent of scheduler delays.
-	if err := h.authorized(ctx); err != nil {
-		h.denied = true
+	// A cache hit performs no SQLite work or timer allocation.
+	if err := h.authorized(context.Background(), false); err != nil {
 		return 0, err
 	}
 	if want == 0 {
 		return 0, nil
 	}
-	p := h.pool
-	if exact && int64(want) > ReservationBytes {
-		return 0, ErrDenied
-	}
+	m, p := h.meter, h.pool
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var ctx context.Context
 	for p.available == 0 || (exact && p.available < int64(want)) {
+		if h.denied.Load() {
+			return 0, ErrDenied
+		}
+		if ctx == nil {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+		}
 		room := ReservationBytes - p.available - p.inflight
 		if room > 0 {
 			n, err := m.store.reservePeriod(ctx, p.id, p.account, m.runtime, room, time.Now(), p.period)
@@ -129,24 +179,26 @@ func (h *Handle) take(want int, exact bool) (int, error) {
 		if p.inflight == 0 {
 			return 0, ErrDenied
 		}
-		changed := m.changed
-		m.waiters++
-		m.mu.Unlock()
+		changed := p.changed
+		p.waiters++
+		p.mu.Unlock()
 		select {
 		case <-changed:
 		case <-ctx.Done():
 		}
-		m.mu.Lock()
-		m.waiters--
+		p.mu.Lock()
+		p.waiters--
 		if ctx.Err() != nil {
 			return 0, ctx.Err()
 		}
-		if h.denied || m.closed {
-			return 0, ErrDenied
-		}
-		if err := h.authorized(ctx); err != nil {
+		if err := h.authorized(ctx, false); err != nil {
 			return 0, err
 		}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed || h.denied.Load() {
+		return 0, ErrDenied
 	}
 	n := min(int64(want), p.available)
 	p.available -= n
@@ -158,93 +210,115 @@ func (h *Handle) Complete(granted, actual int, upload bool) {
 	if granted == 0 {
 		return
 	}
-	m := h.meter
-	defer m.pending.Done()
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	defer h.meter.pending.Done()
+	p := h.pool
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	actual = max(0, min(granted, actual))
-	h.pool.available += int64(granted - actual)
-	h.pool.inflight -= int64(granted)
-	if m.waiters > 0 {
-		close(m.changed)
-		m.changed = make(chan struct{})
-	}
+	p.available += int64(granted - actual)
+	p.inflight -= int64(granted)
 	if upload {
-		h.pool.upload += int64(actual)
+		p.upload += int64(actual)
 	} else {
-		h.pool.download += int64(actual)
+		p.download += int64(actual)
+	}
+	if p.waiters > 0 {
+		close(p.changed)
+		p.changed = make(chan struct{})
 	}
 }
 func (h *Handle) Close() {
+	h.denied.Store(true)
 	m := h.meter
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	h.denied = true
-	delete(m.handles, h)
-}
-
-func (h *Handle) authorized(ctx context.Context) error {
-	u, err := h.meter.store.authorize(ctx, h.credential, h.generation, time.Now(), false)
-	if err != nil {
-		return err
+	if _, ok := m.handles[h]; ok {
+		delete(m.handles, h)
+		h.pool.refs--
 	}
-	if u.PeriodID != h.pool.period {
-		return ErrDenied
-	}
-	return nil
 }
 
 func (m *Meter) Tick(ctx context.Context) error {
+	m.maintenance.Lock()
+	defer m.maintenance.Unlock()
 	m.mu.Lock()
-	var toClose []io.Closer
-	var result error
-	checked := map[string]error{}
-	for h := range m.handles {
-		key := h.credential + "." + strconv.FormatInt(h.generation, 10) + "/" + strconv.FormatInt(h.pool.period, 10)
-		err, found := checked[key]
-		if !found {
-			err = h.authorized(ctx)
-			checked[key] = err
-		}
-		if err != nil {
-			h.denied = true
-			toClose = append(toClose, h.closer)
-			delete(m.handles, h)
-		}
+	if m.closed {
+		m.mu.Unlock()
+		return ErrDenied
 	}
-	referenced := map[*pool]bool{}
+	handles := make([]*Handle, 0, len(m.handles))
+	pools := make(map[string]*pool, len(m.pools))
 	for h := range m.handles {
-		referenced[h.pool] = true
+		handles = append(handles, h)
 	}
 	for key, p := range m.pools {
-		idle := !referenced[p] && p.inflight == 0
-		if p.reserved {
+		pools[key] = p
+	}
+	m.mu.Unlock()
+	checked := map[*authorization]bool{}
+	for _, h := range handles {
+		force := !checked[h.auth]
+		checked[h.auth] = true
+		if err := h.authorized(ctx, force); err != nil {
+			h.Close()
+			_ = h.closer.Close()
+		}
+	}
+	var result error
+	for key, p := range pools {
+		p.mu.Lock()
+		m.mu.Lock()
+		idle := p.refs == 0 && p.inflight == 0
+		if idle && m.pools[key] == p {
+			delete(m.pools, key)
+			m.detached = append(m.detached, p)
+		}
+		m.mu.Unlock()
+		if p.reserved && (idle || p.upload != p.savedUpload || p.download != p.savedDownload) {
 			err := m.store.Checkpoint(ctx, p.id, p.upload, p.download, idle)
 			result = errors.Join(result, err)
-			if err != nil {
-				continue
+			if err == nil {
+				p.savedUpload, p.savedDownload = p.upload, p.download
+				if idle {
+					p.reserved = false
+				}
 			}
 		}
-		if idle {
-			delete(m.pools, key)
+		p.mu.Unlock()
+	}
+	m.mu.Lock()
+	used := map[*authorization]bool{}
+	for h := range m.handles {
+		used[h.auth] = true
+	}
+	for key, a := range m.auth {
+		if !used[a] {
+			delete(m.auth, key)
+		}
+	}
+	retired := m.poolSequence
+	for _, p := range m.pools {
+		if p.sequence <= retired {
+			retired = p.sequence - 1
+		}
+	}
+	compact := retired > m.retired
+	m.mu.Unlock()
+	if compact && result == nil {
+		result = m.store.compactScope(ctx, m.epoch, retired, false)
+		if result == nil {
+			m.retired = retired
 		}
 	}
 	if result != nil {
-		for h := range m.handles {
-			h.denied = true
-			toClose = append(toClose, h.closer)
-			delete(m.handles, h)
-		}
-	}
-	m.mu.Unlock()
-	for _, c := range toClose {
-		_ = c.Close()
+		m.Shutdown()
+	} else {
+		m.detached = nil
 	}
 	return result
 }
-
 func (m *Meter) Run(ctx context.Context) error {
-	ticker := time.NewTicker(250 * time.Millisecond)
+	ticker := time.NewTicker(AuthorizationInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -258,24 +332,34 @@ func (m *Meter) Run(ctx context.Context) error {
 	}
 }
 
-// Shutdown closes sockets first; callers must finish outstanding I/O before
-// Close settles the remaining reservation. A forced exit leaves it charged.
+// Stop admitting work before waiting for outstanding socket I/O to settle.
 func (m *Meter) Shutdown() {
 	m.mu.Lock()
 	m.closed = true
-	close(m.changed)
-	m.changed = make(chan struct{})
-	closers := []io.Closer{}
+	handles := make([]*Handle, 0, len(m.handles))
 	for h := range m.handles {
-		h.denied = true
-		closers = append(closers, h.closer)
+		h.denied.Store(true)
+		handles = append(handles, h)
+	}
+	pools := make([]*pool, 0, len(m.pools))
+	for _, p := range m.pools {
+		pools = append(pools, p)
 	}
 	m.mu.Unlock()
-	for _, c := range closers {
-		_ = c.Close()
+	for _, p := range pools {
+		p.mu.Lock()
+		close(p.changed)
+		p.changed = make(chan struct{})
+		p.mu.Unlock()
+	}
+	for _, h := range handles {
+		_ = h.closer.Close()
 	}
 }
 func (m *Meter) Close(ctx context.Context) error {
+	m.Shutdown()
+	m.maintenance.Lock()
+	defer m.maintenance.Unlock()
 	done := make(chan struct{})
 	go func() { m.pending.Wait(); close(done) }()
 	select {
@@ -284,12 +368,25 @@ func (m *Meter) Close(ctx context.Context) error {
 		return ctx.Err()
 	}
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	var result error
+	pools := append([]*pool(nil), m.detached...)
 	for _, p := range m.pools {
+		pools = append(pools, p)
+	}
+	m.mu.Unlock()
+	var result error
+	for _, p := range pools {
+		p.mu.Lock()
 		if p.reserved {
-			result = errors.Join(result, m.store.Checkpoint(ctx, p.id, p.upload, p.download, true))
+			err := m.store.Checkpoint(ctx, p.id, p.upload, p.download, true)
+			result = errors.Join(result, err)
+			if err == nil {
+				p.reserved = false
+			}
 		}
+		p.mu.Unlock()
+	}
+	if result == nil {
+		result = m.store.compactScope(ctx, m.epoch, m.poolSequence, true)
 	}
 	return result
 }

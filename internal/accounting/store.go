@@ -1,5 +1,5 @@
-// Package accounting owns durable, shared proxy usage. Download counters live
-// in the subscription service and never contribute to this ledger.
+// Package accounting owns entitlements, durable proxy usage and download grants.
+// Download counts are stored separately and never contribute to traffic usage.
 package accounting
 
 import (
@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/sck03/sing-box-vpn/internal/database"
@@ -21,7 +22,10 @@ var ErrConflict = errors.New("account revision conflict")
 // conservatively charge its unspent reservation, but cannot issue it twice.
 const ReservationBytes int64 = 64 << 10
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db                 *sql.DB
+	authorizationEpoch atomic.Uint64
+}
 
 func Open(path string) (*Store, error) {
 	db, err := database.Open(path)
@@ -55,9 +59,9 @@ CREATE TABLE IF NOT EXISTS usage_periods (
 CREATE TABLE IF NOT EXISTS subscribers (
  id TEXT PRIMARY KEY, name TEXT NOT NULL, disabled INTEGER NOT NULL DEFAULT 0,
  revision INTEGER NOT NULL DEFAULT 1);
-CREATE TABLE IF NOT EXISTS account_grants (
- id TEXT PRIMARY KEY,account TEXT NOT NULL REFERENCES accounts(id),scope TEXT NOT NULL,
- clients TEXT NOT NULL,expires INTEGER,max_downloads INTEGER,hash TEXT NOT NULL UNIQUE,
+CREATE TABLE IF NOT EXISTS download_grants (
+ id TEXT PRIMARY KEY,account TEXT REFERENCES accounts(id),scope TEXT NOT NULL,
+ clients TEXT NOT NULL,outputs TEXT NOT NULL,expires INTEGER,max_downloads INTEGER,hash TEXT NOT NULL UNIQUE,
  downloads INTEGER NOT NULL DEFAULT 0,revoked INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS credentials (
  id TEXT PRIMARY KEY, account TEXT NOT NULL REFERENCES accounts(id),
@@ -70,6 +74,8 @@ CREATE TABLE IF NOT EXISTS leases (
  runtime TEXT NOT NULL, reserved INTEGER NOT NULL, upload INTEGER NOT NULL DEFAULT 0,
  download INTEGER NOT NULL DEFAULT 0, closed INTEGER NOT NULL DEFAULT 0,
  period INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS lease_scopes (
+ id TEXT PRIMARY KEY, retired INTEGER NOT NULL DEFAULT 0, closed INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS events (
  sequence INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL,
  account TEXT NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL);
@@ -146,6 +152,7 @@ func timestamp(t *time.Time) any {
 }
 
 func (s *Store) SaveAccount(ctx context.Context, a domain.Account) error {
+	defer s.authorizationEpoch.Add(1)
 	if err := a.Validate(); err != nil {
 		return err
 	}
@@ -339,6 +346,9 @@ func (s *Store) reservePeriod(ctx context.Context, id, account, runtime string, 
 	if _, err = tx.ExecContext(ctx, `UPDATE accounts SET charged=charged WHERE id=?`, account); err != nil {
 		return 0, err
 	}
+	if err = checkLeaseScope(ctx, tx, id); err != nil {
+		return 0, err
+	}
 	u, err := readAccount(tx.QueryRowContext(ctx, `SELECT `+accountColumns+` FROM accounts WHERE id=?`, account))
 	if err != nil {
 		return 0, err
@@ -424,6 +434,7 @@ func (s *Store) Checkpoint(ctx context.Context, id string, upload, download int6
 }
 
 func (s *Store) Rotate(ctx context.Context, id, uuid, password string, expected int64) error {
+	defer s.authorizationEpoch.Add(1)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -489,6 +500,7 @@ func uniqueCredential(ctx context.Context, tx *sql.Tx, c domain.Credential) erro
 }
 
 func (s *Store) Unbind(ctx context.Context, id string, generation int64) error {
+	defer s.authorizationEpoch.Add(1)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err

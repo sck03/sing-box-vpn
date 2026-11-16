@@ -39,7 +39,18 @@ func buildSubscriptions(ctx context.Context, root, core string, c sub.Config, r 
 	return compileSubscriptions(ctx, root, core, c, r, local, false)
 }
 
-func compileSubscriptions(ctx context.Context, root, core string, c sub.Config, r sub.Runtime, local map[string][]sub.Node, available bool) (fileBundle, sub.Snapshot, map[string]sub.Preview, error) {
+func compileSubscriptions(ctx context.Context, root, core string, c sub.Config, r sub.Runtime, local map[string][]sub.Node, available bool, stores ...*accounting.Store) (fileBundle, sub.Snapshot, map[string]sub.Preview, error) {
+	r = sub.PruneRuntime(c, r)
+	service := AccountService{Root: root}
+	if len(stores) > 0 {
+		service.Store = stores[0]
+	}
+	var closeStore func()
+	defer func() {
+		if closeStore != nil {
+			closeStore()
+		}
+	}()
 	if local == nil {
 		local = map[string][]sub.Node{}
 	}
@@ -54,7 +65,14 @@ func compileSubscriptions(ctx context.Context, root, core string, c sub.Config, 
 	}
 	for _, source := range c.Sources {
 		if source.Kind == "account" {
-			nodes, err := (AccountService{Root: root}).accountNodes(ctx, source.AccountID, source.Scope, 0)
+			if service.Store == nil {
+				var err error
+				service.Store, closeStore, err = service.openStore()
+				if err != nil {
+					return nil, sub.Snapshot{}, nil, err
+				}
+			}
+			nodes, err := service.accountNodes(ctx, source.AccountID, source.Scope, 0)
 			if errors.Is(err, accounting.ErrDenied) {
 				nodes = nil
 				err = nil
@@ -82,7 +100,11 @@ func compileSubscriptions(ctx context.Context, root, core string, c sub.Config, 
 		return nil, snapshot, previews, err
 	}
 	templates := map[string]sub.Template{}
-	for _, t := range c.Templates {
+	effective, err := sub.ResolveResources(c, r.Resources)
+	if err != nil {
+		return nil, snapshot, previews, err
+	}
+	for _, t := range effective.Templates {
 		templates[t.ID] = t
 	}
 	for _, output := range c.Outputs {

@@ -1,7 +1,6 @@
 package manage
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	strict "github.com/sck03/sing-box-vpn/internal/encoding"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
@@ -200,6 +200,7 @@ func refreshSubscriptions(ctx context.Context, root, core string, force bool) er
 		return err
 	}
 	client := newHTTPClient(20 * time.Second)
+	runtime = sub.PruneRuntime(config, runtime)
 	defer client.CloseIdleConnections()
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 3 {
@@ -302,14 +303,11 @@ func refreshSubscriptions(ctx context.Context, root, core string, force bool) er
 				events = append(events, sub.Run{Time: now, Operation: "refresh", ObjectID: id, Message: message})
 			}
 		}
-		if resourceChanged {
-			config.Revision++
-		}
-		files, _, _, buildErr := compileSubscriptions(ctx, root, core, config, state, local, !resourceChanged)
+		files, _, _, buildErr := compileSubscriptions(ctx, root, core, current, state, local, !resourceChanged)
 		if buildErr != nil {
 			// A rejected resource update must be fetched again; do not retain its ETag.
 			for id := range resources {
-				state.Resources[id] = sub.ResourceCache{Next: now.Add(time.Minute)}
+				state.Resources[id] = runtime.Resources[id]
 			}
 			state.Record("publish", "", buildErr.Error(), now)
 			if err := AtomicJSON(filepath.Join(root, subscriptionsRuntime), state); err != nil {
@@ -326,19 +324,7 @@ func refreshSubscriptions(ctx context.Context, root, core string, force bool) er
 }
 
 func strictSubscriptionJSON(data []byte, target any) error {
-	if len(data) == 0 || len(data) > sub.MaxBody || bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
-		return errors.New("empty or oversized JSON")
-	}
-	decoder := json.NewDecoder(strings.NewReader(string(data)))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		return err
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return errors.New("expected one JSON document")
-	}
-	return nil
+	return strict.JSON(data, target, sub.MaxBody)
 }
 
 func notifySubscriptionEvent(ctx context.Context, client *http.Client, root string, c sub.Config, event sub.Run) {

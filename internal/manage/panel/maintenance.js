@@ -40,7 +40,7 @@ export async function overview(ctx) {
       ),
     ),
   );
-  return [
+  const content = [
     stats,
     card(
       "运行实例",
@@ -99,6 +99,25 @@ export async function overview(ctx) {
     ),
     tasksCard(data.tasks, ctx),
   ];
+  const tables = content.flatMap((node) => [
+    ...node.querySelectorAll(".data-table"),
+  ]);
+  ctx.updateOverview = (next) => {
+    ctx.observeRevision(next.revision);
+    const values = [
+      next.applied_revision === next.revision ? "已同步" : "待应用",
+      next.revision,
+      next.applied_revision,
+      next.tasks.filter((t) => ["queued", "running"].includes(t.state)).length,
+    ];
+    stats.querySelectorAll("strong").forEach((node, i) => {
+      node.textContent = values[i];
+    });
+    [next.runtimes, next.services, next.tasks].forEach((items, i) =>
+      tables[i].updateItems(items),
+    );
+  };
+  return content;
 }
 function tasksCard(tasks, ctx) {
   return card(

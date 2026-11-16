@@ -31,7 +31,7 @@ func TestSubscriptionAdminAuthenticationAndPreview(t *testing.T) {
 		status              int
 	}{
 		{"/", "", "", 200}, {"/api/config", "", "", 401},
-		{"/api/config", strings.Repeat("a", 43), "", 401},
+		{"/api/config", strings.Repeat("a", 64), "", 401},
 		{"/api/config", session.Token, "https://evil.example", 403},
 		{"/api/config", session.Token, "", 200},
 	} {
@@ -150,20 +150,15 @@ func TestSubscriptionCustomOutputsAndRevokedUsageCleanup(t *testing.T) {
 	c := sub.DefaultConfig()
 	c.Outputs = c.Outputs[:1]
 	c.Outputs[0].ID = "custom"
-	if err := ensureSubscriptionGrant(&c, strings.Repeat("a", 43)); err != nil || len(c.Grants) != 0 {
-		t.Fatal("custom outputs must use explicit grants", err)
-	}
-	root, token := t.TempDir(), strings.Repeat("b", 43)
-	c = subscriptionFixture(t, root, token, "content")
-	usage := filepath.Join(root, "subscriptions/usage", c.Grants[0].TokenHash+".json")
-	if err := AtomicJSON(usage, uint64(9)); err != nil {
+	root, token := t.TempDir(), strings.Repeat("b", 64)
+	subscriptionFixture(t, root, token, "content")
+	if err := RunSubscriptions(context.Background(), []string{"--root", root, "revoke", "--id", "fixture"}, nil, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if err := RunSubscriptions(context.Background(), []string{"--root", root, "revoke", "--id", c.Grants[0].ID}, nil, io.Discard); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(usage); !os.IsNotExist(err) {
-		t.Fatal("revoked usage remains", err)
+	response := httptest.NewRecorder()
+	subscriptionHandler(root).ServeHTTP(response, httptest.NewRequest("GET", "/s/"+token+"/normal-sing-box", nil))
+	if response.Code != 404 {
+		t.Fatal("revoked grant remains usable")
 	}
 	var links bytes.Buffer
 	if err := subscriptionURLs(root, "127.0.0.1", "normal", &links); err != nil || strings.Contains(links.String(), "/s/") {
@@ -260,7 +255,7 @@ func TestSubscriptionSoak(t *testing.T) {
 		t.Fatal("soak duration must be at least one minute")
 	}
 	root := t.TempDir()
-	token := strings.Repeat("a", 43)
+	token := strings.Repeat("a", 64)
 	subscriptionFixture(t, root, token, strings.Repeat("x", 1024))
 	server := httptest.NewServer(subscriptionHandler(root))
 	client := server.Client()

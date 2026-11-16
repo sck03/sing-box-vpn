@@ -1,6 +1,6 @@
 # v4 架构与维护
 
-`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。schema=4，面向空目录，不提供旧数据迁移。配置派生 JSON、订阅缓存和证书材料是不同职责，不允许旧 CLI 修改配置投影。
+`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema=5；平台配置 schema=4、订阅配置 schema=1 是各自独立的格式版本。面向空目录，不提供旧数据库、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责，不允许旧 CLI 修改配置投影。
 
 ## 模块边界
 
@@ -8,6 +8,8 @@
 | --- | --- |
 | internal/domain | 稳定身份、权益/周期规则，不依赖 HTTP 或 SQLite |
 | internal/application | HTTP/CLI 共享类型化命令 |
+| internal/manage/accounts_queries | 返回结构化账户查询、凭据摘要和渲染产物；传输层负责编码 |
+| internal/encoding | 按调用场景限制大小的严格 JSON 解码 |
 | internal/database | 连接策略、schema 版本与文件权限 |
 | internal/adminauth | bcrypt、Cookie 会话、CSRF、角色、限速、TOTP、审计 |
 | internal/accounting | 权益激活、日历账期、凭据代次、预留/检查点、下载计数 |
@@ -33,11 +35,15 @@ HTTP/CLI → Validate → 校验资源引用/核心配置 → revision CAS 保�
 
 每权益每实例共享最多 64 KiB 持久预留池，批量累计检查点幂等结算。预留先落盘再交付转发，崩溃保守占用剩余额度。关闭连接时回收无引用池；无图表观看时不影响计量。周期以 IANA 时区与日历计算，短月截断，时钟回拨不回退 period ID。旧周期检查点只结算旧账期。
 
+计量拓扑锁不执行 SQLite 或 socket I/O；每个额度池独立串行预留。凭据代次共用最长 250 ms 授权缓存，到期/重置边界提前失效，同 Store 的策略变更立即失效。只为用量变化或关闭的池写检查点。正常关闭的 lease 按运行代次的单调序号压缩，用高水位和关闭标记防止重放；崩溃的未结清 lease 与账期保留，不能手工删除以释放额度。连续崩溃的保守占用可以累积。
+
 备份使用 VACUUM INTO 取得一致快照，再 AES-GCM 加密。恢复校验数据库结构等于本发行 schema，拒绝额外 trigger/view 和路径逃逸。同机恢复保留安全和账本；灾难恢复临时目录完成后发布，禁用所有权益并撤销 token。
 
 ## 安全与资源
 
 只允许固定类型的系统动作；没有网页任意 shell。公开面板强制 TLS/可信代理；会话存哈希，CSRF、同源、Host、CSP 与服务端角色检查。SSE 每轮复核会话，状态缓存 4 秒、刷新 5 秒、慢写 10 秒截止；页面隐藏断开，无无限消息队列。
+
+下载授权统一保存在 download_grants，权益授权选择客户端格式，输出授权选择 output ID，两者互斥。账号与输出下载共用撤销、有效期及原子次数检查。下载监听复用数据库连接，不按请求打开 SQLite。远程模板/规则正文与 ETag 同存有界运行缓存，编译时覆盖配置中的回退值，不写回期望配置；删除资源或修改 URL 同时移除旧缓存。后台仅为到期的刷新和自动分发排队。
 
 VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IPv4 拨号在隧道 worker 内执行；出口验证失败或身份改变立即撤销准入。防火墙/网卡/namespace 仅处理完整所有权匹配资源，不清空用户系统规则。OpenVPN 输出流有 2 MiB 日志预算和持续消费，cloudflared 使用 journald。
 

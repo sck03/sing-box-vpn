@@ -1,8 +1,11 @@
 let csrf = "";
+let sessionGeneration = 0;
 export function setCSRF(value) {
+  sessionGeneration++;
   csrf = value || "";
 }
 export async function api(path, body, { blob = false, signal } = {}) {
+  const generation = sessionGeneration;
   const response = await fetch(path, {
     method: body === undefined ? "GET" : "POST",
     credentials: "same-origin",
@@ -13,14 +16,22 @@ export async function api(path, body, { blob = false, signal } = {}) {
         : { "Content-Type": "application/json", "X-CSRF-Token": csrf },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  const stale = () => {
+    if (generation !== sessionGeneration)
+      throw new DOMException("会话已更改", "AbortError");
+  };
+  stale();
   if (!response.ok) {
     const error = new Error(
       (await response.text()).trim() || `HTTP ${response.status}`,
     );
     error.status = response.status;
+    stale();
     throw error;
   }
-  return blob ? response.blob() : response.json();
+  const value = await (blob ? response.blob() : response.json());
+  stale();
+  return value;
 }
 export function download(blob, name) {
   const url = URL.createObjectURL(blob),

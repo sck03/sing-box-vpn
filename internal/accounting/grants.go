@@ -16,6 +16,7 @@ import (
 type Grant struct {
 	ID           string     `json:"id"`
 	AccountID    string     `json:"account_id"`
+	Outputs      []string   `json:"outputs,omitempty"`
 	Scope        string     `json:"scope"`
 	Clients      []string   `json:"clients"`
 	ExpiresAt    *time.Time `json:"expires_at"`
@@ -29,8 +30,24 @@ func grantHash(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 func (s *Store) CreateGrant(ctx context.Context, g Grant) (string, error) {
-	if !domain.ResourceID.MatchString(g.ID) || !domain.ResourceID.MatchString(g.AccountID) || !slices.Contains([]string{"", "normal", "vpngate"}, g.Scope) || len(g.Clients) == 0 || len(g.Clients) > 3 {
+	if !domain.ResourceID.MatchString(g.ID) || !slices.Contains([]string{"", "normal", "vpngate"}, g.Scope) || len(g.Clients) > 3 {
 		return "", errors.New("invalid download grant")
+	}
+	if g.AccountID != "" {
+		if !domain.ResourceID.MatchString(g.AccountID) || len(g.Clients) == 0 || len(g.Outputs) != 0 {
+			return "", errors.New("account grants require client formats and cannot select outputs")
+		}
+	} else {
+		if len(g.Outputs) == 0 || len(g.Outputs) > 128 || len(g.Clients) != 0 || g.Scope != "" {
+			return "", errors.New("output grants require 1–128 outputs")
+		}
+		seen := map[string]bool{}
+		for _, id := range g.Outputs {
+			if !domain.ResourceID.MatchString(id) || seen[id] {
+				return "", errors.New("invalid or duplicate output")
+			}
+			seen[id] = true
+		}
 	}
 	for _, client := range g.Clients {
 		if !slices.Contains([]string{"sing-box", "mihomo", "uri"}, client) {
@@ -47,7 +64,15 @@ func (s *Store) CreateGrant(ctx context.Context, g Grant) (string, error) {
 	var b [32]byte
 	rand.Read(b[:])
 	token := hex.EncodeToString(b[:])
-	r, err := s.db.ExecContext(ctx, `INSERT INTO account_grants(id,account,scope,clients,expires,max_downloads,hash) SELECT ?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM account_grants)<10000`, g.ID, g.AccountID, g.Scope, string(clients), timestamp(g.ExpiresAt), g.MaxDownloads, grantHash(token))
+	outputs, err := json.Marshal(g.Outputs)
+	if err != nil {
+		return "", err
+	}
+	var account any
+	if g.AccountID != "" {
+		account = g.AccountID
+	}
+	r, err := s.db.ExecContext(ctx, `INSERT INTO download_grants(id,account,scope,clients,outputs,expires,max_downloads,hash) SELECT ?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM download_grants)<10000`, g.ID, account, g.Scope, string(clients), string(outputs), timestamp(g.ExpiresAt), g.MaxDownloads, grantHash(token))
 	if err != nil {
 		return "", err
 	}
@@ -61,13 +86,19 @@ func (s *Store) CreateGrant(ctx context.Context, g Grant) (string, error) {
 	return token, nil
 }
 func readGrant(row scanner) (g Grant, err error) {
-	var clients string
+	var clients, outputs string
+	var account sql.NullString
 	var expires, limit sql.NullInt64
-	err = row.Scan(&g.ID, &g.AccountID, &g.Scope, &clients, &expires, &limit, &g.Downloads, &g.Revoked)
+	err = row.Scan(&g.ID, &account, &g.Scope, &clients, &outputs, &expires, &limit, &g.Downloads, &g.Revoked)
 	if err != nil {
 		return
 	}
 	err = json.Unmarshal([]byte(clients), &g.Clients)
+	if err != nil {
+		return
+	}
+	g.AccountID = account.String
+	err = json.Unmarshal([]byte(outputs), &g.Outputs)
 	if expires.Valid {
 		t := time.Unix(expires.Int64, 0).UTC()
 		g.ExpiresAt = &t
@@ -78,10 +109,10 @@ func readGrant(row scanner) (g Grant, err error) {
 	return
 }
 
-const grantColumns = `id,account,scope,clients,expires,max_downloads,downloads,revoked`
+const grantColumns = `id,account,scope,clients,outputs,expires,max_downloads,downloads,revoked`
 
 func (s *Store) Grants(ctx context.Context) ([]Grant, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+grantColumns+` FROM account_grants ORDER BY id LIMIT 10000`)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+grantColumns+` FROM download_grants ORDER BY id LIMIT 10000`)
 	if err != nil {
 		return nil, err
 	}
@@ -97,45 +128,48 @@ func (s *Store) Grants(ctx context.Context) ([]Grant, error) {
 	return out, rows.Err()
 }
 func (s *Store) RevokeGrant(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE account_grants SET revoked=1 WHERE id=?`, id)
+	_, err := s.db.ExecContext(ctx, `UPDATE download_grants SET revoked=1 WHERE id=?`, id)
 	return err
 }
 func (s *Store) Grant(ctx context.Context, token string) (Grant, Usage, error) {
-	if len(token) != 64 {
-		return Grant{}, Usage{}, ErrDenied
-	}
-	g, err := readGrant(s.db.QueryRowContext(ctx, `SELECT `+grantColumns+` FROM account_grants WHERE hash=?`, grantHash(token)))
-	if err != nil {
+	g, err := s.LookupGrant(ctx, token)
+	if err != nil || g.AccountID == "" {
 		return g, Usage{}, ErrDenied
+	}
+	u, err := s.VisibleAccount(ctx, g.AccountID, time.Now())
+	return g, u, err
+}
+
+func (s *Store) LookupGrant(ctx context.Context, token string) (Grant, error) {
+	if len(token) != 64 {
+		return Grant{}, ErrDenied
+	}
+	g, err := readGrant(s.db.QueryRowContext(ctx, `SELECT `+grantColumns+` FROM download_grants WHERE hash=?`, grantHash(token)))
+	if err != nil {
+		return g, ErrDenied
 	}
 	now := time.Now()
 	if g.Revoked || (g.ExpiresAt != nil && !now.Before(*g.ExpiresAt)) {
-		return g, Usage{}, ErrDenied
+		return g, ErrDenied
 	}
-	u, err := s.Advance(ctx, g.AccountID, now, false)
-	if err != nil {
-		return g, u, err
-	}
-	if u.Disabled || (u.ExpiresAt != nil && !now.Before(*u.ExpiresAt)) {
-		return g, u, ErrDenied
-	}
-	if u.SubscriberID != "" {
-		var disabled bool
-		if err = s.db.QueryRowContext(ctx, `SELECT disabled FROM subscribers WHERE id=?`, u.SubscriberID).Scan(&disabled); err != nil || disabled {
-			return g, u, ErrDenied
-		}
-	}
-	return g, u, nil
+	return g, nil
 }
 func (s *Store) CountDownload(ctx context.Context, token, client string) error {
-	g, _, err := s.Grant(ctx, token)
+	g, err := s.LookupGrant(ctx, token)
 	if err != nil {
 		return err
 	}
-	if !slices.Contains(g.Clients, client) {
+	if g.AccountID != "" {
+		if !slices.Contains(g.Clients, client) {
+			return ErrDenied
+		}
+		if _, err := s.DownloadAccount(ctx, g.AccountID, time.Now()); err != nil {
+			return err
+		}
+	} else if !slices.Contains(g.Outputs, client) {
 		return ErrDenied
 	}
-	r, err := s.db.ExecContext(ctx, `UPDATE account_grants SET downloads=downloads+1 WHERE hash=? AND revoked=0 AND (expires IS NULL OR expires>?) AND (max_downloads IS NULL OR downloads<max_downloads)`, grantHash(token), time.Now().Unix())
+	r, err := s.db.ExecContext(ctx, `UPDATE download_grants SET downloads=downloads+1 WHERE hash=? AND revoked=0 AND (expires IS NULL OR expires>?) AND (max_downloads IS NULL OR downloads<max_downloads)`, grantHash(token), time.Now().Unix())
 	if err != nil {
 		return err
 	}

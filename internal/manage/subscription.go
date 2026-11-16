@@ -11,24 +11,23 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/sck03/sing-box-vpn/internal/accounting"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
 type subscriptionSettings struct {
 	Enabled       bool   `json:"enabled"`
 	Port          int    `json:"port"`
-	Token         string `json:"token"`
 	Listen        string `json:"listen"`
 	PublicBaseURL string `json:"public_base_url,omitempty"`
 }
 
-var subscriptionTokenPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{32,255}$`)
+var subscriptionTokenPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 func configureSubscription(root string, app App, settings VPNSettings, port int, options ...string) error {
 	var previous subscriptionSettings
@@ -63,9 +62,6 @@ func configureSubscription(root string, app App, settings VPNSettings, port int,
 		}
 	}
 	previous.Enabled, previous.Port = true, port
-	if previous.Token == "" {
-		previous.Token = randomSecret()
-	}
 	if previous.Listen == "" {
 		previous.Listen = "::"
 	}
@@ -94,9 +90,6 @@ func configureSubscription(root string, app App, settings VPNSettings, port int,
 	if err != nil {
 		return err
 	}
-	if err := ensureSubscriptionGrant(&c, previous.Token); err != nil {
-		return err
-	}
 	files := fileBundle{}
 	if err := files.json("subscription.json", previous); err != nil {
 		return err
@@ -107,67 +100,8 @@ func configureSubscription(root string, app App, settings VPNSettings, port int,
 	return publish(root, files)
 }
 
-func ensureSubscriptionGrant(c *sub.Config, token string) error {
-	hash := sub.Digest([]byte(token))
-	for _, g := range c.Grants {
-		if g.TokenHash == hash && g.Revoked {
-			return errors.New("默认授权已撤销，请先重置默认订阅令牌")
-		}
-		if g.TokenHash == hash && !g.Revoked {
-			return nil
-		}
-	}
-	ids := []string{}
-	builtins := sub.DefaultConfig().Outputs
-	for _, o := range c.Outputs {
-		if slices.ContainsFunc(builtins, func(b sub.Output) bool {
-			return o.ID == b.ID && o.Collection == b.Collection && o.Template == b.Template
-		}) {
-			ids = append(ids, o.ID)
-		}
-	}
-	// A listener can serve exclusively custom outputs through independent grants.
-	// Do not grant those outputs implicitly or create an invalid empty grant.
-	if len(ids) == 0 {
-		return nil
-	}
-	c.Grants = slices.DeleteFunc(c.Grants, func(g sub.Grant) bool { return g.Revoked })
-	c.Grants = append(c.Grants, sub.Grant{ID: "default-" + hash[:12], Name: "默认订阅", TokenHash: hash, Outputs: ids})
-	c.Revision++
-	return c.Validate()
-}
-
 func resetSubscriptionToken(root string) error {
-	var settings subscriptionSettings
-	found, err := ReadJSON(filepath.Join(root, "subscription.json"), &settings)
-	if err != nil {
-		return err
-	}
-	if !found {
-		return errors.New("请先启用订阅")
-	}
-	c, _, _, err := loadSubscriptions(root)
-	if err != nil {
-		return err
-	}
-	hash := sub.Digest([]byte(settings.Token))
-	for i := range c.Grants {
-		if c.Grants[i].TokenHash == hash {
-			c.Grants[i].Revoked = true
-		}
-	}
-	settings.Token = randomSecret()
-	if err := ensureSubscriptionGrant(&c, settings.Token); err != nil {
-		return err
-	}
-	files := fileBundle{}
-	if err := files.json("subscription.json", settings); err != nil {
-		return err
-	}
-	if err := files.json(subscriptionsConfig, c); err != nil {
-		return err
-	}
-	return publish(root, files)
+	return errors.New("default sharing tokens were removed; revoke and create explicit download grants")
 }
 func disableSubscription(root string) error {
 	var settings subscriptionSettings
@@ -200,10 +134,7 @@ func subscriptionURLs(root, address, scope string, output io.Writer) error {
 		if !strings.HasPrefix(out.ID, scope+"-") {
 			continue
 		}
-		if _, ok := findGrant(c, settings.Token, out.ID, time.Now()); !ok {
-			continue
-		}
-		if _, err = fmt.Fprintf(output, "%s/s/%s/%s\n", subscriptionBase(settings, address), settings.Token, out.ID); err != nil {
+		if _, err = fmt.Fprintf(output, "输出 %s：请从面板创建下载授权\n", out.ID); err != nil {
 			return err
 		}
 		count++
@@ -266,8 +197,8 @@ func RunSubscription(ctx context.Context, args []string, output io.Writer) error
 	if err != nil {
 		return err
 	}
-	if !found || !settings.Enabled || !subscriptionTokenPattern.MatchString(settings.Token) {
-		return errors.New("订阅服务未配置强路径令牌")
+	if !found || !settings.Enabled {
+		return errors.New("订阅监听服务未启用")
 	}
 	if net.ParseIP(settings.Listen) == nil || settings.Port < 1 || settings.Port > 65535 {
 		return errors.New("订阅监听地址或端口错误")
@@ -278,19 +209,15 @@ func RunSubscription(ctx context.Context, args []string, output io.Writer) error
 	}
 	child, cancel := context.WithCancel(ctx)
 	defer cancel()
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		if platformOwned(*root) {
-			<-child.Done()
-		} else {
-			runSubscriptionScheduler(child, *root)
-		}
-	}()
-	server := &http.Server{Handler: unifiedDownloadHandler(*root), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 15 * time.Second, MaxHeaderBytes: 16 << 10}
+	store, err := accounting.Open(filepath.Join(*root, "control.db"))
+	if err != nil {
+		listener.Close()
+		return err
+	}
+	defer store.Close()
+	server := &http.Server{Handler: unifiedDownloadHandler(*root, store), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 15 * time.Second, MaxHeaderBytes: 16 << 10}
 	err = serveSubscription(child, listener, server)
 	cancel()
-	<-done
 	return err
 }
 

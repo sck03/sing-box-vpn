@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	strict "github.com/sck03/sing-box-vpn/internal/encoding"
 )
 
 func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Writer) error {
@@ -39,11 +41,15 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 	}
 	op := f.Args()[0]
 	decode := func(v any) error {
-		data, err := io.ReadAll(io.LimitReader(input, 128<<20))
+		limit := maxJSONFile
+		if op == "restore" {
+			limit = maxPlatformBackupRequest
+		}
+		data, err := io.ReadAll(io.LimitReader(input, int64(limit)+1))
 		if err != nil {
 			return err
 		}
-		return strictSubscriptionJSON(data, v)
+		return strict.JSON(data, v, limit)
 	}
 	if op == "restore" {
 		var v struct {

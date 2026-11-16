@@ -70,7 +70,6 @@ func (s SubscriptionService) plan(ctx context.Context, command application.Subsc
 		if err := validateSubscriptionsRevision(c, *candidate); err != nil {
 			return err
 		}
-		candidate.Grants = c.Grants
 		c = *candidate
 	}
 	if r.Sources == nil {
