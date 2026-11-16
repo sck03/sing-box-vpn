@@ -64,7 +64,8 @@ profile 指令最多三个参数，使用固定字段缓冲并提前拒绝多余
 | addons/vpngate/gateway/{nodes,geo}.go | 节点缓存/候选与后台刷新回收、出口及 Geo/ASN 校验 |
 | addons/vpngate/gateway/source_cache.go | 候选和已验证节点的来源归属、统一缓存读写 |
 | addons/vpngate/gateway/node_source.go | CSV 完整性、候选去重排序和 Base64 解码缓冲复用 |
-| lib/services.sh | 统一服务单元、启动恢复和 3 秒意外退出重试策略 |
+| lib/services.sh | 统一服务单元、启动恢复、10 秒重试及 5 分钟最多 10 次启动 |
+| internal/subscription/ | 类型化节点、来源集合、预览、独立客户端模板与快照生成 |
 | sing-box.service | 普通五协议 |
 | yg-vpngate.service | 出口管理器与认证 SOCKS5 |
 | sing-box-vpngate.service | 独立五协议 VPNGate 入口 |
@@ -74,8 +75,8 @@ profile 指令最多三个参数，使用固定字段缓冲并提前拒绝多余
 
 菜单 9 先选择普通或 VPNGate，再输出该类型的 URI、二维码、聚合、Mihomo 与 sing-box JSON。
 普通导出位于 `/etc/s-box/`，VPNGate 导出位于 `/etc/s-box/vpngate/`；订阅 HTTP 服务只允许
-读取两处明确列出的客户端文件。VPNGate 客户端仅手动选择当前国家的五个节点，公网流量
-均经 VPNGate，不保留普通节点、国内公网直连或自动切换的分支；本地私有地址仍可直连。
+按 `/s/<令牌>/<输出ID>` 读取已验证快照中的授权输出。VPNGate 客户端仅手动选择当前国家
+节点，流量经 VPNGate，不保留普通节点或 DIRECT 回退；混合集合使用独立 VPNGate 策略组。
 菜单 17 → 14 独立修改 VPNGate 端口、协议凭据、SNI、WS 或 TLS 证书；既有普通入口不变。
 OpenClash 可使用同目录 `proxies.yaml` 作为原生节点 provider，沿用路由器自己的 DNS 与策略；
 仅含当前国家节点，不提供直连或普通节点回退。详细设置见 [OpenClash 使用](docs/usage.md#openclash)。

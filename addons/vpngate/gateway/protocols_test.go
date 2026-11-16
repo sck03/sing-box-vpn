@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/binary"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -288,6 +289,9 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 	if err := manage.AtomicJSON(filepath.Join(root, "subscription.json"), manage.Object{"enabled": true, "port": subscriptionPort, "token": token, "listen": "127.0.0.1"}); err != nil {
 		t.Fatal(err)
 	}
+	if err := manage.RunConfig(ctx, []string{"--root", root, "--core", binary, "subscription-init", "--port", strconv.Itoa(subscriptionPort)}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
 	subscriptionCtx, stopSubscription := context.WithCancel(ctx)
 	subscriptionDone := make(chan error, 1)
 	go func() {
@@ -304,7 +308,7 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 			t.Error("protocol subscription server did not stop")
 		}
 	})
-	subscriptionURL := "http://127.0.0.1:" + strconv.Itoa(subscriptionPort) + "/" + token + "/"
+	subscriptionURL := "http://127.0.0.1:" + strconv.Itoa(subscriptionPort) + "/s/" + token + "/"
 	if _, err := manage.ReadJSON(filepath.Join(root, "app.json"), &app); err != nil {
 		t.Fatal(err)
 	}
@@ -384,11 +388,23 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 							delete(client, "proxies")
 							provider := manage.Object{"type": "file", "path": filepath.ToSlash(filepath.Join(directory, "jhsub-base64.txt"))}
 							if format == "provider" {
-								endpoint := subscriptionURL
+								endpoint := subscriptionURL + "normal-provider"
 								if group.label == "vpngate" {
-									endpoint += "vpngate/"
+									endpoint = subscriptionURL + "vpngate-provider"
 								}
-								provider = manage.Object{"type": "http", "url": endpoint + "proxies.yaml", "path": "./" + name + "-provider.yaml", "interval": 3600}
+								response, err := http.Get(endpoint)
+								if err != nil {
+									t.Fatal("provider download", err)
+								}
+								var downloaded struct {
+									Proxies []manage.Object `json:"proxies"`
+								}
+								decodeErr := json.NewDecoder(response.Body).Decode(&downloaded)
+								response.Body.Close()
+								if response.StatusCode != http.StatusOK || decodeErr != nil || len(downloaded.Proxies) != len(group.entries) {
+									t.Fatalf("invalid provider response: status=%d nodes=%d error=%v", response.StatusCode, len(downloaded.Proxies), decodeErr)
+								}
+								provider = manage.Object{"type": "http", "url": endpoint, "path": "./" + name + "-provider.yaml", "interval": 3600}
 							}
 							client["proxy-providers"] = manage.Object{"subscription": provider}
 							client["proxy-groups"] = []manage.Object{{"name": "selected", "type": "select", "use": []string{"subscription"}, "filter": "^" + regexp.QuoteMeta(node["tag"].(string)) + "$"}}

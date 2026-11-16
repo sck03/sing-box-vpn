@@ -8,6 +8,12 @@ The gateway's country selection, volunteer-node classification and SOCKS5
 relay design adapt byJoey/fanout, commit d7ce5224caf3469b19876982abdf8d1be16c4a8b.
 Its MIT license is reproduced below.
 
+Subscription processing and client field mappings were reviewed against
+sub-store-org/Sub-Store commit 7f2de2f33b1e7af6cf5e092e2d8d3d50b8eb1212
+(MIT). This project contains independent Go implementations, not its JavaScript runtime.
+YAML parsing links go.yaml.in/yaml/v3 v3.0.4 (MIT/Apache-2.0).
+Its original LICENSE and NOTICE are distributed in third_party/yaml/.
+
 MIT License
 
 Copyright (c) 2026 Joey (byJoey)

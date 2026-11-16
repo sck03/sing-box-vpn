@@ -66,5 +66,5 @@ Mihomo 更新包括 DNS 拨号收敛、代理循环检查性能及重载保留 f
 | [conduitvpn](https://github.com/sarices/conduitvpn/commit/4afc89bb9647fc1ccd8c240ab88e6e84e879398e) | 最新提交仍与来源记录一致，涉及 VPNGate 节点源和部署 | 继续采用受限 profile 校验与有界 CSV 解析 |
 
 OpenVPN DCO 能否使用依赖内核、客户端/服务端和密码套件；只升级客户端版本不能保证 VPNGate
-志愿节点支持。当前保持标准库 Go 管理器、独立 OpenVPN 后端与明确的 `tunnel`/`proxyAccess`
+志愿节点支持。当前保持 Go 管理器、独立 OpenVPN 后端与明确的 `tunnel`/`proxyAccess`
 边界，后续后端替换无需改动订阅或 SOCKS 协议层。

@@ -38,7 +38,7 @@ func main() {
 }
 func entry(args []string) error {
 	if len(args) == 0 || args[0] == "--help" {
-		fmt.Println("yg-vpngate daemon|ctl|worker|cleanup|config|core|firewall|asset|remote|subscription|--version\nctl: status, nodes, start, stop, swap, reload, refresh, mode, policy")
+		fmt.Println("yg-vpngate daemon|ctl|worker|cleanup|config|core|firewall|asset|remote|subscription|subscriptions|--version\nctl: status, nodes, start, stop, swap, reload, refresh, mode, policy")
 		return nil
 	}
 	if args[0] == "--version" {
@@ -46,7 +46,7 @@ func entry(args []string) error {
 		return nil
 	}
 	switch args[0] {
-	case "config", "core", "firewall", "asset", "remote", "subscription":
+	case "config", "core", "firewall", "asset", "remote", "subscription", "subscriptions":
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		switch args[0] {
@@ -62,6 +62,8 @@ func entry(args []string) error {
 			return manage.RunRemote(ctx, args[1:], os.Stdin, os.Stdout)
 		case "subscription":
 			return manage.RunSubscription(ctx, args[1:], os.Stdout)
+		case "subscriptions":
+			return manage.RunSubscriptions(ctx, args[1:], os.Stdin, os.Stdout)
 		}
 		return errors.New("unknown management command")
 	case "daemon":

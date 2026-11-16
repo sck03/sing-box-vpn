@@ -1,6 +1,6 @@
 **模块与维护约定**
 
-项目使用一个仅依赖标准库的 Go 二进制 `yg-vpngate`。Bash 负责安装、菜单和 systemd 单元；
+项目使用一个 Go 二进制 `yg-vpngate`，YAML 导入使用成熟解析库。Bash 负责安装、菜单和 systemd 单元；
 配置、导出、凭据、更新与网关运行逻辑由 Go 管理。使用说明见 [README](../README.md)，
 测试与测量记录见 [optimization.md](optimization.md)。
 
@@ -102,8 +102,8 @@ OpenVPN 指令最多三个参数，校验使用固定四字段存储；发现多
 | `config.go` / `credentials.go` | 管理命令、配置变更、独立国家设置与凭据 |
 | `init.go` | 当前配置初始化、地址校验、端口预留及拒绝覆盖无管理状态的目录 |
 | `export.go` | 普通/VPNGate 导出集合、客户端校验及发布文件组装 |
-| `state.go` / `render.go` | 原生证书/密钥、服务端配置与 sing-box 协议出站 |
-| `client.go` / `mihomo.go` / `uri.go` | sing-box 客户端策略、Mihomo 配置和 URI 编码，三种格式各自维护 |
+| `model.go` / `state.go` / `render.go` | 类型化本机节点、证书/密钥与服务端配置 |
+| `../subscription/` | 独立节点模型、严格解析、集合处理、能力检查、客户端模板与确定性输出 |
 | `websocket.go` | 本地 WebSocket 路径约束及客户端 Host 选择 |
 | `storage.go` | 有界文件读取、统一原子写入、JSON 格式和可复用流式缓冲 |
 | `publish.go` | 单次多文件提交快照、恢复校验、失败恢复和启动等待 |
@@ -113,7 +113,12 @@ OpenVPN 指令最多三个参数，校验使用固定四字段存储；发现多
 | `services.go` | systemd 状态查询与重启，区分未运行和执行失败 |
 | `assets.go` / `core_archive.go` | 共用资产下载与 SHA256 校验 / 有界完整解包与暂存文件 |
 | `core_validation.go` | 全部核心配置路径的摘要快照、兼容性检查与变更检测 |
-| `subscription.go` / `remote.go` | 有限连接的本地订阅、远端 HTTP 请求及推送命令 |
+| `subscription.go` / `subscriptions_http.go` | 监听生命周期、授权及已发布快照下载 |
+| `subscriptions_cli.go` / `subscriptions_store.go` | 管理入口、版本校验和快照发布 |
+| `subscriptions_prepare.go` / `subscriptions_refresh.go` / `subscriptions_resources.go` | 锁外有界获取、调度、缓存、退避和通知 |
+| `subscriptions_service.go` / `subscriptions_restore.go` | 服务事务及失败回滚，可注入执行器 |
+| `subscriptions_backup.go` / `subscriptions_archive.go` | 加密备份、校验恢复和对象回收站 |
+| `validation_cache.go` / `remote.go` | 核心校验摘要缓存 / 远端请求及推送命令 |
 | `remote_payload.go` | 推送文件的一致快照、有界读取与 Telegram 消息分段 |
 
 `cmd/release/` 构建两种 Linux 架构并生成安装包和 SHA256；`cmd/ci-release/` 解析发布版本。
@@ -132,19 +137,35 @@ VMess 分享链接直接编码标准 UTF-8 JSON；链接与 Mihomo 导出共用 
 优先采用传输配置中的 Host，缺省才使用 Profile 的默认值，连接地址、TLS SNI 与 Host 独立。
 路径校验同时用于菜单修改和订阅构造，阻止手改状态绕过检查。服务端按解码后的 URL.Path 匹配，
 因此本地路径不接受查询、片段或百分号转义；普通/VPNGate 都保留合法原始 UTF-8 路径。
-URI 查询参数直接写入 Builder，省去逐项拼接和临时切片；VMess 单独编码 JSON，不生成无用的
-URI authority、转义名称或查询参数。新增格式应维护自身编码约束并接受真实核心验证。
+URI 使用标准 URL 编码，VMess 独立编码 UTF-8 JSON。不同客户端直接从同一类型节点生成，
+不再通过 sing-box 出站对象转译。新增格式应维护自身能力约束并接受可用的真实核心验证。
 Mihomo 完整配置 `clmi.yaml` 和 OpenClash provider `proxies.yaml` 复用同一节点集合，
 provider 仅序列化 `proxies`，路由器策略由客户端负责。两个范围的 provider 均进入现有
-发布事务与卸载清理列表；HTTP 订阅使用相同令牌，空文件或超过 16 MiB 返回 503。
-客户端策略按普通/VPNGate 范围直接构造；VPNGate 不创建随后丢弃的中国规则集、Clash
-直连模式规则与自动测速选择器。共享节点列表预留容量，避免构建期间重复扩容。
+发布事务与卸载清理列表。HTTP 通过独立授权选择 output ID，配置/快照在同一发布锁下读取。
+客户端策略由声明式模板配置；VPNGate 单独选择且不回退到普通出口。混合集合建立独立
+VPNGate 组；全 VPNGate 集合拒绝带 DIRECT 分流的模板。
 URI 的证书字段遵循目标导入格式：Hysteria2 只为自签证书固定叶证书指纹，CA 证书不固定；
 VMess 自签 TLS 使用 `insecure=1`。客户端不支持的字段不能通过额外兼容分支保证生效，
 原生订阅及真实核心导入测试是验收依据，已知格式限制须在使用文档中明确说明。
 
-订阅流式读取最新文件，不发送基于秒精度修改时间的缓存验证标记，避免同秒变更误返回 304。
+订阅配置位于 `subscriptions/config.json`，缓存/诊断位于 `runtime.json`，本机生成输入位于
+`local.json`，单一发布快照位于 `published.json`。HTTP 只鉴权并读取快照；下载不触发获取或核心检查。
+内容 SHA256 生成 ETag，授权检查先于条件请求；磁盘快照缓存用已打开文件的身份、大小和修改时间失效。
+不依靠秒级修改时间判断内容版本。次数账本独立持久化，HEAD/304 不扣次数。
 监听异常或取消时统一关闭服务器及现有连接；取消回调代替常驻等待协程。32 连接及读写超时仍有效。
+
+节点来源、集合、模板、规则集、输出和授权分别有稳定 ID。改名不改变输出 URL。远端节点的 ID
+按来源和连接身份计算；凭据变化产生新 ID。`app.json` schema 1 只保存类型化节点，Profile/Inbounds
+在旧管理命令的内部边界重建，Reality 公钥从私钥推导。外部不支持旧 schema/API。
+
+配置编辑使用 revision 乐观校验。远端获取持独立刷新锁、释放配置锁，提交时再取得 operation/config
+锁并复核 revision。两个来源下载 worker；全部缓存合计 8 MiB/4096 节点；对象每类最多 128。
+模板/规则每小时获取，来源默认每小时获取，失败指数退避 60 秒至 6 小时；必需来源默认最多陈旧一天。
+规则与输出有合计预算。失败不发布部分结果，来源删除后不从缓存重新引入。备份和回收站有独立上限。
+
+核心检查缓存绑定二进制 SHA256、配置内容、外部证书和私钥内容。相同检查复用成功收据，二进制
+变化即失效；失败不会写入收据。核心升级仍保留全配置清单、变更复核及服务回滚。
+服务重试间隔 10 秒，5 分钟最多 10 次；持续错误修复后可执行 `systemctl reset-failed` 再启动。
 
 主动推送先等待配置锁并恢复中断的发布，在同一锁内读取所选范围的订阅快照，每个文件最多
 16 MiB；全部读取成功后释放锁，再进行远端请求。GitLab 的三个文件始终来自同一批本地配置，

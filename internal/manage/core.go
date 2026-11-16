@@ -73,6 +73,16 @@ func CheckCore(ctx context.Context, binary string) (string, error) {
 }
 
 func CheckJSON(ctx context.Context, binary, directory string, value any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	key, err := validationKey(binary, value)
+	if err != nil {
+		return err
+	}
+	if validatedConfig(directory, key) {
+		return nil
+	}
 	if err := os.MkdirAll(directory, 0700); err != nil {
 		return err
 	}
@@ -92,6 +102,7 @@ func CheckJSON(ctx context.Context, binary, directory string, value any) error {
 	if err != nil {
 		return fmt.Errorf("配置检查失败: %w", err)
 	}
+	rememberValidation(directory, key)
 	return nil
 }
 

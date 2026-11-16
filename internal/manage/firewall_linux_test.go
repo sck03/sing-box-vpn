@@ -62,7 +62,7 @@ func TestLinuxMultiportFirewall(t *testing.T) {
 		}
 	}
 	profile := func(base int, hopping, tuic []string) Profile {
-		p := Profile{Ports: map[string]int{}, Hopping: hopping, TUICPorts: tuic}
+		p := Profile{Ports: map[string]int{}, Hopping: hopping, TUICPorts: tuic, WSPath: "/ws", Secrets: Secrets{Reality: Reality{Private: randomSecret()}}}
 		for i, kind := range Protocols {
 			p.Ports[kind] = base + i
 		}

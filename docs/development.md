@@ -4,7 +4,8 @@
 
 ## 构建环境
 
-工具链锁定 **Go 1.27.3**，模块只依赖标准库。版本与 sing-box 基线 SHA256 记录在
+工具链锁定 **Go 1.27.3**，YAML 导入使用 `go.yaml.in/yaml/v3 v3.0.4`，其余为标准库。
+依赖及校验和由 `go.mod` / `go.sum` 固定，许可证随 `third_party/` 分发。版本与核心 SHA256 记录在
 [versions.json](../versions.json)，当前测试基线为 sing-box 1.14.4、Mihomo 1.19.33。
 安装包包含源码和 Linux amd64/arm64 静态管理/网关程序，VPS 无需开发环境。
 
@@ -17,6 +18,23 @@ go run ./cmd/release
 参考来源与授权见 [NOTICE.md](../NOTICE.md)；安装不拉取 fanout/conduitvpn 源码，OpenVPN 由 apt 安装。
 
 ## 验证
+
+v3 的订阅工作流新增：严格导入、集合与适配器、独立授权/ETag/次数限制、远端必需来源的一次应用、
+304 缓存、模板/规则调度、服务回滚、加密备份及证书路径恢复。新增客户端先扩展
+`internal/subscription` 的能力登记和适配器，再补结构测试与可取得的真实客户端验收。
+不得把专有客户端的输出结构测试写成真实连接验收。新部署配置说明见 [subscriptions.md](subscriptions.md)。
+
+可选 Web 页与管理 API 共用订阅命令层。回归检查管理鉴权、跨源拒绝、预览不发布、实际协议按需检测、
+HTTP PUT/WebDAV 鉴权与 Gist 的 secret 可见性检查，均不依赖真实分发账户。
+持续测试默认跳过，可独立运行（不要与 race 或其他负载并行用于性能比较）：
+
+```bash
+RUN_SUBSCRIPTION_SOAK=10m go test ./internal/manage -run '^TestSubscriptionSoak$' -count=1 -v -timeout=12m
+```
+
+Windows PowerShell 先加载开发环境，再设置 `$env:RUN_SUBSCRIPTION_SOAK='10m'`；结束后用
+`Remove-Item Env:RUN_SUBSCRIPTION_SOAK` 清除。延长时长时同步提高 `-timeout`。
+测试报告实际请求数、失败数、GC 后堆和 goroutine 回收；不能据此推断生产 RSS 或代理吞吐。
 
 先准备官方 SHA256 校验的 sing-box 和 Mihomo。基础验证覆盖初始化、更新回滚、认证、真实五协议
 TCP/UDP、持续单向 UDP 和资源边界；性能测量命令见[优化记录](optimization.md)。

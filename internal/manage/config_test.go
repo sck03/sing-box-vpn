@@ -217,7 +217,7 @@ func TestInvalidClientDoesNotCommitAnyWorkingConfig(t *testing.T) {
 		before[name] = readBytes(t, filepath.Join(root, name))
 	}
 	bad := app
-	bad.Profile.Secrets.Reality.Public = "invalid-public-key"
+	object(object(bad.Inbounds[0]["tls"])["reality"])["private_key"] = "invalid-private-key"
 	if err := CommitApp(context.Background(), root, core, &bad); err == nil {
 		t.Fatal("invalid client config was accepted")
 	}
@@ -245,7 +245,7 @@ func TestHoppingAndMihomoManualGroup(t *testing.T) {
 	mihomo := readObject(t, filepath.Join(root, "vpngate", "clmi.yaml"))
 	found := false
 	for _, group := range objects(mihomo["proxy-groups"]) {
-		if group["name"] == "临时家宽" {
+		if group["name"] == "VPNGate" {
 			found = true
 			if group["type"] != "select" {
 				t.Fatal("gateway group is not manual")
@@ -314,7 +314,8 @@ func TestBashFacingConfigurationCommands(t *testing.T) {
 		t.Fatal("menu could not clear CDN address")
 	}
 	run("subscription-init", "--port", "0")
-	if len(strings.Split(strings.TrimSpace(run("subscription-urls")), "\n")) != 4 {
+	urls := run("subscription-urls")
+	if len(strings.Split(strings.TrimSpace(urls), "\n")) != 5 || !strings.Contains(urls, "/normal-uri") {
 		t.Fatal("missing subscription URLs")
 	}
 	run("subscription-stop")

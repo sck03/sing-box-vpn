@@ -419,20 +419,16 @@ func writeTUICLink(output io.Writer, app App, settings VPNSettings, private map[
 			continue
 		}
 		cache := certificateCache{}
-		profile, err = outboundProfile(inbound, profile, cache)
+		managed, err := managedNodes(App{Profile: profile, Inbounds: []Object{inbound}})
 		if err != nil {
 			return err
 		}
-		node, err := outboundWithCache(inbound, profile, app.Address, name+"-端口-"+strconv.Itoa(port), cache)
+		node, err := managed[0].subscriptionNode(app.Address, name+"-端口-"+strconv.Itoa(port), scope, nil, cache)
 		if err != nil {
 			return err
 		}
-		node["server_port"] = port
-		link, err := uriWithCache(node, profile, cache)
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(output, link)
+		node.Port = port
+		_, err = fmt.Fprintln(output, node.URI())
 		return err
 	}
 	return errors.New("缺少 TUIC 入口")

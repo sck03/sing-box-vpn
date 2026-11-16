@@ -5,6 +5,33 @@
 本文记录当前实现和验证边界；以往的分配测量与修复记录见
 [5c272d4 时的优化日志](https://github.com/sck03/sing-box-vpn/blob/5c272d4/docs/optimization.md)。
 
+## 订阅模型与按变化校验 · 2026-11-16
+
+v3 把节点解析、集合处理和客户端渲染收敛到 `internal/subscription`。普通/VPNGate 导出、HTTP 下载与
+分发使用同一份已发布快照，查看链接不再生成文件或启动核心。校验成功收据包含核心二进制、配置和外部
+证书/私钥摘要；内容不变时省去重复 `sing-box check`，核心或依赖改变时重新检查。收据最多 128 条。
+
+以 `70c56fb` 为基线，各执行 7 次独立 CLI：查看链接从每次 1 次核心调用降到 0 次；重复相同分流设置
+从每次 3 次降到 1 次，剩余调用为版本查询。耗时与竞态测试同时采样，存在干扰，不报告速度提升百分比。
+
+Windows amd64、Go 1.27.3、i5-9400F，7 节点输入的渲染基准：
+
+| 渲染动作 | 每次耗时 | 分配字节 | 分配次数 |
+| --- | --- | --- | --- |
+| sing-box | 74.63 µs | 24,344 B | 339 |
+| Mihomo | 68.20 µs | 20,105 B | 323 |
+| Base64 | 25.19 µs | 16,753 B | 124 |
+| VMess URI | 6.42 µs | 2,454 B | 47 |
+
+```bash
+go test ./internal/subscription -run '^$' -bench 'BenchmarkClientRender|BenchmarkVMessURI' -benchmem
+```
+
+持续 HTTP 下载测试运行 10 分钟，完成 79,688 请求，0 失败；GC 后堆由 769,616 B 到 1,138,496 B，
+关闭连接后 goroutine 由 6 到 2。该证据不覆盖数天在线、整机 RSS 或代理吞吐。
+来源/规则/输出容量、并发、超时、缓存、日志与回收站均有上限，具体数值见 [订阅文档](subscriptions.md#资源边界)。
+完整验收与限制见 [v3 验收记录](refactor-status.md)。
+
 ## 凭据表单与 TUIC 复用端口 · 2026-11-13
 
 截图中的旧菜单来自最新正式包 v2.0.0，而自定义凭据和 TUIC 多端口已经存在于后续源码。
@@ -163,7 +190,7 @@ go test ./internal/manage -run '^$' -bench '^BenchmarkCoreDownload$' -benchmem -
 | 远端推送 | 同批快照、单文件 16 MiB、响应 4 MiB、HEAD 存在性检查；`BenchmarkRemoteAcknowledgement` |
 | 核心更新 | 下载 256 MiB、完整展开 512 MiB、取消与校验后发布；`BenchmarkCoreDownload`、`BenchmarkCoreConfigValidation` |
 | 核心配置校验 | JSON 直接编码到临时文件；`BenchmarkValidationJSONEncoding` |
-| 客户端配置 | 只创建当前范围需要的规则和选择器；`BenchmarkClientConfig` |
+| 客户端配置 | 统一模型按目标渲染；`internal/subscription` 的 `BenchmarkClientRender` |
 | 端口清单 | 只解析前四列，逐行复用缓冲；`BenchmarkPortInventory` |
 | 隧道资源清单 | 查询失败拒绝登记归属、精确链名匹配、字节迭代；`BenchmarkNamespaceListed` |
 | VMess URI | 直接编码 JSON，省去无用的 URI 字段构造；`BenchmarkVMessURI` |

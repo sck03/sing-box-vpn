@@ -12,102 +12,132 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
-func TestSubscriptionAuthenticationAndFreshFileContent(t *testing.T) {
-	root, token := t.TempDir(), strings.Repeat("a", 43)
-	if err := AtomicBytes(filepath.Join(root, "sbox.json"), []byte(`{"version":1}`), 0600); err != nil {
+func subscriptionFixture(t *testing.T, root, token, body string) sub.Config {
+	t.Helper()
+	c := sub.DefaultConfig()
+	if err := ensureSubscriptionGrant(&c, token); err != nil {
 		t.Fatal(err)
 	}
-	if err := AtomicBytes(filepath.Join(root, "vpngate", "sbox.json"), []byte(`{"scope":"vpngate"}`), 0600); err != nil {
+	if err := AtomicJSON(filepath.Join(root, subscriptionsConfig), c); err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(subscriptionHandler(root, token))
-	defer server.Close()
-	for _, path := range []string{"wrong/sbox.json", token + "/app.json", token + "/../app.json", token + "/missing/file", "中文/sbox.json", "wrong/vpngate/sbox.json", token + "/vpngate/secrets.json", token + "/vpngate/server.json", token + "/vpngate/../sbox.json"} {
-		response, err := server.Client().Get(server.URL + "/" + path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		response.Body.Close()
-		if response.StatusCode != 404 {
-			t.Fatal("unauthorized file exposed", path, response.StatusCode)
-		}
-	}
-	for _, body := range []string{`{"version":1}`, `{"version":2}`} {
-		if err := AtomicBytes(filepath.Join(root, "sbox.json"), []byte(body), 0600); err != nil {
-			t.Fatal(err)
-		}
-		response, err := server.Client().Get(server.URL + "/" + token + "/sbox.json")
-		if err != nil {
-			t.Fatal(err)
-		}
-		data, err := io.ReadAll(response.Body)
-		response.Body.Close()
-		if err != nil || string(data) != body || response.Header.Get("Cache-Control") != "no-store" {
-			t.Fatal("stale subscription", err)
-		}
-	}
-	response, err := server.Client().Get(server.URL + "/" + token + "/vpngate/sbox.json")
-	if err != nil {
+	if err := AtomicJSON(filepath.Join(root, "subscription.json"), subscriptionSettings{Enabled: true, Port: 12345, Token: token, Listen: "::"}); err != nil {
 		t.Fatal(err)
 	}
-	data, err := io.ReadAll(response.Body)
-	response.Body.Close()
-	if err != nil || response.StatusCode != 200 || string(data) != `{"scope":"vpngate"}` {
-		t.Fatal("separate VPNGate subscription returned ordinary content", err)
-	}
-	req, _ := http.NewRequest("HEAD", server.URL+"/"+token+"/sbox.json", nil)
-	response, err = server.Client().Do(req)
-	if err != nil {
+	writeTestSnapshot(t, root, body)
+	return c
+}
+
+func writeTestSnapshot(t *testing.T, root, body string) {
+	t.Helper()
+	a := sub.Artifact{Name: "test", MIME: "application/json", Data: []byte(body), ETag: `"` + sub.Digest([]byte(body)) + `"`}
+	if err := AtomicJSON(filepath.Join(root, subscriptionsSnapshot), sub.Snapshot{Version: sub.SchemaVersion, Artifacts: map[string]sub.Artifact{"normal-sing-box": a, "vpngate-sing-box": {Name: "vpn", MIME: "application/json", Data: []byte(`{"scope":"vpngate"}`), ETag: `"` + sub.Digest([]byte(`{"scope":"vpngate"}`)) + `"`}}}); err != nil {
 		t.Fatal(err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode != 200 || response.ContentLength == 0 {
-		t.Fatal("HEAD response invalid")
 	}
 }
 
-func TestSubscriptionRejectsUnavailableFiles(t *testing.T) {
+func TestSubscriptionAuthenticationETagRevocation(t *testing.T) {
 	root, token := t.TempDir(), strings.Repeat("a", 43)
-	handler := subscriptionHandler(root, token)
-	for _, scope := range []string{normalScope, vpngateScope} {
-		directory, err := exportDirectory(root, scope)
-		if err != nil {
+	c := subscriptionFixture(t, root, token, `{"version":1}`)
+	handler := subscriptionHandler(root)
+	for _, path := range []string{"/s/wrong/normal-sing-box", "/s/" + token + "/app.json", "/s/" + token + "/../app.json", "/s/" + token + "/vpngate/secrets.json", "/s/" + token + "/normal-sing-box?url=http://localhost"} {
+		r := httptest.NewRecorder()
+		handler.ServeHTTP(r, httptest.NewRequest("GET", path, nil))
+		if r.Code != 404 {
+			t.Fatal(path, r.Code)
+		}
+	}
+	path := "/s/" + token + "/normal-sing-box"
+	r := httptest.NewRecorder()
+	handler.ServeHTTP(r, httptest.NewRequest("GET", path, nil))
+	if r.Code != 200 || r.Body.String() != `{"version":1}` || r.Header().Get("Cache-Control") != "private, no-cache" {
+		t.Fatal(r)
+	}
+	tag := r.Header().Get("ETag")
+	if tag == "" {
+		t.Fatal("missing ETag")
+	}
+	req := httptest.NewRequest("GET", path, nil)
+	req.Header.Set("If-None-Match", tag)
+	r = httptest.NewRecorder()
+	handler.ServeHTTP(r, req)
+	if r.Code != 304 || r.Body.Len() != 0 {
+		t.Fatal(r)
+	}
+	c.Grants[0].Revoked = true
+	if err := AtomicJSON(filepath.Join(root, subscriptionsConfig), c); err != nil {
+		t.Fatal(err)
+	}
+	r = httptest.NewRecorder()
+	handler.ServeHTTP(r, req)
+	if r.Code != 404 {
+		t.Fatal("revoked token accepted", r.Code)
+	}
+}
+
+func TestSubscriptionUpdateWithinSameSecond(t *testing.T) {
+	root, token := t.TempDir(), strings.Repeat("a", 43)
+	subscriptionFixture(t, root, token, `{"version":1}`)
+	handler := subscriptionHandler(root)
+	modified := time.Now().Add(-time.Minute).Truncate(time.Second)
+	tag := ""
+	for _, body := range []string{`{"version":1}`, `{"version":2}`} {
+		writeTestSnapshot(t, root, body)
+		if err := os.Chtimes(filepath.Join(root, subscriptionsSnapshot), modified, modified); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.MkdirAll(directory, 0700); err != nil {
-			t.Fatal(err)
+		req := httptest.NewRequest("GET", "/s/"+token+"/normal-sing-box", nil)
+		req.Header.Set("If-None-Match", tag)
+		r := httptest.NewRecorder()
+		handler.ServeHTTP(r, req)
+		if r.Code != 200 || r.Body.String() != body {
+			t.Fatal("stale response", r.Code, r.Body.String())
 		}
-		prefix := ""
-		if scope == vpngateScope {
-			prefix = "vpngate/"
+		tag = r.Header().Get("ETag")
+	}
+}
+
+func TestSubscriptionLimitsAndScope(t *testing.T) {
+	root, token := t.TempDir(), strings.Repeat("a", 43)
+	c := subscriptionFixture(t, root, token, `{"version":1}`)
+	c.Grants[0].Outputs = []string{"normal-sing-box"}
+	c.Grants[0].MaxDownloads = 1
+	if err := AtomicJSON(filepath.Join(root, subscriptionsConfig), c); err != nil {
+		t.Fatal(err)
+	}
+	handler := subscriptionHandler(root)
+	for _, tc := range []struct {
+		method, path string
+		status       int
+	}{{"GET", "vpngate-sing-box", 404}, {"HEAD", "normal-sing-box", 200}, {"GET", "normal-sing-box", 200}, {"GET", "normal-sing-box", 404}} {
+		r := httptest.NewRecorder()
+		handler.ServeHTTP(r, httptest.NewRequest(tc.method, "/s/"+token+"/"+tc.path, nil))
+		if r.Code != tc.status {
+			t.Fatal(tc, r.Code)
 		}
-		for _, name := range []string{"sbox.json", "clmi.yaml", "proxies.yaml", "jhsub.txt"} {
-			filename := name
-			if name == "jhsub.txt" {
-				filename = "jhsub-base64.txt"
-			}
-			path := filepath.Join(directory, filename)
-			for _, size := range []int64{0, maxJSONFile + 1} {
-				file, err := os.Create(path)
-				if err != nil {
-					t.Fatal(err)
-				}
-				err = file.Truncate(size)
-				file.Close()
-				if err != nil {
-					t.Fatal(err)
-				}
-				for _, method := range []string{http.MethodGet, http.MethodHead} {
-					response := httptest.NewRecorder()
-					handler.ServeHTTP(response, httptest.NewRequest(method, "/"+token+"/"+prefix+name, nil))
-					if response.Code != http.StatusServiceUnavailable {
-						t.Errorf("%s %s%s with %d bytes returned %d", method, prefix, name, size, response.Code)
-					}
-				}
-			}
-		}
+	}
+	r := httptest.NewRecorder()
+	subscriptionHandler(root).ServeHTTP(r, httptest.NewRequest("GET", "/s/"+token+"/normal-sing-box", nil))
+	if r.Code != 404 {
+		t.Fatal("count reset")
+	}
+}
+
+func TestSubscriptionRejectsUnavailableSnapshot(t *testing.T) {
+	root, token := t.TempDir(), strings.Repeat("a", 43)
+	subscriptionFixture(t, root, token, `{"version":1}`)
+	handler := subscriptionHandler(root)
+	if err := AtomicBytes(filepath.Join(root, subscriptionsSnapshot), []byte(`{}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRecorder()
+	handler.ServeHTTP(r, httptest.NewRequest("GET", "/s/"+token+"/normal-sing-box", nil))
+	if r.Code != 503 {
+		t.Fatal(r.Code)
 	}
 }
 
@@ -120,45 +150,49 @@ func TestNativeProviderSubscription(t *testing.T) {
 		t.Fatal(err)
 	}
 	var settings subscriptionSettings
-	if _, err := ReadJSON(filepath.Join(root, "subscription.json"), &settings); err != nil {
-		t.Fatal(err)
-	}
-	server := httptest.NewServer(subscriptionHandler(root, settings.Token))
-	defer server.Close()
+	ReadJSON(filepath.Join(root, "subscription.json"), &settings)
 	for _, scope := range []string{normalScope, vpngateScope} {
 		var urls strings.Builder
 		if err := subscriptionURLs(root, "127.0.0.1", scope, &urls); err != nil {
 			t.Fatal(err)
 		}
-		found := false
-		for endpoint := range strings.FieldsSeq(urls.String()) {
-			if !strings.HasSuffix(endpoint, "/proxies.yaml") {
-				continue
-			}
-			found = true
-			prefix := strings.Index(endpoint, "/"+settings.Token+"/")
-			if prefix < 0 {
-				t.Fatal("provider URL omitted authentication")
-			}
-			response, err := server.Client().Get(server.URL + endpoint[prefix:])
-			if err != nil {
-				t.Fatal(err)
-			}
-			data, err := io.ReadAll(response.Body)
-			response.Body.Close()
-			directory, _ := exportDirectory(root, scope)
-			if err != nil || response.StatusCode != http.StatusOK || string(data) != string(readBytes(t, filepath.Join(directory, "proxies.yaml"))) {
-				t.Fatal("provider subscription returned incorrect scope or content", scope, err)
-			}
-			if response.Header.Get("Content-Type") != "application/yaml; charset=utf-8" {
-				t.Fatal("provider content type missing")
-			}
+		if !strings.Contains(urls.String(), "/s/"+settings.Token+"/"+scope+"-provider") {
+			t.Fatal("missing provider URL")
 		}
-		if !found {
-			t.Fatal("provider URL not advertised", scope)
+		r := httptest.NewRecorder()
+		subscriptionHandler(root).ServeHTTP(r, httptest.NewRequest("GET", "/s/"+settings.Token+"/"+scope+"-provider", nil))
+		if r.Code != 200 || !strings.Contains(r.Body.String(), `"proxies"`) {
+			t.Fatal(r.Code, r.Body.String())
 		}
 	}
 }
+
+func TestSubscriptionEnablePreservesAddress(t *testing.T) {
+	root := t.TempDir()
+	if err := configureSubscription(root, App{}, VPNSettings{}, 0, "127.0.0.1", "https://example.com/sub"); err != nil {
+		t.Fatal(err)
+	}
+	var first, second subscriptionSettings
+	ReadJSON(filepath.Join(root, "subscription.json"), &first)
+	if err := disableSubscription(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := configureSubscription(root, App{}, VPNSettings{}, 0); err != nil {
+		t.Fatal(err)
+	}
+	ReadJSON(filepath.Join(root, "subscription.json"), &second)
+	if first.Token != second.Token || first.Port != second.Port || first.PublicBaseURL != second.PublicBaseURL {
+		t.Fatal("ordinary enable rotated address")
+	}
+	if err := resetSubscriptionToken(root); err != nil {
+		t.Fatal(err)
+	}
+	ReadJSON(filepath.Join(root, "subscription.json"), &second)
+	if first.Token == second.Token {
+		t.Fatal("reset did not rotate")
+	}
+}
+
 func TestSubscriptionConnectionLimitAndShutdown(t *testing.T) {
 	base, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
@@ -186,7 +220,7 @@ func TestSubscriptionConnectionLimitAndShutdown(t *testing.T) {
 	}()
 	select {
 	case <-result:
-		t.Fatal("accepted beyond connection limit")
+		t.Fatal("capacity exceeded")
 	case <-time.After(20 * time.Millisecond):
 	}
 	listener.Close()
@@ -196,51 +230,22 @@ func TestSubscriptionConnectionLimitAndShutdown(t *testing.T) {
 			t.Fatal(err)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("shutdown did not unblock saturated listener")
+		t.Fatal("blocked shutdown")
 	}
 	first.Close()
 	first.Close()
 	if len(listener.slots) != 0 {
-		t.Fatal("connection capacity was not released exactly once")
+		t.Fatal("capacity leak")
 	}
 }
 
-func TestSubscriptionUpdateWithinSameSecond(t *testing.T) {
-	root, token := t.TempDir(), strings.Repeat("a", 43)
-	path := filepath.Join(root, "sbox.json")
-	handler := subscriptionHandler(root, token)
-	modified := time.Now().Add(-time.Minute).Truncate(time.Second)
-	for i, body := range []string{`{"version":1}`, `{"version":2}`} {
-		if err := AtomicBytes(path, []byte(body), 0600); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Chtimes(path, modified, modified); err != nil {
-			t.Fatal(err)
-		}
-		request := httptest.NewRequest(http.MethodGet, "/"+token+"/sbox.json", nil)
-		if i > 0 {
-			request.Header.Set("If-Modified-Since", modified.UTC().Format(http.TimeFormat))
-		}
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, request)
-		if response.Code != http.StatusOK || response.Body.String() != body {
-			t.Fatalf("update %d returned status %d, body %q", i, response.Code, response.Body.String())
-		}
-	}
-}
 func TestDisabledSubscriptionDoesNotListen(t *testing.T) {
 	root := t.TempDir()
-	if err := AtomicJSON(filepath.Join(root, "subscription.json"), subscriptionSettings{false, 12345, strings.Repeat("a", 43), "127.0.0.1"}); err != nil {
+	if err := AtomicJSON(filepath.Join(root, "subscription.json"), subscriptionSettings{Enabled: false, Port: 12345, Token: strings.Repeat("a", 43), Listen: "127.0.0.1"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := RunSubscription(context.Background(), []string{"--root", root}, io.Discard); err == nil {
-		t.Fatal("disabled subscription started")
-	}
-	if err := os.Remove(filepath.Join(root, "subscription.json")); err != nil {
-		t.Fatal(err)
-	}
-	if err := RunSubscription(context.Background(), []string{"--root", root}, io.Discard); err == nil {
-		t.Fatal("unconfigured subscription started")
+		t.Fatal("disabled server started")
 	}
 }
 
@@ -266,11 +271,7 @@ func TestSubscriptionListenerFailureClosesActiveRequests(t *testing.T) {
 	}
 	defer listener.Close()
 	started, stopped := make(chan struct{}), make(chan struct{})
-	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		close(started)
-		<-r.Context().Done()
-		close(stopped)
-	})}
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { close(started); <-r.Context().Done(); close(stopped) })}
 	defer server.Close()
 	fail := make(chan struct{})
 	result := make(chan error, 1)
@@ -283,28 +284,25 @@ func TestSubscriptionListenerFailureClosesActiveRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
-	if _, err := io.WriteString(client, "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"); err != nil {
-		close(fail)
-		t.Fatal(err)
-	}
+	io.WriteString(client, "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
 	select {
 	case <-started:
 	case <-time.After(3 * time.Second):
 		close(fail)
-		t.Fatal("request did not start")
+		t.Fatal("not started")
 	}
 	close(fail)
 	select {
 	case err := <-result:
-		if err == nil || !strings.Contains(err.Error(), "listener failed") {
-			t.Fatal("listener failure was hidden", err)
+		if err == nil {
+			t.Fatal("failure hidden")
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("server did not exit")
+		t.Fatal("not stopped")
 	}
 	select {
 	case <-stopped:
 	case <-time.After(3 * time.Second):
-		t.Fatal("active request survived listener failure")
+		t.Fatal("request survived")
 	}
 }

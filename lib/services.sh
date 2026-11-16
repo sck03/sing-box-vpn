@@ -18,10 +18,11 @@ write_service_recovery() {
 [Unit]
 Wants=network-online.target
 After=network-online.target
-StartLimitIntervalSec=0
+StartLimitIntervalSec=300
+StartLimitBurst=10
 [Service]
 Restart=always
-RestartSec=3
+RestartSec=10
 TimeoutStartSec=120
 ExecStartPre=+${SB_MANAGER:-/usr/local/bin/yg-vpngate} firewall --root "$root" --wait
 EOF
@@ -58,7 +59,7 @@ write_subscription_service() {
 ExecStart=/usr/local/bin/yg-vpngate subscription --root "$SB_ROOT"
 WorkingDirectory=$SB_ROOT
 ProtectSystem=strict
-ReadOnlyPaths=$SB_ROOT
+ReadWritePaths=$SB_ROOT
 NoNewPrivileges=true
 EOF
 }

@@ -27,7 +27,7 @@ func TestLinuxServiceStartupRecovery(t *testing.T) {
 	if !filepath.IsAbs(manager) {
 		t.Fatal("GATEWAY_BINARY must be an absolute path to the built manager")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	run := func(name string, args ...string) []byte {
 		t.Helper()
@@ -125,7 +125,7 @@ func TestLinuxServiceStartupRecovery(t *testing.T) {
 	}
 	interrupt()
 	run("systemctl", "kill", "--signal=SIGTERM", "--kill-whom=main", name+".service")
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	restarted := false
 	for time.Now().Before(deadline) {
 		current := pid()

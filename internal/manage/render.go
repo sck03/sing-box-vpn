@@ -10,8 +10,6 @@ import (
 	"strings"
 )
 
-const anyTLSMinIdleSessions = 1
-
 func NewProfile(root string, used map[int]bool, suffix string, excluded ...portRange) (Profile, error) {
 	directory := root
 	if suffix != "" {
@@ -108,91 +106,4 @@ func ServerConfig(inbounds []Object, routing map[string][]string, warp Object, s
 		result["endpoints"] = []Object{merge(clone(warp).(Object), Object{"type": "wireguard", "tag": "warp-out"})}
 	}
 	return result, nil
-}
-
-func outboundProfile(inbound Object, p Profile, cache certificateCache) (Profile, error) {
-	tls := object(inbound["tls"])
-	if text(inbound["type"]) != "vless" && tls["enabled"] == true {
-		p.Certificate = text(tls["certificate_path"])
-		info, err := cache.get(p.Certificate)
-		if err != nil {
-			return p, err
-		}
-		p.SelfSigned = info.SelfSigned
-		if sni := text(tls["server_name"]); sni != "" {
-			p.TLSSNI = sni
-		}
-	}
-	return p, nil
-}
-
-func Outbound(inbound Object, p Profile, address, name string) (Object, error) {
-	return outboundWithCache(inbound, p, address, name, certificateCache{})
-}
-func outboundWithCache(inbound Object, p Profile, address, name string, cache certificateCache) (Object, error) {
-	kind := text(inbound["type"])
-	n := Object{"type": kind, "tag": name, "server": address, "server_port": number(inbound["listen_port"])}
-	users := objects(inbound["users"])
-	if len(users) == 0 {
-		return nil, errors.New("入口缺少用户凭据")
-	}
-	for _, key := range []string{"uuid", "password"} {
-		if value, ok := users[0][key]; ok {
-			n[key] = value
-		}
-	}
-	serverTLS := object(inbound["tls"])
-	if kind == "vless" {
-		n["flow"] = "xtls-rprx-vision"
-		n["tls"] = Object{"enabled": true, "server_name": serverTLS["server_name"], "utls": Object{"enabled": true, "fingerprint": "chrome"}, "reality": Object{"enabled": true, "public_key": p.Secrets.Reality.Public, "short_id": p.Secrets.Reality.ShortID}}
-		return n, nil
-	}
-	var err error
-	p, err = outboundProfile(inbound, p, cache)
-	if err != nil {
-		return nil, err
-	}
-	sni := text(serverTLS["server_name"])
-	if sni == "" {
-		sni = p.TLSSNI
-	}
-	tls := Object{"enabled": serverTLS["enabled"] == true, "server_name": sni}
-	n["tls"] = tls
-	if tls["enabled"] == true {
-		if p.SelfSigned {
-			info, err := cache.get(p.Certificate)
-			if err != nil {
-				return nil, err
-			}
-			tls["certificate_public_key_sha256"] = []string{info.Pin}
-		}
-		if kind == "hysteria2" || kind == "tuic" {
-			tls["alpn"] = []string{"h3"}
-		}
-	}
-	switch kind {
-	case "vmess":
-		path := text(object(inbound["transport"])["path"])
-		if err := validateWebSocketPath(path); err != nil {
-			return nil, err
-		}
-		n["security"] = "auto"
-		n["transport"] = Object{"type": "ws", "path": path, "headers": Object{"Host": p.TLSSNI}}
-	case "tuic":
-		n["congestion_control"], n["udp_relay_mode"], n["zero_rtt_handshake"], n["heartbeat"] = "bbr", "native", false, "10s"
-	case "anytls":
-		n["idle_session_check_interval"], n["idle_session_timeout"], n["min_idle_session"] = "30s", "30s", anyTLSMinIdleSessions
-	case "hysteria2":
-		if len(p.Hopping) > 0 {
-			ports := make([]string, len(p.Hopping))
-			for i, value := range p.Hopping {
-				ports[i] = value
-				if !strings.Contains(value, ":") {
-					ports[i] += ":" + value
-				}
-			}
-			n["server_ports"] = ports
-		}
-	}
-	return n, nil
 }

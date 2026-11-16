@@ -40,7 +40,7 @@ func TestServiceRecoveryIncludesExistingArgoAndPreservesOtherOverrides(t *testin
 	for _, service := range services {
 		path := filepath.Join(directory, service+".service.d", "10-sb-vpn-recovery.conf")
 		data := string(readBytes(t, path))
-		for _, expected := range []string{"StartLimitIntervalSec=0", "Restart=always", "RestartSec=3", `ExecStartPre=+/bin/true firewall --root "` + filepath.ToSlash(root) + `" --wait`} {
+		for _, expected := range []string{"StartLimitIntervalSec=300", "StartLimitBurst=10", "Restart=always", "RestartSec=10", `ExecStartPre=+/bin/true firewall --root "` + filepath.ToSlash(root) + `" --wait`} {
 			if !strings.Contains(data, expected) {
 				t.Fatalf("%s cannot recover automatically: missing %s", service, expected)
 			}
@@ -53,7 +53,7 @@ func TestServiceRecoveryIncludesExistingArgoAndPreservesOtherOverrides(t *testin
 		t.Fatal("recovery created an uninstalled service", err)
 	}
 	if data := string(readBytes(t, filepath.Join(directory, "sb-subscription.service"))); !strings.Contains(data, "ProtectSystem=strict") {
-		t.Fatal("subscription lost its read-only sandbox")
+		t.Fatal("subscription lost its system sandbox")
 	}
 	gateway := string(readBytes(t, filepath.Join(directory, "sing-box-vpngate.service")))
 	unit, _, _ := strings.Cut(gateway, "[Service]")

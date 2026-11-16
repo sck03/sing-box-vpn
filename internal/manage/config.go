@@ -60,6 +60,17 @@ func loadVPN(root string) (VPNSettings, map[string]Secrets, error) {
 	return s, private, err
 }
 func CommitApp(ctx context.Context, root, core string, app *App) error {
+	managed, err := managedNodes(*app)
+	if err != nil {
+		return err
+	}
+	if len(managed) != len(Protocols) {
+		return errors.New("普通配置必须完整包含五协议")
+	}
+	app.Inbounds = make([]Object, 0, len(managed))
+	for _, node := range managed {
+		app.Inbounds = append(app.Inbounds, node.inbound())
+	}
 	version, err := CheckCore(ctx, core)
 	if err != nil {
 		return err
@@ -297,6 +308,9 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 	format := options.String("format", "json", "show output: json or text")
 	stdin := options.Bool("stdin", false, "read custom UUID/password from stdin")
 	tuicPort := options.Int("tuic-port", 0, "TUIC port for a single share link")
+	listen := options.String("listen", "", "subscription listen IP")
+	publicBase := options.String("public-base-url", "", "subscription public base URL")
+	applyServices := options.Bool("apply-services", false, "apply subscription settings with service rollback")
 	if err := parseOptions(options, args[1:]); err != nil {
 		return err
 	}
@@ -335,7 +349,7 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 	if operation == "recover" {
 		return recoverConfig(ctx, *root)
 	}
-	return withLock(*root, func() error {
+	execute := func() error {
 		var app App
 		exists, err := ReadJSON(filepath.Join(*root, "app.json"), &app)
 		if err != nil {
@@ -409,7 +423,9 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 			}
 			return errors.New("缺少 VMess 入口")
 		case "subscription-init":
-			return configureSubscription(*root, app, settings, *port)
+			return configureSubscription(*root, app, settings, *port, *listen, *publicBase)
+		case "subscription-reset":
+			return resetSubscriptionToken(*root)
 		case "subscription-stop":
 			return disableSubscription(*root)
 		case "subscription-urls":
@@ -420,6 +436,15 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 			}
 			if tuicRequested {
 				return writeTUICLink(output, app, settings, private, *scope, *tuicPort)
+			}
+			if operation == "links" {
+				dir, _ := exportDirectory(*root, *scope)
+				data, err := readSubscriptionFile(filepath.Join(dir, "jhsub.txt"))
+				if err != nil {
+					return err
+				}
+				_, err = output.Write(data)
+				return err
 			}
 			files, links, err := exportBundle(ctx, *root, *core, app, settings, private)
 			if err != nil {
@@ -466,7 +491,16 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 			return err
 		}
 		return CommitApp(ctx, *root, *core, &app)
-	})
+	}
+	if *applyServices {
+		if operation != "subscription-init" && operation != "subscription-stop" {
+			return errors.New("--apply-services 仅用于订阅启停")
+		}
+		return withOperationLock(*root, func() error {
+			return applySubscriptionChange(ctx, *root, execute, systemSubscriptionService{root: *root})
+		})
+	}
+	return withLock(*root, execute)
 }
 
 func mutateApp(app *App, settings VPNSettings, operation string, values []string) error {

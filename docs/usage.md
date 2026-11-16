@@ -46,8 +46,8 @@ WS 路径以 `/` 开头，最多 255 个 UTF-8 字节，例如 `/ws-01`、`/节�
 TUIC 客户端使用其中一个端口；它没有 Hy2 的自动端口跳跃参数。云平台安全组也需放行这些 UDP 端口。
 只改 TUIC 复用范围时，程序只更新端口元数据和防火墙，不重新生成未变化的订阅或调用核心校验。
 
-菜单仍缺少这些选项时，先通过菜单 **7** 更新正式包至 **v2.1.0 或更新版本**，退出后重新运行 `sb`。
-源码分支与正式 Release 分开发布，单独复制 `sb.sh` 会造成菜单与管理程序不匹配，请使用完整安装包。
+v3 使用新配置目录和完整安装包。源码分支与正式 Release 分开发布，单独复制 `sb.sh` 会造成
+菜单与管理程序不匹配。旧数据不自动迁移。
 
 自动分配使用 20000–59999，跳过已有节点和预留范围；若提示 200 个未预留端口均不可用，
 请检查系统占用或手动指定端口。系统端口清单无法完整读取时会报错并保留原配置。
@@ -66,7 +66,7 @@ sb tuic-link 31200 vpngate
 
 菜单 **12** 导入 PEM 证书/私钥或使用 Certbot；VPNGate 统一 TLS 证书位于 **17 → 14 → 5**。
 导入文件必须存在、密钥匹配，证书须覆盖填写的域名且在有效期内。VLESS 继续使用 Reality。
-自签证书的 sing-box 配置使用公钥指纹，Mihomo 配置明确启用 `skip-cert-verify`。
+自签证书的 sing-box 配置使用公钥指纹，Mihomo 使用叶证书指纹并关闭 `skip-cert-verify`。
 Hysteria2 分享链接同时携带 `insecure=1` 和叶证书 SHA256 指纹；CA 证书使用系统信任校验，
 不固定叶证书，避免正常续期后旧链接失效。更换自签证书后须重新获取订阅。
 
@@ -81,12 +81,16 @@ Hysteria2 分享链接同时携带 `insecure=1` 和叶证书 SHA256 指纹；CA 
 | 客户端配置 | `sbox.json` / `clmi.yaml` | 同名文件 |
 | OpenClash/Mihomo 节点 provider | `proxies.yaml` | 同名文件，只含当前国家节点 |
 | URI / Base64 聚合 | `jhsub.txt` / `jhsub-base64.txt` | 同名文件 |
-| HTTP 订阅 | `/<令牌>/sbox.json` 等 | `/<令牌>/vpngate/sbox.json` 等 |
+| HTTP 订阅 | `/s/<令牌>/normal-sing-box` 等 | `/s/<令牌>/vpngate-sing-box` 等 |
 
-本地订阅在 **3 → 8** 启用或重置，两套地址使用同一令牌；重置令牌后需更新客户端订阅地址。
-HTTP 的 `jhsub.txt` 路径提供 Base64 聚合，`links.txt` 提供原始 URI。公网加密传输需 HTTPS 反向代理。
+本地订阅在 **3 → 8** 管理。启用、停用、修改监听和重置令牌分别操作；普通修改保留地址。
+默认分享覆盖两套输出，也可为设备创建独立授权并设置范围、到期和下载次数。
+`normal-base64` 提供 Base64，`normal-uri` 提供原始 URI；VPNGate 使用相应 `vpngate-` ID。
+公网基础地址可独立配置为 HTTPS 反向代理地址，旧的按文件名下载接口已删除。
 默认通配监听在系统支持时同时接受 IPv4/IPv6；生成的 IPv6 URL 自动使用方括号。
-文件缺失、为空或超过 16 MiB 时返回 503，避免把无效内容当作成功订阅；此上限不限制代理流量。
+下载只读取已验证快照，支持 ETag/304；输出不可用或必需来源过期时返回 503，授权无效返回 404。
+配置文件最大 8 MiB，序列化状态最大 16 MiB；此上限不限制代理流量。详细格式和恢复流程见
+[订阅配置与接口](subscriptions.md)。菜单查看不刷新，远端刷新在订阅服务中定时执行。
 GitLab 的 VPNGate 文件放在 `vpngate/`，普通订阅继续使用原路径。
 推送使用开始时的一份订阅快照；期间修改配置不会混入本次内容，需再次推送才能更新。
 Telegram 保留完整链接，按每条消息最多 3500 字节分段；空订阅或单个链接过长时会在发送前
@@ -121,7 +125,7 @@ HTTP 地址，普通和 VPNGate 订阅分开使用。两种导入方式：
 proxy-providers:
   VPNGate:
     type: http
-    url: "http://服务器:订阅端口/令牌/vpngate/proxies.yaml"
+    url: "http://服务器:订阅端口/s/令牌/vpngate-provider"
     path: ./proxy_provider/vpngate.yaml
     interval: 3600
     proxy: DIRECT
@@ -138,7 +142,7 @@ proxy-groups:
 `MATCH,VPNGate出口`，并检查之前的 DIRECT 规则及 OpenClash 覆写。此组不要加入 DIRECT、
 普通节点或自动回退组。暂停 VPNGate 时节点文件仍保留，但公网转发被服务端阻断。
 
-普通节点使用不带 `/vpngate/` 的 `proxies.yaml` 地址；两种 provider 使用不同的名称和缓存路径。
+普通节点使用 `/s/令牌/normal-provider` 地址；两种 provider 使用不同的名称和缓存路径。
 这两个 YAML 文件采用 JSON 语法（属于 YAML 可接受的格式），Mihomo 可直接读取，无需改格式。
 自签 VMess/TUIC 请使用原生文件，避免聚合 URI 丢失证书设置。当前验收覆盖 Mihomo HTTP provider
 导入五协议的真实 TCP/UDP；OpenWrt 设备和 LuCI 覆写界面需在实际路由器上验证。

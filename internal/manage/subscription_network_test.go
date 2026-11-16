@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -23,9 +22,7 @@ func TestSubscriptionURLsReachBothAddressFamilies(t *testing.T) {
 		t.Fatal(err)
 	}
 	const body = `{"subscription":"current"}`
-	if err := AtomicBytes(filepath.Join(root, "sbox.json"), []byte(body), 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeTestSnapshot(t, root, body)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- RunSubscription(ctx, []string{"--root", root}, io.Discard) }()

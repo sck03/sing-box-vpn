@@ -9,6 +9,7 @@ MANAGER="${SB_MANAGER:-/usr/local/bin/yg-vpngate}"
 source "$SCRIPT_ROOT/lib/ui.sh"
 source "$SCRIPT_ROOT/lib/services.sh"
 source "$SCRIPT_ROOT/lib/node-settings.sh"
+source "$SCRIPT_ROOT/lib/subscriptions.sh"
 cfg() { "$MANAGER" config --root "$SB_ROOT" --core "$CORE" "$@"; }
 require_root() { [[ $(id -u) == 0 ]] || { echo '需要 root 权限' >&2; return 1; }; }
 require_system() {
@@ -48,7 +49,7 @@ install_main() {
     if [[ -d "$APP_HOME" && ! -f "$APP_HOME/.managed" ]]; then echo "$APP_HOME 已存在且无项目标记，停止安装" >&2; return 1; fi
     install -d -m 0755 "$APP_HOME" "$SB_ROOT"
     if [[ "$SCRIPT_ROOT" != "$APP_HOME" ]]; then
-        cp -a "$SCRIPT_ROOT/lib" "$SCRIPT_ROOT/addons" "$SCRIPT_ROOT/internal" "$SCRIPT_ROOT/cmd" "$SCRIPT_ROOT/go.mod" "$SCRIPT_ROOT/manifest.go" "$SCRIPT_ROOT/versions.json" "$SCRIPT_ROOT/LICENSE" "$SCRIPT_ROOT/NOTICE.md" "$SCRIPT_ROOT/sb.sh" "$SCRIPT_ROOT/install.sh" "$APP_HOME/"
+        cp -a "$SCRIPT_ROOT/lib" "$SCRIPT_ROOT/addons" "$SCRIPT_ROOT/internal" "$SCRIPT_ROOT/cmd" "$SCRIPT_ROOT/go.mod" "$SCRIPT_ROOT/go.sum" "$SCRIPT_ROOT/third_party" "$SCRIPT_ROOT/manifest.go" "$SCRIPT_ROOT/versions.json" "$SCRIPT_ROOT/LICENSE" "$SCRIPT_ROOT/NOTICE.md" "$SCRIPT_ROOT/sb.sh" "$SCRIPT_ROOT/install.sh" "$APP_HOME/"
         install -d "$APP_HOME/.bin"
         cp -a "$SCRIPT_ROOT/.bin/linux-$install_arch" "$APP_HOME/.bin/"
     fi
@@ -84,26 +85,6 @@ install_main() {
     ui_line "$UI_GREEN" ' 五协议普通节点已安装完成。'
     show_status
     ui_hint '输入 sb 打开管理菜单；菜单 9 查看节点，菜单 17 添加 VPNGate。'
-}
-subscription_menu() {
-    ui_submenu '本地订阅管理' subscription_action \
-        '启用 / 重置本地订阅' '停止本地订阅' '查看订阅地址'
-}
-subscription_action() {
-    local port
-    case "$1" in
-    1) ui_input port '订阅端口，回车随机' || return "$UI_CANCEL"
-       cfg subscription-init --port "${port:-0}"
-       write_subscription_service
-       cfg export; firewall; systemctl daemon-reload; systemctl enable sb-subscription >/dev/null; systemctl restart sb-subscription
-       echo '普通五协议订阅：'; subscription_urls normal
-       if [[ -f "$SB_ROOT/vpngate/sbox.json" ]]; then echo 'VPNGate 五协议订阅：'; subscription_urls vpngate; fi;;
-    2) systemctl disable --now sb-subscription 2>/dev/null || true
-       cfg subscription-stop
-       firewall;;
-    3) echo '普通五协议订阅：'; subscription_urls normal
-       if [[ -f "$SB_ROOT/vpngate/sbox.json" ]]; then echo 'VPNGate 五协议订阅：'; subscription_urls vpngate; fi;;
-    esac
 }
 subscription_urls() { cfg subscription-urls --scope "${1:-normal}"; }
 telegram_config() {
@@ -231,7 +212,7 @@ share_menu() {
         share_scope_menu "$1"
         return
     fi
-    while ui_choose '刷新并查看节点 / 订阅' \
+    while ui_choose '查看已发布节点 / 订阅' \
         '普通五协议（VPS 出口 / 已配置分流）' 'VPNGate 五协议（当前国家出口）'; do
         case "$REPLY" in 1) share_scope_menu normal;;2) share_scope_menu vpngate;;esac
     done
@@ -249,9 +230,9 @@ share_action() {
     if [[ "$scope" == vpngate ]]; then export_dir="$SB_ROOT/vpngate"; fi
     case "$choice" in
     1) cfg links --scope "$scope"; if command -v qrencode >/dev/null;then while IFS= read -r link;do qrencode -t ANSIUTF8 "$link";done < "$export_dir/jhsub.txt";fi;;
-    2) cfg export --scope "$scope";echo "Sing-box: $export_dir/sbox.json";echo "Mihomo / OpenClash 完整配置: $export_dir/clmi.yaml";echo "OpenClash 节点订阅: $export_dir/proxies.yaml";subscription_urls "$scope";;
-    3) cfg export --scope "$scope";"$MANAGER" remote --root "$SB_ROOT" telegram-push --scope "$scope";;
-    4) cfg export --scope "$scope";"$MANAGER" remote --root "$SB_ROOT" gitlab-push --scope "$scope";;
+    2) echo "Sing-box: $export_dir/sbox.json";echo "Mihomo / OpenClash 完整配置: $export_dir/clmi.yaml";echo "OpenClash 节点订阅: $export_dir/proxies.yaml";subscription_urls "$scope";;
+    3) "$MANAGER" remote --root "$SB_ROOT" telegram-push --scope "$scope";;
+    4) "$MANAGER" remote --root "$SB_ROOT" gitlab-push --scope "$scope";;
     esac
 }
 uninstall_main() {
@@ -334,7 +315,7 @@ main_menu_render() {
     ui_option 7 '更新 Sing-box-vpn 脚本'
     ui_option 8 '更新 / 指定 / 回滚 Sing-box 稳定核心'
     ui_rule
-    ui_option 9 '刷新并查看节点 / 订阅 / 推送'
+    ui_option 9 '查看已发布节点 / 订阅 / 推送'
     ui_option 10 '查看 Sing-box / VPNGate 运行日志'
     ui_option 11 '一键开启 BBR + FQ 加速'
     ui_option 12 '管理 TLS 证书 / Certbot 申请证书'

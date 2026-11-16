@@ -12,7 +12,7 @@ import (
 
 const customUUID = "01234567-89ab-4cde-8f01-23456789abcd"
 
-func TestUpgradeRepairsStaleCredentialMetadata(t *testing.T) {
+func TestManagedNodesDoNotPersistDuplicateCredentialMetadata(t *testing.T) {
 	root, core, app := appFixture(t)
 	server := readBytes(t, filepath.Join(root, "sb.json"))
 	links := readBytes(t, filepath.Join(root, "jhsub.txt"))
@@ -28,7 +28,7 @@ func TestUpgradeRepairsStaleCredentialMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	if app.Profile.Secrets.UUID["vless"] != expected || !bytes.Equal(server, readBytes(t, filepath.Join(root, "sb.json"))) || !bytes.Equal(links, readBytes(t, filepath.Join(root, "jhsub.txt"))) {
-		t.Fatal("upgrade did not repair metadata while preserving existing nodes")
+		t.Fatal("persisted node authority changed credentials or generated content")
 	}
 }
 

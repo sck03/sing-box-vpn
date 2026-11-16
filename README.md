@@ -5,6 +5,8 @@
 
 支持五协议自定义凭据、域名分流、Argo/CDN、TLS 证书、Hy2 跳跃、TUIC 多端口和订阅导出。
 支持使用 Mihomo 核心的 OpenClash：可导入完整配置，或只更新节点、保留路由器自己的分流。
+订阅支持本机、手工及远端来源、集合处理、客户端模板、独立分享和加密备份。
+可按需启动轻量 Web 管理和协议连接检测，支持定时刷新、规则资源、诊断通知与多目的地分发。
 
 ## 安装与使用
 
@@ -19,12 +21,12 @@ curl -fsSL https://raw.githubusercontent.com/sck03/sing-box-vpn/main/install.sh 
 
 1. 菜单 **9** 查看普通五协议节点、二维码和客户端配置。
 2. 需要 VPNGate 时，菜单 **17** 选择国家并启动出口，再从菜单 **9** 选择 VPNGate 节点。
-3. 菜单 **3 → 8** 配置本地订阅，支持 sing-box、Mihomo/OpenClash 和聚合链接。
+3. 菜单 **3 → 8** 管理订阅、来源、集合、模板、独立分享、刷新记录、备份和回收站。
 4. 菜单 **3 → 2 → 1** 自定义五协议 UUID / 密码，TUIC 的 UUID 和密码可分别修改。
 5. 菜单 **4 → 4** 设置 TUIC 多端口，**4 → 6** 获取指定端口链接。
 
-若仍看到“重置 UUID / 密码”或端口菜单只有 Hysteria-2，请用菜单 **7** 更新至 **v2.1.0 或更新版本**，
-完成后退出并重新运行 `sb`。安装器下载最新正式 Release；仅推送源码不会更新 VPS 的菜单。
+**v3 使用新的管理数据结构和订阅接口，面向空目录的新部署，不迁移 v2 或更早的数据。**
+安装器下载最新正式 Release；源码与安装包分别发布，部署本分支请先构建完整安装包。
 
 推荐导入对应核心的 `sbox.json` 或 `clmi.yaml`。聚合 URI 的证书选项支持因客户端而异，
 Mihomo 的 VMess/TUIC 自签 TLS 节点请使用 `clmi.yaml`，详见[订阅说明](docs/usage.md#节点与订阅)。
@@ -57,6 +59,8 @@ OpenClash 的 `proxy-providers` 使用 `proxies.yaml`，见[OpenClash 设置](do
 
 - [使用指南](docs/usage.md)：凭据、端口、证书、两套订阅、出口控制与故障排查。
 - [开发与发布](docs/development.md)：构建、测试、GitHub Actions 和 Release。
+- [订阅配置与接口](docs/subscriptions.md)：配置示例、客户端能力、授权、调度与恢复。
+- [v3 验收记录](docs/refactor-status.md)：交付范围、回归结果、持续测试和验证边界。
 - [架构与维护](docs/architecture.md)：模块边界、资源限制和扩展约定。
 - [上游技术与协议](docs/upstream.md)：sing-box 新协议、OpenClash 和 VPNGate 更新及项目接入范围。
 - [实施方案](VPNGate-实施方案.md) · [性能与优化记录](docs/optimization.md)。
