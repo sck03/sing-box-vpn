@@ -30,6 +30,11 @@ func probeSubscriptionNode(ctx context.Context, root, core, endpoint string, nod
 	if _, _, err := sub.Render([]sub.Node{node}, sub.Template{ID: "probe", Client: "sing-box", Version: 1, Mode: "nodes"}, false); err != nil {
 		return err
 	}
+	config := Object{"log": Object{"level": "error"}, "inbounds": []Object{{"type": "mixed", "listen": "127.0.0.1", "listen_port": 0}}, "outbounds": []Object{node.SingBox()}, "route": Object{"final": node.Name, "default_domain_resolver": "bootstrap"}, "dns": Object{"servers": []Object{{"type": "local", "tag": "bootstrap"}}}}
+	return probeCoreConfig(ctx, root, core, endpoint, config)
+}
+
+func probeCoreConfig(ctx context.Context, root, core, endpoint string, config Object) error {
 	child, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
 	stage, err := os.MkdirTemp(root, ".probe-")
@@ -41,7 +46,7 @@ func probeSubscriptionNode(ctx context.Context, root, core, endpoint string, nod
 	if err != nil {
 		return err
 	}
-	config := Object{"log": Object{"level": "error"}, "inbounds": []Object{{"type": "mixed", "listen": "127.0.0.1", "listen_port": port}}, "outbounds": []Object{node.SingBox()}, "route": Object{"final": node.Name, "default_domain_resolver": "bootstrap"}, "dns": Object{"servers": []Object{{"type": "local", "tag": "bootstrap"}}}}
+	config["inbounds"] = []Object{{"type": "mixed", "listen": "127.0.0.1", "listen_port": port}}
 	path := filepath.Join(stage, "probe.json")
 	if err := AtomicJSON(path, config); err != nil {
 		return err

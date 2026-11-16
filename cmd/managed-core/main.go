@@ -3,15 +3,18 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
+	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	runtime "github.com/sck03/sing-box-vpn/internal/runtime"
 )
 
@@ -62,12 +65,42 @@ func run() error {
 		core.Close()
 		return err
 	}
+	control, err := controlstore.Open(*database)
+	if err != nil {
+		core.Close()
+		return err
+	}
+	defer control.Close()
+	var revision int64
+	if data, e := os.ReadFile(filepath.Join(filepath.Dir(*database), "runtime-revision.json")); e == nil {
+		if e = json.Unmarshal(data, &revision); e != nil {
+			core.Close()
+			return e
+		}
+	}
+	started := time.Now().UnixNano()
+	if err = control.Heartbeat(ctx, *instance, runtime.Version, revision, started); err != nil {
+		core.Close()
+		return err
+	}
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
 	result := make(chan error, 1)
 	go func() { result <- meter.Run(ctx) }()
-	select {
-	case <-ctx.Done():
-	case err = <-result:
-		stop()
+	running := true
+	for running {
+		select {
+		case <-ctx.Done():
+			running = false
+		case err = <-result:
+			stop()
+			running = false
+		case <-ticker.C:
+			if err = control.Heartbeat(ctx, *instance, runtime.Version, revision, started); err != nil {
+				stop()
+				running = false
+			}
+		}
 	}
 	meter.Shutdown()
 	err = errors.Join(err, core.Close())

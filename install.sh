@@ -6,7 +6,7 @@ LOCAL=0
 for option in "$@"; do
     case "$option" in --local) LOCAL=1;; --upgrade) ACTION=upgrade;; *) echo "未知选项: $option" >&2;exit 1;; esac
 done
-if [[ "$ACTION" == install && -f "${SB_HOME:-/opt/sing-box-vpn}/.managed" && -f "${SB_ROOT:-/etc/s-box}/app.json" ]]; then
+if [[ "$ACTION" == install && -f "${SB_HOME:-/opt/sing-box-vpn}/.managed" && -f "${SB_ROOT:-/etc/s-box}/.platform-v4" ]]; then
     ACTION=upgrade
 fi
 if ((LOCAL));then

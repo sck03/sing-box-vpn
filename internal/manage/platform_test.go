@@ -1,0 +1,168 @@
+package manage
+
+import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"context"
+	"errors"
+	"github.com/sck03/sing-box-vpn/internal/accounting"
+	"github.com/sck03/sing-box-vpn/internal/application"
+	"github.com/sck03/sing-box-vpn/internal/domain"
+	"os"
+	"path/filepath"
+	"reflect"
+	"testing"
+	"time"
+)
+
+func TestDeploymentPlanPreservesStoppedAndUnaffected(t *testing.T) {
+	old := PlatformConfig{App: App{Inbounds: []Object{}}, Argo: TunnelSettings{Mode: "off"}}
+	c := old
+	c.Listener.Enabled = true
+	plan := deploymentPlan(c, old, []string{"sing-box"})
+	if !reflect.DeepEqual(plan, []serviceChange{{"sb-subscription", "enable-start"}}) {
+		t.Fatal(plan)
+	}
+	c = old
+	c.App.Advanced.Log = Object{"level": "debug"}
+	if p := deploymentPlan(c, old, nil); len(p) != 0 {
+		t.Fatal("started a stopped runtime", p)
+	}
+	plan = deploymentPlan(c, old, []string{"sing-box"})
+	if !reflect.DeepEqual(plan, []serviceChange{{"sing-box", "restart"}}) {
+		t.Fatal(plan)
+	}
+}
+func TestEncryptedPlatformBackupDisasterLedger(t *testing.T) {
+	root, core, _ := appFixture(t)
+	s, c, _ := platformFixture(t, root, core)
+	ctx := t.Context()
+	quota := int64(10000)
+	if e := s.Accounts.SaveAccount(ctx, domain.Account{ID: "a", Name: "Alice", QuotaBytes: &quota}); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := s.Accounts.Reserve(ctx, "lease", "a", "normal", 1000, time.Now()); e != nil {
+		t.Fatal(e)
+	}
+	token, e := s.Accounts.CreateGrant(ctx, accounting.Grant{ID: "g", AccountID: "a", Clients: []string{"uri"}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	c.Certificates = append(c.Certificates, CertificateAsset{ID: "pending", Domain: "example.com", Provider: "certbot", Certificate: filepath.ToSlash(filepath.Join(root, "certificates/pending/cert.pem")), Key: filepath.ToSlash(filepath.Join(root, "certificates/pending/key.pem"))})
+	id, e := s.Store.Queue(ctx, "apply", "test", []byte(`{}`), 1, mustJSON(t, c))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = s.Store.Applied(ctx, 2); e != nil {
+		t.Fatal(e)
+	}
+	s.Store.Finish(ctx, id, nil)
+	password := []byte("backup-password-123")
+	data, e := s.Backup(ctx, password)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if bytes.Contains(data, []byte("Alice")) || bytes.Contains(data, []byte(token)) {
+		t.Fatal("backup plaintext")
+	}
+	corrupted := append([]byte(nil), data...)
+	corrupted[len(corrupted)-1] ^= 1
+	if _, e = decodePlatformBackup(corrupted, password); e == nil {
+		t.Fatal("tampered backup accepted")
+	}
+	destination := filepath.Join(t.TempDir(), "recovered")
+	if e = RestoreDisaster(ctx, destination, data, password, "newadmin", "new-password-123"); e != nil {
+		t.Fatal(e)
+	}
+	recovered, e := OpenPlatform(destination, core, core, true)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer recovered.Close()
+	u, e := recovered.Accounts.Account(ctx, "a")
+	if e != nil || u.Charged != 1000 || !u.Disabled {
+		t.Fatal(u, e)
+	}
+	if _, _, e = recovered.Accounts.Grant(ctx, token); !errors.Is(e, accounting.ErrDenied) {
+		t.Fatal("old token revived", e)
+	}
+	if _, e = recovered.Auth.Login(ctx, "admin", "correct-password-123", "", "local"); e == nil {
+		t.Fatal("old administrator revived")
+	}
+	if _, e = recovered.Auth.Login(ctx, "newadmin", "new-password-123", "", "local"); e != nil {
+		t.Fatal(e)
+	}
+	if e = RestoreDisaster(ctx, destination, data, password, "other", "new-password-123"); e == nil {
+		t.Fatal("recovery overwrote live state")
+	}
+}
+func TestReleaseExtractionRejectsEscapesLinksAndDuplicates(t *testing.T) {
+	for _, name := range []string{"../escape", "sing-box-vpn/../escape", "sing-box-vpn/link", "sing-box-vpn/duplicate"} {
+		t.Run(name, func(t *testing.T) {
+			var raw bytes.Buffer
+			gz := gzip.NewWriter(&raw)
+			tw := tar.NewWriter(gz)
+			h := &tar.Header{Name: name, Mode: 0644, Size: 1}
+			if name == "sing-box-vpn/link" {
+				h.Typeflag = tar.TypeSymlink
+				h.Linkname = "/etc/passwd"
+				h.Size = 0
+			}
+			tw.WriteHeader(h)
+			if h.Size > 0 {
+				tw.Write([]byte("x"))
+			}
+			if name == "sing-box-vpn/duplicate" {
+				tw.WriteHeader(h)
+				tw.Write([]byte("x"))
+			}
+			tw.Close()
+			gz.Close()
+			root := t.TempDir()
+			path := filepath.Join(root, "archive.gz")
+			os.WriteFile(path, raw.Bytes(), 0600)
+			if e := extractProgramArchive(path, filepath.Join(root, "out")); e == nil {
+				t.Fatal("unsafe release accepted")
+			}
+		})
+	}
+}
+func TestAccountSourceUsesCandidatePublishingAddress(t *testing.T) {
+	root, core, _ := appFixture(t)
+	s, c, _ := platformFixture(t, root, core)
+	ctx := t.Context()
+	service := AccountService{Root: root}
+	if e := service.Execute(ctx, application.AccountCommand{Operation: "save", Account: domain.Account{ID: "a", Name: "A"}}, new(bytes.Buffer)); e != nil {
+		t.Fatal(e)
+	}
+	if e := service.Execute(ctx, application.AccountCommand{Operation: "bind", ID: "a", Scope: "normal"}, new(bytes.Buffer)); e != nil {
+		t.Fatal(e)
+	}
+	c.App.Address = "192.0.2.44"
+	nodes, e := service.accountNodes(context.WithValue(ctx, accountExportConfigKey{}, c), "a", "normal", 0)
+	if e != nil || len(nodes) != 5 {
+		t.Fatal(len(nodes), e)
+	}
+	for _, node := range nodes {
+		if node.Server != "192.0.2.44" {
+			t.Fatal("compiled stale address", node.Server)
+		}
+	}
+	_ = s
+}
+
+func TestEffectiveServerRejectsCrossResourceCycleAndReferences(t *testing.T) {
+	server := Object{"outbounds": []Object{{"type": "socks", "tag": "proxy", "domain_resolver": "dns"}}, "dns": Object{"servers": []Object{{"tag": "dns", "type": "https", "detour": "proxy"}}}}
+	if e := validateEffectiveServer(server); e == nil {
+		t.Fatal("DNS/outbound cycle accepted")
+	}
+	object(server["dns"])["servers"] = []Object{{"tag": "dns", "type": "local"}}
+	if e := validateEffectiveServer(server); e != nil {
+		t.Fatal(e)
+	}
+	server["route"] = Object{"final": "missing"}
+	if e := validateEffectiveServer(server); e == nil {
+		t.Fatal("missing final accepted")
+	}
+}

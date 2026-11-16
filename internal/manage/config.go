@@ -300,6 +300,9 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 		*core = filepath.Join(*root, "sing-box")
 	}
 	operation := args[0]
+	if platformOwned(*root) && !slices.Contains([]string{"show", "recover", "links", "export", "subscription-urls"}, operation) {
+		return errors.New("configuration is owned by control.db; use the unified panel or panel apply")
+	}
 	options := flag.NewFlagSet(operation, flag.ContinueOnError)
 	options.SetOutput(output)
 	address, name, port := options.String("address", "", "server address"), options.String("name", "VPS", "node name"), options.Int("port", 0, "subscription port")

@@ -14,3 +14,6 @@ gateway.json
 state.json
 *.ovpn
 *.auth
+
+/待手动删除/
+node_modules/

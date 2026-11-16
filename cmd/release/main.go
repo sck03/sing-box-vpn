@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
@@ -48,24 +49,26 @@ func build() error {
 	}
 	destination := filepath.Join(root, ".build", "release")
 	for _, arch := range []string{"amd64", "arm64"} {
-		binary := filepath.Join(destination, ".bin", "linux-"+arch, "yg-vpngate")
-		if err := os.MkdirAll(filepath.Dir(binary), 0755); err != nil {
-			return err
-		}
-		cmd := exec.Command(goBinary, "build", "-trimpath", "-ldflags", "-s -w -X main.version="+strings.TrimPrefix(project.Versions.Release, "v"), "-o", binary, "./addons/vpngate/gateway")
-		cmd.Dir = root
-		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-		for _, value := range os.Environ() {
-			if !strings.HasPrefix(value, "GOOS=") && !strings.HasPrefix(value, "GOARCH=") && !strings.HasPrefix(value, "CGO_ENABLED=") {
-				cmd.Env = append(cmd.Env, value)
+		for _, target := range []struct{ name, pkg string }{{"yg-vpngate", "./addons/vpngate/gateway"}, {"managed-core", "./cmd/managed-core"}} {
+			binary := filepath.Join(destination, ".bin", "linux-"+arch, target.name)
+			if err := os.MkdirAll(filepath.Dir(binary), 0755); err != nil {
+				return err
 			}
-		}
-		cmd.Env = append(cmd.Env, "GOOS=linux", "GOARCH="+arch, "CGO_ENABLED=0")
-		if err = cmd.Run(); err != nil {
-			return err
-		}
-		if err = os.Chmod(binary, 0755); err != nil {
-			return err
+			cmd := exec.Command(goBinary, "build", "-tags", "with_quic,with_utls,with_wireguard", "-trimpath", "-ldflags", "-s -w -X main.version="+strings.TrimPrefix(project.Versions.Release, "v"), "-o", binary, target.pkg)
+			cmd.Dir = root
+			cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+			for _, value := range os.Environ() {
+				if !strings.HasPrefix(value, "GOOS=") && !strings.HasPrefix(value, "GOARCH=") && !strings.HasPrefix(value, "CGO_ENABLED=") {
+					cmd.Env = append(cmd.Env, value)
+				}
+			}
+			cmd.Env = append(cmd.Env, "GOOS=linux", "GOARCH="+arch, "CGO_ENABLED=0")
+			if err = cmd.Run(); err != nil {
+				return err
+			}
+			if err = os.Chmod(binary, 0755); err != nil {
+				return err
+			}
 		}
 	}
 	archive := filepath.Join(destination, "sing-box-vpn-"+project.Versions.Release+".tar.gz")
@@ -127,13 +130,28 @@ func build() error {
 			if info.IsDir() {
 				header.Mode = 0755
 			}
-			if strings.HasSuffix(name, ".sh") || filepath.Base(name) == "yg-vpngate" {
+			if strings.HasSuffix(name, ".sh") || filepath.Base(name) == "yg-vpngate" || filepath.Base(name) == "managed-core" {
 				header.Mode = 0755
+			}
+			var shell []byte
+			if !info.IsDir() && strings.HasSuffix(name, ".sh") {
+				shell, err = os.ReadFile(name)
+				if err != nil {
+					return err
+				}
+				shell = bytes.ReplaceAll(shell, []byte("\r\n"), []byte("\n"))
+				header.Size = int64(len(shell))
 			}
 			if err = writer.WriteHeader(header); err != nil {
 				return err
 			}
 			if !info.IsDir() {
+				if shell != nil {
+					if _, err = writer.Write(shell); err != nil {
+						return err
+					}
+					continue
+				}
 				in, err := os.Open(name)
 				if err != nil {
 					return err
@@ -147,7 +165,7 @@ func build() error {
 		}
 		return nil
 	}
-	for _, member := range []string{"sb.sh", "install.sh", "lib", "addons", "internal", "cmd", "scripts", "go.mod", "go.sum", "third_party", "manifest.go", "versions.json", "LICENSE", "NOTICE.md", "README.md", "VPNGate-实施方案.md", "docs", ".github"} {
+	for _, member := range []string{"sb.sh", "install.sh", "lib", "addons", "internal", "cmd", "scripts", "go.mod", "go.sum", "package.json", "package-lock.json", "third_party", "manifest.go", "versions.json", "LICENSE", "NOTICE.md", "README.md", "VPNGate-实施方案.md", "docs", ".github"} {
 		if err = add(filepath.Join(root, member), member); err != nil {
 			writer.Close()
 			gz.Close()

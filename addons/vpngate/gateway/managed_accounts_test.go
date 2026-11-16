@@ -23,7 +23,7 @@ func startManagedCore(t *testing.T, root, name, instance string, config manage.O
 	if binary == "" {
 		t.Skip("set MANAGED_CORE_BINARY for metered runtime acceptance")
 	}
-	store, err := accounting.Open(filepath.Join(root, "accounts.db"))
+	store, err := accounting.Open(filepath.Join(root, "control.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func startManagedCore(t *testing.T, root, name, instance string, config manage.O
 	if err = manage.AtomicJSON(path, config); err != nil {
 		t.Fatal(err)
 	}
-	protocolProcess(t, root, name+"-managed", exec.Command(binary, "--config", path, "--database", filepath.Join(root, "accounts.db"), "--instance", instance), entries[0]["listen_port"].(int))
+	protocolProcess(t, root, name+"-managed", exec.Command(binary, "--config", path, "--database", filepath.Join(root, "control.db"), "--instance", instance), entries[0]["listen_port"].(int))
 	return store
 }
 

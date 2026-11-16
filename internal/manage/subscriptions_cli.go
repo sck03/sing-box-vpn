@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/sck03/sing-box-vpn/internal/application"
@@ -45,7 +46,10 @@ func RunSubscriptions(ctx context.Context, args []string, input io.Reader, outpu
 	}
 	operation := args[0]
 	if operation == "serve" {
-		return serveSubscriptionAdmin(ctx, *root, *core, *listen, output)
+		return RunPanel(ctx, []string{"--root", *root, "--core", *core, "--listen", *listen, "serve"}, input, output)
+	}
+	if platformOwned(*root) && !slices.Contains([]string{"show", "clients", "preview", "export", "logs", "check", "refresh", "deliver"}, operation) {
+		return errors.New("subscription configuration is owned by control.db; use the unified panel")
 	}
 	if operation == "backup" || operation == "restore-backup" {
 		return subscriptionBackupCommand(ctx, *root, *core, operation, *file, *apply, input, output)

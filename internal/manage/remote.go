@@ -146,6 +146,9 @@ func RunRemote(ctx context.Context, args []string, input io.Reader, output io.Wr
 		return err
 	}
 	args = f.Args()
+	if platformOwned(*root) {
+		return errors.New("use the panel delivery channels and task queue")
+	}
 	if len(args) == 0 {
 		return errors.New("缺少远端操作")
 	}

@@ -281,9 +281,13 @@ func RunSubscription(ctx context.Context, args []string, output io.Writer) error
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		runSubscriptionScheduler(child, *root)
+		if platformOwned(*root) {
+			<-child.Done()
+		} else {
+			runSubscriptionScheduler(child, *root)
+		}
 	}()
-	server := &http.Server{Handler: subscriptionHandler(*root), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 15 * time.Second, MaxHeaderBytes: 16 << 10}
+	server := &http.Server{Handler: unifiedDownloadHandler(*root), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 15 * time.Second, MaxHeaderBytes: 16 << 10}
 	err = serveSubscription(child, listener, server)
 	cancel()
 	<-done

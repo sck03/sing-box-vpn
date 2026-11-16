@@ -42,7 +42,7 @@ func TestLinuxServiceStartupRecovery(t *testing.T) {
 	run("ip", "netns", "add", namespace)
 	t.Cleanup(func() { _ = exec.Command("ip", "netns", "del", namespace).Run() })
 	root := t.TempDir()
-	app := App{Version: "recovered", Inbounds: []Object{{"type": "vmess", "listen_port": 20001}, {"type": "hysteria2", "listen_port": 20002}}, Profile: Profile{Ports: map[string]int{"hysteria2": 20002}, Hopping: []string{"31000:31002"}}}
+	app := App{Version: "recovered", Inbounds: []Object{{"type": "vmess", "tag": "vmess", "listen_port": 20001}, {"type": "hysteria2", "tag": "hy2", "listen_port": 20002}}, Profile: Profile{Ports: map[string]int{"hysteria2": 20002}, Hopping: []string{"31000:31002"}}}
 	before, err := JSONBytes(app)
 	if err != nil {
 		t.Fatal(err)

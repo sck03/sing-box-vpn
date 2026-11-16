@@ -46,10 +46,12 @@ func entry(args []string) error {
 		return nil
 	}
 	switch args[0] {
-	case "config", "core", "firewall", "asset", "remote", "subscription", "subscriptions", "accounts":
+	case "config", "core", "firewall", "asset", "remote", "subscription", "subscriptions", "accounts", "panel":
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		switch args[0] {
+		case "panel":
+			return manage.RunPanel(ctx, args[1:], os.Stdin, os.Stdout)
 		case "accounts":
 			return manage.RunAccounts(ctx, args[1:], os.Stdin, os.Stdout)
 		case "config":

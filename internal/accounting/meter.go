@@ -24,11 +24,13 @@ type Meter struct {
 	pending        sync.WaitGroup
 	changed        chan struct{}
 	waiters        int
+	poolSequence   uint64
 }
 type pool struct {
 	id, account                           string
 	available, inflight, upload, download int64
 	reserved                              bool
+	period                                int64
 }
 type Handle struct {
 	meter      *Meter
@@ -56,15 +58,22 @@ func (m *Meter) Open(ctx context.Context, user, inbound string, closer io.Closer
 	if m.closed || len(m.handles) >= 10000 {
 		return nil, ErrDenied
 	}
-	var account string
-	err = m.store.db.QueryRowContext(ctx, `SELECT a.id FROM accounts a JOIN credentials c ON c.account=a.id WHERE c.id=? AND c.generation=? AND c.runtime=? AND c.inbound=? AND a.disabled=0 AND (a.expires IS NULL OR a.expires>?) AND (a.quota IS NULL OR a.charged<=a.quota)`, credential, generation, m.runtime, inbound, time.Now().Unix()).Scan(&account)
+	var binding int
+	err = m.store.db.QueryRowContext(ctx, `SELECT 1 FROM credentials WHERE id=? AND generation=? AND runtime=? AND inbound=?`, credential, generation, m.runtime, inbound).Scan(&binding)
 	if err != nil {
 		return nil, ErrDenied
 	}
-	p := m.pools[account]
+	u, err := m.store.authorize(ctx, credential, generation, time.Now(), true)
+	if err != nil {
+		return nil, err
+	}
+	account := u.ID
+	key := account + "-" + strconv.FormatInt(u.PeriodID, 10)
+	p := m.pools[key]
 	if p == nil {
-		p = &pool{id: m.epoch + "-" + account, account: account}
-		m.pools[account] = p
+		m.poolSequence++
+		p = &pool{id: m.epoch + "-" + key + "-" + strconv.FormatUint(m.poolSequence, 10), account: account, period: u.PeriodID}
+		m.pools[key] = p
 	}
 	h := &Handle{meter: m, pool: p, credential: credential, generation: generation, closer: closer}
 	m.handles[h] = struct{}{}
@@ -91,7 +100,7 @@ func (h *Handle) take(want int, exact bool) (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	// Checking at the byte boundary makes expiry independent of scheduler delays.
-	if _, err := m.store.Authorized(ctx, h.credential, h.generation, time.Now()); err != nil {
+	if err := h.authorized(ctx); err != nil {
 		h.denied = true
 		return 0, err
 	}
@@ -105,7 +114,7 @@ func (h *Handle) take(want int, exact bool) (int, error) {
 	for p.available == 0 || (exact && p.available < int64(want)) {
 		room := ReservationBytes - p.available - p.inflight
 		if room > 0 {
-			n, err := m.store.Reserve(ctx, p.id, p.account, m.runtime, room, time.Now())
+			n, err := m.store.reservePeriod(ctx, p.id, p.account, m.runtime, room, time.Now(), p.period)
 			if err != nil && p.inflight == 0 {
 				return 0, err
 			}
@@ -135,7 +144,7 @@ func (h *Handle) take(want int, exact bool) (int, error) {
 		if h.denied || m.closed {
 			return 0, ErrDenied
 		}
-		if _, err := m.store.Authorized(ctx, h.credential, h.generation, time.Now()); err != nil {
+		if err := h.authorized(ctx); err != nil {
 			return 0, err
 		}
 	}
@@ -174,16 +183,27 @@ func (h *Handle) Close() {
 	delete(m.handles, h)
 }
 
+func (h *Handle) authorized(ctx context.Context) error {
+	u, err := h.meter.store.authorize(ctx, h.credential, h.generation, time.Now(), false)
+	if err != nil {
+		return err
+	}
+	if u.PeriodID != h.pool.period {
+		return ErrDenied
+	}
+	return nil
+}
+
 func (m *Meter) Tick(ctx context.Context) error {
 	m.mu.Lock()
 	var toClose []io.Closer
 	var result error
 	checked := map[string]error{}
 	for h := range m.handles {
-		key := h.credential + "." + strconv.FormatInt(h.generation, 10)
+		key := h.credential + "." + strconv.FormatInt(h.generation, 10) + "/" + strconv.FormatInt(h.pool.period, 10)
 		err, found := checked[key]
 		if !found {
-			_, err = m.store.Authorized(ctx, h.credential, h.generation, time.Now())
+			err = h.authorized(ctx)
 			checked[key] = err
 		}
 		if err != nil {
@@ -192,9 +212,21 @@ func (m *Meter) Tick(ctx context.Context) error {
 			delete(m.handles, h)
 		}
 	}
-	for _, p := range m.pools {
+	referenced := map[*pool]bool{}
+	for h := range m.handles {
+		referenced[h.pool] = true
+	}
+	for key, p := range m.pools {
+		idle := !referenced[p] && p.inflight == 0
 		if p.reserved {
-			result = errors.Join(result, m.store.Checkpoint(ctx, p.id, p.upload, p.download, false))
+			err := m.store.Checkpoint(ctx, p.id, p.upload, p.download, idle)
+			result = errors.Join(result, err)
+			if err != nil {
+				continue
+			}
+		}
+		if idle {
+			delete(m.pools, key)
 		}
 	}
 	if result != nil {

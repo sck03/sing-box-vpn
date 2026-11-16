@@ -27,5 +27,8 @@ func RunAccounts(ctx context.Context, args []string, input io.Reader, out io.Wri
 	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
 		return errors.New("expected one account command")
 	}
+	if platformOwned(*root) && c.Operation != "list" && c.Operation != "credentials" && c.Operation != "export" {
+		return errors.New("use panel accounts and credential tasks for managed installations")
+	}
 	return (AccountService{Root: *root}).Execute(ctx, c, out)
 }

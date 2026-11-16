@@ -19,6 +19,7 @@ type Source struct {
 	URL             string `json:"url,omitempty"`
 	Content         string `json:"content,omitempty"`
 	Scope           string `json:"scope,omitempty"`
+	AccountID       string `json:"account_id,omitempty"`
 	Required        bool   `json:"required"`
 	IntervalSeconds int    `json:"interval_seconds,omitempty"`
 	MaxStaleSeconds int    `json:"max_stale_seconds,omitempty"`
@@ -104,6 +105,7 @@ type Delivery struct {
 var domainRulePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 var tokenHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var gistPathPattern = regexp.MustCompile(`^/gists/[a-fA-F0-9]+$`)
+var telegramTokenPattern = regexp.MustCompile(`^[0-9]+:[A-Za-z0-9_-]+$`)
 
 func HTTPURL(value string) error {
 	u, err := url.Parse(value)
@@ -218,6 +220,10 @@ func (c Config) Validate() error {
 		case "local":
 			if s.Scope != "normal" && s.Scope != "vpngate" {
 				return errors.New("unknown local scope")
+			}
+		case "account":
+			if !ValidID(s.AccountID) || (s.Scope != "normal" && s.Scope != "vpngate" && s.Scope != "") {
+				return errors.New("account source requires an account ID and valid scope")
 			}
 		case "inline", "remote":
 			if !slices.Contains([]string{"uri", "base64", "mihomo", "sing-box", "nodes"}, s.Format) {
@@ -356,7 +362,7 @@ func (c Config) Validate() error {
 		if err := HTTPURL(d.URL); err != nil {
 			return err
 		}
-		if !slices.Contains([]string{"http-put", "webdav", "github-gist"}, d.Kind) {
+		if !slices.Contains([]string{"http-put", "webdav", "github-gist", "telegram", "gitlab"}, d.Kind) {
 			return errors.New("unsupported delivery kind")
 		}
 		if strings.ContainsAny(d.Username+d.Token, "\r\n") || len(d.Token)+len(d.Password) > 8192 {
@@ -366,6 +372,17 @@ func (c Config) Validate() error {
 			u, _ := url.Parse(d.URL)
 			if u.Scheme != "https" || u.Host != "api.github.com" || !gistPathPattern.MatchString(u.Path) || u.RawQuery != "" || d.Token == "" || d.Filename == "" || strings.ContainsAny(d.Filename, "/\\\r\n") {
 				return errors.New("GitHub delivery requires an existing Gist API URL, token and filename")
+			}
+		}
+		if d.Kind == "telegram" {
+			if d.URL != "https://api.telegram.org" || d.Username == "" || d.Token == "" || !telegramTokenPattern.MatchString(d.Token) {
+				return errors.New("Telegram requires api.telegram.org, chat ID and a bot token")
+			}
+		}
+		if d.Kind == "gitlab" {
+			u, _ := url.Parse(d.URL)
+			if u.Scheme != "https" || !strings.Contains(u.Path, "/api/v4/projects/") || u.RawQuery != "" || d.Token == "" || d.Filename == "" || strings.ContainsAny(d.Filename, "\\\r\n") || strings.HasPrefix(d.Filename, "/") || strings.Contains(d.Filename, "..") {
+				return errors.New("GitLab requires a private project API URL, token and relative filename")
 			}
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
@@ -17,6 +18,53 @@ import (
 )
 
 func sendSubscriptionArtifact(ctx context.Context, client *http.Client, d sub.Delivery, artifact sub.Artifact) error {
+	if d.Kind == "telegram" {
+		chunks, err := telegramMessages(string(artifact.Data))
+		if err != nil {
+			return err
+		}
+		for _, chunk := range chunks {
+			var response struct {
+				OK bool `json:"ok"`
+			}
+			if err = remoteRequest(ctx, client, d.URL+"/bot"+d.Token+"/sendMessage", "POST", Object{"chat_id": d.Username, "text": chunk, "disable_web_page_preview": true}, nil, &response); err != nil {
+				return errors.New("Telegram delivery failed")
+			}
+			if !response.OK {
+				return errors.New("Telegram rejected delivery")
+			}
+		}
+		return nil
+	}
+	if d.Kind == "gitlab" {
+		headers := map[string]string{"PRIVATE-TOKEN": d.Token}
+		var project struct {
+			Visibility string `json:"visibility"`
+		}
+		if err := remoteRequest(ctx, client, d.URL, "GET", nil, headers, &project); err != nil {
+			return errors.New("GitLab project check failed")
+		}
+		if project.Visibility != "private" {
+			return errors.New("GitLab delivery requires a private project")
+		}
+		branch := d.Username
+		if branch == "" {
+			branch = "main"
+		}
+		action := "update"
+		err := remoteRequest(ctx, client, d.URL+"/repository/files/"+url.PathEscape(d.Filename)+"?ref="+url.QueryEscape(branch), "HEAD", nil, headers, nil)
+		if err != nil {
+			var status httpStatusError
+			if !errors.As(err, &status) || status != 404 {
+				return errors.New("GitLab file check failed")
+			}
+			action = "create"
+		}
+		if err = remoteRequest(ctx, client, d.URL+"/repository/commits", "POST", Object{"branch": branch, "commit_message": "Update subscription", "actions": []Object{{"action": action, "file_path": d.Filename, "content": string(artifact.Data)}}}, headers, nil); err != nil {
+			return errors.New("GitLab delivery failed")
+		}
+		return nil
+	}
 	method, data := http.MethodPut, artifact.Data
 	if d.Kind == "github-gist" {
 		// Subscription credentials must never be uploaded to a public Gist.
@@ -119,6 +167,8 @@ func deliverSubscriptions(ctx context.Context, root, id string, automatic bool, 
 					var err error
 					if !exists || !subscriptionFresh(c, snapshot, d.Output, now) {
 						err = errors.New("output unavailable or stale")
+					} else if e := checkOutputAccounts(ctx, root, c, d.Output); e != nil {
+						err = errors.New("output contains an inactive entitlement")
 					} else if state.Digest != digest {
 						err = sendSubscriptionArtifact(ctx, client, d, artifact)
 						status = "delivered"

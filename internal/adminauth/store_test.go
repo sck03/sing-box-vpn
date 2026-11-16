@@ -1,0 +1,123 @@
+package adminauth
+
+import (
+	"errors"
+	"fmt"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+const testPassword = "correct-password-123"
+
+func authFixture(t *testing.T) (*Store, string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "control.db")
+	s, e := Open(path)
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() { s.Close() })
+	if e = s.Bootstrap(t.Context(), "admin", testPassword, false); e != nil {
+		t.Fatal(e)
+	}
+	return s, path
+}
+func TestSessionsCSRFAndRevocation(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := t.Context()
+	first, e := s.Login(ctx, "admin", testPassword, "", "127.0.0.1")
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.Authenticate(ctx, first.Token, "bad", true); !errors.Is(e, ErrUnauthorized) {
+		t.Fatal(e)
+	}
+	if _, e = s.Authenticate(ctx, first.Token, first.CSRF, true); e != nil {
+		t.Fatal(e)
+	}
+	second, e := s.Login(ctx, "admin", testPassword, "", "127.0.0.1")
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.Authenticate(ctx, first.Token, "", false); !errors.Is(e, ErrUnauthorized) {
+		t.Fatal("old login survived", e)
+	}
+	users, _ := s.List(ctx)
+	a := users[0]
+	a.Disabled = true
+	if e = s.Save(ctx, "admin", a, ""); e == nil {
+		t.Fatal("disabled last administrator")
+	}
+	a.Disabled = false
+	if e = s.Save(ctx, "admin", a, "changed-password-123"); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.Authenticate(ctx, second.Token, "", false); !errors.Is(e, ErrUnauthorized) {
+		t.Fatal("password change retained session", e)
+	}
+	var clear int
+	if e = s.db.QueryRow(`SELECT count(*) FROM administrators WHERE password=?`, testPassword).Scan(&clear); e != nil || clear != 0 {
+		t.Fatal("plaintext password", e)
+	}
+}
+func TestPersistentGuardAndBoundedKeys(t *testing.T) {
+	s, path := authFixture(t)
+	ctx := t.Context()
+	now := time.Now().Unix()
+	for range 8 {
+		if e := s.guard(ctx, "target", "peer", now); e != nil {
+			t.Fatal(e)
+		}
+	}
+	s.Close()
+	s, e := Open(path)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.Close()
+	if e = s.guard(ctx, "target", "peer", now); !errors.Is(e, ErrLimited) {
+		t.Fatal("guard reset", e)
+	}
+	for i := 0; i < 1500; i++ {
+		_ = s.guard(ctx, fmt.Sprint(i), fmt.Sprint(i), now)
+	}
+	var count int
+	s.db.QueryRow(`SELECT count(*) FROM login_guard`).Scan(&count)
+	if count > 1003 {
+		t.Fatal("unbounded attacker keys", count)
+	}
+	if e = s.guard(ctx, "target", "peer", now+901); e != nil {
+		t.Fatal(e)
+	}
+}
+func TestMFAConfirmAndReplay(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := t.Context()
+	session, e := s.Login(ctx, "admin", testPassword, "", "local")
+	if e != nil {
+		t.Fatal(e)
+	}
+	secret, e := s.Enroll(ctx, "admin", testPassword)
+	if e != nil {
+		t.Fatal(e)
+	}
+	step := time.Now().Unix() / 30
+	code := totp(secret, step)
+	if e = s.ConfirmMFA(ctx, "admin", code); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.Authenticate(ctx, session.Token, "", false); !errors.Is(e, ErrUnauthorized) {
+		t.Fatal(e)
+	}
+	if _, e = s.Login(ctx, "admin", testPassword, code, "local"); !errors.Is(e, ErrUnauthorized) {
+		t.Fatal("TOTP replay", e)
+	}
+	next := totp(secret, step+1)
+	if _, e = s.Login(ctx, "admin", testPassword, next, "local"); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.Login(ctx, "admin", testPassword, next, "local"); !errors.Is(e, ErrUnauthorized) {
+		t.Fatal("login TOTP replay", e)
+	}
+}

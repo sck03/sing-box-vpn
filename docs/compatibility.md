@@ -1,68 +1,17 @@
-# v3 兼容性与验证边界
+# v4 兼容性与验证边界
 
-测试基线为官方 sing-box 1.14.4，工具链为 Go 1.27.3；基线 SHA256 记录在 versions.json。
-安装与菜单更新从官方 API 获取最新稳定核心，1.14.4 不构成版本锁定。
-2026-11-10 核对官方最新稳定版本仍为 1.14.4；Mihomo 验收基线为 1.19.33。
-新协议、OpenClash 和 VPNGate 技术核对见[上游说明](upstream.md)。
-研究阶段检查了 sing-box-yg 的新版服务端、四种客户端分支和 Hy2 跳跃格式。
-实现统一使用现代 DNS、WireGuard endpoint、HTTP client、route action 和 SRS 规则集。
+本版只接受新数据库/schema 4，不迁移旧账户或管理接口。Linux Debian/Ubuntu + systemd，amd64/arm64；Windows 用于开发与本机测试。数据目录由 root 独占，面板默认回环。
 
-规则中的 network 应使用独立名称，不能把 udp,tcp 当作一个匹配字符串。
-Hy2 server_ports 的单端口写成 31200:31200。Mihomo 使用自身格式和版本校验。
-SRS 中国规则仍支持；它不是被移除的旧 geosite/geoip 数据库选项。
+受管核心固定 sing-box 1.14.4，适配版本 1.14.4+sbvpn.2；截至 2026-11-17 查询仍是上游最新稳定版。官方二进制用于生成配置验证；不能用任意官方核心替换受管运行时，否则丢失认证后账户计量。更新需双程序一起验证。
 
-域名分流保留。官方 1.14 的路由规则仍支持 `domain`、`domain_suffix`、`domain_keyword`、
-`domain_regex` 和 `rule_set`，SOCKS5 / WARP 仍可作为匹配后的出口。
-旧 geosite/geoip 数据库在 1.12 被移除，旧 DNS server 格式在 1.14 被移除；
-旧字段的迁移不等于取消域名分流。
+稳定依赖核对已升级 YAML 3.0.6、x/crypto 0.59.0、SQLite 1.62.0 等。sing-box 的协议 fork 与未发布 tag 的依赖保持上游配套版本，精确版本见 go.mod/go.sum。所有链接模块的可用许可证声明位于 third_party/modules，免费开源不等于外部 VPS/域名/服务永久免费。
 
-本项目的 IPv4 / IPv6 设置使用 `resolve` 的 `prefer_ipv4` / `prefer_ipv6`。
-它们是解析优先级，保留另一地址族的可用回退。1.14.4 的 `resolve` 仅解析请求目标中的域名，
-不会用 HTTP Host / TLS SNI 改写已有目标 IP；菜单与状态输出据此使用“优先解析”表述。
-真实核心验收覆盖域名请求、IP 请求的 HTTP 域名嗅探以及 IPv6 优先设置对仅 A 记录目标的回退。
+支持五协议入站；direct、SOCKS、五协议代理出站、selector/urltest、WireGuard endpoint、resolved DNS 服务和受管 DNS。未注册协议拒绝配置，不静默丢字段。账户只允许数据库显式绑定；入口预设凭据不是默认用户。
 
-官方参考：[路由规则](https://sing-box.sagernet.org/configuration/route/rule/)、
-[resolve 动作](https://sing-box.sagernet.org/configuration/route/rule_action/#resolve)、
-[废弃功能清单](https://sing-box.sagernet.org/deprecated/)。
+Mihomo 测试基线 1.19.33。原生 sing-box/Mihomo 配置和 provider 是推荐导出方式。Mihomo URI 导入器忽略 VMess insecure 和 TUIC allow_insecure；这两类自签 TLS URI 不纳入真实链路通过项，其原生配置已覆盖。OpenClash 使用 Mihomo provider 的结构与核心路径，尚不代表实体 OpenWrt/LuCI 验收。
 
-Go 验收直接读取管理命令发布的普通/VPNGate 订阅文件，包含 sing-box 五协议和 Mihomo
-五协议的真实 TCP/UDP（各 20 条）、Mihomo 通过 HTTP provider 获取 `proxies.yaml` 的五协议
-TCP/UDP（20 条），以及 Base64 URI 导入 VLESS、Hysteria2、AnyTLS 后的 TCP/UDP（12 条）。
-VMess 开启自签 TLS，TUIC 包含特殊字符密码。原生 provider 是 OpenClash 的节点接入路径，
-不包含路由器策略；本地验证不代表已经验收实体 OpenWrt 和 LuCI 覆写。
-Mihomo 的 URI 导入器忽略 VMess `insecure` 和 TUIC `allow_insecure`，这两项自签 TLS
-URI 不计入 72 条验收；它们的原生配置已覆盖。格式能解析不等于证书验证策略能完整导入。
-CI 另检查普通/VPNGate 完整 Mihomo 配置；普通配置首次校验会下载 GeoIP 数据库。
-普通/VPNGate 的 VMess 原生配置已验证中文 WS 路径。当前核心的服务端按 `URL.Path`
-匹配，而客户端会解析路径里的查询与转义；因此管理程序在保存和导出时拒绝 `?`、`#`、`%`
-等含糊路径，避免 `sing-box check` 通过但 WebSocket 握手返回 404。
-本地 HTTP 订阅另有 IPv4/IPv6 实际请求验证，检查生成地址、响应内容和取消后退出。
-受控 Linux OpenVPN 与命名空间验收仍保留；公共节点可用性取决于实际运行环境。
-UDP 验收包含慢域名解析及阻塞写入期间其他端口继续转发、多个目标独立解析、队列上限和关联关闭取消。
-8 个目标端口的并发传输校验每个端口的回复、1024 个数据包的内容及按目标的发送顺序。
-SOCKS/worker 的帧格式与认证协议保持兼容，单向活跃 UDP 的约 60 秒空闲阈值保持原值。
-Linux 验收同时模拟网关被强制结束后的重启，确认旧隧道进程被回收后再建立新隧道。
-systemd 专项验收模拟内核防火墙规则丢失及配置提交中断，再触发正常退出码的意外退出，
-验证自动重试、启动前恢复配置/IPv4/IPv6 规则、订阅沙箱兼容及主动停止后保持停止。
-这模拟了重启后的恢复状态，实际 VPS 断电及文件系统恢复仍须在目标机器验证。
-许可证与代码来源见 NOTICE.md。
+域名解析优先级使用 resolve/prefer_ipv4/prefer_ipv6，保留其他地址族回退；IP 请求不会被 SNI/HTTP Host 隐式替换。现代 DNS 与 SRS 规则集有效，旧 geosite/geoip 和 DNS 格式不兼容。
 
-当前版本只接受 `app.json` schema 1 和订阅 schema 1，不接受 v2 及更早的数据库、配置或下载接口。
-仅支持新部署及当前 Go 配置，不提供旧 sing-box-yg/Python 配置导入、旧防火墙链迁移
-或历史 URI 字节兼容。VMess 分享链接使用标准 JSON 和 Base64，中文与 emoji 按 UTF-8 编码。
-当前配置重装和国家切换继续保留各自端口、凭据与 Reality 密钥。
-配置与更新使用同一文件锁，客户端校验失败不会提前替换服务端配置。
+凭据绑定和轮换需要重启对应实例载入新用户，影响该实例其他连接。禁用/到期/旧代次在守卫执行，协议内部认证会话对象可能存活，但不能继续转发。持久预留不保证断电零误差；最多保守占用每权益每实例 64 KiB，方向计数可能落后最终数据。
 
-普通与 VPNGate 默认独立导出。新地址为 `/s/<token>/<output-id>`，例如 `normal-sing-box`
-与 `vpngate-provider`。当前国家的 VPNGate 本地文件位于 `vpngate/`。已保存国家的端口与凭据保留，
-切回时恢复原链接。只为当前国家监听五个入口；升级核心同时校验两套客户端与服务端配置。
-普通客户端可选择分流或全代理模板；VPNGate 客户端只手动选择，不回退到普通节点或公网直连。
-
-新增 Surge/Mac、Loon、Quantumult X、Surfboard、Stash、Egern、Shadowrocket 适配器有生成结构
-与字段映射测试，尚未在这些专有客户端做真实导入/连接验收。具体协议子集由
-`yg-vpngate subscriptions clients` 输出，不能把“有适配器”理解为支持该客户端所有功能和旧版本。
-不支持的协议/连接字段显式报错；只有输出配置明确设置 `skip_unsupported` 才排除不支持节点。
-自签 TLS 的 URI/部分专有输出会提示证书 pin 限制，优先使用 sing-box/Mihomo 原生配置。
-
-控制动作要求最多 16 KiB 的单个完整 JSON 对象，尾随对象、垃圾或超限空白均在修改配置前拒绝。
-核心版本号的三个部分均检查范围，再比较最低版本；未来稳定版本继续可用。
+实际已通过和未完成的验收以 [实施记录](unified-management-status.md) 为准。浏览器工具故障、未覆盖的长期负载或断电实验必须明确记录，不能等价为已验证生产稳定。

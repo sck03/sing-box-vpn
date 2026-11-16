@@ -59,6 +59,11 @@ jobs:
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Dependencies
         run: sudo apt-get update -qq && sudo apt-get install -y -qq openvpn iproute2 iptables shellcheck
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Panel DOM regression
+        run: npm ci && npm test
       - name: Download verified sing-box 1.14.4
         run: |
           mkdir -p .build/core
@@ -77,39 +82,19 @@ jobs:
         run: RUN_UDP_IDLE_TESTS=1 go test -race -count=1 -v ./...
       - name: Managed runtime account isolation and real TCP/UDP links
         run: |
-          go build -tags with_quic,with_utls -o "$GITHUB_WORKSPACE/.build/managed-core" ./cmd/managed-core
+          go build -tags with_quic,with_utls,with_wireguard -o "$GITHUB_WORKSPACE/.build/managed-core" ./cmd/managed-core
           MANAGED_CORE_BINARY="$GITHUB_WORKSPACE/.build/managed-core" go test -race -count=1 -v -run '^(TestManagedAccountIsolation|TestRealFiveProtocolsTCPUDP)$' ./addons/vpngate/gateway
       - name: Formatting, vet and shell checks
         run: |
           test -z "$(gofmt -l manifest.go internal cmd addons/vpngate/gateway)"
           go vet ./...
-          for script in sb.sh install.sh addons/vpngate/vpngate.sh lib/*.sh scripts/*.sh; do
+          for script in sb.sh install.sh lib/*.sh scripts/*.sh; do
             bash -n "$script"
           done
-          shellcheck --severity=warning sb.sh install.sh addons/vpngate/vpngate.sh lib/*.sh scripts/*.sh
-          bash scripts/test-node-settings.sh
+          shellcheck --severity=warning sb.sh install.sh lib/*.sh scripts/*.sh
           bash scripts/test-program-upgrade.sh
-          bash -c 'source ./lib/ui.sh; ui_secret value "test"; [[ "$value" == "  password  " ]]' <<< '  password  '
       - name: Build Linux management and gateway binary
         run: CGO_ENABLED=0 go build -trimpath -o "$GITHUB_WORKSPACE/.build/yg-vpngate" ./addons/vpngate/gateway
-      - name: Archive unused architecture without touching other files
-        run: |
-          bash -c '
-            source ./sb.sh
-            APP_HOME="$PWD/.build/archive-check/program"
-            SB_ROOT="$PWD/.build/archive-check/config"
-            mkdir -p "$APP_HOME/lib" "$APP_HOME/.bin/linux-arm64" "$SB_ROOT"
-            printf legacy-python > "$APP_HOME/lib/config.py"
-            printf legacy-config > "$SB_ROOT/sb10.json"
-            printf other-architecture > "$APP_HOME/.bin/linux-arm64/yg-vpngate"
-            archive_unused_architecture amd64
-            archives=("$SB_ROOT/待手动删除/"*)
-            cmp <(printf legacy-python) "$APP_HOME/lib/config.py"
-            cmp <(printf legacy-config) "$SB_ROOT/sb10.json"
-            test ! -e "$APP_HOME/.bin/linux-arm64"
-            cmp <(printf other-architecture) "${archives[0]}/linux-arm64/yg-vpngate"
-            test "$(stat -c %a "${archives[0]}")" = 700
-          '
       - name: Online stable-core update and rollback
         run: |
           mkdir -p .test/core-updater
@@ -130,6 +115,18 @@ jobs:
         run: sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_SERVICE_TESTS=1 "$(command -v go)" test -run '^TestLinuxServiceStartupRecovery$' -count=1 -v -timeout=2m ./internal/manage
       - name: Build both release architectures
         run: go run ./cmd/release
+      - name: Fresh v4 installation and panel deployment rollback
+        run: |
+          set -euo pipefail
+          test_password="$(openssl rand -hex 24)"
+          echo "::add-mask::$test_password"
+          admin_file="$(mktemp)"
+          trap 'rm -f "$admin_file"' EXIT
+          printf '{"username":"admin","password":"%s"}' "$test_password" > "$admin_file"
+          mkdir -p .test/platform-install
+          tar -xzf .build/release/sing-box-vpn-*.tar.gz -C .test/platform-install
+          sudo env SB_ADDRESS=127.0.0.1 SB_ADMIN_JSON_FILE="$admin_file" bash .test/platform-install/sing-box-vpn/sb.sh install
+          SB_TEST_PASSWORD="$test_password" python3 scripts/test-platform-linux.py
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: verified-release

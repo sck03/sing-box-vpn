@@ -125,6 +125,9 @@ func firewallRules(app App, settings VPNSettings, gateway Object, subscription s
 	inputs := append(append([]Object{}, app.Inbounds...), objects(gateway["inbounds"])...)
 	ports := map[string]bool{}
 	for _, in := range inputs {
+		if in["_disabled"] == true {
+			continue
+		}
 		port, kind := number(in["listen_port"]), text(in["type"])
 		if port < 1 || port > 65535 || !slices.Contains(Protocols, kind) {
 			return "", "", errors.New("入口协议或端口错误")
@@ -172,6 +175,11 @@ func firewallRules(app App, settings VPNSettings, gateway Object, subscription s
 				return in["type"] == kind && number(in["listen_port"]) == profile.Ports[kind]
 			}) {
 				return "", "", fmt.Errorf("%s 多端口的主端口与入口配置不一致", kind)
+			}
+			if slices.ContainsFunc(entries, func(in Object) bool {
+				return in["type"] == kind && number(in["listen_port"]) == profile.Ports[kind] && in["_disabled"] == true
+			}) {
+				continue
 			}
 			scope := normalScope
 			if i > 0 {

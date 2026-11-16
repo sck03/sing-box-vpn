@@ -16,7 +16,7 @@ func serviceScript(t *testing.T, directory, root, manager, script string) {
 	if err != nil {
 		t.Skip("bash is required for service installation checks")
 	}
-	library, err := filepath.Abs("../../lib/services.sh")
+	library, err := filepath.Abs("testdata/service-recovery.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,8 +35,8 @@ func TestServiceRecoveryIncludesExistingArgoAndPreservesOtherOverrides(t *testin
 	if err := os.WriteFile(filepath.Join(directory, "sb-argo.service"), []byte(legacy), 0644); err != nil {
 		t.Fatal(err)
 	}
-	serviceScript(t, directory, root, "/bin/true", "write_main_service; write_subscription_service; write_gateway_services; write_service_recovery \"$SB_ROOT\" sb-argo missing-service")
-	services := []string{"sing-box", "sb-subscription", "yg-vpngate", "sing-box-vpngate", "sb-argo"}
+	serviceScript(t, directory, root, "/bin/true", "write_service_recovery \"$SB_ROOT\" sb-argo missing-service")
+	services := []string{"sb-argo"}
 	for _, service := range services {
 		path := filepath.Join(directory, service+".service.d", "10-sb-vpn-recovery.conf")
 		data := string(readBytes(t, path))
@@ -52,15 +52,7 @@ func TestServiceRecoveryIncludesExistingArgoAndPreservesOtherOverrides(t *testin
 	if _, err := os.Stat(filepath.Join(directory, "missing-service.service.d")); !os.IsNotExist(err) {
 		t.Fatal("recovery created an uninstalled service", err)
 	}
-	if data := string(readBytes(t, filepath.Join(directory, "sb-subscription.service"))); !strings.Contains(data, "ProtectSystem=strict") {
-		t.Fatal("subscription lost its system sandbox")
-	}
-	gateway := string(readBytes(t, filepath.Join(directory, "sing-box-vpngate.service")))
-	unit, _, _ := strings.Cut(gateway, "[Service]")
-	if !strings.Contains(unit, "yg-vpngate.service") {
-		t.Fatal("dedicated entries cannot start the required gateway daemon")
-	}
-	custom := filepath.Join(directory, "sing-box.service.d", "90-user.conf")
+	custom := filepath.Join(directory, "sb-argo.service.d", "90-user.conf")
 	if err := os.WriteFile(custom, []byte("user settings"), 0644); err != nil {
 		t.Fatal(err)
 	}

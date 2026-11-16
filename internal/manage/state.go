@@ -67,6 +67,18 @@ type App struct {
 	SocksPort  int                 `json:"socks_port"`
 	CDNAddress string              `json:"cdn_address,omitempty"`
 	Argo       Object              `json:"argo,omitempty"`
+	Advanced   CoreSettings        `json:"advanced"`
+}
+
+// CoreSettings cannot override authenticated inbounds or VPNGate's route.
+type CoreSettings struct {
+	Outbounds    []Object `json:"outbounds,omitempty"`
+	Route        Object   `json:"route,omitempty"`
+	DNS          Object   `json:"dns,omitempty"`
+	Endpoints    []Object `json:"endpoints,omitempty"`
+	Services     []Object `json:"services,omitempty"`
+	Log          Object   `json:"log,omitempty"`
+	Experimental Object   `json:"experimental,omitempty"`
 }
 type VPNSettings struct {
 	ActiveCountry string             `json:"active_country"`

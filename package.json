@@ -1,0 +1,11 @@
+{
+  "name": "sing-box-vpn-panel-validation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node scripts/test-panel.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "31.0.1"
+  }
+}

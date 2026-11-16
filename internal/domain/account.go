@@ -12,16 +12,21 @@ var ResourceID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
 
 var Protocols = []string{"vless", "vmess", "hysteria2", "tuic", "anytls"}
 
-// An account owns a single entitlement in the first schema. IDs, rather than
-// names or download tokens, identify its durable usage pool.
+// Account is an independently metered entitlement. Several entitlements may
+// belong to one subscriber without sharing credentials or quota pools.
 type Account struct {
-	ID         string     `json:"id"`
-	Name       string     `json:"name"`
-	Disabled   bool       `json:"disabled"`
-	ExpiresAt  *time.Time `json:"expires_at"`
-	QuotaBytes *int64     `json:"quota_bytes"`
-	Revision   int64      `json:"revision"`
-	CreatedAt  time.Time  `json:"created_at"`
+	ID              string       `json:"id"`
+	Name            string       `json:"name"`
+	Disabled        bool         `json:"disabled"`
+	ExpiresAt       *time.Time   `json:"expires_at"`
+	QuotaBytes      *int64       `json:"quota_bytes"`
+	Revision        int64        `json:"revision"`
+	CreatedAt       time.Time    `json:"created_at"`
+	SubscriberID    string       `json:"subscriber_id"`
+	StartMode       string       `json:"start_mode"`
+	StartsAt        *time.Time   `json:"starts_at"`
+	DurationSeconds int64        `json:"duration_seconds"`
+	Period          PeriodPolicy `json:"period"`
 }
 
 type Credential struct {
@@ -44,6 +49,21 @@ func (a Account) Validate() error {
 	}
 	if a.ExpiresAt != nil && a.ExpiresAt.IsZero() {
 		return errors.New("expiry must be null or a valid timestamp")
+	}
+	if a.SubscriberID != "" && !ResourceID.MatchString(a.SubscriberID) {
+		return errors.New("invalid subscriber ID")
+	}
+	if !slices.Contains([]string{"", "created", "first_use", "scheduled"}, a.StartMode) {
+		return errors.New("invalid entitlement start mode")
+	}
+	if a.StartMode == "scheduled" && (a.StartsAt == nil || a.StartsAt.IsZero()) {
+		return errors.New("scheduled entitlement requires starts_at")
+	}
+	if a.DurationSeconds < 0 || a.DurationSeconds > 10*366*86400 {
+		return errors.New("duration must be 0–10 years in seconds")
+	}
+	if err := a.Period.Validate(); err != nil {
+		return err
 	}
 	return nil
 }

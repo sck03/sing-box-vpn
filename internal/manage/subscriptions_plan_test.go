@@ -62,15 +62,9 @@ func TestPreviewSummaryAndHTTPConflict(t *testing.T) {
 			t.Fatal("preview leaks credential")
 		}
 	}
-	c, _, _, _ := loadSubscriptions(root)
-	stale := c
-	c.Revision++
-	if err := AtomicJSON(filepath.Join(root, subscriptionsConfig), c); err != nil {
-		t.Fatal(err)
-	}
-	handler := subscriptionAdminHandler(root, core, strings.Repeat("b", 43))
-	req := httptest.NewRequest("POST", "/api/apply", bytes.NewReader(mustJSON(t, adminRequest{Config: mustJSON(t, stale)})))
-	req.Header.Set("Authorization", "Bearer "+strings.Repeat("b", 43))
+	s, c, session := platformFixture(t, root, core)
+	handler := s.Handler(PanelOptions{PublicURL: "http://example.com"})
+	req := panelRequest("POST", "/api/config", mustJSON(t, Object{"config": c, "revision": 0}), session)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	if w.Code != 409 {

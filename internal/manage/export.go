@@ -43,7 +43,11 @@ func collectLocalSubscriptionNodes(app App, settings VPNSettings, private map[st
 		if err != nil {
 			return err
 		}
-		node, err := managed[0].subscriptionNode(app.Address, name, scope, p.Hopping, cache)
+		hopping := []string(nil)
+		if number(in["listen_port"]) == p.Ports["hysteria2"] {
+			hopping = p.Hopping
+		}
+		node, err := managed[0].subscriptionNode(app.Address, name, scope, hopping, cache)
 		if err != nil {
 			return err
 		}
@@ -54,6 +58,9 @@ func collectLocalSubscriptionNodes(app App, settings VPNSettings, private map[st
 		return nil
 	}
 	for _, in := range app.Inbounds {
+		if in["_disabled"] == true {
+			continue
+		}
 		kind := text(in["type"])
 		if Labels[kind] == "" {
 			return nil, errors.New("未知入口协议")

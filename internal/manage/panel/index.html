@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>统一管理 · sing-box-vpn</title>
+    <link rel="stylesheet" href="/panel/style.css" />
+  </head>
+  <body>
+    <section id="login" class="login">
+      <div class="brand">◈ <span>sing-box-vpn</span></div>
+      <h1>统一管理面板</h1>
+      <p>管理节点、账户与网络出口。</p>
+      <form id="login-form">
+        <label
+          >管理员<input
+            name="username"
+            autocomplete="username"
+            required
+            value="admin" /></label
+        ><label
+          >密码<input
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            required
+            minlength="12"
+            maxlength="72" /></label
+        ><label
+          >动态验证码（已启用 TOTP 时填写）<input
+            name="code"
+            autocomplete="one-time-code"
+            inputmode="numeric"
+            maxlength="6" /></label
+        ><button class="primary" type="submit">登录</button>
+      </form>
+      <p id="login-error" role="alert"></p>
+    </section>
+    <div id="shell" hidden>
+      <aside>
+        <div class="brand">
+          ◈ <span>sing-box-vpn<small>统一控制台 / v4</small></span>
+        </div>
+        <nav id="navigation" aria-label="主导航"></nav>
+        <div class="identity">
+          <span id="identity"></span><button id="logout">退出登录</button>
+        </div>
+      </aside>
+      <main>
+        <header>
+          <div>
+            <span class="eyebrow">CONTROL CENTER</span>
+            <h1 id="page-title">运行概览</h1>
+          </div>
+          <button id="refresh">刷新状态</button>
+        </header>
+        <section id="draft" class="draft" hidden>
+          <span id="draft-message">配置有未保存的更改</span>
+          <div>
+            <button id="discard">重新载入</button
+            ><button id="preview">预览差异与校验</button
+            ><button id="save" class="primary">校验并应用配置</button>
+          </div>
+        </section>
+        <div id="content"></div>
+        <footer>普通节点与 VPNGate 独立运行 · 额度在受管运行时执行</footer>
+      </main>
+    </div>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <dialog id="dialog"></dialog>
+    <script type="module" src="/panel/app.js"></script>
+  </body>
+</html>

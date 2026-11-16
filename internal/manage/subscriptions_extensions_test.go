@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,18 +24,19 @@ import (
 
 func TestSubscriptionAdminAuthenticationAndPreview(t *testing.T) {
 	root, core, _ := appFixture(t)
-	handler := subscriptionAdminHandler(root, core, strings.Repeat("b", 43))
+	s, _, session := platformFixture(t, root, core)
+	handler := s.Handler(PanelOptions{PublicURL: "http://example.com"})
 	for _, tc := range []struct {
 		path, token, origin string
 		status              int
 	}{
 		{"/", "", "", 200}, {"/api/config", "", "", 401},
 		{"/api/config", strings.Repeat("a", 43), "", 401},
-		{"/api/config", strings.Repeat("b", 43), "https://evil.example", 403},
-		{"/api/config", strings.Repeat("b", 43), "", 200},
+		{"/api/config", session.Token, "https://evil.example", 403},
+		{"/api/config", session.Token, "", 200},
 	} {
-		r := httptest.NewRequest("GET", tc.path, nil)
-		r.Header.Set("Authorization", "Bearer "+tc.token)
+		r := httptest.NewRequest("GET", "http://example.com"+tc.path, nil)
+		r.AddCookie(&http.Cookie{Name: "sbvpn", Value: tc.token})
 		r.Header.Set("Origin", tc.origin)
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)
@@ -43,15 +46,14 @@ func TestSubscriptionAdminAuthenticationAndPreview(t *testing.T) {
 	}
 	c, _, _, _ := loadSubscriptions(root)
 	before := readBytes(t, filepath.Join(root, subscriptionsSnapshot))
-	data, _ := json.Marshal(adminRequest{Config: mustJSON(t, c)})
-	r := httptest.NewRequest("POST", "/api/preview", bytes.NewReader(data))
-	r.Header.Set("Authorization", "Bearer "+strings.Repeat("b", 43))
+	data, _ := json.Marshal(c)
+	r := panelRequest("POST", "/api/subscriptions/preview", data, session)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)
 	if w.Code != 200 || !bytes.Equal(before, readBytes(t, filepath.Join(root, subscriptionsSnapshot))) {
 		t.Fatal("preview changed published state", w.Body.String())
 	}
-	if err := serveSubscriptionAdmin(context.Background(), root, core, "0.0.0.0:9099", io.Discard); err == nil {
+	if err := s.Serve(context.Background(), PanelOptions{Listen: "0.0.0.0:9099"}, io.Discard); err == nil {
 		t.Fatal("admin accepted public binding")
 	}
 }
@@ -224,6 +226,20 @@ func TestSubscriptionOnDemandProtocolProbe(t *testing.T) {
 	}
 	for _, node := range local[normalScope] {
 		if node.Protocol == "anytls" {
+			// Starting the process does not mean its listener is ready. A mixed
+			// proxy correctly returns 502 while the upstream is still starting.
+			for {
+				conn, err := net.DialTimeout("tcp", net.JoinHostPort(node.Server, strconv.Itoa(node.Port)), 200*time.Millisecond)
+				if err == nil {
+					conn.Close()
+					break
+				}
+				select {
+				case <-ctx.Done():
+					t.Fatal("probe fixture did not start", ctx.Err())
+				case <-time.After(50 * time.Millisecond):
+				}
+			}
 			if err := probeSubscriptionNode(ctx, root, core, server.URL, node); err != nil {
 				t.Fatal(err)
 			}

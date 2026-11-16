@@ -27,12 +27,13 @@ import (
 	"github.com/sagernet/sing-box/protocol/tuic"
 	"github.com/sagernet/sing-box/protocol/vless"
 	"github.com/sagernet/sing-box/protocol/vmess"
+	"github.com/sagernet/sing-box/service/resolved"
 	sjson "github.com/sagernet/sing/common/json"
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
-const Version = "1.14.4+sbvpn.1"
+const Version = "1.14.4+sbvpn.2"
 
 func guarded[T any](meter *accounting.Meter, constructor inbound.ConstructorFunc[T]) inbound.ConstructorFunc[T] {
 	return func(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options T) (adapter.Inbound, error) {
@@ -63,7 +64,12 @@ func Context(ctx context.Context, meter *accounting.Meter) context.Context {
 	transport.RegisterTLS(dnsTransports)
 	transport.RegisterHTTPS(dnsTransports)
 	local.RegisterTransport(dnsTransports)
-	return box.Context(ctx, registry, outbounds, endpoint.NewRegistry(), dnsTransports, service.NewRegistry(), certificate.NewRegistry())
+	endpoints := endpoint.NewRegistry()
+	registerEndpoints(endpoints)
+	services := service.NewRegistry()
+	resolved.RegisterService(services)
+	resolved.RegisterTransport(dnsTransports)
+	return box.Context(ctx, registry, outbounds, endpoints, dnsTransports, services, certificate.NewRegistry())
 }
 
 // BindUsers replaces every protocol user list, even when no account is bound.
@@ -137,11 +143,8 @@ func BindUsers(raw []byte, credentials []domain.Credential) ([]byte, error) {
 		}
 		node["users"] = data
 	}
-	for _, c := range credentials {
-		if !tags[c.InboundID] {
-			return nil, fmt.Errorf("credential %s refers to missing inbound", c.ID)
-		}
-	}
+	// Disabled/deleted inbounds are absent from the generated listener list.
+	// Their credentials cannot authenticate because no listener accepts them.
 	data, err := json.Marshal(nodes)
 	if err != nil {
 		return nil, err

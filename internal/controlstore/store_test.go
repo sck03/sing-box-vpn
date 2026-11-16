@@ -1,0 +1,75 @@
+package controlstore
+
+import (
+	"errors"
+	"path/filepath"
+	"testing"
+)
+
+func TestTaskRecoveryAndConfigurationRevisions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "control.db")
+	s, e := Open(path)
+	if e != nil {
+		t.Fatal(e)
+	}
+	ctx := t.Context()
+	if e = s.Initialize(ctx, []byte(`{"value":1}`)); e != nil {
+		t.Fatal(e)
+	}
+	id, e := s.Queue(ctx, "apply", "admin", []byte(`{"revision":2}`), 1, []byte(`{"value":2}`))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.Queue(ctx, "apply", "admin", []byte(`{}`), 2, []byte(`{}`)); e == nil {
+		t.Fatal("overlapping apply accepted")
+	}
+	if _, e = s.Claim(ctx); e != nil {
+		t.Fatal(e)
+	}
+	s.Close()
+	s, e = Open(path)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.Close()
+	if e = s.Recover(ctx); e != nil {
+		t.Fatal(e)
+	}
+	task, e := s.Claim(ctx)
+	if e != nil || task.ID != id {
+		t.Fatal(task, e)
+	}
+	state, _ := s.State(ctx)
+	if state.AppliedRevision != 1 || state.Revision != 2 {
+		t.Fatal(state)
+	}
+	if e = s.Applied(ctx, 2); e != nil {
+		t.Fatal(e)
+	}
+	if e = s.Finish(ctx, id, nil); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.Queue(ctx, "apply", "admin", []byte(`{}`), 1, []byte(`{}`)); !errors.Is(e, ErrConflict) {
+		t.Fatal(e)
+	}
+	id, e = s.Queue(ctx, "account", "admin", []byte(`{"secret":"pending"}`), 0, nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.Claim(ctx); e != nil {
+		t.Fatal(e)
+	}
+	if e = s.Recover(ctx); e != nil {
+		t.Fatal(e)
+	}
+	tasks, e := s.Tasks(ctx)
+	if e != nil || len(tasks) == 0 {
+		t.Fatal(tasks, e)
+	}
+	if tasks[0].State != "failed" {
+		t.Fatal("non-idempotent action replayed")
+	}
+	if e = s.Cancel(ctx, id); e == nil {
+		t.Fatal("cancelled completed task")
+	}
+}

@@ -115,6 +115,8 @@ func build(c Config, runtime Runtime, local map[string][]Node, now time.Time, av
 		switch source.Kind {
 		case "local":
 			nodes = local[source.Scope]
+		case "account":
+			nodes = local["account:"+source.ID]
 		case "inline":
 			nodes, err = Parse([]byte(source.Content), source.Format, source.ID)
 		case "remote":

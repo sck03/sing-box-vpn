@@ -25,7 +25,7 @@ func TestFirewallRejectsUnownedChainsWithoutChangingThem(t *testing.T) {
 }
 func TestFirewallUsesProtocolPortsAndSeparateHoppingChain(t *testing.T) {
 	root := t.TempDir()
-	app := App{Inbounds: []Object{{"type": "vmess", "listen_port": 20001}, {"type": "hysteria2", "listen_port": 20002}}, Profile: Profile{Ports: map[string]int{"hysteria2": 20002}, Hopping: []string{"31000:31100"}}}
+	app := App{Inbounds: []Object{{"type": "vmess", "tag": "test-vmess", "listen_port": 20001}, {"type": "hysteria2", "tag": "test-hy2", "listen_port": 20002}}, Profile: Profile{Ports: map[string]int{"hysteria2": 20002}, Hopping: []string{"31000:31100"}}}
 	if err := AtomicJSON(filepath.Join(root, "app.json"), app); err != nil {
 		t.Fatal(err)
 	}

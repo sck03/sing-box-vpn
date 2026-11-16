@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"path/filepath"
 	"time"
 
@@ -39,6 +40,31 @@ func buildSubscriptions(ctx context.Context, root, core string, c sub.Config, r 
 }
 
 func compileSubscriptions(ctx context.Context, root, core string, c sub.Config, r sub.Runtime, local map[string][]sub.Node, available bool) (fileBundle, sub.Snapshot, map[string]sub.Preview, error) {
+	if local == nil {
+		local = map[string][]sub.Node{}
+	}
+	if platformOwned(root) {
+		local[normalScope], local[vpngateScope] = nil, nil
+		c.Sources = append([]sub.Source(nil), c.Sources...)
+		for i := range c.Sources {
+			if c.Sources[i].Kind == "local" {
+				c.Sources[i].Required = false
+			}
+		}
+	}
+	for _, source := range c.Sources {
+		if source.Kind == "account" {
+			nodes, err := (AccountService{Root: root}).accountNodes(ctx, source.AccountID, source.Scope, 0)
+			if errors.Is(err, accounting.ErrDenied) {
+				nodes = nil
+				err = nil
+			}
+			if err != nil {
+				return nil, sub.Snapshot{}, nil, err
+			}
+			local["account:"+source.ID] = nodes
+		}
+	}
 	build := sub.Build
 	if available {
 		build = sub.BuildAvailable

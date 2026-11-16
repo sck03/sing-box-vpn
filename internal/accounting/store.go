@@ -8,12 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"time"
 
+	"github.com/sck03/sing-box-vpn/internal/database"
 	"github.com/sck03/sing-box-vpn/internal/domain"
-	_ "modernc.org/sqlite"
 )
 
 var ErrDenied = errors.New("account disabled, expired, exhausted, or unavailable")
@@ -26,35 +24,12 @@ const ReservationBytes int64 = 64 << 10
 type Store struct{ db *sql.DB }
 
 func Open(path string) (*Store, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return nil, err
-	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	db, err := database.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	if err = f.Close(); err != nil {
-		return nil, err
-	}
-	if err = os.Chmod(path, 0600); err != nil {
-		return nil, err
-	}
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(1)
 	s := &Store{db: db}
-	if _, err = db.Exec(`PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;`); err == nil {
-		var version int
-		err = db.QueryRow(`PRAGMA user_version`).Scan(&version)
-		if err == nil && version != 0 && version != 1 {
-			err = errors.New("unsupported account database schema")
-		}
-		if err == nil {
-			_, err = db.Exec(schema)
-		}
-	}
+	_, err = db.Exec(schema)
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -71,34 +46,53 @@ CREATE TABLE IF NOT EXISTS accounts (
  revision INTEGER NOT NULL, created INTEGER NOT NULL,
  charged INTEGER NOT NULL DEFAULT 0 CHECK(charged>=0),
  upload INTEGER NOT NULL DEFAULT 0 CHECK(upload>=0),
- download INTEGER NOT NULL DEFAULT 0 CHECK(download>=0));
+ download INTEGER NOT NULL DEFAULT 0 CHECK(download>=0),
+ policy TEXT NOT NULL DEFAULT '{}', started INTEGER, period INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS usage_periods (
+ account TEXT NOT NULL REFERENCES accounts(id), period INTEGER NOT NULL,
+ charged INTEGER NOT NULL, upload INTEGER NOT NULL, download INTEGER NOT NULL,
+ PRIMARY KEY(account,period));
+CREATE TABLE IF NOT EXISTS subscribers (
+ id TEXT PRIMARY KEY, name TEXT NOT NULL, disabled INTEGER NOT NULL DEFAULT 0,
+ revision INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE IF NOT EXISTS account_grants (
+ id TEXT PRIMARY KEY,account TEXT NOT NULL REFERENCES accounts(id),scope TEXT NOT NULL,
+ clients TEXT NOT NULL,expires INTEGER,max_downloads INTEGER,hash TEXT NOT NULL UNIQUE,
+ downloads INTEGER NOT NULL DEFAULT 0,revoked INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS credentials (
  id TEXT PRIMARY KEY, account TEXT NOT NULL REFERENCES accounts(id),
  runtime TEXT NOT NULL, inbound TEXT NOT NULL, protocol TEXT NOT NULL,
  generation INTEGER NOT NULL, secret BLOB NOT NULL,
  UNIQUE(account,runtime,inbound));
+CREATE TABLE IF NOT EXISTS revoked_credentials (id TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS leases (
  id TEXT PRIMARY KEY, account TEXT NOT NULL REFERENCES accounts(id),
  runtime TEXT NOT NULL, reserved INTEGER NOT NULL, upload INTEGER NOT NULL DEFAULT 0,
- download INTEGER NOT NULL DEFAULT 0, closed INTEGER NOT NULL DEFAULT 0);
+ download INTEGER NOT NULL DEFAULT 0, closed INTEGER NOT NULL DEFAULT 0,
+ period INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS events (
  sequence INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL,
  account TEXT NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL);
-PRAGMA user_version=1;`
+`
 
 type Usage struct {
 	domain.Account
-	Charged  int64 `json:"charged_bytes"`
-	Upload   int64 `json:"upload_bytes"`
-	Download int64 `json:"download_bytes"`
+	Charged   int64      `json:"charged_bytes"`
+	Upload    int64      `json:"upload_bytes"`
+	Download  int64      `json:"download_bytes"`
+	StartedAt *time.Time `json:"started_at"`
+	PeriodID  int64      `json:"period_id"`
+	NextReset *time.Time `json:"next_reset"`
+	State     string     `json:"state"`
 }
 
 type scanner interface{ Scan(...any) error }
 
 func readAccount(row scanner) (u Usage, err error) {
-	var expires, quota sql.NullInt64
+	var expires, quota, started sql.NullInt64
+	var policy string
 	var created int64
-	err = row.Scan(&u.ID, &u.Name, &u.Disabled, &expires, &quota, &u.Revision, &created, &u.Charged, &u.Upload, &u.Download)
+	err = row.Scan(&u.ID, &u.Name, &u.Disabled, &expires, &quota, &u.Revision, &created, &u.Charged, &u.Upload, &u.Download, &policy, &started, &u.PeriodID)
 	if err != nil {
 		return
 	}
@@ -110,10 +104,20 @@ func readAccount(row scanner) (u Usage, err error) {
 	if quota.Valid {
 		u.QuotaBytes = &quota.Int64
 	}
+	var a domain.Account
+	if err = json.Unmarshal([]byte(policy), &a); err != nil {
+		return
+	}
+	u.SubscriberID, u.StartMode, u.StartsAt, u.DurationSeconds, u.Period = a.SubscriberID, a.StartMode, a.StartsAt, a.DurationSeconds, a.Period
+	if started.Valid {
+		t := time.Unix(started.Int64, 0).UTC()
+		u.StartedAt = &t
+	}
+	u.describe(time.Now())
 	return
 }
 
-const accountColumns = `id,name,disabled,expires,quota,revision,created,charged,upload,download`
+const accountColumns = `id,name,disabled,expires,quota,revision,created,charged,upload,download,policy,started,period`
 
 func (s *Store) Account(ctx context.Context, id string) (Usage, error) {
 	return readAccount(s.db.QueryRowContext(ctx, `SELECT `+accountColumns+` FROM accounts WHERE id=?`, id))
@@ -150,6 +154,19 @@ func (s *Store) SaveAccount(ctx context.Context, a domain.Account) error {
 		return err
 	}
 	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `UPDATE accounts SET revision=revision WHERE id=?`, a.ID); err != nil {
+		return err
+	}
+	policy, err := json.Marshal(a)
+	if err != nil {
+		return err
+	}
+	if a.SubscriberID != "" {
+		var exists int
+		if err = tx.QueryRowContext(ctx, `SELECT 1 FROM subscribers WHERE id=?`, a.SubscriberID).Scan(&exists); err != nil {
+			return errors.New("subscriber does not exist")
+		}
+	}
 	if a.Revision == 0 {
 		var count int
 		if err = tx.QueryRowContext(ctx, `SELECT count(*) FROM accounts`).Scan(&count); err != nil {
@@ -158,10 +175,30 @@ func (s *Store) SaveAccount(ctx context.Context, a domain.Account) error {
 		if count >= 1000 {
 			return errors.New("account limit is 1000")
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO accounts(id,name,disabled,expires,quota,revision,created) VALUES(?,?,?,?,?,1,?)`, a.ID, a.Name, a.Disabled, timestamp(a.ExpiresAt), a.QuotaBytes, time.Now().Unix())
+		now := time.Now().UTC().Truncate(time.Second)
+		var start *time.Time
+		if a.StartMode == "scheduled" {
+			start = a.StartsAt
+		} else if a.StartMode != "first_use" {
+			start = &now
+		}
+		period := int64(0)
+		if start != nil {
+			period = start.Unix()
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO accounts(id,name,disabled,expires,quota,revision,created,policy,started,period) VALUES(?,?,?,?,?,1,?,?,?,?)`, a.ID, a.Name, a.Disabled, timestamp(a.ExpiresAt), a.QuotaBytes, now.Unix(), string(policy), timestamp(start), period)
 	} else {
+		old, e := readAccount(tx.QueryRowContext(ctx, `SELECT `+accountColumns+` FROM accounts WHERE id=?`, a.ID))
+		if e != nil {
+			return e
+		}
+		// Activation and the reset anchor are immutable. New plans get new IDs;
+		// editing a quota must never silently reset usage or reactivate expiry.
+		if old.StartMode != a.StartMode || timestamp(old.StartsAt) != timestamp(a.StartsAt) || old.DurationSeconds != a.DurationSeconds || old.Period != a.Period {
+			return errors.New("start and period policy are immutable; create a new entitlement")
+		}
 		var r sql.Result
-		r, err = tx.ExecContext(ctx, `UPDATE accounts SET name=?,disabled=?,expires=?,quota=?,revision=revision+1 WHERE id=? AND revision=?`, a.Name, a.Disabled, timestamp(a.ExpiresAt), a.QuotaBytes, a.ID, a.Revision)
+		r, err = tx.ExecContext(ctx, `UPDATE accounts SET name=?,disabled=?,expires=?,quota=?,policy=?,revision=revision+1 WHERE id=? AND revision=?`, a.Name, a.Disabled, timestamp(a.ExpiresAt), a.QuotaBytes, string(policy), a.ID, a.Revision)
 		if err == nil {
 			n, e := r.RowsAffected()
 			if e != nil {
@@ -190,6 +227,39 @@ func record(ctx context.Context, tx *sql.Tx, id, kind, detail string) error {
 }
 
 func (s *Store) Bind(ctx context.Context, c domain.Credential) error {
+	return s.BindBatch(ctx, []domain.Credential{c})
+}
+
+// BindBatch publishes every credential in one transaction. A conflict on any
+// inbound leaves all accounts unchanged.
+func (s *Store) BindBatch(ctx context.Context, credentials []domain.Credential) error {
+	if len(credentials) > 10000 {
+		return errors.New("credential batch limit exceeded")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `UPDATE credentials SET generation=generation WHERE id=''`); err != nil {
+		return err
+	}
+	var count int
+	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM credentials`).Scan(&count); err != nil {
+		return err
+	}
+	if count+len(credentials) > 10000 {
+		return errors.New("credential limit exceeded")
+	}
+	for _, c := range credentials {
+		if err = bindCredential(ctx, tx, c); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func bindCredential(ctx context.Context, tx *sql.Tx, c domain.Credential) error {
 	if err := c.Validate(); err != nil {
 		return err
 	}
@@ -197,18 +267,23 @@ func (s *Store) Bind(ctx context.Context, c domain.Credential) error {
 	if err != nil {
 		return err
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
+	var revoked int
+	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM revoked_credentials WHERE id=?`, c.ID).Scan(&revoked); err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	if revoked > 0 {
+		return errors.New("credential ID was revoked; create a new credential ID")
+	}
+	if err = uniqueCredential(ctx, tx, c); err != nil {
+		return err
+	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO credentials(id,account,runtime,inbound,protocol,generation,secret) VALUES(?,?,?,?,?,?,?)`, c.ID, c.AccountID, c.RuntimeID, c.InboundID, c.Protocol, c.Generation, data); err != nil {
 		return err
 	}
 	if err = record(ctx, tx, c.AccountID, "bind", c.RuntimeID+"/"+c.InboundID); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return nil
 }
 
 func (s *Store) Credentials(ctx context.Context, runtime string) ([]domain.Credential, error) {
@@ -236,18 +311,22 @@ func (s *Store) Credentials(ctx context.Context, runtime string) ([]domain.Crede
 }
 
 func (s *Store) Authorized(ctx context.Context, credential string, generation int64, now time.Time) (string, error) {
-	var id string
-	err := s.db.QueryRowContext(ctx, `SELECT a.id FROM accounts a JOIN credentials c ON c.account=a.id WHERE c.id=? AND c.generation=? AND a.disabled=0 AND (a.expires IS NULL OR a.expires>?) AND (a.quota IS NULL OR a.charged<=a.quota)`, credential, generation, now.Unix()).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", ErrDenied
-	}
-	return id, err
+	u, err := s.authorize(ctx, credential, generation, now, false)
+	return u.ID, err
 }
 
 // Reserve atomically allocates one shared pool across both runtime processes.
 // Cumulative checkpoints make replay idempotent; the reservation itself is the
 // recovery bound if a process dies before its next checkpoint.
 func (s *Store) Reserve(ctx context.Context, id, account, runtime string, want int64, now time.Time) (int64, error) {
+	u, err := s.Advance(ctx, account, now, false)
+	if err != nil {
+		return 0, err
+	}
+	return s.reservePeriod(ctx, id, account, runtime, want, now, u.PeriodID)
+}
+
+func (s *Store) reservePeriod(ctx context.Context, id, account, runtime string, want int64, now time.Time, periodID int64) (int64, error) {
 	if want < 1 || want > ReservationBytes {
 		return 0, errors.New("invalid reservation size")
 	}
@@ -264,7 +343,8 @@ func (s *Store) Reserve(ctx context.Context, id, account, runtime string, want i
 	if err != nil {
 		return 0, err
 	}
-	if u.Disabled || (u.ExpiresAt != nil && !now.Before(*u.ExpiresAt)) {
+	u.describe(now)
+	if u.PeriodID != periodID || u.Disabled || u.StartedAt == nil || now.Before(*u.StartedAt) || (u.ExpiresAt != nil && !now.Before(*u.ExpiresAt)) {
 		return 0, ErrDenied
 	}
 	if u.QuotaBytes != nil {
@@ -273,15 +353,16 @@ func (s *Store) Reserve(ctx context.Context, id, account, runtime string, want i
 	if want <= 0 {
 		return 0, ErrDenied
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO leases(id,account,runtime,reserved) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET reserved=reserved+excluded.reserved WHERE account=excluded.account AND runtime=excluded.runtime AND closed=0`, id, account, runtime, want); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT INTO leases(id,account,runtime,reserved,period) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET reserved=reserved+excluded.reserved WHERE account=excluded.account AND runtime=excluded.runtime AND period=excluded.period AND closed=0`, id, account, runtime, want, u.PeriodID); err != nil {
 		return 0, err
 	}
 	var closed int
 	var owner, instance string
-	if err = tx.QueryRowContext(ctx, `SELECT account,runtime,closed FROM leases WHERE id=?`, id).Scan(&owner, &instance, &closed); err != nil {
+	var period int64
+	if err = tx.QueryRowContext(ctx, `SELECT account,runtime,closed,period FROM leases WHERE id=?`, id).Scan(&owner, &instance, &closed, &period); err != nil {
 		return 0, err
 	}
-	if closed != 0 || owner != account || instance != runtime {
+	if closed != 0 || owner != account || instance != runtime || period != u.PeriodID {
 		return 0, errors.New("reservation owner mismatch")
 	}
 	charged, err := tx.ExecContext(ctx, `UPDATE accounts SET charged=charged+? WHERE id=? AND charged<=?`, want, account, int64(1<<62)-want)
@@ -312,9 +393,9 @@ func (s *Store) Checkpoint(ctx context.Context, id string, upload, download int6
 		return err
 	}
 	var account string
-	var reserved, oldUp, oldDown int64
+	var reserved, oldUp, oldDown, period int64
 	var closed bool
-	if err = tx.QueryRowContext(ctx, `SELECT account,reserved,upload,download,closed FROM leases WHERE id=?`, id).Scan(&account, &reserved, &oldUp, &oldDown, &closed); err != nil {
+	if err = tx.QueryRowContext(ctx, `SELECT account,reserved,upload,download,closed,period FROM leases WHERE id=?`, id).Scan(&account, &reserved, &oldUp, &oldDown, &closed, &period); err != nil {
 		return err
 	}
 	if upload < oldUp || download < oldDown || upload+download > reserved {
@@ -330,7 +411,10 @@ func (s *Store) Checkpoint(ctx context.Context, id string, upload, download int6
 	if closeLease {
 		refund = reserved - upload - download
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE accounts SET upload=upload+?,download=download+?,charged=charged-? WHERE id=?`, upload-oldUp, download-oldDown, refund, account); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE accounts SET upload=upload+?,download=download+?,charged=charged-? WHERE id=? AND period=?`, upload-oldUp, download-oldDown, refund, account, period); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE usage_periods SET upload=upload+?,download=download+?,charged=charged-? WHERE account=? AND period=?`, upload-oldUp, download-oldDown, refund, account, period); err != nil {
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE leases SET upload=?,download=?,closed=? WHERE id=?`, upload, download, closeLease, id); err != nil {
@@ -345,6 +429,9 @@ func (s *Store) Rotate(ctx context.Context, id, uuid, password string, expected 
 		return err
 	}
 	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `UPDATE credentials SET generation=generation WHERE id=?`, id); err != nil {
+		return err
+	}
 	var data []byte
 	if err = tx.QueryRowContext(ctx, `SELECT secret FROM credentials WHERE id=? AND generation=?`, id, expected).Scan(&data); errors.Is(err, sql.ErrNoRows) {
 		return ErrConflict
@@ -355,9 +442,15 @@ func (s *Store) Rotate(ctx context.Context, id, uuid, password string, expected 
 	if err = json.Unmarshal(data, &c); err != nil {
 		return err
 	}
+	if (c.Protocol == "hysteria2" || c.Protocol == "anytls") && c.Password == password || (c.Protocol != "hysteria2" && c.Protocol != "anytls") && c.UUID == uuid {
+		return errors.New("rotation must change the authentication secret")
+	}
 	c.Generation++
 	c.UUID = uuid
 	c.Password = password
+	if err = uniqueCredential(ctx, tx, c); err != nil {
+		return err
+	}
 	data, err = json.Marshal(c)
 	if err != nil {
 		return err
@@ -374,6 +467,45 @@ func (s *Store) Rotate(ctx context.Context, id, uuid, password string, expected 
 		return ErrConflict
 	}
 	if err = record(ctx, tx, c.AccountID, "rotate", fmt.Sprintf("credential %s generation %d", id, c.Generation)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func uniqueCredential(ctx context.Context, tx *sql.Tx, c domain.Credential) error {
+	field, value := "$.uuid", c.UUID
+	if c.Protocol == "anytls" || c.Protocol == "hysteria2" {
+		field, value = "$.password", c.Password
+	}
+	var count int
+	err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM credentials WHERE runtime=? AND inbound=? AND id<>? AND json_extract(secret,?)=?`, c.RuntimeID, c.InboundID, c.ID, field, value).Scan(&count)
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return errors.New("credential is already assigned on this inbound")
+	}
+	return nil
+}
+
+func (s *Store) Unbind(ctx context.Context, id string, generation int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	r, err := tx.ExecContext(ctx, `DELETE FROM credentials WHERE id=? AND generation=?`, id, generation)
+	if err != nil {
+		return err
+	}
+	n, err := r.RowsAffected()
+	if err == nil && n != 1 {
+		return ErrConflict
+	}
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO revoked_credentials(id) VALUES(?)`, id); err != nil {
 		return err
 	}
 	return tx.Commit()

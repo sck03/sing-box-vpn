@@ -4,7 +4,7 @@
 
 > 本文保留实施前的分析基线。后续代码改动、实际验收与未完成范围见 [统一管理实施记录](unified-management-status.md)。
 
-**本轮仅形成分析报告，未修改程序代码、配置、依赖或部署状态。本文所有“建议”“目标”“验收”均指后续工作，不代表已经实现。**
+**本报告编写于实施前，当时仅形成分析，未修改程序。文中“建议”“目标”“验收”均描述当时的后续工作；当前 v4 实现与验收结果以统一管理实施记录为准。**
 
 用户目标：排查 BUG，优化性能、资源占用和稳定性，精简重复代码，提高模块化、解耦性和可扩展性；将原 sing-box 菜单、订阅管理和独立账户管理统一起来。面向新部署，不承担旧版本数据或接口兼容。
 
@@ -352,19 +352,19 @@ P1：影响配置可用性、授权边界或明显资源风险，建议在扩大
 
 证据位置：
 
-- F1：[集合校验](E:/sing-box-vpn/internal/subscription/config.go:253)、[节点展开](E:/sing-box-vpn/internal/subscription/build.go:137)。
-- F2：[本地提交](E:/sing-box-vpn/internal/manage/config.go:91)、[完整导出调用](E:/sing-box-vpn/internal/manage/export.go:110)。
-- F3：[更新入口](E:/sing-box-vpn/sb.sh:333)、[安装时启用与重启](E:/sing-box-vpn/sb.sh:80)。
-- F4：[远端 304 与元数据](E:/sing-box-vpn/internal/manage/subscriptions_refresh.go:109)。
-- F5：[默认授权选择](E:/sing-box-vpn/internal/manage/subscription.go:110)。
-- F6：[下载新鲜度判断](E:/sing-box-vpn/internal/manage/subscriptions_http.go:89)。
-- F7：[固定校验清单](E:/sing-box-vpn/internal/manage/core_validation.go:11)。
+- F1：[集合校验](https://github.com/sck03/sing-box-vpn/blob/2bfeb0edd3229a795f1db619896a54881d45dc2f/internal/subscription/config.go#L253)、[节点展开](https://github.com/sck03/sing-box-vpn/blob/2bfeb0edd3229a795f1db619896a54881d45dc2f/internal/subscription/build.go#L137)。
+- F2：[本地提交](https://github.com/sck03/sing-box-vpn/blob/2bfeb0edd3229a795f1db619896a54881d45dc2f/internal/manage/config.go#L91)、[完整导出调用](https://github.com/sck03/sing-box-vpn/blob/2bfeb0edd3229a795f1db619896a54881d45dc2f/internal/manage/export.go#L110)。
+- F3：[更新入口](https://github.com/sck03/sing-box-vpn/blob/2bfeb0edd3229a795f1db619896a54881d45dc2f/sb.sh#L333)、[安装时启用与重启](https://github.com/sck03/sing-box-vpn/blob/2bfeb0edd3229a795f1db619896a54881d45dc2f/sb.sh#L80)。
+- F4：[远端 304 与元数据](https://github.com/sck03/sing-box-vpn/blob/2bfeb0edd3229a795f1db619896a54881d45dc2f/internal/manage/subscriptions_refresh.go#L109)。
+- F5：[默认授权选择](https://github.com/sck03/sing-box-vpn/blob/2bfeb0edd3229a795f1db619896a54881d45dc2f/internal/manage/subscription.go#L110)。
+- F6：[下载新鲜度判断](https://github.com/sck03/sing-box-vpn/blob/2bfeb0edd3229a795f1db619896a54881d45dc2f/internal/manage/subscriptions_http.go#L89)。
+- F7：[固定校验清单](https://github.com/sck03/sing-box-vpn/blob/2bfeb0edd3229a795f1db619896a54881d45dc2f/internal/manage/core_validation.go#L11)。
 
 另有三个结构性缺口，不能仅靠新增表单修好：
 
-- [管理模型](E:/sing-box-vpn/internal/manage/model.go:52)明确限制一个入口只接受一份用户信息；独立账户需要改变入口与凭据关系。
-- [订阅服务生命周期](E:/sing-box-vpn/internal/manage/subscription.go:254)承担订阅相关后台调度；未来账户执行不能绑定到该监听服务。
-- [Web 处理器](E:/sing-box-vpn/internal/manage/subscriptions_admin.go:95)将 API 请求转换成 CLI 参数并创建临时输入文件；适合当前小工具，扩展为完整面板前应抽出类型化应用服务。
+- [管理模型](https://github.com/sck03/sing-box-vpn/blob/2bfeb0edd3229a795f1db619896a54881d45dc2f/internal/manage/model.go#L52)明确限制一个入口只接受一份用户信息；独立账户需要改变入口与凭据关系。
+- [订阅服务生命周期](https://github.com/sck03/sing-box-vpn/blob/2bfeb0edd3229a795f1db619896a54881d45dc2f/internal/manage/subscription.go#L254)承担订阅相关后台调度；未来账户执行不能绑定到该监听服务。
+- [Web 处理器](https://github.com/sck03/sing-box-vpn/blob/2bfeb0edd3229a795f1db619896a54881d45dc2f/internal/manage/subscriptions_admin.go#L95)将 API 请求转换成 CLI 参数并创建临时输入文件；适合当前小工具，扩展为完整面板前应抽出类型化应用服务。
 
 ## 10. 性能、资源与代码精简的重点
 
@@ -464,13 +464,13 @@ B、C、D 可在接口确定后交错开展，但不能在能力验证前对用�
 
 本项目：
 
-- [现有架构](E:/sing-box-vpn/docs/architecture.md)
-- [订阅设计与使用](E:/sing-box-vpn/docs/subscriptions.md)
-- [既有验收记录及边界](E:/sing-box-vpn/docs/refactor-status.md)
-- [性能记录](E:/sing-box-vpn/docs/optimization.md)
-- [订阅菜单](E:/sing-box-vpn/lib/subscriptions.sh:4)
-- [VPNGate 菜单](E:/sing-box-vpn/addons/vpngate/vpngate.sh:45)
-- [当前下载授权模型](E:/sing-box-vpn/internal/subscription/config.go:69)
+- [现有架构](https://github.com/sck03/sing-box-vpn/blob/2bfeb0edd3229a795f1db619896a54881d45dc2f/docs/architecture.md)
+- [订阅设计与使用](https://github.com/sck03/sing-box-vpn/blob/2bfeb0edd3229a795f1db619896a54881d45dc2f/docs/subscriptions.md)
+- [既有验收记录及边界](https://github.com/sck03/sing-box-vpn/blob/2bfeb0edd3229a795f1db619896a54881d45dc2f/docs/refactor-status.md)
+- [性能记录](https://github.com/sck03/sing-box-vpn/blob/2bfeb0edd3229a795f1db619896a54881d45dc2f/docs/optimization.md)
+- [订阅菜单](https://github.com/sck03/sing-box-vpn/blob/2bfeb0edd3229a795f1db619896a54881d45dc2f/lib/subscriptions.sh#L4)
+- [VPNGate 菜单](https://github.com/sck03/sing-box-vpn/blob/2bfeb0edd3229a795f1db619896a54881d45dc2f/addons/vpngate/vpngate.sh#L45)
+- [当前下载授权模型](https://github.com/sck03/sing-box-vpn/blob/2bfeb0edd3229a795f1db619896a54881d45dc2f/internal/subscription/config.go#L69)
 
 s-ui：
 

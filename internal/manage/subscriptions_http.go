@@ -162,6 +162,10 @@ func subscriptionHandler(root string) http.Handler {
 				status = http.StatusNotFound
 				return errors.New("invalid authorization")
 			}
+			if err := checkOutputAccounts(request.Context(), root, view.config, parts[3]); err != nil {
+				status = http.StatusNotFound
+				return err
+			}
 			var found bool
 			artifact, found = view.snapshot.Artifacts[parts[3]]
 			if !found || !subscriptionFresh(view.config, view.snapshot, parts[3], time.Now()) {

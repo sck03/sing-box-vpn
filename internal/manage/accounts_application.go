@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"io"
 	"path/filepath"
 	"slices"
@@ -18,7 +19,15 @@ import (
 type AccountService struct{ Root string }
 
 func (s AccountService) Execute(ctx context.Context, c application.AccountCommand, out io.Writer) error {
-	store, err := accounting.Open(filepath.Join(s.Root, "accounts.db"))
+	if c.UUID != "" {
+		if _, err := uuid.Parse(c.UUID); err != nil {
+			return errors.New("invalid custom UUID")
+		}
+	}
+	if c.Password != "" && (len(c.Password) < 16 || len(c.Password) > 128) {
+		return errors.New("custom password must contain 16–128 bytes")
+	}
+	store, err := accounting.Open(filepath.Join(s.Root, "control.db"))
 	if err != nil {
 		return err
 	}
@@ -29,6 +38,12 @@ func (s AccountService) Execute(ctx context.Context, c application.AccountComman
 		if err != nil {
 			return err
 		}
+		for i := range accounts {
+			accounts[i], err = store.Advance(ctx, accounts[i].ID, time.Now(), false)
+			if err != nil {
+				return err
+			}
+		}
 		return jsonEncoder(out).Encode(accounts)
 	case "save":
 		return store.SaveAccount(ctx, c.Account)
@@ -36,28 +51,71 @@ func (s AccountService) Execute(ctx context.Context, c application.AccountComman
 		if !slices.Contains([]string{normalScope, vpngateScope}, c.Scope) {
 			return errors.New("invalid runtime scope")
 		}
-		if _, err = store.Account(ctx, c.ID); err != nil {
-			return err
+		ids := c.AccountIDs
+		if len(ids) == 0 {
+			ids = []string{c.ID}
+		}
+		if len(ids) > 100 || (len(c.AccountIDs) > 0 && c.ID != "") {
+			return errors.New("select 1–100 account IDs, without a separate id")
+		}
+		if len(ids) > 1 && (c.UUID != "" || c.Password != "") {
+			return errors.New("batch binding requires independent random credentials")
+		}
+		seen := map[string]bool{}
+		for _, id := range ids {
+			if seen[id] {
+				return errors.New("duplicate account ID")
+			}
+			seen[id] = true
+			if _, err = store.Account(ctx, id); err != nil {
+				return err
+			}
 		}
 		return withStartupLock(ctx, s.Root, func() error {
 			entries, err := s.accountEntries(c.Scope)
 			if err != nil {
 				return err
 			}
+			for _, id := range c.InboundIDs {
+				if !slices.ContainsFunc(entries, func(v ManagedNode) bool { return v.ID == id && !v.Disabled }) {
+					return fmt.Errorf("inbound %s is missing or disabled", id)
+				}
+			}
 			existing, err := store.Credentials(ctx, c.Scope)
 			if err != nil {
 				return err
 			}
-			for _, entry := range entries {
-				if slices.ContainsFunc(existing, func(v domain.Credential) bool { return v.AccountID == c.ID && v.InboundID == entry.ID }) {
-					continue
+			pending := []domain.Credential{}
+			for _, id := range ids {
+				selected := 0
+				for _, entry := range entries {
+					if len(c.InboundIDs) > 0 && !slices.Contains(c.InboundIDs, entry.ID) {
+						continue
+					}
+					if entry.Disabled {
+						continue
+					}
+					selected++
+					if slices.ContainsFunc(existing, func(v domain.Credential) bool { return v.AccountID == id && v.InboundID == entry.ID }) {
+						continue
+					}
+					credential := domain.Credential{ID: hexSecret()[:32], AccountID: id, RuntimeID: c.Scope, InboundID: entry.ID, Protocol: entry.Protocol, Generation: 1, UUID: randomUUID(), Password: randomSecret()}
+					if c.UUID != "" {
+						credential.UUID = c.UUID
+					}
+					if c.Password != "" {
+						credential.Password = c.Password
+					}
+					pending = append(pending, credential)
 				}
-				credential := domain.Credential{ID: hexSecret()[:32], AccountID: c.ID, RuntimeID: c.Scope, InboundID: entry.ID, Protocol: entry.Protocol, Generation: 1, UUID: randomUUID(), Password: randomSecret()}
-				if err = store.Bind(ctx, credential); err != nil {
-					return err
+				if selected == 0 {
+					return errors.New("no enabled inbounds selected")
 				}
 			}
-			return jsonEncoder(out).Encode(Object{"status": "saved", "runtime": c.Scope, "apply": "restart the affected managed-core instance to load new credentials"})
+			if err = store.BindBatch(ctx, pending); err != nil {
+				return err
+			}
+			return jsonEncoder(out).Encode(Object{"status": "saved", "runtime": c.Scope, "accounts": len(ids), "created": len(pending)})
 		})
 	case "credentials":
 		if !slices.Contains([]string{normalScope, vpngateScope}, c.Scope) {
@@ -75,7 +133,15 @@ func (s AccountService) Execute(ctx context.Context, c application.AccountComman
 		}
 		return jsonEncoder(out).Encode(result)
 	case "rotate":
-		return store.Rotate(ctx, c.ID, randomUUID(), randomSecret(), c.Generation)
+		if c.UUID == "" {
+			c.UUID = randomUUID()
+		}
+		if c.Password == "" {
+			c.Password = randomSecret()
+		}
+		return store.Rotate(ctx, c.ID, c.UUID, c.Password, c.Generation)
+	case "unbind":
+		return store.Unbind(ctx, c.ID, c.Generation)
 	case "export":
 		usage, err := store.Account(ctx, c.ID)
 		if err != nil {
@@ -89,61 +155,9 @@ func (s AccountService) Execute(ctx context.Context, c application.AccountComman
 		}
 		var nodes []sub.Node
 		err = withStartupLock(ctx, s.Root, func() error {
-			var app App
-			if ok, err := ReadJSON(filepath.Join(s.Root, "app.json"), &app); err != nil {
-				return err
-			} else if !ok {
-				return errors.New("ordinary node is not initialized")
-			}
-			settings, private, err := loadVPN(s.Root)
-			if err != nil {
-				return err
-			}
-			local, err := collectLocalSubscriptionNodes(app, settings, private)
-			if err != nil {
-				return err
-			}
-			for _, scope := range []string{normalScope, vpngateScope} {
-				if c.Scope != "" && c.Scope != scope {
-					continue
-				}
-				entries, err := s.accountEntries(scope)
-				if err != nil {
-					if scope == vpngateScope && settings.ActiveCountry == "" {
-						continue
-					}
-					return err
-				}
-				credentials, err := store.Credentials(ctx, scope)
-				if err != nil {
-					return err
-				}
-				for _, credential := range credentials {
-					if credential.AccountID != c.ID {
-						continue
-					}
-					if !slices.ContainsFunc(entries, func(n ManagedNode) bool { return n.ID == credential.InboundID && n.Protocol == credential.Protocol }) {
-						return errors.New("credential binding no longer matches the inbound")
-					}
-					for _, template := range local[scope] {
-						if template.Protocol != credential.Protocol {
-							continue
-						}
-						node := template
-						node.UUID = credential.UUID
-						node.Password = credential.Password
-						// Protocol renderers validate which secret fields are meaningful.
-						if node.Protocol == "vless" || node.Protocol == "vmess" {
-							node.Password = ""
-						}
-						if node.Protocol == "hysteria2" || node.Protocol == "anytls" {
-							node.UUID = ""
-						}
-						nodes = append(nodes, node)
-					}
-				}
-			}
-			return nil
+			var e error
+			nodes, e = s.accountNodes(ctx, c.ID, c.Scope, c.TUICPort)
+			return e
 		})
 		if err != nil {
 			return err

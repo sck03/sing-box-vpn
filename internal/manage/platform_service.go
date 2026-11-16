@@ -1,0 +1,619 @@
+package manage
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
+	"sync"
+	"time"
+
+	"github.com/sck03/sing-box-vpn/internal/accounting"
+	"github.com/sck03/sing-box-vpn/internal/adminauth"
+	"github.com/sck03/sing-box-vpn/internal/application"
+	"github.com/sck03/sing-box-vpn/internal/command"
+	"github.com/sck03/sing-box-vpn/internal/controlstore"
+	"github.com/sck03/sing-box-vpn/internal/database"
+	"github.com/sck03/sing-box-vpn/internal/domain"
+	sub "github.com/sck03/sing-box-vpn/internal/subscription"
+)
+
+type PlatformService struct {
+	Root, Core, Runtime string
+	Store               *controlstore.Store
+	Auth                *adminauth.Store
+	Accounts            *accounting.Store
+	NoSystem            bool
+	mu                  sync.Mutex
+	wake                chan struct{}
+	statusMu            sync.Mutex
+	statusAt            time.Time
+	status              []byte
+}
+type PlatformAction struct {
+	Operation    string                          `json:"operation"`
+	Service      string                          `json:"service,omitempty"`
+	ID           string                          `json:"id,omitempty"`
+	Scope        string                          `json:"scope,omitempty"`
+	Value        string                          `json:"value,omitempty"`
+	Config       json.RawMessage                 `json:"config,omitempty"`
+	Account      application.AccountCommand      `json:"account,omitempty"`
+	Subscription application.SubscriptionCommand `json:"subscription,omitempty"`
+	Automatic    bool                            `json:"automatic,omitempty"`
+}
+type applyInput struct {
+	Revision int64    `json:"revision"`
+	Active   []string `json:"active"`
+	Enabled  []string `json:"enabled"`
+}
+
+func OpenPlatform(root, core, runtime string, noSystem bool) (*PlatformService, error) {
+	path := filepath.Join(root, database.Filename)
+	store, err := controlstore.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	auth, err := adminauth.Open(path)
+	if err != nil {
+		store.Close()
+		return nil, err
+	}
+	accounts, err := accounting.Open(path)
+	if err != nil {
+		store.Close()
+		auth.Close()
+		return nil, err
+	}
+	return &PlatformService{Root: root, Core: core, Runtime: runtime, Store: store, Auth: auth, Accounts: accounts, NoSystem: noSystem, wake: make(chan struct{}, 1)}, nil
+}
+func (s *PlatformService) Close() error {
+	return errors.Join(s.Store.Close(), s.Auth.Close(), s.Accounts.Close())
+}
+func (s *PlatformService) signal() {
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (s *PlatformService) Initialize(ctx context.Context, address, name, admin, password string) error {
+	if _, err := s.Store.State(ctx); err == nil {
+		return errors.New("platform is already initialized")
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if _, err := os.Stat(filepath.Join(s.Root, "app.json")); err == nil {
+		return errors.New("new platform requires a fresh directory; legacy configuration is not imported")
+	}
+	if err := initializeApp(ctx, s.Root, s.Core, address, name); err != nil {
+		return err
+	}
+	var app App
+	if _, err := ReadJSON(filepath.Join(s.Root, "app.json"), &app); err != nil {
+		return err
+	}
+	config, _, _, err := loadSubscriptions(s.Root)
+	if err != nil {
+		return err
+	}
+	config.Sources = []sub.Source{}
+	config.Collections = []sub.Collection{}
+	config.Outputs = []sub.Output{}
+	config.Grants = []sub.Grant{}
+	v := PlatformConfig{Schema: 4, App: app, VPN: VPNSettings{ProxyPort: 7928, Profiles: map[string]Profile{}}, VPNSecrets: map[string]Secrets{}, Gateway: Object{}, Subscriptions: config, Certificates: []CertificateAsset{}, Argo: TunnelSettings{Mode: "off"}, Listener: subscriptionSettings{Listen: "127.0.0.1", Port: 2097, Token: randomSecret()}}
+	data, err := encodePlatform(v)
+	if err != nil {
+		return err
+	}
+	if err = s.Auth.Bootstrap(ctx, admin, password, false); err != nil {
+		return err
+	}
+	if err = s.Store.Initialize(ctx, data); err != nil {
+		return err
+	}
+	if err = AtomicBytes(filepath.Join(s.Root, ".platform-v4"), []byte("control.db owns configuration; JSON files are generated\n"), 0600); err != nil {
+		return err
+	}
+	return AtomicJSON(filepath.Join(s.Root, "runtime-revision.json"), int64(1))
+}
+
+func (s *PlatformService) State(ctx context.Context, secret bool) (Object, error) {
+	state, err := s.Store.State(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c, err := decodePlatform(state.Desired)
+	if err != nil {
+		return nil, err
+	}
+	var value any = c
+	if !secret {
+		data, _ := json.Marshal(c)
+		var object any
+		if err = json.Unmarshal(data, &object); err != nil {
+			return nil, err
+		}
+		redactPlatform(object)
+		value = object
+	}
+	return Object{"revision": state.Revision, "applied_revision": state.AppliedRevision, "config": value, "root": s.Root}, nil
+}
+func redactPlatform(v any) {
+	switch x := v.(type) {
+	case map[string]any:
+		for k, value := range x {
+			if slices.Contains([]string{"uuid", "password", "passwords", "private_key", "reality_private", "private", "token", "token_hash", "key", "secret", "authorization", "headers", "vpn_secrets", "proxy_pass", "socks_pass", "url", "content", "client_secret", "pre_shared_key"}, k) {
+				x[k] = "[redacted]"
+			} else {
+				redactPlatform(value)
+			}
+		}
+	case []any:
+		for _, item := range x {
+			redactPlatform(item)
+		}
+	}
+}
+
+func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revision int64, actor string) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if c.Listener.Token == "" {
+		c.Listener.Token = randomSecret()
+	}
+	if c.Argo.Mode == "fixed" {
+		c.App.Argo = Object{"domain": c.Argo.Domain, "inbound": c.Argo.Inbound}
+	} else if c.Argo.Mode == "off" || c.Argo.Mode == "" {
+		c.App.Argo = Object{}
+	}
+	if err := c.Validate(); err != nil {
+		return 0, err
+	}
+	state, err := s.Store.State(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if state.Revision != revision {
+		return 0, controlstore.ErrConflict
+	}
+	// Validate before persisting intent. No service or public artifact changes.
+	if _, err = s.build(ctx, c); err != nil {
+		return 0, err
+	}
+	active := []string{}
+	enabled := []string{}
+	if !s.NoSystem {
+		active, err = s.activeServices(ctx)
+		if err != nil {
+			return 0, err
+		}
+		enabled, err = s.enabledServices(ctx)
+		if err != nil {
+			return 0, err
+		}
+	}
+	data, err := encodePlatform(c)
+	if err != nil {
+		return 0, err
+	}
+	input, _ := json.Marshal(applyInput{Revision: revision + 1, Active: active, Enabled: enabled})
+	id, err := s.Store.Queue(ctx, "apply", actor, input, revision, data)
+	if err == nil {
+		s.signal()
+	}
+	return id, err
+}
+
+func (s *PlatformService) Queue(ctx context.Context, a PlatformAction, actor string) (int64, error) {
+	if !slices.Contains([]string{"service", "gateway", "account", "subscription", "certificate-renew", "bbr", "program-upgrade", "runtime-rollback", "outbound-probe"}, a.Operation) {
+		return 0, errors.New("unknown platform action")
+	}
+	if a.Operation == "account" && !slices.Contains([]string{"bind", "rotate", "unbind"}, a.Account.Operation) {
+		return 0, errors.New("account task must bind, unbind or rotate credentials")
+	}
+	if a.Operation == "subscription" && !slices.Contains([]string{"refresh", "check", "deliver"}, a.Subscription.Operation) {
+		return 0, errors.New("unsupported subscription task")
+	}
+	data, err := json.Marshal(a)
+	if err != nil {
+		return 0, err
+	}
+	id, err := s.Store.Queue(ctx, a.Operation, actor, data, 0, nil)
+	if err == nil {
+		s.signal()
+	}
+	return id, err
+}
+
+func (s *PlatformService) Run(ctx context.Context) error {
+	workerLock, err := os.OpenFile(filepath.Join(s.Root, ".platform-worker.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return err
+	}
+	defer workerLock.Close()
+	if err = lockFile(workerLock); err != nil {
+		return errors.New("another platform worker is already running")
+	}
+	if err := s.Store.Recover(ctx); err != nil {
+		return err
+	}
+	// Restore projections from the confirmed database state before serving tasks.
+	state, err := s.Store.State(ctx)
+	if err != nil {
+		return err
+	}
+	c, err := decodePlatform(state.Applied)
+	if err != nil {
+		return err
+	}
+	if err = withStartupLock(ctx, s.Root, func() error {
+		files, e := s.build(ctx, c)
+		if e != nil {
+			return e
+		}
+		if e = files.json("runtime-revision.json", state.AppliedRevision); e != nil {
+			return e
+		}
+		return publish(s.Root, files)
+	}); err != nil {
+		return err
+	}
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	nextMaintenance := time.Time{}
+	nextSubscriptions := time.Time{}
+	for {
+		if err = ctx.Err(); err != nil {
+			return err
+		}
+		task, e := s.Store.Claim(ctx)
+		if errors.Is(e, sql.ErrNoRows) {
+			if time.Now().After(nextSubscriptions) {
+				nextSubscriptions = time.Now().Add(time.Minute)
+				_, _ = s.Queue(ctx, PlatformAction{Operation: "subscription", Automatic: true, Subscription: application.SubscriptionCommand{Operation: "refresh"}}, "scheduler")
+				_, _ = s.Queue(ctx, PlatformAction{Operation: "subscription", Automatic: true, Subscription: application.SubscriptionCommand{Operation: "deliver"}}, "scheduler")
+			}
+			if !s.NoSystem && time.Now().After(nextMaintenance) {
+				nextMaintenance = time.Now().Add(30 * time.Second)
+				maintenance, stop := context.WithTimeout(ctx, 30*time.Second)
+				if e := s.syncTunnel(maintenance); e != nil {
+					_ = s.Auth.Audit(maintenance, "scheduler", "tunnel-sync", "", "failed")
+				}
+				if e := s.scheduleCertificates(maintenance); e != nil {
+					_ = s.Auth.Audit(maintenance, "scheduler", "certificate-schedule", "", "failed")
+				}
+				stop()
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-s.wake:
+			case <-ticker.C:
+			}
+			continue
+		}
+		if e != nil {
+			return e
+		}
+		child, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		if task.Kind == "apply" {
+			var input applyInput
+			e = json.Unmarshal(task.Input, &input)
+			if e == nil {
+				e = s.apply(child, task.ID, input)
+			}
+		} else {
+			var action PlatformAction
+			e = json.Unmarshal(task.Input, &action)
+			if e == nil {
+				e = s.execute(child, task.ID, action)
+			}
+		}
+		cancel()
+		finish, stop := context.WithTimeout(context.Background(), 10*time.Second)
+		result := "success"
+		if e != nil {
+			result = "failed"
+		}
+		_ = s.Auth.Audit(finish, task.Actor, task.Kind, fmt.Sprint(task.ID), result)
+		finishErr := s.Store.Finish(finish, task.ID, e)
+		stop()
+		if finishErr != nil {
+			return finishErr
+		}
+	}
+}
+
+func (s *PlatformService) apply(ctx context.Context, id int64, input applyInput) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state, err := s.Store.State(ctx)
+	if err != nil {
+		return err
+	}
+	if input.Revision != state.Revision {
+		return controlstore.ErrConflict
+	}
+	c, err := decodePlatform(state.Desired)
+	if err != nil {
+		return err
+	}
+	previous, err := decodePlatform(state.Applied)
+	if err != nil {
+		return err
+	}
+	files, err := s.build(ctx, c)
+	if err != nil {
+		return err
+	}
+	if err = s.checkRuntime(ctx, files); err != nil {
+		return err
+	}
+	if err = files.json("runtime-revision.json", state.Revision); err != nil {
+		return err
+	}
+	if err = s.Store.Phase(ctx, id, "publishing"); err != nil {
+		return err
+	}
+	err = withStartupLock(ctx, s.Root, func() error { return publish(s.Root, files) })
+	if err != nil {
+		return err
+	}
+	if err = s.Store.Phase(ctx, id, "applying-services"); err == nil && !s.NoSystem {
+		err = s.applyHost(ctx, c, previous, input.Active, false)
+	}
+	if err == nil {
+		err = s.Store.Applied(ctx, state.Revision)
+	}
+	if err != nil {
+		// Desired remains reviewable. Configuration rollback never touches the
+		// accounting/security tables, so revocations cannot be undone here.
+		recovery, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		old, e := s.build(recovery, previous)
+		if e == nil {
+			e = old.json("runtime-revision.json", state.AppliedRevision)
+		}
+		if e == nil {
+			e = withStartupLock(recovery, s.Root, func() error { return publish(s.Root, old) })
+		}
+		if e == nil && !s.NoSystem {
+			e = s.applyHost(recovery, previous, c, input.Active, true)
+			e = errors.Join(e, s.restoreEnabled(recovery, input.Enabled))
+		}
+		phase := "rolled-back"
+		if e != nil {
+			phase = "rollback-failed"
+		}
+		_ = s.Store.Phase(recovery, id, phase)
+		return errors.Join(err, e)
+	}
+	return nil
+}
+
+func (s *PlatformService) checkRuntime(ctx context.Context, files fileBundle) error {
+	if s.Runtime == "" {
+		return errors.New("managed runtime binary is required")
+	}
+	for _, scope := range []string{"normal", "vpngate"} {
+		name := "sb.json"
+		if scope == "vpngate" {
+			name = "vpngate/server.json"
+		}
+		data := files[name]
+		if len(data) == 0 {
+			continue
+		}
+		f, err := os.CreateTemp(s.Root, ".runtime-check-*.json")
+		if err != nil {
+			return err
+		}
+		path := f.Name()
+		if err = f.Chmod(0600); err == nil {
+			_, err = f.Write(data)
+		}
+		err = errors.Join(err, f.Close())
+		if err == nil {
+			_, err = command.Output(ctx, nil, s.Runtime, "--check", "--config", path, "--database", filepath.Join(s.Root, database.Filename), "--instance", scope)
+		}
+		_ = os.Remove(path)
+		if err != nil {
+			return fmt.Errorf("managed %s configuration rejected: %w", scope, err)
+		}
+	}
+	return nil
+}
+
+func (s *PlatformService) execute(ctx context.Context, id int64, a PlatformAction) error {
+	if err := s.Store.Phase(ctx, id, "executing"); err != nil {
+		return err
+	}
+	switch a.Operation {
+	case "account":
+		if a.Account.Operation == "rotate" || a.Account.Operation == "unbind" {
+			found := false
+			for _, scope := range []string{"normal", "vpngate"} {
+				credentials, e := s.Accounts.Credentials(ctx, scope)
+				if e != nil {
+					return e
+				}
+				for _, credential := range credentials {
+					if credential.ID == a.Account.ID {
+						if a.Account.Scope != "" && a.Account.Scope != scope {
+							return errors.New("credential belongs to a different runtime")
+						}
+						a.Account.Scope, found = scope, true
+					}
+				}
+			}
+			if !found {
+				return errors.New("credential not found")
+			}
+		}
+		var active []string
+		if !s.NoSystem {
+			var e error
+			active, e = s.activeServices(ctx)
+			if e != nil {
+				return e
+			}
+		}
+		var out bytes.Buffer
+		err := (AccountService{Root: s.Root}).Execute(ctx, a.Account, &out)
+		if err != nil {
+			return err
+		}
+		state, err := s.Store.State(ctx)
+		if err != nil {
+			return err
+		}
+		c, err := decodePlatform(state.Applied)
+		if err != nil {
+			return err
+		}
+		files, err := s.build(ctx, c)
+		if err != nil {
+			return err
+		}
+		if err = s.checkRuntime(ctx, files); err != nil {
+			return err
+		}
+		if err = withStartupLock(ctx, s.Root, func() error { return publish(s.Root, files) }); err != nil {
+			return err
+		}
+		if !s.NoSystem {
+			for _, scope := range []string{"normal", "vpngate"} {
+				if a.Account.Scope != "" && a.Account.Scope != scope {
+					continue
+				}
+				if !slices.Contains(active, scopeService(scope)) {
+					continue
+				}
+				started := time.Now().UnixNano()
+				if err = s.service(ctx, scopeService(scope), "restart"); err != nil {
+					return err
+				}
+				if err = s.awaitRuntime(ctx, scope, started); err != nil {
+					return err
+				}
+			}
+		}
+		if out.Len() > 0 {
+			return s.Store.Result(ctx, id, out.Bytes())
+		}
+		return nil
+	case "subscription":
+		if a.Automatic {
+			if a.Subscription.Operation == "refresh" {
+				return refreshSubscriptions(ctx, s.Root, s.Core, false)
+			}
+			return deliverSubscriptions(ctx, s.Root, "", true, new(bytes.Buffer))
+		}
+		var out bytes.Buffer
+		if err := (SubscriptionService{Root: s.Root, Core: s.Core}).Execute(ctx, a.Subscription, &out); err != nil {
+			return err
+		}
+		var result any
+		if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+			result = Object{"completed": true}
+		}
+		redactPlatform(result)
+		data, err := json.Marshal(result)
+		if err != nil {
+			return err
+		}
+		return s.Store.Result(ctx, id, data)
+	case "service":
+		if s.NoSystem {
+			return errors.New("system operations are disabled")
+		}
+		return s.service(ctx, a.Service, a.Value)
+	case "gateway":
+		_, err := s.gateway(ctx, "actions", a.Config)
+		return err
+	case "certificate-renew":
+		return s.renewCertificate(ctx, a.ID)
+	case "bbr":
+		return s.setBBR(ctx, a.Value)
+	case "program-upgrade":
+		return s.upgradeProgram(ctx, a.Value)
+	case "runtime-rollback":
+		return s.rollbackRuntime(ctx)
+	case "outbound-probe":
+		return s.probeOutbound(ctx, id, a.ID, a.Value)
+	}
+	return errors.New("unknown task")
+}
+
+func (s *PlatformService) Preset(ctx context.Context, protocol, id string) (ManagedNode, error) {
+	if !domain.ResourceID.MatchString(id) || !slices.Contains(Protocols, protocol) {
+		return ManagedNode{}, errors.New("invalid preset")
+	}
+	state, err := s.Store.State(ctx)
+	if err != nil {
+		return ManagedNode{}, err
+	}
+	c, err := decodePlatform(state.Desired)
+	if err != nil {
+		return ManagedNode{}, err
+	}
+	used, ranges, err := allocationPorts(s.Root, c.App, c.VPN)
+	if err != nil {
+		return ManagedNode{}, err
+	}
+	p, err := NewProfile(s.Root, used, "", ranges...)
+	if err != nil {
+		return ManagedNode{}, err
+	}
+	nodes, err := managedNodes(App{Profile: p, Inbounds: MakeInbounds(p, "")})
+	if err != nil {
+		return ManagedNode{}, err
+	}
+	for _, n := range nodes {
+		if n.Protocol == protocol {
+			n.ID = id
+			return n, nil
+		}
+	}
+	return ManagedNode{}, errors.New("preset unavailable")
+}
+
+func (s *PlatformService) PrepareCountry(ctx context.Context, cc string) (PlatformConfig, error) {
+	state, err := s.Store.State(ctx)
+	if err != nil {
+		return PlatformConfig{}, err
+	}
+	c, err := decodePlatform(state.Desired)
+	if err != nil {
+		return c, err
+	}
+	if !countryPattern.MatchString(cc) {
+		return c, errors.New("country must be two uppercase letters")
+	}
+	if _, ok := c.VPN.Profiles[cc]; !ok {
+		used, ranges, e := allocationPorts(s.Root, c.App, c.VPN)
+		if e != nil {
+			return c, e
+		}
+		p, e := NewProfile(s.Root, used, cc+"-", ranges...)
+		if e != nil {
+			return c, e
+		}
+		secret := p.Secrets
+		secret.SocksUser, secret.SocksPass = "ygvg-"+cc, hexSecret()
+		p.Secrets = Secrets{}
+		p.Country = cc
+		c.VPN.Profiles[cc] = p
+		c.VPNSecrets[cc] = secret
+		c.VPN.Order = append(c.VPN.Order, cc)
+	}
+	c.VPN.ActiveCountry = cc
+	p := c.VPNSecrets[cc]
+	c.Gateway = merge(c.Gateway, Object{"country": cc, "enabled": true, "mode": "sticky", "fixed_host": "", "listen": fmt.Sprintf("127.0.0.1:%d", c.VPN.ProxyPort), "proxy_user": p.SocksUser, "proxy_pass": p.SocksPass, "data_dir": "/var/lib/yg-vpngate", "run_dir": "/run/yg-vpngate"})
+	return c, nil
+}

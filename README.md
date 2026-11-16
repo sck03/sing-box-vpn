@@ -1,72 +1,52 @@
-# sing-box-vpn
+# sing-box-vpn v4
 
-基于 sing-box 的五协议节点管理程序，支持 VLESS Reality、VMess WS、Hysteria-2、TUIC-v5 和 AnyTLS。
-普通节点使用 VPS 出口，可选 VPNGate 提供指定国家的家宽候选出口。
+面向新部署的 sing-box 统一管理平台。Web 面板管理五协议入站、独立账户与周期额度、订阅与分发、服务端路由与 DNS、WireGuard/WARP、Argo、VPNGate、证书和维护任务。
 
-支持五协议自定义凭据、域名分流、Argo/CDN、TLS 证书、Hy2 跳跃、TUIC 多端口和订阅导出。
-支持使用 Mihomo 核心的 OpenClash：可导入完整配置，或只更新节点、保留路由器自己的分流。
-订阅支持本机、手工及远端来源、集合处理、客户端模板、独立分享和加密备份。
-可按需启动轻量 Web 管理和协议连接检测，支持定时刷新、规则资源、诊断通知与多目的地分发。
+普通节点与 VPNGate 使用独立受管核心进程。面板停止不停止代理计量；账户停用、到期、额度与凭据代次在认证后的转发边界执行。权威状态为 `control.db`，生成的 JSON 文件不再作为第二套配置入口。
 
-统一管理重构正在进行：F1–F7 修复、共享订阅应用层、SQLite 账户账本和独立受管核心已有实现。
-完整资源面板与运行时自动部署尚未完成，当前安装仍使用官方核心。
-已验收功能、开发验证方式和剩余范围见 [统一管理实施记录](docs/unified-management-status.md)。
+## 安装
 
-## 安装与使用
+支持 Debian/Ubuntu、systemd、Linux amd64/arm64。需要 root；安装器自动安装 Python 3、OpenVPN、Certbot 等免费系统包。VPS 无需 Go 或 Node.js。VPNGate 需要 IPv4、TUN 与 network namespace。
 
-支持 **Ubuntu/Debian + systemd、Linux amd64/arm64**，安装需要 root 权限。
-使用预编译程序，VPS 无需安装 Go 或 Python；VPNGate 另外需要 IPv4 外网、TUN 和 network namespace。
+**v4 要求全新空目录，不迁移旧数据或兼容旧管理接口。** 分支提交不等于正式发行；安装器默认获取 GitHub 最新正式 Release。部署当前分支应先构建完整包：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sck03/sing-box-vpn/main/install.sh | sudo bash
+go run ./cmd/release
+tar -xzf .build/release/sing-box-vpn-v4.0.0.tar.gz
+cd sing-box-vpn
+sudo bash install.sh --local
 ```
 
-安装后运行 `sb` 打开菜单：
+安装后面板默认 `127.0.0.1:2096`，使用安装时设置的管理员账号：
 
-1. 菜单 **9** 查看普通五协议节点、二维码和客户端配置。
-2. 需要 VPNGate 时，菜单 **17** 选择国家并启动出口，再从菜单 **9** 选择 VPNGate 节点。
-3. 菜单 **3 → 8** 管理订阅、来源、集合、模板、独立分享、刷新记录、备份和回收站。
-4. 菜单 **3 → 2 → 1** 自定义五协议 UUID / 密码，TUIC 的 UUID 和密码可分别修改。
-5. 菜单 **4 → 4** 设置 TUIC 多端口，**4 → 6** 获取指定端口链接。
+```bash
+ssh -L 2096:127.0.0.1:2096 root@VPS
+```
 
-**v3 使用新的管理数据结构和订阅接口，面向空目录的新部署，不迁移 v2 或更早的数据。**
-安装器下载最新正式 Release；源码与安装包分别发布，部署本分支请先构建完整安装包。
+浏览器访问 `http://127.0.0.1:2096`。首次进入「权益与用量」创建权益、绑定入口，再到「下载授权」创建分享。初始入口不接受共用预设凭据，不预建可公开下载的共享输出。
 
-推荐导入对应核心的 `sbox.json` 或 `clmi.yaml`。聚合 URI 的证书选项支持因客户端而异，
-Mihomo 的 VMess/TUIC 自签 TLS 节点请使用 `clmi.yaml`，详见[订阅说明](docs/usage.md#节点与订阅)。
-OpenClash 的 `proxy-providers` 使用 `proxies.yaml`，见[OpenClash 设置](docs/usage.md#openclash)。
+公开管理访问需要 TLS 或明确配置的可信 HTTPS 反向代理，配置见[使用指南](docs/usage.md)。日常操作全部在面板；`sb` 仅保留安装、诊断、管理员重置、恢复、升级救援和卸载。
 
-## 常用菜单
+## 功能边界
 
-| 操作 | 菜单 |
-| --- | --- |
-| 安装；整套卸载 | 1；2 |
-| 凭据、Reality SNI、VMess WS/CDN、Argo、订阅 | 3 |
-| 主端口、Hy2 跳跃、TUIC 多端口 | 4 |
-| 普通节点域名分流；TLS 证书 | 5；12 |
-| 服务启动 / 停止 / 重启；核心更新 / 回滚 | 6；8 |
-| 更新项目程序；查看节点 / 订阅；日志 | 7；9；10 |
-| VPNGate 国家、出口、独立入口设置 | 17 |
+- VLESS Reality、VMess WS、Hysteria2、TUIC、AnyTLS；原生 sing-box/Mihomo 配置与 URI、二维码、指定 TUIC 转发端口导出。
+- 管理员/操作员/只读角色、bcrypt、Cookie 会话撤销、CSRF、持久登录限速、TOTP 与审计。
+- 订阅者与多权益、首次代理使用/创建/预约开始、固定期限、每 N 日或每月按时区重置。下载令牌与代理额度分别管理。
+- 配置 revision、持久任务、实际运行心跳、失败回滚、在线加密备份和空目录灾难恢复。
+- VPNGate 出口校验失败阻断转发；「家宽候选」是筛选结果，志愿者节点和固定 IP 不作保证。
+- 凭据新增/轮换要重启受影响实例载入，影响该实例其他连接；旧凭据撤销在账本中立即生效。
+- 第三方订阅只能管理下载；客户端直连第三方时，本项目无法执行其流量额度。
 
-子菜单输入 **0** 返回，填写参数时输入 **0** 取消；卸载需输入 **y** 确认。
-
-## 使用须知
-
-- 普通节点与 VPNGate 使用独立端口、凭据和订阅。VPNGate 同时激活一个国家，切回已保存国家可恢复原链接。
-- VPNGate 是志愿者网络，家宽候选属于筛选结果；节点在线和固定 IP 无法保证。出口校验失败时阻断转发。
-- 已启用服务支持开机恢复，连通时间取决于网络、握手和出口校验。主动停止与 VPNGate 暂停设置会保留。
-- 本地订阅令牌相当于访问密码，公网加密传输可配置 HTTPS 反向代理。
-
-安装与核心更新默认获取官方最新稳定版，最低支持 **1.14.0**。具体兼容性见[兼容性说明](docs/compatibility.md)。
+依赖优先采用免费开源的最新稳定版；核心适配依赖按经过验证的版本组合固定。当前 sing-box 1.14.4，SQLite 1.62.0，YAML 3.0.6，x/crypto 0.59.0。版本及许可证见 [go.mod](go.mod)、[NOTICE.md](NOTICE.md)、[第三方声明](third_party/modules/README.md)。
 
 ## 文档
 
-- [使用指南](docs/usage.md)：凭据、端口、证书、两套订阅、出口控制与故障排查。
-- [开发与发布](docs/development.md)：构建、测试、GitHub Actions 和 Release。
-- [订阅配置与接口](docs/subscriptions.md)：配置示例、客户端能力、授权、调度与恢复。
-- [v3 验收记录](docs/refactor-status.md)：交付范围、回归结果、持续测试和验证边界。
-- [架构与维护](docs/architecture.md)：模块边界、资源限制和扩展约定。
-- [上游技术与协议](docs/upstream.md)：sing-box 新协议、OpenClash 和 VPNGate 更新及项目接入范围。
-- [实施方案](VPNGate-实施方案.md) · [性能与优化记录](docs/optimization.md)。
+- [使用指南](docs/usage.md)
+- [订阅与下载授权](docs/subscriptions.md)
+- [架构与扩展](docs/architecture.md)
+- [开发与发布](docs/development.md)
+- [兼容性与限制](docs/compatibility.md)
+- [本次实施和验收记录](docs/unified-management-status.md)
+- [实施前完整分析](docs/unified-management-analysis.md)
 
-许可证 GPL-3.0，第三方来源与授权见 [NOTICE.md](NOTICE.md)。
+许可证 GPL-3.0。历史分析与测量资料保留为证据，不代表当前版本已重新通过其中所有实验。
