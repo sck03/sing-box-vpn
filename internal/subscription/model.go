@@ -253,15 +253,20 @@ func Process(nodes []Node, p Processor) (Preview, error) {
 		if patterns[1] != nil && patterns[1].MatchString(n.Name) {
 			reason = "exclude filter"
 		}
-		identity := n.Identity()
-		if p.Deduplicate && seen[identity] {
-			reason = "duplicate connection parameters"
+		identity := ""
+		if p.Deduplicate {
+			identity = n.Identity()
+			if seen[identity] {
+				reason = "duplicate connection parameters"
+			}
 		}
 		if reason != "" {
 			result.Diagnostics = append(result.Diagnostics, Diagnostic{n.ID, n.Name, "filter", reason})
 			continue
 		}
-		seen[identity] = true
+		if p.Deduplicate {
+			seen[identity] = true
+		}
 		if patterns[2] != nil {
 			n.Name = patterns[2].ReplaceAllString(n.Name, p.RenameReplacement)
 		}

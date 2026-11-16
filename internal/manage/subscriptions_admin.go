@@ -4,23 +4,26 @@ import (
 	"bytes"
 	"context"
 	"crypto/subtle"
-	_ "embed"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	sub "github.com/sck03/sing-box-vpn/internal/subscription"
+	"github.com/sck03/sing-box-vpn/internal/accounting"
+	"github.com/sck03/sing-box-vpn/internal/application"
 )
 
 //go:embed subscriptions_admin.html
 var subscriptionAdminPage []byte
+
+//go:embed web/*.js
+var subscriptionAdminAssets embed.FS
 
 func serveSubscriptionAdmin(ctx context.Context, root, core, address string, output io.Writer) error {
 	host, _, err := net.SplitHostPort(address)
@@ -76,7 +79,17 @@ func subscriptionAdminHandler(root, core, token string) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+		if r.Method == http.MethodGet && (r.URL.Path == "/web/admin.js" || r.URL.Path == "/web/api.js" || r.URL.Path == "/web/accounts.js") {
+			data, err := subscriptionAdminAssets.ReadFile(strings.TrimPrefix(r.URL.Path, "/"))
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+			_, _ = w.Write(data)
+			return
+		}
 		if r.URL.Path == "/" && r.Method == http.MethodGet {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			_, _ = w.Write(subscriptionAdminPage)
@@ -92,7 +105,11 @@ func subscriptionAdminHandler(root, core, token string) http.Handler {
 			http.Error(w, "cross-origin request rejected", 403)
 			return
 		}
-		args := []string{"--root", root, "--core", core}
+		if r.URL.Path == "/api/accounts" {
+			serveAccountCommand(root, w, r)
+			return
+		}
+		service := SubscriptionService{Root: root, Core: core}
 		var request adminRequest
 		if r.Method == http.MethodPost {
 			r.Body = http.MaxBytesReader(w, r.Body, 12<<20)
@@ -111,75 +128,52 @@ func subscriptionAdminHandler(root, core, token string) http.Handler {
 			http.Error(w, "method not allowed", 405)
 			return
 		}
-		var input io.Reader
-		stage := ""
-		defer func() {
-			if stage != "" {
-				_ = os.RemoveAll(stage)
-			}
-		}()
-		staging := func() (string, error) {
-			if stage == "" {
-				var err error
-				stage, err = os.MkdirTemp(root, ".admin-")
-				if err != nil {
-					return "", err
-				}
-			}
-			return filepath.Join(stage, "input"), nil
-		}
+		command := application.SubscriptionCommand{ID: request.ID, Kind: request.Kind, Outputs: strings.Split(request.Outputs, ","), MaxDownloads: request.MaxDownloads, Config: request.Config, ProbeURL: request.ProbeURL}
 		binaryBackup := false
 		var err error
+		var result bytes.Buffer
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/config":
-			args = append(args, "show")
+			command.Operation = "show"
 		case r.Method == http.MethodGet && r.URL.Path == "/api/logs":
-			args = append(args, "logs")
+			command.Operation = "logs"
 		case r.Method == http.MethodGet && r.URL.Path == "/api/clients":
-			args = append(args, "clients")
+			command.Operation = "clients"
 		case r.Method == http.MethodGet && r.URL.Path == "/api/trash":
-			args = append(args, "trash")
+			command.Operation = "trash"
 		case r.Method == http.MethodGet && r.URL.Path == "/api/export":
-			args = append(args, "export", "--id", r.URL.Query().Get("id"))
+			command.Operation, command.ID = "export", r.URL.Query().Get("id")
 		case r.Method == http.MethodPost && (r.URL.Path == "/api/preview" || r.URL.Path == "/api/apply"):
-			var path string
-			path, err = staging()
-			if err == nil {
-				err = AtomicBytes(path, request.Config, 0600)
-			}
-			args = append(args, strings.TrimPrefix(r.URL.Path, "/api/"), "--file", path)
+			command.Operation = strings.TrimPrefix(r.URL.Path, "/api/")
 		case r.Method == http.MethodPost && (r.URL.Path == "/api/backup" || r.URL.Path == "/api/restore-backup"):
-			var path string
-			path, err = staging()
-			operation := strings.TrimPrefix(r.URL.Path, "/api/")
-			binaryBackup = operation == "backup"
-			if !binaryBackup && err == nil {
-				err = AtomicBytes(path, request.Backup, 0600)
-			}
-			input = strings.NewReader(request.Password)
-			args = append(args, operation, "--file", path)
-			if request.Apply {
-				args = append(args, "--apply")
+			binaryBackup = r.URL.Path == "/api/backup"
+			password := []byte(request.Password)
+			defer clear(password)
+			if binaryBackup {
+				err = service.Backup(r.Context(), password, &result)
+			} else {
+				err = service.RestoreBackup(r.Context(), request.Backup, password, request.Apply, &result)
 			}
 		case r.Method == http.MethodPost && r.URL.Path == "/api/action":
 			switch request.Operation {
 			case "refresh":
-				args = append(args, "refresh")
+				command.Operation = "refresh"
 			case "check":
-				args = append(args, "check", "--id", request.ID)
-				if request.ProbeURL != "" {
-					args = append(args, "--probe-url", request.ProbeURL)
+				command.Operation = "check"
+				if command.ProbeURL == "" {
+					command.ProbeURL = "https://www.gstatic.com/generate_204"
 				}
 			case "deliver", "revoke", "restore":
-				args = append(args, request.Operation, "--id", request.ID)
+				command.Operation = request.Operation
 			case "archive":
-				args = append(args, "archive", "--kind", request.Kind, "--id", request.ID)
+				command.Operation = "archive"
 			case "grant":
 				expires := request.Expires
 				if expires == "" {
 					expires = "0"
 				}
-				args = append(args, "grant", "--id", request.ID, "--outputs", request.Outputs, "--expires", expires, "--max-downloads", fmt.Sprint(request.MaxDownloads))
+				command.Operation = "grant"
+				command.Expires, err = time.ParseDuration(expires)
 			default:
 				err = errors.New("unknown administration action")
 			}
@@ -191,23 +185,57 @@ func subscriptionAdminHandler(root, core, token string) http.Handler {
 			http.Error(w, err.Error(), 400)
 			return
 		}
-		var result bytes.Buffer
-		if err := RunSubscriptions(r.Context(), args, input, &result); err != nil {
-			http.Error(w, err.Error(), 400)
+		if command.Operation != "" {
+			err = service.Execute(r.Context(), command, &result)
+		}
+		if err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, application.ErrConflict) {
+				status = http.StatusConflict
+			}
+			http.Error(w, err.Error(), status)
 			return
 		}
 		if binaryBackup {
-			data, err := readLimitedRegularFile(filepath.Join(stage, "input"), sub.MaxBody+52)
-			if err != nil {
-				http.Error(w, err.Error(), 500)
-				return
-			}
 			w.Header().Set("Content-Type", "application/octet-stream")
 			w.Header().Set("Content-Disposition", `attachment; filename="subscriptions.sbvpn"`)
-			_, _ = w.Write(data)
+			_, _ = w.Write(result.Bytes())
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write(result.Bytes())
 	})
+}
+
+func serveAccountCommand(root string, w http.ResponseWriter, r *http.Request) {
+	command := application.AccountCommand{Operation: "list"}
+	if r.Method == http.MethodPost {
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&command); err != nil {
+			http.Error(w, "invalid account command", 400)
+			return
+		}
+		if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
+			http.Error(w, "expected one command", 400)
+			return
+		}
+	} else if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET, POST")
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	var result bytes.Buffer
+	err := (AccountService{Root: root}).Execute(r.Context(), command, &result)
+	if err != nil {
+		code := 400
+		if errors.Is(err, accounting.ErrConflict) {
+			code = 409
+		}
+		http.Error(w, err.Error(), code)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write(result.Bytes())
 }

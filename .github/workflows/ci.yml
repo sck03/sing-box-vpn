@@ -75,6 +75,10 @@ jobs:
           echo "MIHOMO_BINARY=$PWD/.build/core/mihomo" >> "$GITHUB_ENV"
       - name: Go tests, race detection and 72 real subscription TCP/UDP links
         run: RUN_UDP_IDLE_TESTS=1 go test -race -count=1 -v ./...
+      - name: Managed runtime account isolation and real TCP/UDP links
+        run: |
+          go build -tags with_quic,with_utls -o "$GITHUB_WORKSPACE/.build/managed-core" ./cmd/managed-core
+          MANAGED_CORE_BINARY="$GITHUB_WORKSPACE/.build/managed-core" go test -race -count=1 -v -run '^(TestManagedAccountIsolation|TestRealFiveProtocolsTCPUDP)$' ./addons/vpngate/gateway
       - name: Formatting, vet and shell checks
         run: |
           test -z "$(gofmt -l manifest.go internal cmd addons/vpngate/gateway)"
@@ -84,6 +88,7 @@ jobs:
           done
           shellcheck --severity=warning sb.sh install.sh addons/vpngate/vpngate.sh lib/*.sh scripts/*.sh
           bash scripts/test-node-settings.sh
+          bash scripts/test-program-upgrade.sh
           bash -c 'source ./lib/ui.sh; ui_secret value "test"; [[ "$value" == "  password  " ]]' <<< '  password  '
       - name: Build Linux management and gateway binary
         run: CGO_ENABLED=0 go build -trimpath -o "$GITHUB_WORKSPACE/.build/yg-vpngate" ./addons/vpngate/gateway

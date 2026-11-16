@@ -90,12 +90,24 @@ func DefaultConfig() Config {
 // Build uses already fetched data. Network activity is never part of publishing
 // or a download request. A required stale/missing source aborts the whole build.
 func Build(c Config, runtime Runtime, local map[string][]Node, now time.Time) (Snapshot, map[string]Preview, error) {
+	return build(c, runtime, local, now, false)
+}
+
+// BuildAvailable removes outputs whose required remote dependencies are stale.
+// Local maintenance and background refresh can publish unrelated valid outputs;
+// explicit configuration edits still use Build to reject an incomplete plan.
+func BuildAvailable(c Config, runtime Runtime, local map[string][]Node, now time.Time) (Snapshot, map[string]Preview, error) {
+	return build(c, runtime, local, now, true)
+}
+
+func build(c Config, runtime Runtime, local map[string][]Node, now time.Time, available bool) (Snapshot, map[string]Preview, error) {
 	result := Snapshot{Version: SchemaVersion, Revision: c.Revision, Artifacts: map[string]Artifact{}, Diagnostics: map[string][]Diagnostic{}, Usage: map[string]Usage{}, SourceTimes: map[string]time.Time{}}
 	previews := map[string]Preview{}
 	if err := c.Validate(); err != nil {
 		return result, previews, err
 	}
 	sources := map[string][]Node{}
+	unavailable := map[string]bool{}
 	nodeCount := 0
 	for _, source := range c.Sources {
 		var nodes []Node
@@ -119,9 +131,10 @@ func Build(c Config, runtime Runtime, local map[string][]Node, now time.Time) (S
 			}
 		}
 		if err != nil {
-			if source.Required {
+			if source.Required && (!available || source.Kind != "remote") {
 				return result, previews, fmt.Errorf("source %s: %w", source.ID, err)
 			}
+			unavailable[source.ID] = source.Required
 			result.Diagnostics["source:"+source.ID] = []Diagnostic{{Stage: "source", Message: err.Error()}}
 			continue
 		}
@@ -134,8 +147,23 @@ func Build(c Config, runtime Runtime, local map[string][]Node, now time.Time) (S
 		}
 		sources[source.ID] = nodes
 	}
+	expanded := 0
 	for _, collection := range c.Collections {
-		nodes := []Node{}
+		count := 0
+		missing := false
+		for _, id := range collection.Sources {
+			count += len(sources[id])
+			missing = missing || unavailable[id]
+		}
+		if missing {
+			previews[collection.ID] = Preview{Diagnostics: []Diagnostic{{Stage: "source", Message: "required remote source unavailable"}}}
+			continue
+		}
+		expanded += count
+		if count > MaxNodes || expanded > MaxNodes*4 {
+			return result, previews, errors.New("expanded collection node budget exceeded")
+		}
+		nodes := make([]Node, 0, count)
 		for _, id := range collection.Sources {
 			nodes = append(nodes, sources[id]...)
 		}
@@ -151,16 +179,21 @@ func Build(c Config, runtime Runtime, local map[string][]Node, now time.Time) (S
 		ruleSets[r.ID] = r.Rules
 	}
 	for _, t := range c.Templates {
+		t.Rules = append([]Rule(nil), t.Rules...)
 		for _, id := range t.RuleSets {
-			t.Rules = append(append([]Rule(nil), t.Rules...), ruleSets[id]...)
+			t.Rules = append(t.Rules, ruleSets[id]...)
 		}
 		templates[t.ID] = t
 	}
 	total := 0
 	for _, output := range c.Outputs {
 		preview := previews[output.Collection]
+		expanded += len(preview.Nodes)
+		if expanded > MaxNodes*8 {
+			return result, previews, errors.New("combined rendered node budget exceeded")
+		}
 		if len(preview.Nodes) == 0 {
-			result.Diagnostics[output.ID] = []Diagnostic{{Stage: "selection", Message: "empty optional collection; output unavailable"}}
+			result.Diagnostics[output.ID] = append(append([]Diagnostic(nil), preview.Diagnostics...), Diagnostic{Stage: "selection", Message: "empty or unavailable collection; output unavailable"})
 			continue
 		}
 		artifact, diagnostics, err := Render(preview.Nodes, templates[output.Template], output.SkipUnsupported)

@@ -14,6 +14,15 @@ sub-store-org/Sub-Store commit 7f2de2f33b1e7af6cf5e092e2d8d3d50b8eb1212
 YAML parsing links go.yaml.in/yaml/v3 v3.0.4 (MIT/Apache-2.0).
 Its original LICENSE and NOTICE are distributed in third_party/yaml/.
 
+The separate managed-core executable links SagerNet/sing-box v1.14.4
+(GPL-3.0-or-later), with an independently implemented authenticated-stream
+guard. Upstream source: https://github.com/SagerNet/sing-box/tree/v1.14.4.
+The account ledger links modernc.org/sqlite v1.44.3 and its Go dependencies.
+Exact module versions and checksums are recorded in go.mod and go.sum.
+License notices for the account-enabled management binary's additional linked
+dependencies are preserved in third_party/accounts/ (Linux and Windows).
+No s-ui or 2s-ui implementation or frontend assets were copied into this project.
+
 MIT License
 
 Copyright (c) 2026 Joey (byJoey)

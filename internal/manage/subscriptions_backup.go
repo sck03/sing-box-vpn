@@ -334,29 +334,51 @@ func subscriptionBackupCommand(ctx context.Context, root, core, operation, file 
 		return errors.New("provide a 12-1024 byte backup password on stdin")
 	}
 	defer clear(password)
+	service := SubscriptionService{Root: root, Core: core}
 	if operation == "backup" {
-		var b subscriptionBackup
-		if err := withStartupLock(ctx, root, func() error { var err error; b, err = collectSubscriptionBackup(root); return err }); err != nil {
+		var result bytes.Buffer
+		if err := service.Backup(ctx, password, &result); err != nil {
 			return err
 		}
-		data, err := json.Marshal(b)
-		if err != nil {
-			return err
-		}
-		if len(data) > sub.MaxBody {
-			return errors.New("backup too large")
-		}
-		encrypted, err := encryptSubscriptionBackup(data, password)
-		clear(data)
-		if err != nil {
-			return err
-		}
-		return AtomicBytes(file, encrypted, 0600)
+		return AtomicBytes(file, result.Bytes(), 0600)
 	}
 	data, err := readLimitedRegularFile(file, sub.MaxBody+52)
 	if err != nil {
 		return err
 	}
+	return service.RestoreBackup(ctx, data, password, apply, output)
+}
+
+func (s SubscriptionService) Backup(ctx context.Context, password []byte, output io.Writer) error {
+	if len(password) < 12 || len(password) > 1024 {
+		return errors.New("backup password must contain 12-1024 bytes")
+	}
+	root := s.Root
+	var b subscriptionBackup
+	if err := withStartupLock(ctx, root, func() error { var err error; b, err = collectSubscriptionBackup(root); return err }); err != nil {
+		return err
+	}
+	data, err := json.Marshal(b)
+	if err != nil {
+		return err
+	}
+	if len(data) > sub.MaxBody {
+		return errors.New("backup too large")
+	}
+	encrypted, err := encryptSubscriptionBackup(data, password)
+	clear(data)
+	if err != nil {
+		return err
+	}
+	_, err = output.Write(encrypted)
+	return err
+}
+
+func (s SubscriptionService) RestoreBackup(ctx context.Context, data, password []byte, apply bool, output io.Writer) error {
+	if len(password) < 12 || len(password) > 1024 {
+		return errors.New("backup password must contain 12-1024 bytes")
+	}
+	root, core := s.Root, s.Core
 	plain, err := decryptSubscriptionBackup(data, password)
 	if err != nil {
 		return err

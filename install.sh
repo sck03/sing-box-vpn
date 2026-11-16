@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 REPOSITORY=https://github.com/sck03/sing-box-vpn
-if [[ "${1:-}" == --local ]];then
+ACTION=install
+LOCAL=0
+for option in "$@"; do
+    case "$option" in --local) LOCAL=1;; --upgrade) ACTION=upgrade;; *) echo "未知选项: $option" >&2;exit 1;; esac
+done
+if [[ "$ACTION" == install && -f "${SB_HOME:-/opt/sing-box-vpn}/.managed" && -f "${SB_ROOT:-/etc/s-box}/app.json" ]]; then
+    ACTION=upgrade
+fi
+if ((LOCAL));then
     SOURCE="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)"
-    exec bash "$SOURCE/sb.sh" install
+    exec bash "$SOURCE/sb.sh" "$ACTION"
 fi
 [[ $(id -u) == 0 && $(uname -s) == Linux ]] || { echo '安装需要 Linux root' >&2;exit 1; }
 command -v curl >/dev/null || { echo '请先安装 curl' >&2;exit 1; }
@@ -21,4 +29,4 @@ curl -fLsS --retry 2 --connect-timeout 15 --max-time 180 "$REPOSITORY/releases/d
 curl -fLsS --retry 2 --connect-timeout 15 --max-time 60 "$REPOSITORY/releases/download/$VERSION/SHA256SUMS" -o "$SCRATCH/SHA256SUMS"
 (cd "$SCRATCH" && grep "  sing-box-vpn-$VERSION.tar.gz$" SHA256SUMS | sha256sum -c -)
 tar -xzf "$SCRATCH/sing-box-vpn-$VERSION.tar.gz" -C "$SCRATCH"
-bash "$SCRATCH/sing-box-vpn/sb.sh" install
+bash "$SCRATCH/sing-box-vpn/sb.sh" "$ACTION"

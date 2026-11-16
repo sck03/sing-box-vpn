@@ -327,9 +327,17 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	protocolCore(t, root, "ordinary", binary, server, inbounds[0]["listen_port"].(int))
+	if os.Getenv("MANAGED_CORE_BINARY") != "" {
+		startManagedCore(t, root, "ordinary", "normal", server, inbounds)
+	} else {
+		protocolCore(t, root, "ordinary", binary, server, inbounds[0]["listen_port"].(int))
+	}
 	vpnServer := manage.Object{"inbounds": vpnInbounds, "outbounds": []manage.Object{{"type": "socks", "tag": "gateway", "server": "127.0.0.1", "server_port": pp, "username": cfg.ProxyUser, "password": cfg.ProxyPass, "version": "5"}}, "route": manage.Object{"final": "gateway"}}
-	protocolCore(t, root, "gateway", binary, vpnServer, vpnInbounds[0]["listen_port"].(int))
+	if os.Getenv("MANAGED_CORE_BINARY") != "" {
+		startManagedCore(t, root, "gateway", "vpngate", vpnServer, vpnInbounds)
+	} else {
+		protocolCore(t, root, "gateway", binary, vpnServer, vpnInbounds[0]["listen_port"].(int))
+	}
 	for _, group := range []struct {
 		label   string
 		entries []manage.Object

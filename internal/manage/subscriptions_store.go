@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/sck03/sing-box-vpn/internal/application"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
@@ -34,7 +35,15 @@ func loadSubscriptions(root string) (sub.Config, sub.Runtime, map[string][]sub.N
 }
 
 func buildSubscriptions(ctx context.Context, root, core string, c sub.Config, r sub.Runtime, local map[string][]sub.Node) (fileBundle, sub.Snapshot, map[string]sub.Preview, error) {
-	snapshot, previews, err := sub.Build(c, r, local, time.Now())
+	return compileSubscriptions(ctx, root, core, c, r, local, false)
+}
+
+func compileSubscriptions(ctx context.Context, root, core string, c sub.Config, r sub.Runtime, local map[string][]sub.Node, available bool) (fileBundle, sub.Snapshot, map[string]sub.Preview, error) {
+	build := sub.Build
+	if available {
+		build = sub.BuildAvailable
+	}
+	snapshot, previews, err := build(c, r, local, time.Now())
 	if err != nil {
 		return nil, snapshot, previews, err
 	}
@@ -85,7 +94,7 @@ func buildSubscriptions(ctx context.Context, root, core string, c sub.Config, r 
 
 func validateSubscriptionsRevision(current, candidate sub.Config) error {
 	if current.Revision != candidate.Revision {
-		return errors.New("订阅配置已更改，请重新预览后提交")
+		return application.ErrConflict
 	}
 	return nil
 }

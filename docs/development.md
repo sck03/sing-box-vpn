@@ -94,10 +94,13 @@ UDP 空闲回归通过真实套接字持续发送短包、分片、零目标端�
 
 ```bash
 SING_BOX_BINARY=/path/to/sing-box MIHOMO_BINARY=/path/to/mihomo RUN_UDP_IDLE_TESTS=1 go test -race -count=1 ./...
+go build -tags with_quic,with_utls -o .build/managed-core ./cmd/managed-core
+MANAGED_CORE_BINARY="$PWD/.build/managed-core" SING_BOX_BINARY=/path/to/sing-box MIHOMO_BINARY=/path/to/mihomo go test -race -count=1 -run '^(TestManagedAccountIsolation|TestRealFiveProtocolsTCPUDP)$' ./addons/vpngate/gateway
 go vet ./...
 gofmt -l manifest.go internal cmd addons/vpngate/gateway
 shellcheck --severity=warning sb.sh install.sh addons/vpngate/vpngate.sh lib/*.sh scripts/*.sh
 bash scripts/test-node-settings.sh
+bash scripts/test-program-upgrade.sh
 ```
 
 Linux 专项要求 root、OpenVPN、iproute2、iptables 和可用 TUN/netns；在独立测试环境执行：

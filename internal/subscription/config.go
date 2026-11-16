@@ -101,6 +101,10 @@ type Delivery struct {
 	Automatic bool   `json:"automatic,omitempty"`
 }
 
+var domainRulePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
+var tokenHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var gistPathPattern = regexp.MustCompile(`^/gists/[a-fA-F0-9]+$`)
+
 func HTTPURL(value string) error {
 	u, err := url.Parse(value)
 	if err != nil || u.Hostname() == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.Fragment != "" {
@@ -118,7 +122,7 @@ func (r Rule) Validate() error {
 	}
 	switch r.Type {
 	case "domain", "domain_suffix":
-		if len(r.Value) > 253 || !regexp.MustCompile(`^[A-Za-z0-9_.-]+$`).MatchString(r.Value) {
+		if len(r.Value) > 253 || !domainRulePattern.MatchString(r.Value) {
 			return errors.New("invalid domain rule")
 		}
 	case "ip_cidr":
@@ -254,10 +258,15 @@ func (c Config) Validate() error {
 		if err := add(collections, set.ID); err != nil {
 			return err
 		}
-		if len(set.Sources) == 0 {
-			return errors.New("empty source selection")
+		if len(set.Sources) == 0 || len(set.Sources) > MaxObjects {
+			return errors.New("source selection must contain 1 to 128 distinct references")
 		}
+		seen := make(map[string]bool, len(set.Sources))
 		for _, id := range set.Sources {
+			if seen[id] {
+				return fmt.Errorf("collection %s repeats source %s", set.ID, id)
+			}
+			seen[id] = true
 			if !sources[id] {
 				return fmt.Errorf("unknown source %s", id)
 			}
@@ -266,6 +275,7 @@ func (c Config) Validate() error {
 			return err
 		}
 	}
+	expandedRuleCount := 0
 	for _, t := range c.Templates {
 		ruleCount += len(t.Rules)
 		if ruleCount > 4096 {
@@ -277,10 +287,28 @@ func (c Config) Validate() error {
 		if err := t.Validate(); err != nil {
 			return err
 		}
+		seen := make(map[string]bool, len(t.RuleSets))
+		expandedRules := len(t.Rules)
 		for _, id := range t.RuleSets {
+			if seen[id] {
+				return fmt.Errorf("template %s repeats rule set %s", t.ID, id)
+			}
+			seen[id] = true
 			if !rules[id] {
 				return fmt.Errorf("unknown rule set %s", id)
 			}
+			for _, r := range c.RuleSets {
+				if r.ID == id {
+					expandedRules += len(r.Rules)
+				}
+			}
+		}
+		if expandedRules > 4096 {
+			return errors.New("expanded template rule limit exceeded")
+		}
+		expandedRuleCount += expandedRules
+		if expandedRuleCount > 16384 {
+			return errors.New("combined expanded rule budget exceeded")
 		}
 	}
 	for _, o := range c.Outputs {
@@ -296,7 +324,7 @@ func (c Config) Validate() error {
 		if err := add(grants, g.ID); err != nil {
 			return err
 		}
-		if !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(g.TokenHash) || tokens[g.TokenHash] {
+		if !tokenHashPattern.MatchString(g.TokenHash) || tokens[g.TokenHash] {
 			return errors.New("invalid or duplicate grant token hash")
 		}
 		tokens[g.TokenHash] = true
@@ -336,7 +364,7 @@ func (c Config) Validate() error {
 		}
 		if d.Kind == "github-gist" {
 			u, _ := url.Parse(d.URL)
-			if u.Scheme != "https" || u.Host != "api.github.com" || !regexp.MustCompile(`^/gists/[a-fA-F0-9]+$`).MatchString(u.Path) || u.RawQuery != "" || d.Token == "" || d.Filename == "" || strings.ContainsAny(d.Filename, "/\\\r\n") {
+			if u.Scheme != "https" || u.Host != "api.github.com" || !gistPathPattern.MatchString(u.Path) || u.RawQuery != "" || d.Token == "" || d.Filename == "" || strings.ContainsAny(d.Filename, "/\\\r\n") {
 				return errors.New("GitHub delivery requires an existing Gist API URL, token and filename")
 			}
 		}

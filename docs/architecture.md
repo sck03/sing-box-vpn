@@ -1,5 +1,10 @@
 **模块与维护约定**
 
+统一管理重构的当前状态和未完成范围见 [实施记录](unified-management-status.md)。新增
+`internal/application` 保存共享命令，订阅 HTTP/CLI 共用 `SubscriptionService`；
+`internal/domain` 保存账户身份，`internal/accounting` 负责 SQLite 额度预留与结算，
+`internal/runtime` 适配独立的 `cmd/managed-core`。后者目前是开发验收入口，尚未替换默认服务。
+
 项目使用一个 Go 二进制 `yg-vpngate`，YAML 导入使用成熟解析库。Bash 负责安装、菜单和 systemd 单元；
 配置、导出、凭据、更新与网关运行逻辑由 Go 管理。使用说明见 [README](../README.md)，
 测试与测量记录见 [optimization.md](optimization.md)。

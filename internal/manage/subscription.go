@@ -118,8 +118,11 @@ func ensureSubscriptionGrant(c *sub.Config, token string) error {
 		}
 	}
 	ids := []string{}
+	builtins := sub.DefaultConfig().Outputs
 	for _, o := range c.Outputs {
-		if strings.HasPrefix(o.ID, "normal-") || strings.HasPrefix(o.ID, "vpngate-") {
+		if slices.ContainsFunc(builtins, func(b sub.Output) bool {
+			return o.ID == b.ID && o.Collection == b.Collection && o.Template == b.Template
+		}) {
 			ids = append(ids, o.ID)
 		}
 	}
@@ -278,17 +281,7 @@ func RunSubscription(ctx context.Context, args []string, output io.Writer) error
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		tick := time.NewTicker(time.Minute)
-		defer tick.Stop()
-		for {
-			select {
-			case <-child.Done():
-				return
-			case <-tick.C:
-				_ = refreshSubscriptions(child, *root, filepath.Join(*root, "sing-box"), false)
-				_ = deliverSubscriptions(child, *root, "", true, io.Discard)
-			}
-		}
+		runSubscriptionScheduler(child, *root)
 	}()
 	server := &http.Server{Handler: subscriptionHandler(*root), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 15 * time.Second, MaxHeaderBytes: 16 << 10}
 	err = serveSubscription(child, listener, server)

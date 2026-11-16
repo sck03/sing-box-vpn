@@ -10,6 +10,7 @@ source "$SCRIPT_ROOT/lib/ui.sh"
 source "$SCRIPT_ROOT/lib/services.sh"
 source "$SCRIPT_ROOT/lib/node-settings.sh"
 source "$SCRIPT_ROOT/lib/subscriptions.sh"
+source "$SCRIPT_ROOT/lib/update.sh"
 cfg() { "$MANAGER" config --root "$SB_ROOT" --core "$CORE" "$@"; }
 require_root() { [[ $(id -u) == 0 ]] || { echo '需要 root 权限' >&2; return 1; }; }
 require_system() {
@@ -37,6 +38,9 @@ archive_unused_architecture() {
 }
 install_main() {
     require_system
+    if [[ -f "$SB_ROOT/app.json" ]]; then
+        echo '已有安装，请使用程序升级入口；首次安装只接受空配置目录' >&2; return 1
+    fi
     local install_arch
     install_arch=$(arch_name)
     if [[ -d "$APP_HOME" && ! -f "$APP_HOME/.managed" ]]; then echo "$APP_HOME 已存在且无项目标记，停止安装" >&2; return 1; fi
@@ -336,7 +340,7 @@ update_main() (
     trap 'rm -f -- "$update_script"' EXIT
     curl -fLsS --retry 2 --connect-timeout 15 --max-time 60 \
         https://raw.githubusercontent.com/sck03/sing-box-vpn/main/install.sh -o "$update_script"
-    bash "$update_script"
+    bash "$update_script" --upgrade
 )
 main_action() {
     case "$1" in
@@ -385,6 +389,7 @@ menu() {
 }
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; fi
 case "${1:-menu}" in
+    upgrade) upgrade_program;;
     install) install_main;;export) cfg export --scope "${2:-normal}";;status) cfg show --scope "${2:-normal}";;links) cfg links --scope "${2:-normal}";;
     vpngate-share) share_menu vpngate;;
     vpngate-settings) vpngate_settings_menu;;

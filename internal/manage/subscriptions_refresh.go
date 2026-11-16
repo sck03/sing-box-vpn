@@ -56,12 +56,25 @@ func fetchSubscription(ctx context.Context, client *http.Client, endpoint, etag 
 
 func parseSubscriptionUsage(header string) (sub.Usage, error) {
 	u := sub.Usage{}
+	if len(header) > 8192 {
+		return u, errors.New("upstream usage header too large")
+	}
+	seen := map[string]bool{}
 	for item := range strings.SplitSeq(header, ";") {
 		key, value, found := strings.Cut(strings.TrimSpace(item), "=")
 		if !found {
+			if key == "upload" || key == "download" || key == "total" || key == "expire" {
+				return u, errors.New("incomplete upstream usage field")
+			}
 			continue
 		}
 		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
+		if key == "upload" || key == "download" || key == "total" || key == "expire" {
+			if seen[key] {
+				return u, errors.New("duplicate upstream usage field")
+			}
+			seen[key] = true
+		}
 		if key == "expire" {
 			n, err := strconv.ParseInt(value, 10, 64)
 			if err != nil || n < 0 {
@@ -115,15 +128,32 @@ func refreshSource(ctx context.Context, client *http.Client, source sub.Source, 
 	if err == nil && unchanged && len(old.Nodes) == 0 {
 		err = errors.New("upstream returned 304 without a cached result")
 	}
-	if err == nil && !unchanged {
-		var nodes []sub.Node
-		nodes, err = sub.Parse(data, source.Format, source.ID)
+	if err == nil {
+		nodes, usage, etag := old.Nodes, old.Usage, old.ETag
+		if !unchanged {
+			nodes, err = sub.Parse(data, source.Format, source.ID)
+			usage, etag = sub.Usage{}, headers.Get("ETag")
+		}
 		if err == nil {
-			usage, usageErr := parseSubscriptionUsage(headers.Get("subscription-userinfo"))
-			if usageErr != nil {
-				err = usageErr
-			} else {
-				old.Nodes, old.Usage, old.ETag = nodes, usage, headers.Get("ETag")
+			var update sub.Usage
+			update, err = parseSubscriptionUsage(headers.Get("subscription-userinfo"))
+			if err == nil {
+				if update.Upload != nil {
+					usage.Upload = update.Upload
+				}
+				if update.Download != nil {
+					usage.Download = update.Download
+				}
+				if update.Total != nil {
+					usage.Total = update.Total
+				}
+				if update.Expire != nil {
+					usage.Expire = update.Expire
+				}
+				if headers.Get("ETag") != "" {
+					etag = headers.Get("ETag")
+				}
+				old.Nodes, old.Usage, old.ETag = nodes, usage, etag
 			}
 		}
 	}
@@ -236,9 +266,6 @@ func refreshSubscriptions(ctx context.Context, root, core string, force bool) er
 		return err
 	}
 	resourceChanged, resources, events := refreshSubscriptionResources(ctx, client, &config, runtime.Resources, now, force)
-	if len(results) == 0 && len(resources) == 0 {
-		return nil
-	}
 	err = withLock(root, func() error {
 		current, state, local, err := loadSubscriptions(root)
 		if err != nil {
@@ -278,7 +305,7 @@ func refreshSubscriptions(ctx context.Context, root, core string, force bool) er
 		if resourceChanged {
 			config.Revision++
 		}
-		files, _, _, buildErr := buildSubscriptions(ctx, root, core, config, state, local)
+		files, _, _, buildErr := compileSubscriptions(ctx, root, core, config, state, local, !resourceChanged)
 		if buildErr != nil {
 			// A rejected resource update must be fetched again; do not retain its ETag.
 			for id := range resources {

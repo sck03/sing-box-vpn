@@ -116,7 +116,7 @@ func exportBundle(ctx context.Context, root, core string, app App, settings VPNS
 	if err != nil {
 		return nil, nil, err
 	}
-	files, _, _, err := buildSubscriptions(ctx, root, core, c, r, local)
+	files, _, _, err := compileSubscriptions(ctx, root, core, c, r, local, true)
 	if err != nil {
 		return nil, nil, err
 	}
