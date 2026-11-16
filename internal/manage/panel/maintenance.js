@@ -1,4 +1,4 @@
-import { api, download, base64 } from "./api.js";
+import { api, download, restoreForm } from "./api.js";
 import {
   el,
   card,
@@ -14,7 +14,7 @@ import {
   notice,
 } from "./ui.js";
 export async function overview(ctx) {
-  const data = ctx.overview || (await api("/api/overview"));
+  const data = ctx.overview || (await (ctx.request || api)("/api/overview"));
   ctx.observeRevision(data.revision);
   const stats = el(
     "div",
@@ -174,7 +174,7 @@ function tasksCard(tasks, ctx) {
   );
 }
 export async function maintenance(ctx) {
-  const data = await api("/api/overview");
+  const data = await (ctx.request || api)("/api/overview");
   const logs = card(
     "运行日志",
     row(
@@ -231,11 +231,17 @@ export async function maintenance(ctx) {
     row(
       button("预览恢复", async () => {
         if (!file.files[0]) throw new Error("请选择备份文件");
-        preview = {
-          backup: await base64(file.files[0]),
+        const candidate = {
+          backup: file.files[0],
           password: password.value,
         };
-        showResult("恢复预览", await api("/api/restore", preview));
+        preview = null;
+        const result = await api(
+          "/api/restore",
+          restoreForm(candidate.backup, candidate.password),
+        );
+        preview = { ...candidate, revision: result.revision };
+        showResult("恢复预览", result);
       }),
       button(
         "应用已预览配置",
@@ -247,12 +253,10 @@ export async function maintenance(ctx) {
             )
           )
             return;
-          const state = await api("/api/state");
-          const result = await api("/api/restore", {
-            ...preview,
-            revision: state.revision,
-            apply: true,
-          });
+          const result = await api(
+            "/api/restore",
+            restoreForm(preview.backup, preview.password, preview.revision),
+          );
           notice("恢复任务 #" + result.task_id + " 已排队");
           preview = null;
         },
@@ -327,7 +331,7 @@ export async function maintenance(ctx) {
   ];
 }
 export async function admins(ctx) {
-  const users = await api("/api/admins");
+  const users = await (ctx.request || api)("/api/admins");
   const edit = (a) =>
     formDialog(
       "管理员",

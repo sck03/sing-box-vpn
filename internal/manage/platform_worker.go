@@ -1,0 +1,104 @@
+package manage
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/sck03/sing-box-vpn/internal/controlstore"
+)
+
+// Configuration and external side effects remain ordered. Read-only probes
+// have their own bounded worker and never block a configuration repair.
+func (s *PlatformService) runWorkers(ctx context.Context) error {
+	child, cancel := context.WithCancel(ctx)
+	defer cancel()
+	done := make(chan error, 2)
+	go func() { done <- s.runLane(child, "control") }()
+	go func() { done <- s.runLane(child, "background") }()
+	err := <-done
+	cancel()
+	return errors.Join(err, <-done)
+}
+
+func (s *PlatformService) runLane(ctx context.Context, lane string) error {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	nextMaintenance, nextSubscriptions := time.Time{}, time.Time{}
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		// Schedule between tasks as well as while idle; a busy queue must not
+		// starve refresh or renewal. Store deduplication bounds automatic work.
+		if lane == "control" {
+			if time.Now().After(nextSubscriptions) {
+				nextSubscriptions = time.Now().Add(time.Minute)
+				if err := s.scheduleSubscriptions(ctx); err != nil {
+					_ = s.Auth.Audit(ctx, "scheduler", "subscription-schedule", "", "failed")
+				}
+			}
+			if !s.NoSystem && time.Now().After(nextMaintenance) {
+				nextMaintenance = time.Now().Add(30 * time.Second)
+				maintenance, stop := context.WithTimeout(ctx, 30*time.Second)
+				if err := s.syncTunnel(maintenance); err != nil {
+					_ = s.Auth.Audit(maintenance, "scheduler", "tunnel-sync", "", "failed")
+				}
+				if err := s.scheduleCertificates(maintenance); err != nil {
+					_ = s.Auth.Audit(maintenance, "scheduler", "certificate-schedule", "", "failed")
+				}
+				stop()
+			}
+		}
+		task, err := s.Store.ClaimLane(ctx, lane)
+		if errors.Is(err, sql.ErrNoRows) {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-s.wake:
+			case <-ticker.C:
+			}
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if err = s.runTask(ctx, task); err != nil {
+			return err
+		}
+	}
+}
+
+func (s *PlatformService) runTask(ctx context.Context, task controlstore.Task) error {
+	child, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	var err error
+	if task.Kind == "apply" {
+		var input applyInput
+		err = json.Unmarshal(task.Input, &input)
+		if err == nil {
+			err = s.apply(child, task.ID, input)
+		}
+	} else {
+		var action PlatformAction
+		err = json.Unmarshal(task.Input, &action)
+		if err == nil {
+			err = s.execute(child, task.ID, action)
+		}
+	}
+	cancel()
+	finish, stop := context.WithTimeout(context.Background(), 10*time.Second)
+	defer stop()
+	result := "success"
+	if err != nil {
+		result = "failed"
+	}
+	_ = s.Auth.Audit(finish, task.Actor, task.Kind, fmt.Sprint(task.ID), result)
+	finishErr := s.Store.Finish(finish, task.ID, err)
+	s.statusMu.Lock()
+	s.statusAt = time.Time{}
+	s.statusMu.Unlock()
+	return finishErr
+}

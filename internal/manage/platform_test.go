@@ -72,7 +72,12 @@ func TestEncryptedPlatformBackupDisasterLedger(t *testing.T) {
 		t.Fatal("tampered backup accepted")
 	}
 	destination := filepath.Join(t.TempDir(), "recovered")
-	if e = RestoreDisaster(ctx, destination, data, password, "newadmin", "new-password-123"); e != nil {
+	backupPath := filepath.Join(t.TempDir(), "backup.sbvpn")
+	if e = os.WriteFile(backupPath, data, 0600); e != nil {
+		t.Fatal(e)
+	}
+	request := mustJSON(t, Object{"backup_path": backupPath, "password": string(password), "username": "newadmin", "new_password": "new-password-123"})
+	if e = RunPanel(ctx, []string{"--root", destination, "restore"}, bytes.NewReader(request), new(bytes.Buffer)); e != nil {
 		t.Fatal(e)
 	}
 	recovered, e := OpenPlatform(destination, core, core, true)

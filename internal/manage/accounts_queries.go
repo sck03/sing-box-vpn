@@ -8,6 +8,7 @@ import (
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
+	"github.com/sck03/sing-box-vpn/internal/clientprofile"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
@@ -18,18 +19,7 @@ func (s AccountService) List(ctx context.Context) ([]accounting.Usage, error) {
 		return nil, err
 	}
 	defer closeStore()
-	accounts, err := store.Accounts(ctx)
-	if err != nil {
-		return nil, err
-	}
-	now := time.Now()
-	for i := range accounts {
-		accounts[i], err = store.Advance(ctx, accounts[i].ID, now, false)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return accounts, nil
+	return store.CurrentAccounts(ctx, time.Now())
 }
 
 type CredentialSummary struct {
@@ -50,7 +40,7 @@ func (s AccountService) Credentials(ctx context.Context, id, scope string) ([]Cr
 		return nil, err
 	}
 	defer closeStore()
-	all, err := store.Credentials(ctx, scope)
+	all, err := store.AccountCredentials(ctx, id, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +54,8 @@ func (s AccountService) Credentials(ctx context.Context, id, scope string) ([]Cr
 }
 
 func (s AccountService) Export(ctx context.Context, c application.AccountCommand) (sub.Artifact, error) {
-	if !slices.Contains([]string{"sing-box", "mihomo", "uri"}, c.Client) {
+	profile, supported := clientprofile.Lookup(c.Client)
+	if !supported {
 		return sub.Artifact{}, errors.New("unsupported account client format")
 	}
 	store, closeStore, err := s.openStore()
@@ -82,10 +73,6 @@ func (s AccountService) Export(ctx context.Context, c application.AccountCommand
 	if err != nil {
 		return sub.Artifact{}, err
 	}
-	mode := "config"
-	if c.Client == "uri" {
-		mode = "nodes"
-	}
-	artifact, _, err := sub.Render(nodes, sub.Template{ID: "account", Version: 1, Client: c.Client, Mode: mode, Preset: "proxy"}, false)
+	artifact, _, err := sub.Render(nodes, sub.Template{ID: "account", Version: 1, Client: c.Client, Mode: profile.AccountMode, Preset: "proxy"}, false)
 	return artifact, err
 }

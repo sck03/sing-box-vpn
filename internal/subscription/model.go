@@ -274,7 +274,7 @@ func Process(nodes []Node, p Processor) (Preview, error) {
 		if n.Name != original.Name {
 			result.Diagnostics = append(result.Diagnostics, Diagnostic{n.ID, original.Name, "rename", n.Name})
 		}
-		if names[n.Name] || slices.Contains([]string{"proxy", "direct", "auto", "DIRECT", "REJECT", "PROXY", "VPNGate"}, n.Name) {
+		if names[n.Name] || reservedName(n.Name) {
 			return result, fmt.Errorf("duplicate or reserved node name %q", n.Name)
 		}
 		if err := n.Validate(); err != nil {

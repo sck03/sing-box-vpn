@@ -40,6 +40,27 @@ func (s *Store) Advance(ctx context.Context, id string, now time.Time, activate 
 	if err != nil {
 		return u, err
 	}
+	return s.advanceUsage(ctx, u, now, activate)
+}
+
+// CurrentAccounts only touches rows whose billing period needs advancing.
+// The common listing path uses the already loaded snapshot without N+1 reads.
+func (s *Store) CurrentAccounts(ctx context.Context, now time.Time) ([]Usage, error) {
+	accounts, err := s.Accounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i, u := range accounts {
+		accounts[i], err = s.advanceUsage(ctx, u, now, false)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return accounts, nil
+}
+
+func (s *Store) advanceUsage(ctx context.Context, u Usage, now time.Time, activate bool) (Usage, error) {
+	id := u.ID
 	needs := u.StartedAt == nil && activate
 	if u.StartedAt != nil {
 		start, _ := u.Period.Bounds(*u.StartedAt, now)

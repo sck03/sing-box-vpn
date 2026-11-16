@@ -265,6 +265,8 @@ func (m *Meter) Tick(ctx context.Context) error {
 		}
 	}
 	var result error
+	var checkpoints []UsageCheckpoint
+	var checkpointPools []*pool
 	for key, p := range pools {
 		p.mu.Lock()
 		m.mu.Lock()
@@ -275,16 +277,22 @@ func (m *Meter) Tick(ctx context.Context) error {
 		}
 		m.mu.Unlock()
 		if p.reserved && (idle || p.upload != p.savedUpload || p.download != p.savedDownload) {
-			err := m.store.Checkpoint(ctx, p.id, p.upload, p.download, idle)
-			result = errors.Join(result, err)
-			if err == nil {
-				p.savedUpload, p.savedDownload = p.upload, p.download
-				if idle {
-					p.reserved = false
-				}
-			}
+			checkpoints = append(checkpoints, UsageCheckpoint{p.id, p.upload, p.download, idle})
+			checkpointPools = append(checkpointPools, p)
 		}
 		p.mu.Unlock()
+	}
+	result = m.store.CheckpointBatch(ctx, checkpoints)
+	if result == nil {
+		for i, point := range checkpoints {
+			p := checkpointPools[i]
+			p.mu.Lock()
+			p.savedUpload, p.savedDownload = point.Upload, point.Download
+			if point.Close {
+				p.reserved = false
+			}
+			p.mu.Unlock()
+		}
 	}
 	m.mu.Lock()
 	used := map[*authorization]bool{}

@@ -8,7 +8,7 @@
 
 支持 Debian/Ubuntu、systemd、Linux amd64/arm64。需要 root；安装器自动安装 Python 3、OpenVPN、Certbot 等免费系统包。VPS 无需 Go 或 Node.js。VPNGate 需要 IPv4、TUN 与 network namespace。
 
-**当前 v4 使用数据库 schema 5、备份格式 5，要求全新空目录，不迁移旧数据或兼容旧管理接口。** 分支提交不等于正式发行；安装器默认获取 GitHub 最新正式 Release。部署当前分支应先构建完整包：
+**当前 v4 使用数据库 schema 6、备份格式 6，要求全新空目录，不迁移旧数据或兼容旧管理接口。** 分支提交不等于正式发行；安装器默认获取 GitHub 最新正式 Release。部署当前分支应先构建完整包：
 
 ```bash
 go run ./cmd/release
@@ -49,6 +49,7 @@ ssh -L 2096:127.0.0.1:2096 root@VPS
 - [开发与发布](docs/development.md)
 - [兼容性与限制](docs/compatibility.md)
 - [本次实施和验收记录](docs/unified-management-status.md)
-- [实施前完整分析](docs/unified-management-analysis.md)
+- [性能与资源边界](docs/optimization.md)
+- [历史分析（固定提交）](https://github.com/sck03/sing-box-vpn/blob/5975e773383b49dd6daca9f5406665eb47b06266/docs/unified-management-analysis.md)
 
-许可证 GPL-3.0。历史分析与测量资料保留为证据，不代表当前版本已重新通过其中所有实验。
+许可证 GPL-3.0。历史分析与测量资料保留在 Git 历史中，不代表当前版本已重新通过其中所有实验。

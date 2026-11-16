@@ -39,7 +39,8 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS control_state(id INTEGER PRIMARY KEY CHECK(id=1),revision INTEGER NOT NULL,applied_revision INTEGER NOT NULL,desired BLOB NOT NULL,applied BLOB NOT NULL);
-CREATE TABLE IF NOT EXISTS control_tasks(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,actor TEXT NOT NULL,state TEXT NOT NULL,phase TEXT NOT NULL,error TEXT NOT NULL DEFAULT '',created INTEGER NOT NULL,updated INTEGER NOT NULL,input BLOB NOT NULL,result BLOB NOT NULL DEFAULT '{}');
+CREATE TABLE IF NOT EXISTS control_tasks(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,actor TEXT NOT NULL,lane TEXT NOT NULL DEFAULT 'control' CHECK(lane IN ('control','background')),state TEXT NOT NULL,phase TEXT NOT NULL,error TEXT NOT NULL DEFAULT '',created INTEGER NOT NULL,updated INTEGER NOT NULL,input BLOB NOT NULL,result BLOB NOT NULL DEFAULT '{}');
+CREATE INDEX IF NOT EXISTS control_task_lane ON control_tasks(state,lane,id);
 CREATE TABLE IF NOT EXISTS runtime_state(instance TEXT PRIMARY KEY,revision INTEGER NOT NULL,version TEXT NOT NULL,started INTEGER NOT NULL,heartbeat INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS observations(name TEXT PRIMARY KEY,value TEXT NOT NULL);
 `)
@@ -71,6 +72,14 @@ func (s *Store) State(ctx context.Context) (v State, err error) {
 	return
 }
 func (s *Store) Queue(ctx context.Context, kind, actor string, input []byte, expected int64, desired []byte) (int64, error) {
+	return s.queue(ctx, "control", kind, actor, input, expected, desired)
+}
+
+func (s *Store) QueueBackground(ctx context.Context, kind, actor string, input []byte) (int64, error) {
+	return s.queue(ctx, "background", kind, actor, input, 0, nil)
+}
+
+func (s *Store) queue(ctx context.Context, lane, kind, actor string, input []byte, expected int64, desired []byte) (int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -88,7 +97,11 @@ func (s *Store) Queue(ctx context.Context, kind, actor string, input []byte, exp
 	}
 	if desired != nil {
 		// Serialize desired configuration changes with active side effects.
-		if pending > 0 {
+		var blocking int
+		if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM control_tasks WHERE state IN ('queued','running') AND lane='control'`).Scan(&blocking); err != nil {
+			return 0, err
+		}
+		if blocking > 0 {
 			return 0, errors.New("wait for the current task before saving configuration")
 		}
 		r, e := tx.ExecContext(ctx, `UPDATE control_state SET desired=?,revision=revision+1 WHERE id=1 AND revision=?`, desired, expected)
@@ -104,7 +117,16 @@ func (s *Store) Queue(ctx context.Context, kind, actor string, input []byte, exp
 		}
 	}
 	now := time.Now().Unix()
-	r, err := tx.ExecContext(ctx, `INSERT INTO control_tasks(kind,actor,state,phase,created,updated,input) VALUES(?,?,'queued','queued',?,?,?)`, kind, actor, now, now, input)
+	if actor == "scheduler" {
+		var duplicate int
+		if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM control_tasks WHERE actor=? AND kind=? AND input=? AND state IN ('queued','running')`, actor, kind, input).Scan(&duplicate); err != nil {
+			return 0, err
+		}
+		if duplicate > 0 {
+			return 0, tx.Commit()
+		}
+	}
+	r, err := tx.ExecContext(ctx, `INSERT INTO control_tasks(kind,actor,lane,state,phase,created,updated,input) VALUES(?,?,?,'queued','queued',?,?,?)`, kind, actor, lane, now, now, input)
 	if err != nil {
 		return 0, err
 	}
@@ -115,6 +137,17 @@ func (s *Store) Queue(ctx context.Context, kind, actor string, input []byte, exp
 	return id, tx.Commit()
 }
 func (s *Store) Claim(ctx context.Context) (v Task, err error) {
+	return s.claim(ctx, "")
+}
+
+func (s *Store) ClaimLane(ctx context.Context, lane string) (Task, error) {
+	if lane != "control" && lane != "background" {
+		return Task{}, errors.New("unknown task lane")
+	}
+	return s.claim(ctx, lane)
+}
+
+func (s *Store) claim(ctx context.Context, lane string) (v Task, err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return v, err
@@ -123,7 +156,7 @@ func (s *Store) Claim(ctx context.Context) (v Task, err error) {
 	if _, err = tx.ExecContext(ctx, `UPDATE control_tasks SET updated=updated WHERE state='queued'`); err != nil {
 		return v, err
 	}
-	err = tx.QueryRowContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,input FROM control_tasks WHERE state='queued' ORDER BY id LIMIT 1`).Scan(&v.ID, &v.Kind, &v.Actor, &v.State, &v.Phase, &v.Error, &v.Created, &v.Updated, &v.Input)
+	err = tx.QueryRowContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,input FROM control_tasks WHERE state='queued' AND (?='' OR lane=?) ORDER BY id LIMIT 1`, lane, lane).Scan(&v.ID, &v.Kind, &v.Actor, &v.State, &v.Phase, &v.Error, &v.Created, &v.Updated, &v.Input)
 	if err != nil {
 		return v, err
 	}

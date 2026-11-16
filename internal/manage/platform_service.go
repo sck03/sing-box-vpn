@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
@@ -34,6 +35,7 @@ type PlatformService struct {
 	statusMu            sync.Mutex
 	statusAt            time.Time
 	status              []byte
+	backupBusy          atomic.Bool
 }
 type PlatformAction struct {
 	Operation    string                          `json:"operation"`
@@ -248,7 +250,12 @@ func (s *PlatformService) Queue(ctx context.Context, a PlatformAction, actor str
 	if err != nil {
 		return 0, err
 	}
-	id, err := s.Store.Queue(ctx, a.Operation, actor, data, 0, nil)
+	var id int64
+	if a.Operation == "outbound-probe" || (a.Operation == "subscription" && a.Subscription.Operation == "check") {
+		id, err = s.Store.QueueBackground(ctx, a.Operation, actor, data)
+	} else {
+		id, err = s.Store.Queue(ctx, a.Operation, actor, data, 0, nil)
+	}
 	if err == nil {
 		s.signal()
 	}
@@ -288,71 +295,7 @@ func (s *PlatformService) Run(ctx context.Context) error {
 	}); err != nil {
 		return err
 	}
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	nextMaintenance := time.Time{}
-	nextSubscriptions := time.Time{}
-	for {
-		if err = ctx.Err(); err != nil {
-			return err
-		}
-		task, e := s.Store.Claim(ctx)
-		if errors.Is(e, sql.ErrNoRows) {
-			if time.Now().After(nextSubscriptions) {
-				nextSubscriptions = time.Now().Add(time.Minute)
-				if e := s.scheduleSubscriptions(ctx); e != nil {
-					_ = s.Auth.Audit(ctx, "scheduler", "subscription-schedule", "", "failed")
-				}
-			}
-			if !s.NoSystem && time.Now().After(nextMaintenance) {
-				nextMaintenance = time.Now().Add(30 * time.Second)
-				maintenance, stop := context.WithTimeout(ctx, 30*time.Second)
-				if e := s.syncTunnel(maintenance); e != nil {
-					_ = s.Auth.Audit(maintenance, "scheduler", "tunnel-sync", "", "failed")
-				}
-				if e := s.scheduleCertificates(maintenance); e != nil {
-					_ = s.Auth.Audit(maintenance, "scheduler", "certificate-schedule", "", "failed")
-				}
-				stop()
-			}
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-s.wake:
-			case <-ticker.C:
-			}
-			continue
-		}
-		if e != nil {
-			return e
-		}
-		child, cancel := context.WithTimeout(ctx, 5*time.Minute)
-		if task.Kind == "apply" {
-			var input applyInput
-			e = json.Unmarshal(task.Input, &input)
-			if e == nil {
-				e = s.apply(child, task.ID, input)
-			}
-		} else {
-			var action PlatformAction
-			e = json.Unmarshal(task.Input, &action)
-			if e == nil {
-				e = s.execute(child, task.ID, action)
-			}
-		}
-		cancel()
-		finish, stop := context.WithTimeout(context.Background(), 10*time.Second)
-		result := "success"
-		if e != nil {
-			result = "failed"
-		}
-		_ = s.Auth.Audit(finish, task.Actor, task.Kind, fmt.Sprint(task.ID), result)
-		finishErr := s.Store.Finish(finish, task.ID, e)
-		stop()
-		if finishErr != nil {
-			return finishErr
-		}
-	}
+	return s.runWorkers(ctx)
 }
 
 func (s *PlatformService) apply(ctx context.Context, id int64, input applyInput) error {

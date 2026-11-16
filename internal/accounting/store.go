@@ -294,7 +294,15 @@ func bindCredential(ctx context.Context, tx *sql.Tx, c domain.Credential) error 
 }
 
 func (s *Store) Credentials(ctx context.Context, runtime string) ([]domain.Credential, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT secret FROM credentials WHERE runtime=? ORDER BY id LIMIT 10001`, runtime)
+	return s.credentials(ctx, `runtime=?`, runtime)
+}
+
+func (s *Store) AccountCredentials(ctx context.Context, account, runtime string) ([]domain.Credential, error) {
+	return s.credentials(ctx, `account=? AND runtime=?`, account, runtime)
+}
+
+func (s *Store) credentials(ctx context.Context, predicate string, args ...any) ([]domain.Credential, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT secret FROM credentials WHERE `+predicate+` ORDER BY id LIMIT 10001`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -391,21 +399,49 @@ func (s *Store) reservePeriod(ctx context.Context, id, account, runtime string, 
 }
 
 func (s *Store) Checkpoint(ctx context.Context, id string, upload, download int64, closeLease bool) error {
-	if upload < 0 || download < 0 || upload > 1<<61 || download > 1<<61 {
-		return errors.New("invalid cumulative usage")
+	return s.CheckpointBatch(ctx, []UsageCheckpoint{{id, upload, download, closeLease}})
+}
+
+type UsageCheckpoint struct {
+	ID               string
+	Upload, Download int64
+	Close            bool
+}
+
+// CheckpointBatch commits one tick atomically, retaining cumulative replay
+// semantics and FULL durability while avoiding a disk sync for each pool.
+func (s *Store) CheckpointBatch(ctx context.Context, points []UsageCheckpoint) error {
+	if len(points) == 0 {
+		return nil
+	}
+	if len(points) > 10000 {
+		return errors.New("checkpoint batch exceeds pool limit")
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `UPDATE leases SET closed=closed WHERE id=?`, id); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE leases SET closed=closed WHERE id=?`, points[0].ID); err != nil {
 		return err
+	}
+	for _, point := range points {
+		if err = checkpoint(ctx, tx, point); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func checkpoint(ctx context.Context, tx *sql.Tx, point UsageCheckpoint) error {
+	id, upload, download, closeLease := point.ID, point.Upload, point.Download, point.Close
+	if upload < 0 || download < 0 || upload > 1<<61 || download > 1<<61 {
+		return errors.New("invalid cumulative usage")
 	}
 	var account string
 	var reserved, oldUp, oldDown, period int64
 	var closed bool
-	if err = tx.QueryRowContext(ctx, `SELECT account,reserved,upload,download,closed,period FROM leases WHERE id=?`, id).Scan(&account, &reserved, &oldUp, &oldDown, &closed, &period); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT account,reserved,upload,download,closed,period FROM leases WHERE id=?`, id).Scan(&account, &reserved, &oldUp, &oldDown, &closed, &period); err != nil {
 		return err
 	}
 	if upload < oldUp || download < oldDown || upload+download > reserved {
@@ -421,16 +457,16 @@ func (s *Store) Checkpoint(ctx context.Context, id string, upload, download int6
 	if closeLease {
 		refund = reserved - upload - download
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE accounts SET upload=upload+?,download=download+?,charged=charged-? WHERE id=? AND period=?`, upload-oldUp, download-oldDown, refund, account, period); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE accounts SET upload=upload+?,download=download+?,charged=charged-? WHERE id=? AND period=?`, upload-oldUp, download-oldDown, refund, account, period); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE usage_periods SET upload=upload+?,download=download+?,charged=charged-? WHERE account=? AND period=?`, upload-oldUp, download-oldDown, refund, account, period); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE usage_periods SET upload=upload+?,download=download+?,charged=charged-? WHERE account=? AND period=?`, upload-oldUp, download-oldDown, refund, account, period); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE leases SET upload=?,download=?,closed=? WHERE id=?`, upload, download, closeLease, id); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE leases SET upload=?,download=?,closed=? WHERE id=?`, upload, download, closeLease, id); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return nil
 }
 
 func (s *Store) Rotate(ctx context.Context, id, uuid, password string, expected int64) error {

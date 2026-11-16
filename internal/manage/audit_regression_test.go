@@ -140,16 +140,8 @@ func TestLargePlatformBackupRoundTrip(t *testing.T) {
 	if err != nil || len(backup.Database) <= 7<<20 {
 		t.Fatal(len(backup.Database), err)
 	}
-	request, _ := json.Marshal(Object{"data": data, "password": string(password)})
-	var decoded struct {
-		Data     []byte `json:"data"`
-		Password string `json:"password"`
-	}
-	if err = decodeRequest(httptest.NewRecorder(), httptest.NewRequest("POST", "/", bytes.NewReader(request)), &decoded, maxPlatformBackupRequest); err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(decoded.Data, data) {
-		t.Fatal("request truncated")
+	if response := restoreRequest(t, data, map[string]string{"password": string(password)}); response.Code != 200 {
+		t.Fatal("binary upload rejected", response.Code)
 	}
 	if err = RestoreDisaster(t.Context(), filepath.Join(t.TempDir(), "restored"), data, password, "recovered", "recovered-password"); err != nil {
 		t.Fatal(err)

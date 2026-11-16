@@ -42,9 +42,6 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 	op := f.Args()[0]
 	decode := func(v any) error {
 		limit := maxJSONFile
-		if op == "restore" {
-			limit = maxPlatformBackupRequest
-		}
 		data, err := io.ReadAll(io.LimitReader(input, int64(limit)+1))
 		if err != nil {
 			return err
@@ -53,7 +50,7 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 	}
 	if op == "restore" {
 		var v struct {
-			Backup      []byte `json:"backup"`
+			BackupPath  string `json:"backup_path"`
 			Password    string `json:"password"`
 			Username    string `json:"username"`
 			NewPassword string `json:"new_password"`
@@ -61,7 +58,19 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 		if err := decode(&v); err != nil {
 			return err
 		}
-		return RestoreDisaster(ctx, *root, v.Backup, []byte(v.Password), v.Username, v.NewPassword)
+		file, err := os.Open(v.BackupPath)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		backup, err := io.ReadAll(io.LimitReader(file, maxPlatformBackup+1))
+		if err != nil {
+			return err
+		}
+		if len(backup) > maxPlatformBackup {
+			return errors.New("backup exceeds 96 MiB")
+		}
+		return RestoreDisaster(ctx, *root, backup, []byte(v.Password), v.Username, v.NewPassword)
 	}
 	s, err := OpenPlatform(*root, *core, *runtime, *noSystem)
 	if err != nil {

@@ -58,9 +58,9 @@ ACME：先保存未绑定资产，再申请，成功后绑定入口。端口 80 
 
 「维护」下载全量 AES-GCM 加密备份，口令至少 12 字节。在线恢复只替换配置和证书，保留当前账户、凭据、流量、管理员及下载撤销；不恢复旧额度。先预览再应用。
 
-当前数据库与备份格式均为 5，只接受本格式。加密文件最多 96 MiB，数据库最多 48 MiB；恢复请求允许相应 Base64 膨胀。旧数据库或旧备份请勿放入新部署目录。
+当前数据库与备份格式均为 6，只接受本格式。加密文件最多 96 MiB，数据库最多 48 MiB；HTTP 恢复使用 multipart/form-data 的二进制 `backup` 文件及 `password`、`apply`、`revision` 字段。应用时必须提供预览对应的配置 revision。同一面板进程同时只处理一个备份/恢复请求，重复请求返回 429。旧数据库或旧备份请勿放入新部署目录。
 
-灾难恢复到空目录，通过 `yg-vpngate panel --root <空目录> restore` 从 stdin 提交 JSON，字段 `backup`（备份字节的 Base64）、`password`、`username`、`new_password`。恢复后全部权益禁用、下载令牌撤销、管理员重建，先对账再启用。复制运行时与验证核心到新目录后执行 `panel recover`、`panel validate`、`panel install-services`。面板配置恢复为回环默认值。
+灾难恢复到空目录，通过 `yg-vpngate panel --root <空目录> restore` 从 stdin 提交 JSON，字段 `backup_path`（本机加密备份文件路径）、`password`、`username`、`new_password`。口令通过 stdin 传入，不放入命令参数。恢复后全部权益禁用、下载令牌撤销、管理员重建，先对账再启用。复制运行时与验证核心到新目录后执行 `panel recover`、`panel validate`、`panel install-services`。面板配置恢复为回环默认值。
 
 `sb status` 查看摘要；`sb diagnose` 查看服务与日志；`sb recover` 从数据库已应用版本重建投影。不要手改生成的 app.json、sb.json 或 subscriptions/config.json，它们会被重建覆盖。
 

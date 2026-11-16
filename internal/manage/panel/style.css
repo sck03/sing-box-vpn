@@ -7,6 +7,7 @@
   --line: #253249;
   --panel: #111c2d;
   --accent: #6ee7c5;
+  --radius: 12px;
 }
 * {
   box-sizing: border-box;
@@ -31,6 +32,55 @@ button {
 }
 button:hover {
   background: #2b425e;
+}
+button {
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease;
+}
+select:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.nav-group {
+  display: grid;
+  gap: 4px;
+}
+.nav-label {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 16px 12px 6px;
+}
+.advanced {
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+.advanced summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+select[multiple] {
+  min-height: 170px;
+}
+select[multiple] option {
+  padding: 7px 10px;
+  border-radius: 5px;
+}
+#content[aria-busy="true"] {
+  opacity: 0.65;
+  cursor: progress;
+}
+form[aria-busy="true"] button[type="submit"]::after {
+  content: " · 处理中";
+}
+@media (prefers-reduced-motion: reduce) {
+  button {
+    transition: none;
+  }
 }
 button.primary {
   background: #0f685b;
@@ -467,10 +517,17 @@ progress {
     display: none;
   }
   nav {
-    display: flex;
-    gap: 3px;
-    overflow: auto;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    overflow: visible;
     margin: 20px 0 0;
+  }
+  .nav-group {
+    align-content: start;
+  }
+  .nav-label {
+    padding-top: 4px;
   }
   nav button {
     white-space: nowrap;

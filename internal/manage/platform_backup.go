@@ -19,11 +19,11 @@ import (
 	"time"
 )
 
-const platformBackupMagic = "SBVPNV05"
+const platformBackupMagic = "SBVPNV06"
 const maxPlatformBackup = 96 << 20
 
-// Base64 expands the binary archive by 4/3; leave room for the JSON envelope.
-const maxPlatformBackupRequest = (maxPlatformBackup+2)/3*4 + (16 << 10)
+// Binary multipart upload plus a bounded metadata envelope.
+const maxPlatformBackupRequest = maxPlatformBackup + (16 << 10)
 
 type platformBackup struct {
 	Version  int               `json:"version"`
@@ -60,7 +60,7 @@ func (s *PlatformService) Backup(ctx context.Context, password []byte) ([]byte, 
 	if len(data) > 48<<20 {
 		return nil, errors.New("database exceeds backup budget")
 	}
-	backup := platformBackup{Version: 5, Root: s.Root, Database: data, Files: map[string][]byte{}, Created: time.Now().UTC()}
+	backup := platformBackup{Version: 6, Root: s.Root, Database: data, Files: map[string][]byte{}, Created: time.Now().UTC()}
 	rawBytes := len(data)
 	copyDB, err := database.Open(snapshot)
 	if err != nil {
@@ -163,7 +163,7 @@ func certificatePaths(c PlatformConfig) []string {
 func decodePlatformBackup(data, password []byte) (platformBackup, error) {
 	var backup platformBackup
 	if len(password) < 12 || len(password) > 1024 || len(data) < 52 || len(data) > maxPlatformBackup || string(data[:8]) != platformBackupMagic {
-		return backup, errors.New("invalid schema-5 encrypted backup")
+		return backup, errors.New("invalid schema-6 encrypted backup")
 	}
 	cipher, err := backupCipher(password, data[8:24])
 	if err != nil {
@@ -176,7 +176,7 @@ func decodePlatformBackup(data, password []byte) (platformBackup, error) {
 	if err = strict.JSON(plain, &backup, maxPlatformBackup); err != nil {
 		return backup, err
 	}
-	if backup.Version != 5 || len(backup.Database) > 48<<20 || len(backup.Files) > 2048 {
+	if backup.Version != 6 || len(backup.Database) > 48<<20 || len(backup.Files) > 2048 {
 		return backup, errors.New("unsupported backup format or size")
 	}
 	for path, value := range backup.Files {
@@ -324,13 +324,14 @@ func (s *PlatformService) servePlatformBackup(w http.ResponseWriter, r *http.Req
 		http.Error(w, "method not allowed", 405)
 		return
 	}
-	var v struct {
-		Password string `json:"password"`
-		Backup   []byte `json:"backup"`
-		Apply    bool   `json:"apply"`
-		Revision int64  `json:"revision"`
+	if !s.backupBusy.CompareAndSwap(false, true) {
+		w.Header().Set("Retry-After", "5")
+		http.Error(w, "another backup or restore is running", http.StatusTooManyRequests)
+		return
 	}
-	if err := decodeRequest(w, r, &v, maxPlatformBackupRequest); err != nil {
+	defer s.backupBusy.Store(false)
+	var v backupRequest
+	if err := readBackupRequest(w, r, &v); err != nil {
 		platformError(w, err)
 		return
 	}
@@ -362,6 +363,11 @@ func (s *PlatformService) servePlatformBackup(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if !v.Apply {
+		state, err := s.Store.State(r.Context())
+		if err != nil {
+			platformError(w, err)
+			return
+		}
 		previewConfig := c
 		if err = relocateBackup(&previewConfig, b, stage); err == nil {
 			err = previewConfig.Validate()
@@ -372,6 +378,7 @@ func (s *PlatformService) servePlatformBackup(w http.ResponseWriter, r *http.Req
 		}
 		summary["mode"] = "same-host configuration restore; current accounts, usage, credentials, administrators and revocations are retained"
 		summary["created"] = b.Created
+		summary["revision"] = state.Revision
 		jsonResponse(w, summary)
 		return
 	}

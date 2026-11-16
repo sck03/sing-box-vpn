@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { clientCatalog, clientOptions } from "./clients.js";
 import {
   el,
   card,
@@ -21,9 +22,10 @@ const states = {
   disabled: "已禁用",
 };
 export async function accounts(ctx) {
+  const request = ctx.request || api;
   const [items, people] = await Promise.all([
-    api("/api/accounts"),
-    api("/api/subscribers"),
+    request("/api/accounts"),
+    request("/api/subscribers"),
   ]);
   const admin = ctx.session.role === "admin";
   const fields = (existing) => [
@@ -386,7 +388,7 @@ export async function accounts(ctx) {
 }
 
 export async function subscribers(ctx) {
-  const people = await api("/api/subscribers");
+  const people = await (ctx.request || api)("/api/subscribers");
   const edit = (v) =>
     formDialog(
       "订阅者",
@@ -434,9 +436,11 @@ export async function subscribers(ctx) {
 }
 
 export async function grants(ctx) {
-  const [items, accounts] = await Promise.all([
-    api("/api/grants"),
-    api("/api/accounts"),
+  const request = ctx.request || api;
+  const [items, accounts, catalog] = await Promise.all([
+    request("/api/grants"),
+    request("/api/accounts"),
+    clientCatalog(request),
   ]);
   return [
     card(
@@ -469,8 +473,11 @@ export async function grants(ctx) {
               },
               {
                 key: "clients",
-                label: "允许客户端格式，逗号分隔",
-                type: "csv",
+                label: "允许客户端格式（可多选）",
+                type: "multiselect",
+                options: clientOptions(catalog),
+                required: true,
+                help: "实验适配需在目标客户端验证；无法保留证书校验参数的节点会拒绝导出。",
               },
               { key: "expires_at", label: "下载到期", type: "date" },
               {

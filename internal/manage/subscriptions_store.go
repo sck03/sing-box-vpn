@@ -2,7 +2,7 @@ package manage
 
 import (
 	"context"
-	"encoding/json"
+	"database/sql"
 	"errors"
 	"fmt"
 	"github.com/sck03/sing-box-vpn/internal/accounting"
@@ -73,7 +73,7 @@ func compileSubscriptions(ctx context.Context, root, core string, c sub.Config, 
 				}
 			}
 			nodes, err := service.accountNodes(ctx, source.AccountID, source.Scope, 0)
-			if errors.Is(err, accounting.ErrDenied) {
+			if errors.Is(err, accounting.ErrDenied) || errors.Is(err, sql.ErrNoRows) {
 				nodes = nil
 				err = nil
 			}
@@ -112,18 +112,20 @@ func compileSubscriptions(ctx context.Context, root, core string, c sub.Config, 
 		if !exists {
 			continue
 		}
-		if old, exists := previous.Artifacts[output.ID]; exists && previous.CoreIdentity == snapshot.CoreIdentity && old.ETag == artifact.ETag {
+		if old, exists := previous.Artifacts[output.ID]; exists && templates[output.Template].Client == "sing-box" && previous.CoreIdentity == snapshot.CoreIdentity && old.ETag == artifact.ETag {
+			snapshot.Diagnostics[output.ID] = append(snapshot.Diagnostics[output.ID], sub.Diagnostic{Stage: "validation", Message: "sing-box core-check; unchanged validated artifact"})
 			continue
 		}
-		if t := templates[output.Template]; t.Client == "sing-box" && t.Mode == "config" {
-			var config Object
-			if err := json.Unmarshal(artifact.Data, &config); err != nil {
-				return nil, snapshot, previews, err
+		verification, err := validateSubscriptionArtifact(ctx, root, core, templates[output.Template], artifact)
+		if err != nil {
+			if available {
+				delete(snapshot.Artifacts, output.ID)
+				snapshot.Diagnostics[output.ID] = append(snapshot.Diagnostics[output.ID], sub.Diagnostic{Stage: "validation", Message: err.Error()})
+				continue
 			}
-			if err := CheckJSON(ctx, core, root, config); err != nil {
-				return nil, snapshot, previews, fmt.Errorf("subscription %s: %w", output.ID, err)
-			}
+			return nil, snapshot, previews, fmt.Errorf("subscription %s: %w", output.ID, err)
 		}
+		snapshot.Diagnostics[output.ID] = append(snapshot.Diagnostics[output.ID], sub.Diagnostic{Stage: "validation", Message: verification})
 	}
 	files := fileBundle{}
 	for name, value := range map[string]any{subscriptionsConfig: c, subscriptionsRuntime: r, subscriptionsLocal: local, subscriptionsSnapshot: snapshot} {

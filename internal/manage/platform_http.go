@@ -120,20 +120,7 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 			} else if strings.HasPrefix(path, "/panel/") {
 				name = strings.TrimPrefix(path, "/")
 			}
-			data, err := panelAssets.ReadFile(name)
-			if err != nil {
-				http.NotFound(w, r)
-				return
-			}
-			mime := "text/html; charset=utf-8"
-			if strings.HasSuffix(name, ".js") {
-				mime = "text/javascript; charset=utf-8"
-			}
-			if strings.HasSuffix(name, ".css") {
-				mime = "text/css; charset=utf-8"
-			}
-			w.Header().Set("Content-Type", mime)
-			_, _ = w.Write(data)
+			servePanelAsset(w, r, name)
 			return
 		}
 		if strings.HasPrefix(path, "/u/") {
@@ -359,29 +346,17 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 			}
 		}
 		if path == "/api/overview" && r.Method == "GET" {
-			state, e := s.Store.State(ctx)
+			data, e := s.overviewSnapshot(ctx)
 			if e != nil {
 				platformError(w, e)
 				return
 			}
-			services, _ := s.ServiceStatus(ctx)
-			runtimes, e := s.Store.Runtimes(ctx)
-			if e != nil {
-				platformError(w, e)
-				return
-			}
-			tasks, e := s.Store.TaskSummaries(ctx)
-			if e != nil {
-				platformError(w, e)
-				return
-			}
-			for i := range tasks {
-				tasks[i].Result = nil
-				if tasks[i].Error != "" {
-					tasks[i].Error = "任务失败，请查看任务详情"
-				}
-			}
-			jsonResponse(w, Object{"revision": state.Revision, "applied_revision": state.AppliedRevision, "services": services, "runtimes": runtimes, "tasks": tasks})
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(data)
+			return
+		}
+		if path == "/api/clients" && r.Method == "GET" {
+			jsonResponse(w, sub.Capabilities())
 			return
 		}
 		if path == "/api/tasks/detail" && r.Method == "GET" {

@@ -24,15 +24,33 @@ export function notice(message, error = false) {
   notice.timer = setTimeout(() => (node.hidden = true), error ? 16000 : 6500);
 }
 export function action(fn) {
+  let pending = false;
   return async (event) => {
-    const button = event?.currentTarget;
+    if (event?.type === "submit") event.preventDefault();
+    if (pending) return;
+    pending = true;
+    const target = event?.currentTarget;
+    const controls =
+      target?.tagName === "FORM"
+        ? [...target.querySelectorAll("button, input[type=submit]")]
+        : target
+          ? [target]
+          : [];
+    const disabled = controls.map((control) => control.disabled);
     try {
-      if (button) button.disabled = true;
+      target?.setAttribute("aria-busy", "true");
+      controls.forEach((control) => {
+        control.disabled = true;
+      });
       await fn(event);
     } catch (error) {
       if (error.name !== "AbortError") notice(error.message, true);
     } finally {
-      if (button?.isConnected) button.disabled = false;
+      pending = false;
+      target?.removeAttribute("aria-busy");
+      controls.forEach((control, i) => {
+        control.disabled = disabled[i];
+      });
     }
   };
 }
@@ -122,13 +140,21 @@ export function formDialog(title, fields, value, save) {
   for (const field of fields) {
     const current = getPath(value, field.key);
     let input;
-    if (field.type === "select") {
+    if (field.type === "select" || field.type === "multiselect") {
       input = el("select");
-      for (const option of field.options || []) {
+      input.multiple = field.type === "multiselect";
+      const options =
+        typeof field.options === "function"
+          ? field.options(value)
+          : field.options;
+      for (const option of options || []) {
         const [v, label] = Array.isArray(option) ? option : [option, option];
         input.append(el("option", { value: v }, label));
       }
       input.value = current ?? field.default ?? "";
+      if (input.multiple)
+        for (const option of input.options)
+          option.selected = (current || []).includes(option.value);
     } else if (field.type === "json" || field.type === "textarea") {
       input = el("textarea", { spellcheck: "false" });
       input.value =
@@ -175,6 +201,41 @@ export function formDialog(title, fields, value, save) {
     area.append(label);
     inputs.push([field, input]);
   }
+  const formValue = () => {
+    const current = structuredClone(value);
+    for (const [field, input] of inputs)
+      setPath(
+        current,
+        field.key,
+        field.type === "bool" ? input.checked : input.value,
+      );
+    return current;
+  };
+  const refreshFields = () => {
+    let current = formValue();
+    for (const [field, input] of inputs) {
+      if (typeof field.options === "function") {
+        const previous = input.value;
+        const options = field.options(current);
+        input.replaceChildren(
+          ...options.map((option) => {
+            const [v, label] = Array.isArray(option)
+              ? option
+              : [option, option];
+            return el("option", { value: v }, label);
+          }),
+        );
+        if ([...input.options].some((o) => o.value === previous))
+          input.value = previous;
+        setPath(current, field.key, input.value);
+      }
+      const visible = !field.visible || field.visible(current);
+      input.closest("label").hidden = !visible;
+      input.disabled = !!field.readonly || !visible;
+    }
+  };
+  form.addEventListener("change", refreshFields);
+  refreshFields();
   form.append(
     area,
     row(
@@ -188,9 +249,12 @@ export function formDialog(title, fields, value, save) {
       event.preventDefault();
       const result = structuredClone(value);
       for (const [field, input] of inputs) {
-        if (field.readonly) continue;
+        if (field.readonly || input.disabled) continue;
         let v = input.value;
         switch (field.type) {
+          case "multiselect":
+            v = [...input.selectedOptions].map((o) => o.value);
+            break;
           case "bool":
             v = input.checked;
             break;

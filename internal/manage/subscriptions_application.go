@@ -50,7 +50,7 @@ func (s SubscriptionService) Execute(ctx context.Context, command application.Su
 		case "show":
 			return write(c)
 		case "clients":
-			return write(sub.Clients)
+			return write(sub.Capabilities())
 		case "logs", "grant", "revoke":
 			store, err := accounting.Open(filepath.Join(root, "control.db"))
 			if err != nil {

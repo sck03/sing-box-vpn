@@ -161,6 +161,9 @@ func (n Node) URI() string {
 	q := url.Values{}
 	if n.TLS.Enabled {
 		q.Set("sni", n.TLS.ServerName)
+		if n.TLS.Fingerprint != "" {
+			q.Set("fp", n.TLS.Fingerprint)
+		}
 		if n.TLS.Insecure {
 			q.Set("insecure", "1")
 		}

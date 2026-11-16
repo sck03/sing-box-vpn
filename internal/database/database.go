@@ -4,14 +4,15 @@ package database
 
 import (
 	"database/sql"
-	"errors"
-	_ "modernc.org/sqlite"
+	"fmt"
 	"os"
 	"path/filepath"
+
+	_ "modernc.org/sqlite"
 )
 
 const Filename = "control.db"
-const SchemaVersion = 5
+const SchemaVersion = 6
 
 func Open(path string) (*sql.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
@@ -36,10 +37,10 @@ func Open(path string) (*sql.DB, error) {
 		var version int
 		err = db.QueryRow(`PRAGMA user_version`).Scan(&version)
 		if err == nil && version != 0 && version != SchemaVersion {
-			err = errors.New("unsupported database; this release requires a new installation directory (schema 5)")
+			err = fmt.Errorf("unsupported database; this release requires a new installation directory (schema %d)", SchemaVersion)
 		}
 		if err == nil {
-			_, err = db.Exec(`PRAGMA user_version=5;`)
+			_, err = db.Exec(fmt.Sprintf("PRAGMA user_version=%d;", SchemaVersion))
 		}
 	}
 	if err != nil {

@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { clientCatalog, templateFields, normalizeTemplate } from "./clients.js";
 import {
   el,
   card,
@@ -18,9 +19,12 @@ const common = [
 export async function subscriptions(ctx) {
   const c = await ctx.config(),
     s = c.subscriptions;
-  const outputGrants = (await api("/api/grants")).filter(
-    (g) => g.outputs?.length,
-  );
+  const request = ctx.request || api;
+  const [catalog, grants] = await Promise.all([
+    clientCatalog(request),
+    request("/api/grants"),
+  ]);
+  const outputGrants = grants.filter((g) => g.outputs?.length);
   s.rule_sets ??= [];
   const change = () => {
     ctx.changed();
@@ -31,6 +35,28 @@ export async function subscriptions(ctx) {
       "订阅编译与分发",
       help(
         "本机独立账户请在「下载授权」创建分享。要自定义模板或分发，添加账户来源，再创建集合和输出。新安装不发布共用入口凭据。第三方节点只能控制下载，不能执行代理流量额度。",
+      ),
+      el(
+        "details",
+        { class: "advanced" },
+        el("summary", {}, "客户端适配与验证范围"),
+        help(
+          "原生核心校验与节点连通性分开报告。实验适配表示尚未通过目标应用实机导入；证书固定、传输方式与端口跳跃还需逐节点匹配。",
+        ),
+        table(
+          [
+            { key: "label", label: "客户端" },
+            { label: "支持输出", value: (p) => p.modes.join(" / ") },
+            {
+              label: "验证",
+              value: (p) =>
+                p.tested_version
+                  ? p.verification + " · " + p.tested_version
+                  : p.verification,
+            },
+          ],
+          Object.values(catalog),
+        ),
       ),
       row(
         button(
@@ -144,30 +170,8 @@ export async function subscriptions(ctx) {
     resourceEditor({
       title: "客户端模板",
       items: s.templates,
-      fields: [
-        { key: "id", label: "ID", required: true },
-        {
-          key: "client",
-          label: "客户端",
-          type: "select",
-          options: ["sing-box", "mihomo", "uri", "base64", "openclash"],
-        },
-        {
-          key: "mode",
-          label: "模式",
-          type: "select",
-          options: ["config", "nodes", "provider", "rules"],
-        },
-        {
-          key: "preset",
-          label: "预设",
-          type: "select",
-          options: ["proxy", "split"],
-        },
-        { key: "dns", label: "客户端 DNS", type: "csv" },
-        { key: "rule_sets", label: "规则集 ID", type: "csv" },
-        { key: "rules", label: "客户端规则 JSON", type: "json", wide: true },
-      ],
+      fields: templateFields(catalog),
+      normalize: (v) => normalizeTemplate(v, catalog),
       defaults: {
         id: "",
         version: 1,

@@ -100,12 +100,15 @@ func TestVMessTLSOptIn(t *testing.T) {
 }
 
 func TestAllClientModesAndExplicitCapabilityFailures(t *testing.T) {
-	for client, cap := range Clients {
+	for client, cap := range Capabilities() {
 		for _, mode := range cap.Modes {
 			t.Run(client+"/"+mode, func(t *testing.T) {
 				var nodes []Node
 				for _, n := range testNodes() {
 					if slices.Contains(cap.Protocols, n.Protocol) {
+						if !cap.Features.UTLS {
+							n.TLS.Fingerprint = ""
+						}
 						nodes = append(nodes, n)
 					}
 				}
@@ -130,7 +133,7 @@ func TestAllClientModesAndExplicitCapabilityFailures(t *testing.T) {
 		t.Fatal("unsupported protocol silently lost")
 	}
 	a, diagnostics, err := Render(testNodes(), Template{ID: "qx", Client: "quantumult-x", Version: 1, Mode: "nodes"}, true)
-	if err != nil || len(diagnostics) != 2 || len(a.Data) == 0 {
+	if err != nil || len(diagnostics) != 3 || len(a.Data) == 0 {
 		t.Fatal("explicit exclusion failed", err, diagnostics)
 	}
 }

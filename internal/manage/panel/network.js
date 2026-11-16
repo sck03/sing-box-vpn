@@ -222,7 +222,7 @@ export async function inbounds(ctx) {
 export async function routing(ctx) {
   const c = await ctx.config(),
     a = structuredClone(c.app.advanced || {});
-  const effective = await api("/api/server", c.app);
+  const effective = await (ctx.request || api)("/api/server", c.app);
   const changed = () => {
     c.app.advanced = a;
     ctx.changed();
@@ -396,7 +396,7 @@ export async function routing(ctx) {
 export async function outbounds(ctx) {
   const c = await ctx.config(),
     a = structuredClone(c.app.advanced || {});
-  const effective = await api("/api/server", c.app);
+  const effective = await (ctx.request || api)("/api/server", c.app);
   a.outbounds ??= effective.outbounds || [];
   a.endpoints ??= effective.endpoints || [];
   a.services ??= [];
@@ -735,7 +735,7 @@ export async function vpngate(ctx) {
 
 export async function certificates(ctx) {
   const c = await ctx.config(),
-    status = await api("/api/certificates");
+    status = await (ctx.request || api)("/api/certificates");
   const changed = () => {
     ctx.changed();
     ctx.render();

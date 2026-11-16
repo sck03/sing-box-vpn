@@ -55,22 +55,35 @@ func (s *PlatformService) service(ctx context.Context, name, action string) erro
 	return err
 }
 func (s *PlatformService) ServiceStatus(ctx context.Context) ([]Object, error) {
+	states := map[string]Object{}
+	var queryErr error
+	if !s.NoSystem {
+		args := append([]string{"show", "--property=Id,ActiveState,SubState,UnitFileState,LoadState,MainPID"}, platformServices...)
+		var data []byte
+		data, queryErr = command.Output(ctx, nil, "systemctl", args...)
+		for _, block := range strings.Split(strings.TrimSpace(string(data)), "\n\n") {
+			v := Object{}
+			for _, line := range strings.Split(block, "\n") {
+				if k, value, ok := strings.Cut(line, "="); ok {
+					v[k] = value
+				}
+			}
+			states[strings.TrimSuffix(text(v["Id"]), ".service")] = v
+		}
+	}
 	result := []Object{}
 	for _, name := range platformServices {
 		v := Object{"name": name}
 		if s.NoSystem {
 			v["state"] = "unavailable"
+		} else if state, ok := states[name]; ok {
+			for key, value := range state {
+				v[key] = value
+			}
 		} else {
-			data, err := command.Output(ctx, nil, "systemctl", "show", name, "--property=ActiveState,SubState,UnitFileState,LoadState,MainPID")
-			if err != nil {
-				v["error"] = "service query failed"
-			} else {
-				for _, line := range strings.Split(string(data), "\n") {
-					k, value, ok := strings.Cut(line, "=")
-					if ok {
-						v[k] = value
-					}
-				}
+			v["error"] = "service query failed"
+			if queryErr == nil {
+				v["error"] = "service missing from systemctl response"
 			}
 		}
 		result = append(result, v)

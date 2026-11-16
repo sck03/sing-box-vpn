@@ -64,6 +64,8 @@ func TestPanelRolesOriginHostAndCSRF(t *testing.T) {
 		want               int
 	}{
 		{"anonymous", "GET", "/api/state", adminauth.Session{}, nil, 401},
+		{"anonymous catalog", "GET", "/api/clients", adminauth.Session{}, nil, 401},
+		{"authenticated catalog", "GET", "/api/clients", admin, nil, 200},
 		{"viewer state", "GET", "/api/state", viewer, nil, 200},
 		{"viewer secret", "GET", "/api/config", viewer, nil, 403},
 		{"viewer task", "POST", "/api/tasks", viewer, nil, 403},

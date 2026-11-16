@@ -24,6 +24,12 @@ const pages = [
   ["maintenance", "维护与任务", maintenance],
   ["admins", "管理员安全", admins],
 ];
+const navigationGroups = [
+  ["工作台", ["overview"]],
+  ["用户与订阅", ["subscribers", "accounts", "grants", "subscriptions"]],
+  ["网络与节点", ["inbounds", "routing", "outbounds", "vpngate"]],
+  ["系统管理", ["certificates", "maintenance", "admins"]],
+];
 let page = "overview",
   draft = null,
   original = null,
@@ -32,7 +38,8 @@ let page = "overview",
   configLoad = null,
   loading = 0,
   refreshTimer,
-  events;
+  events,
+  pageRequest;
 const ctx = {
   session: null,
   root: "",
@@ -81,6 +88,7 @@ const ctx = {
   render: renderPage,
   logoutLocal() {
     ++loading;
+    pageRequest?.abort();
     ctx.session = null;
     resetDraft();
     ctx.overview = null;
@@ -107,24 +115,28 @@ function resetDraft() {
 }
 async function renderPage() {
   if (!ctx.session) return;
+  pageRequest?.abort();
+  pageRequest = new AbortController();
+  const signal = pageRequest.signal;
   const generation = ++loading;
   ctx.updateOverview = null;
   const definition = pages.find((v) => v[0] === page) || pages[0];
   $("#page-title").textContent = definition[1];
   document.title = definition[1] + " · sing-box-vpn";
-  for (const item of $("#navigation").children)
+  for (const item of $("#navigation").querySelectorAll("button"))
     item.setAttribute(
       "aria-current",
       item.dataset.page === page ? "page" : "false",
     );
   try {
+    $("#content").setAttribute("aria-busy", "true");
     let content;
     if (
       ctx.session.role !== "admin" &&
       !["overview", "accounts", "subscribers"].includes(page) &&
       !(ctx.session.role === "operator" && page === "maintenance")
     ) {
-      const data = await api("/api/state");
+      const data = await api("/api/state", undefined, { signal });
       content = [
         card(
           "只读配置摘要",
@@ -137,6 +149,7 @@ async function renderPage() {
     } else {
       // Each render owns its callback; a late render cannot replace the live one.
       const view = Object.create(ctx);
+      view.request = (path, body) => api(path, body, { signal });
       content = await definition[2](view);
       if (generation === loading) ctx.updateOverview = view.updateOverview;
     }
@@ -156,6 +169,8 @@ async function renderPage() {
           card("无法载入", help(error.message), button("重试", renderPage)),
         );
     }
+  } finally {
+    if (generation === loading) $("#content").removeAttribute("aria-busy");
   }
 }
 function schedule() {
@@ -182,7 +197,11 @@ function schedule() {
           await api("/api/auth/session");
           schedule();
         } catch (error) {
-          if (error.name !== "AbortError") ctx.logoutLocal();
+          if (error.status === 401) ctx.logoutLocal();
+          else if (error.name !== "AbortError") {
+            notice("连接暂时中断，正在重连；编辑草稿已保留。", true);
+            refreshTimer = setTimeout(schedule, 5000);
+          }
         }
       }, 5000);
     };
@@ -195,22 +214,30 @@ async function connected(session) {
   $("#shell").hidden = false;
   $("#identity").textContent = session.id + " · " + session.role;
   $("#navigation").replaceChildren(
-    ...pages
-      .filter(
-        (p) =>
-          session.role === "admin" ||
-          (!["grants", "admins"].includes(p[0]) &&
-            (p[0] !== "maintenance" || session.role === "operator")),
-      )
-      .map(([id, label]) => {
-        const b = button(label, () => {
-          page = id;
-          location.hash = id;
-          renderPage();
-        });
-        b.dataset.page = id;
-        return b;
-      }),
+    ...navigationGroups.map(([title, ids]) => {
+      const visible = ids
+        .map((id) => pages.find((p) => p[0] === id))
+        .filter(
+          (p) =>
+            session.role === "admin" ||
+            (!["grants", "admins"].includes(p[0]) &&
+              (p[0] !== "maintenance" || session.role === "operator")),
+        );
+      return el(
+        "section",
+        { class: "nav-group", "aria-label": title },
+        el("span", { class: "nav-label" }, title),
+        ...visible.map(([id, label]) => {
+          const b = button(label, () => {
+            page = id;
+            location.hash = id;
+            renderPage();
+          });
+          b.dataset.page = id;
+          return b;
+        }),
+      );
+    }),
   );
   page = location.hash.slice(1) || "overview";
   if (!pages.some((p) => p[0] === page)) page = "overview";

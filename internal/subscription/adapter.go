@@ -7,29 +7,11 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/sck03/sing-box-vpn/internal/clientprofile"
 )
 
-type Capability struct {
-	Protocols    []string `json:"protocols"`
-	Modes        []string `json:"modes"`
-	Verification string   `json:"verification"`
-}
-
-var Clients = map[string]Capability{
-	"sing-box":     {protocols, []string{"nodes", "config"}, "core-check"},
-	"mihomo":       {protocols, []string{"nodes", "provider", "config"}, "core-check"},
-	"openclash":    {protocols, []string{"provider", "config"}, "Mihomo core-check; router UI untested"},
-	"surge":        {protocols, []string{"nodes", "config"}, "syntax-only"},
-	"surge-mac":    {protocols, []string{"nodes", "config"}, "syntax-only"},
-	"loon":         {[]string{"vless", "vmess", "hysteria2", "anytls", "trojan", "ss"}, []string{"nodes", "config"}, "syntax-only"},
-	"quantumult-x": {[]string{"vless", "vmess", "anytls", "trojan", "ss"}, []string{"nodes", "config"}, "syntax-only"},
-	"surfboard":    {[]string{"vmess", "hysteria2", "tuic", "anytls", "trojan", "ss"}, []string{"nodes", "config"}, "syntax-only"},
-	"stash":        {protocols, []string{"provider", "config"}, "syntax-only"},
-	"egern":        {protocols, []string{"nodes", "config"}, "syntax-only"},
-	"shadowrocket": {protocols, []string{"nodes", "rules"}, "syntax-only"},
-	"uri":          {protocols, []string{"nodes"}, "parser-roundtrip"},
-	"base64":       {protocols, []string{"nodes"}, "parser-roundtrip"},
-}
+func Capabilities() map[string]clientprofile.Profile { return clientprofile.All() }
 
 type Artifact struct {
 	Name string `json:"name"`
@@ -39,18 +21,30 @@ type Artifact struct {
 }
 
 func capabilityError(n Node, client string) error {
-	cap, ok := Clients[client]
+	cap, ok := clientprofile.Lookup(client)
 	if !ok || !slices.Contains(cap.Protocols, n.Protocol) {
 		return fmt.Errorf("%s does not support %s", client, n.Protocol)
 	}
 	if len(n.TLS.PublicKeyPins) > 0 && n.TLS.CertificateHash == "" && client != "sing-box" {
 		return errors.New("target cannot preserve public-key certificate pin")
 	}
-	if n.TLS.CertificateHash != "" && !n.TLS.Insecure && !slices.Contains([]string{"sing-box", "mihomo", "openclash", "surge", "surge-mac", "surfboard"}, client) {
+	uri := slices.Contains([]string{"uri", "base64", "shadowrocket"}, client)
+	// URI formats can carry a Hysteria2 hash; other URI protocols explicitly
+	// report their import limitation below. Native adapters never drop a pin.
+	if n.TLS.CertificateHash != "" && !cap.Features.CertificatePin && client != "sing-box" && !(uri && (n.Protocol == "hysteria2" || n.TLS.Insecure)) {
 		return errors.New("target cannot preserve certificate verification pin")
 	}
-	if len(n.Ports) > 0 && slices.Contains([]string{"loon", "stash", "quantumult-x"}, client) {
+	if len(n.Ports) > 0 && !cap.Features.PortHopping {
 		return errors.New("target adapter cannot preserve port hopping")
+	}
+	if n.TLS.Fingerprint != "" && !cap.Features.UTLS {
+		return errors.New("target adapter cannot preserve the requested TLS client fingerprint")
+	}
+	if client == "egern" && len(n.TLS.ALPN) > 0 && n.Protocol != "tuic" {
+		return errors.New("Egern adapter cannot preserve ALPN for this protocol")
+	}
+	if n.Protocol == "tuic" && (n.Congestion != "" || n.UDPRelay != "") && slices.Contains([]string{"egern", "surge", "surge-mac", "surfboard"}, client) {
+		return errors.New("target adapter cannot preserve explicit TUIC congestion or UDP relay settings")
 	}
 	if client == "sing-box" && n.TLS.CertificateHash != "" && len(n.TLS.PublicKeyPins) == 0 {
 		return errors.New("sing-box requires a public-key pin, not a certificate hash")
@@ -70,19 +64,29 @@ func capabilityError(n Node, client string) error {
 
 func Render(nodes []Node, t Template, skipUnsupported bool) (Artifact, []Diagnostic, error) {
 	a := Artifact{Name: t.ID}
+	selected, diagnostics, err := Select(nodes, t, skipUnsupported)
+	if err != nil {
+		return a, diagnostics, err
+	}
+	return renderSelected(selected, t, a, diagnostics)
+}
+
+// Select is shared by rendering and probes so a skipped node is never tested
+// or presented as part of a published output.
+func Select(nodes []Node, t Template, skipUnsupported bool) ([]Node, []Diagnostic, error) {
 	diagnostics := []Diagnostic{}
 	if err := t.Validate(); err != nil {
-		return a, diagnostics, err
+		return nil, diagnostics, err
 	}
 	selected := make([]Node, 0, len(nodes))
 	for _, n := range nodes {
 		if err := n.Validate(); err != nil {
-			return a, diagnostics, err
+			return nil, diagnostics, err
 		}
 		if err := capabilityError(n, t.Client); err != nil {
 			diagnostics = append(diagnostics, Diagnostic{n.ID, n.Name, "capability", err.Error()})
 			if !skipUnsupported {
-				return a, diagnostics, err
+				return nil, diagnostics, err
 			}
 			continue
 		}
@@ -95,11 +99,26 @@ func Render(nodes []Node, t Template, skipUnsupported bool) (Artifact, []Diagnos
 		}
 	}
 	if len(selected) == 0 {
-		return a, diagnostics, errors.New("cannot publish an empty node selection")
+		return nil, diagnostics, errors.New("cannot publish an empty node selection")
+	}
+	names := make(map[string]bool, len(selected))
+	for _, n := range selected {
+		if names[n.Name] || reservedName(n.Name) {
+			return nil, diagnostics, fmt.Errorf("duplicate or reserved node name %q", n.Name)
+		}
+		names[n.Name] = true
 	}
 	if err := validatePolicy(selected, t); err != nil {
-		return a, diagnostics, err
+		return nil, diagnostics, err
 	}
+	return selected, diagnostics, nil
+}
+
+func reservedName(name string) bool {
+	return slices.Contains([]string{"PROXY", "DIRECT", "AUTO", "REJECT", "VPNGATE"}, strings.ToUpper(name))
+}
+
+func renderSelected(selected []Node, t Template, a Artifact, diagnostics []Diagnostic) (Artifact, []Diagnostic, error) {
 	var value any
 	var err error
 	switch t.Client {

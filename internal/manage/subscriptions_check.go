@@ -101,18 +101,41 @@ func checkSubscriptionOutput(ctx context.Context, root, core, id, endpoint strin
 		return err
 	}
 	var nodes []sub.Node
+	var target, verification string
+	var diagnostics []sub.Diagnostic
 	if err := withStartupLock(ctx, root, func() error {
 		c, r, local, err := loadSubscriptions(root)
 		if err != nil {
 			return err
 		}
-		_, previews, err := sub.Build(c, r, local, time.Now())
+		_, snapshot, previews, err := compileSubscriptions(ctx, root, core, c, r, local, true)
+		if err != nil {
+			return err
+		}
+		c, err = sub.ResolveResources(c, r.Resources)
 		if err != nil {
 			return err
 		}
 		for _, out := range c.Outputs {
 			if out.ID == id {
-				nodes = previews[out.Collection].Nodes
+				artifact, exists := snapshot.Artifacts[id]
+				if !exists {
+					return errors.New("selected output is unavailable")
+				}
+				for _, template := range c.Templates {
+					if template.ID != out.Template {
+						continue
+					}
+					target = template.Client
+					nodes, diagnostics, err = sub.Select(previews[out.Collection].Nodes, template, out.SkipUnsupported)
+					if err != nil {
+						return err
+					}
+					verification, err = validateSubscriptionArtifact(ctx, root, core, template, artifact)
+					if err != nil {
+						return err
+					}
+				}
 			}
 		}
 		if len(nodes) == 0 || len(nodes) > 64 {
@@ -167,6 +190,6 @@ func checkSubscriptionOutput(ctx context.Context, root, core, id, endpoint strin
 		}); err != nil {
 			return err
 		}
-		return jsonEncoder(output).Encode(Object{"endpoint": endpoint, "passed": passed, "total": len(results), "nodes": results})
+		return jsonEncoder(output).Encode(Object{"endpoint": endpoint, "client": target, "artifact_validation": verification, "connectivity_engine": "sing-box", "diagnostics": diagnostics, "passed": passed, "total": len(results), "nodes": results})
 	})
 }

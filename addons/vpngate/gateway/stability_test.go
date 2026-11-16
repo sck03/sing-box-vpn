@@ -414,7 +414,10 @@ func TestProcessExitIsBroadcastAndCleanupDoesNotWaitAgain(t *testing.T) {
 	go waitProcess(cmd, done, exited, func() { cleaned = true })
 	select {
 	case <-exited:
-	case <-time.After(5 * time.Second):
+	// Race-instrumented Windows executables can take over five seconds just
+	// to initialize. Keep the one-second cleanup assertion below independent
+	// of process startup, which is not the behavior under test.
+	case <-time.After(30 * time.Second):
 		cmd.Process.Kill()
 		t.Fatal("process exit was not reported to the monitor")
 	}

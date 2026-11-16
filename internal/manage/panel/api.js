@@ -6,6 +6,7 @@ export function setCSRF(value) {
 }
 export async function api(path, body, { blob = false, signal } = {}) {
   const generation = sessionGeneration;
+  const multipart = body instanceof FormData;
   const response = await fetch(path, {
     method: body === undefined ? "GET" : "POST",
     credentials: "same-origin",
@@ -13,8 +14,11 @@ export async function api(path, body, { blob = false, signal } = {}) {
     headers:
       body === undefined
         ? {}
-        : { "Content-Type": "application/json", "X-CSRF-Token": csrf },
-    body: body === undefined ? undefined : JSON.stringify(body),
+        : multipart
+          ? { "X-CSRF-Token": csrf }
+          : { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+    body:
+      body === undefined ? undefined : multipart ? body : JSON.stringify(body),
   });
   const stale = () => {
     if (generation !== sessionGeneration)
@@ -41,12 +45,14 @@ export function download(blob, name) {
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
-export async function base64(file) {
+export function restoreForm(file, password, revision) {
   if (file.size > 96 * 1024 * 1024) throw new Error("备份文件超过 96 MiB");
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result).split(",")[1]);
-    r.onerror = reject;
-    r.readAsDataURL(file);
-  });
+  const form = new FormData();
+  form.set("backup", file);
+  form.set("password", password);
+  if (revision !== undefined) {
+    form.set("revision", String(revision));
+    form.set("apply", "true");
+  }
+  return form;
 }

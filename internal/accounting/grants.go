@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/sck03/sing-box-vpn/internal/clientprofile"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	"slices"
 	"time"
@@ -30,7 +31,7 @@ func grantHash(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 func (s *Store) CreateGrant(ctx context.Context, g Grant) (string, error) {
-	if !domain.ResourceID.MatchString(g.ID) || !slices.Contains([]string{"", "normal", "vpngate"}, g.Scope) || len(g.Clients) > 3 {
+	if !domain.ResourceID.MatchString(g.ID) || !slices.Contains([]string{"", "normal", "vpngate"}, g.Scope) || len(g.Clients) > len(clientprofile.All()) {
 		return "", errors.New("invalid download grant")
 	}
 	if g.AccountID != "" {
@@ -49,10 +50,12 @@ func (s *Store) CreateGrant(ctx context.Context, g Grant) (string, error) {
 			seen[id] = true
 		}
 	}
+	seenClients := make(map[string]bool, len(g.Clients))
 	for _, client := range g.Clients {
-		if !slices.Contains([]string{"sing-box", "mihomo", "uri"}, client) {
-			return "", errors.New("unsupported client")
+		if !clientprofile.SupportsAccount(client) || seenClients[client] {
+			return "", errors.New("unsupported or duplicate client")
 		}
+		seenClients[client] = true
 	}
 	if g.MaxDownloads != nil && (*g.MaxDownloads < 0 || *g.MaxDownloads > 1<<40) {
 		return "", errors.New("invalid download limit")

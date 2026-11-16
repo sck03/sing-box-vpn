@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/sck03/sing-box-vpn/internal/clientprofile"
 )
 
 type Source struct {
@@ -44,18 +46,17 @@ type RuleSet struct {
 }
 
 type Template struct {
-	ID             string   `json:"id"`
-	Client         string   `json:"client"`
-	Version        int      `json:"version"`
-	MinimumVersion string   `json:"minimum_version,omitempty"`
-	Mode           string   `json:"mode"`   // nodes, provider, config, rules
-	Preset         string   `json:"preset"` // proxy, split
-	DNS            []string `json:"dns,omitempty"`
-	ProbeURL       string   `json:"probe_url,omitempty"`
-	TUN            bool     `json:"tun,omitempty"`
-	Rules          []Rule   `json:"rules,omitempty"`
-	RuleSets       []string `json:"rule_sets,omitempty"`
-	URL            string   `json:"url,omitempty"` // remote declarative JSON template
+	ID       string   `json:"id"`
+	Client   string   `json:"client"`
+	Version  int      `json:"version"`
+	Mode     string   `json:"mode"`   // nodes, provider, config, rules
+	Preset   string   `json:"preset"` // proxy, split
+	DNS      []string `json:"dns,omitempty"`
+	ProbeURL string   `json:"probe_url,omitempty"`
+	TUN      bool     `json:"tun,omitempty"`
+	Rules    []Rule   `json:"rules,omitempty"`
+	RuleSets []string `json:"rule_sets,omitempty"`
+	URL      string   `json:"url,omitempty"` // remote declarative JSON template
 }
 
 type Output struct {
@@ -125,7 +126,7 @@ func (r Rule) Validate() error {
 }
 
 func (t Template) Validate() error {
-	cap, ok := Clients[t.Client]
+	cap, ok := clientprofile.Lookup(t.Client)
 	if !ok {
 		return fmt.Errorf("unknown client %q", t.Client)
 	}
@@ -135,7 +136,7 @@ func (t Template) Validate() error {
 	if t.Preset != "" && t.Preset != "proxy" && t.Preset != "split" {
 		return errors.New("unknown template preset")
 	}
-	if t.TUN && !slices.Contains([]string{"sing-box", "mihomo", "openclash"}, t.Client) {
+	if t.TUN && !cap.Features.TUN {
 		return errors.New("TUN parameter is not supported by this client template")
 	}
 	if t.Client == "sing-box" && len(t.DNS) > 1 {
@@ -144,10 +145,10 @@ func (t Template) Validate() error {
 	if t.Mode != "config" && (len(t.DNS) > 0 || t.ProbeURL != "" || t.TUN) {
 		return errors.New("DNS, probe and TUN settings require a complete config output")
 	}
-	if len(t.DNS) > 0 && t.Client == "egern" {
-		return errors.New("Egern template uses client-managed DNS")
+	if len(t.DNS) > 0 && !cap.Features.DNS {
+		return errors.New("this template uses client-managed DNS")
 	}
-	if t.ProbeURL != "" && !slices.Contains([]string{"mihomo", "openclash", "stash"}, t.Client) {
+	if t.ProbeURL != "" && !cap.Features.Probe {
 		return errors.New("automatic probe URL is unsupported by this template")
 	}
 	if t.Mode != "config" && t.Mode != "rules" && (len(t.Rules) > 0 || len(t.RuleSets) > 0 || t.TUN) {

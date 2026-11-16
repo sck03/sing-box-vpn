@@ -3,6 +3,7 @@ package manage
 import (
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
+	"github.com/sck03/sing-box-vpn/internal/clientprofile"
 	"net/http"
 	"slices"
 	"strings"
@@ -22,7 +23,7 @@ func serveAccountDownload(root string, w http.ResponseWriter, r *http.Request, s
 		return
 	}
 	token, resource := parts[0], parts[1]
-	if len(token) != 64 || !slices.Contains([]string{"usage", "sing-box", "mihomo", "uri"}, resource) {
+	if len(token) != 64 || (resource != "usage" && !clientprofile.SupportsAccount(resource)) {
 		http.NotFound(w, r)
 		return
 	}
@@ -65,10 +66,7 @@ func serveAccountDownload(root string, w http.ResponseWriter, r *http.Request, s
 			return
 		}
 	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	if resource == "sing-box" {
-		w.Header().Set("Content-Type", "application/json")
-	}
+	w.Header().Set("Content-Type", artifact.MIME+"; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="account-`+resource+`.txt"`)
 	if r.Method == "GET" {
 		_, _ = w.Write(artifact.Data)
@@ -87,22 +85,9 @@ func unifiedDownloadHandler(root string, stores ...*accounting.Store) http.Handl
 			if name == "user" {
 				name = "panel/user.html"
 			}
-			data, err := panelAssets.ReadFile(name)
-			if err != nil {
-				http.NotFound(w, r)
-				return
-			}
 			w.Header().Set("Referrer-Policy", "no-referrer")
 			w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'")
-			mime := "text/html; charset=utf-8"
-			if strings.HasSuffix(name, ".js") {
-				mime = "text/javascript"
-			}
-			if strings.HasSuffix(name, ".css") {
-				mime = "text/css"
-			}
-			w.Header().Set("Content-Type", mime)
-			_, _ = w.Write(data)
+			servePanelAsset(w, r, name)
 			return
 		}
 		outputs.ServeHTTP(w, r)

@@ -1,5 +1,6 @@
 const token = location.hash.slice(1);
-history.replaceState(null, "", location.pathname);
+// Keep the fragment for reloads; it is never sent in HTTP requests or referrers.
+const base = new URL("./", location.href);
 const target = document.querySelector("#user-content");
 const format = (n) =>
   n === null ? "不限" : (Number(n) / 1073741824).toFixed(2) + " GiB";
@@ -12,7 +13,7 @@ function element(tag, text) {
 async function load() {
   if (!/^[a-f0-9]{64}$/.test(token))
     throw new Error("请使用包含完整授权令牌的分享地址。");
-  const response = await fetch("/u/" + token + "/usage", {
+  const response = await fetch(new URL("u/" + token + "/usage", base), {
     credentials: "omit",
     cache: "no-store",
   });
@@ -49,7 +50,7 @@ async function load() {
   for (const client of u.clients) {
     const wrap = document.createElement("div");
     wrap.className = "card";
-    const address = location.origin + "/u/" + token + "/" + client;
+    const address = new URL("u/" + token + "/" + client, base).href;
     const link = element("a", "下载 " + client);
     link.href = address;
     link.rel = "noreferrer";

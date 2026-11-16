@@ -94,7 +94,7 @@ func Build(c Config, runtime Runtime, local map[string][]Node, now time.Time) (S
 	return build(c, runtime, local, now, false)
 }
 
-// BuildAvailable removes outputs whose required remote dependencies are stale.
+// BuildAvailable removes outputs whose required runtime dependencies are unavailable.
 // Local maintenance and background refresh can publish unrelated valid outputs;
 // explicit configuration edits still use Build to reject an incomplete plan.
 func BuildAvailable(c Config, runtime Runtime, local map[string][]Node, now time.Time) (Snapshot, map[string]Preview, error) {
@@ -138,16 +138,16 @@ func build(c Config, runtime Runtime, local map[string][]Node, now time.Time, av
 				result.Usage[source.ID], result.SourceTimes[source.ID] = cached.Usage, cached.Success
 			}
 		}
+		if err == nil && source.Required && len(nodes) == 0 {
+			err = errors.New("required source is empty")
+		}
 		if err != nil {
-			if source.Required && (!available || source.Kind != "remote") {
+			if source.Required && (!available || (source.Kind != "remote" && source.Kind != "account" && source.Kind != "local")) {
 				return result, previews, fmt.Errorf("source %s: %w", source.ID, err)
 			}
 			unavailable[source.ID] = source.Required
 			result.Diagnostics["source:"+source.ID] = []Diagnostic{{Stage: "source", Message: err.Error()}}
 			continue
-		}
-		if source.Required && len(nodes) == 0 {
-			return result, previews, fmt.Errorf("required source %s is empty", source.ID)
 		}
 		nodeCount += len(nodes)
 		if nodeCount > MaxNodes {
@@ -164,7 +164,7 @@ func build(c Config, runtime Runtime, local map[string][]Node, now time.Time, av
 			missing = missing || unavailable[id]
 		}
 		if missing {
-			previews[collection.ID] = Preview{Diagnostics: []Diagnostic{{Stage: "source", Message: "required remote source unavailable"}}}
+			previews[collection.ID] = Preview{Diagnostics: []Diagnostic{{Stage: "source", Message: "required source unavailable"}}}
 			continue
 		}
 		expanded += count
@@ -207,6 +207,10 @@ func build(c Config, runtime Runtime, local map[string][]Node, now time.Time, av
 		artifact, diagnostics, err := Render(preview.Nodes, templates[output.Template], output.SkipUnsupported)
 		result.Diagnostics[output.ID] = append(append([]Diagnostic(nil), preview.Diagnostics...), diagnostics...)
 		if err != nil {
+			if available {
+				result.Diagnostics[output.ID] = append(result.Diagnostics[output.ID], Diagnostic{Stage: "render", Message: err.Error()})
+				continue
+			}
 			return result, previews, fmt.Errorf("output %s: %w", output.ID, err)
 		}
 		artifact.Name = output.Name
