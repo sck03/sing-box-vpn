@@ -73,6 +73,7 @@ func (s *PlatformService) runLane(ctx context.Context, lane string) error {
 }
 
 func (s *PlatformService) runTask(ctx context.Context, task controlstore.Task) error {
+	s.invalidateOverview()
 	child, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	var err error
 	if task.Kind == "apply" {
@@ -97,8 +98,6 @@ func (s *PlatformService) runTask(ctx context.Context, task controlstore.Task) e
 	}
 	_ = s.Auth.Audit(finish, task.Actor, task.Kind, fmt.Sprint(task.ID), result)
 	finishErr := s.Store.Finish(finish, task.ID, err)
-	s.statusMu.Lock()
-	s.statusAt = time.Time{}
-	s.statusMu.Unlock()
+	s.invalidateOverview()
 	return finishErr
 }

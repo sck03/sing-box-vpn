@@ -25,7 +25,7 @@ Windows amd64，Go 1.27.3，sing-box 1.14.4、Mihomo 1.19.33：
 
 - Linux amd64/arm64 管理器和受管核心发行包构建通过。13 种客户端格式的 HTTP 下载、授权保护和累计计数通过；实验客户端使用共同支持的 VMess WS 样例，不代表全部协议组合认证。
 
-Windows Git Bash 缺少 `flock`，无法在该环境执行升级脚本；该项及系统专项由推送后的 Linux CI 执行，结果以对应提交的 GitHub Actions 记录为准。
+首轮 Linux CI 的全量竞态、72 条链路、受管账户隔离、升级脚本、OpenVPN/netns、IPv4/IPv6 防火墙、systemd 恢复和双架构构建通过。最终安装回滚脚本发现概览缓存未在新任务入队时失效，短时间查不到刚提交的任务；已在入队、开始和完成时统一失效，并补充“入队立即可见”回归。最终结果以对应提交的 GitHub Actions 记录为准。Windows Git Bash 缺少 `flock`，本机不执行升级系统专项。
 
 ## 验证边界
 

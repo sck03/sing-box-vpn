@@ -77,6 +77,7 @@ func (s *PlatformService) Close() error {
 	return errors.Join(s.Store.Close(), s.Auth.Close(), s.Accounts.Close())
 }
 func (s *PlatformService) signal() {
+	s.invalidateOverview()
 	select {
 	case s.wake <- struct{}{}:
 	default:

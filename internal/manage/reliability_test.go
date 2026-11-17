@@ -16,6 +16,7 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/clientprofile"
+	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
@@ -163,6 +164,34 @@ func TestPanelAssetConditionalCache(t *testing.T) {
 	if w.Code != 304 || w.Body.Len() != 0 {
 		t.Fatal(w.Code, w.Body.Len())
 	}
+}
+
+func TestQueuedTaskImmediatelyInvalidatesOverview(t *testing.T) {
+	root, core, _ := appFixture(t)
+	s, _, _ := platformFixture(t, root, core)
+	if _, err := s.overviewSnapshot(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.Queue(t.Context(), PlatformAction{Operation: "service", Service: "sing-box", Value: "stop"}, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := s.overviewSnapshot(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var overview struct {
+		Tasks []controlstore.Task `json:"tasks"`
+	}
+	if err := json.Unmarshal(data, &overview); err != nil {
+		t.Fatal(err)
+	}
+	for _, task := range overview.Tasks {
+		if task.ID == id && task.State == "queued" {
+			return
+		}
+	}
+	t.Fatal("new task missing from cached overview")
 }
 
 func TestAccountDownloadsUseSharedClientCatalog(t *testing.T) {

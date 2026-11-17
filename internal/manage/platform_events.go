@@ -10,6 +10,12 @@ import (
 
 // Snapshot construction is shared across viewers and only occurs on demand.
 // No per-viewer queue grows while a browser is slow or hidden.
+func (s *PlatformService) invalidateOverview() {
+	s.statusMu.Lock()
+	s.statusAt = time.Time{}
+	s.statusMu.Unlock()
+}
+
 func (s *PlatformService) overviewSnapshot(ctx context.Context) ([]byte, error) {
 	s.statusMu.Lock()
 	defer s.statusMu.Unlock()
