@@ -96,10 +96,12 @@ jobs:
       - name: Build Linux management and gateway binary
         run: CGO_ENABLED=0 go build -trimpath -o "$GITHUB_WORKSPACE/.build/yg-vpngate" ./addons/vpngate/gateway
       - name: Online validator download and current platform CLI
+        env:
+          SBVPN_GITHUB_TOKEN: ${{ github.token }}
         run: |
           mkdir -p .test/core-updater
           cp "$SING_BOX_BINARY" .test/core-updater/sing-box
-          sudo .build/yg-vpngate core --root "$PWD/.test/core-updater" prepare --version 1.14.4 --output "$PWD/.test/core-updater/sing-box.candidate"
+          sudo --preserve-env=SBVPN_GITHUB_TOKEN .build/yg-vpngate core --root "$PWD/.test/core-updater" prepare --version 1.14.4 --output "$PWD/.test/core-updater/sing-box.candidate"
           printf '%s\n' '{"username":"ci-validator","password":"isolated-validator-test"}' | sudo .build/yg-vpngate panel \
             --root "$PWD/.test/core-updater" --core "$PWD/.test/core-updater/sing-box.candidate" \
             --runtime "$PWD/.build/managed-core" --address 127.0.0.1 --name validator-test --no-system init

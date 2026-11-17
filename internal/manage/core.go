@@ -226,7 +226,13 @@ func httpRequest(ctx context.Context, client *http.Client, url string) (*http.Re
 	return response, nil
 }
 func getJSON(ctx context.Context, client *http.Client, url string, target any) error {
-	response, err := httpRequest(ctx, client, url)
+	metadataClient := *client
+	transport := client.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	metadataClient.Transport = githubMetadataTransport{base: transport, token: os.Getenv("SBVPN_GITHUB_TOKEN")}
+	response, err := httpRequest(ctx, &metadataClient, url)
 	if err != nil {
 		return err
 	}
