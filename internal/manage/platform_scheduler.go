@@ -15,9 +15,19 @@ func (s *PlatformService) scheduleSubscriptions(ctx context.Context) error {
 	}
 	now := time.Now()
 	refresh := false
+	checked := map[string]bool{}
 	for _, source := range c.Sources {
 		if source.Kind == "remote" && !now.Before(r.Sources[source.ID].Next) {
 			refresh = true
+		}
+		if source.Kind == "account" && !checked[source.AccountID] {
+			checked[source.AccountID] = true
+			_, state, err := accountSourceState(ctx, s.Accounts, source.AccountID, now)
+			if err != nil {
+				return err
+			}
+			previous, found := r.Accounts[source.AccountID]
+			refresh = refresh || !found || state != previous
 		}
 	}
 	for _, t := range c.Templates {

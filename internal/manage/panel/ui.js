@@ -86,8 +86,9 @@ export function formDialog(title, fields, value, save) {
           const d = new Date(current);
           input.value = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
             .toISOString()
-            .slice(0, 16);
+            .slice(0, 19);
         }
+        input.step = "1";
       } else
         input.value =
           field.type === "csv"
@@ -108,7 +109,7 @@ export function formDialog(title, fields, value, save) {
     );
     if (field.help) label.append(el("small", {}, field.help));
     area.append(label);
-    inputs.push([field, input]);
+    inputs.push([field, input, input.value]);
   }
   const formValue = () => {
     const current = structuredClone(value);
@@ -176,8 +177,9 @@ export function formDialog(title, fields, value, save) {
       errorNode.hidden = true;
       try {
         const result = structuredClone(value);
-        for (const [field, input] of inputs) {
+        for (const [field, input, initial] of inputs) {
           if (field.readonly || input.disabled) continue;
+          if (field.type === "date" && input.value === initial) continue;
           let v = input.value;
           switch (field.type) {
             case "multiselect":

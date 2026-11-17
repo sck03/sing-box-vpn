@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/database"
 	"time"
 )
@@ -21,17 +22,18 @@ type State struct {
 	Applied         json.RawMessage `json:"applied"`
 }
 type Task struct {
-	ID      int64           `json:"id"`
-	Kind    string          `json:"kind"`
-	Actor   string          `json:"actor"`
-	State   string          `json:"state"`
-	Phase   string          `json:"phase"`
-	Error   string          `json:"error,omitempty"`
-	Created int64           `json:"created"`
-	Updated int64           `json:"updated"`
-	Input   json.RawMessage `json:"-"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Outcome string          `json:"outcome,omitempty"`
+	ID      int64                    `json:"id"`
+	Kind    string                   `json:"kind"`
+	Actor   string                   `json:"actor"`
+	State   string                   `json:"state"`
+	Phase   string                   `json:"phase"`
+	Error   string                   `json:"error,omitempty"`
+	Created int64                    `json:"created"`
+	Updated int64                    `json:"updated"`
+	Input   json.RawMessage          `json:"-"`
+	Result  json.RawMessage          `json:"result,omitempty"`
+	Outcome string                   `json:"outcome,omitempty"`
+	Details application.TaskAudience `json:"details"`
 }
 
 func Open(path string) (*Store, error) {
@@ -234,6 +236,7 @@ func (s *Store) TaskSummaries(ctx context.Context) ([]Task, error) {
 }
 func (s *Store) Task(ctx context.Context, id int64) (t Task, err error) {
 	err = s.db.QueryRowContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,CAST(result AS BLOB),COALESCE(json_extract(result,'$.outcome'),'') FROM control_tasks WHERE id=?`, id).Scan(&t.ID, &t.Kind, &t.Actor, &t.State, &t.Phase, &t.Error, &t.Created, &t.Updated, &t.Result, &t.Outcome)
+	t.Details = application.TaskDetails(t.Kind, t.Actor)
 	return
 }
 func (s *Store) tasks(ctx context.Context, result string) ([]Task, error) {
@@ -248,6 +251,7 @@ func (s *Store) tasks(ctx context.Context, result string) ([]Task, error) {
 		if err = rows.Scan(&t.ID, &t.Kind, &t.Actor, &t.State, &t.Phase, &t.Error, &t.Created, &t.Updated, &t.Result, &t.Outcome); err != nil {
 			return nil, err
 		}
+		t.Details = application.TaskDetails(t.Kind, t.Actor)
 		v = append(v, t)
 	}
 	return v, rows.Err()

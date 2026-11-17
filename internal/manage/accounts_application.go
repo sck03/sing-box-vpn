@@ -17,6 +17,9 @@ type AccountService struct {
 	Root    string
 	Store   *accounting.Store
 	Control *controlstore.Store
+	// Config supplies an explicit immutable candidate for compilation. Downloads
+	// leave it nil and capture the confirmed configuration once per operation.
+	Config *PlatformConfig
 }
 
 func (s *PlatformService) accountService() AccountService {
@@ -110,45 +113,45 @@ func (s AccountService) Execute(ctx context.Context, c application.AccountComman
 }
 
 func (s AccountService) accountEntries(ctx context.Context, scope string) ([]ManagedNode, error) {
-	if platformOwned(s.Root) {
+	c, err := s.configSnapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return configuredEntries(c, scope)
+}
+
+func (s AccountService) configSnapshot(ctx context.Context) (PlatformConfig, error) {
+	if s.Config != nil {
+		return *s.Config, nil
+	}
+	if s.Control != nil || platformOwned(s.Root) {
 		store := s.Control
 		if store == nil {
 			var err error
 			store, err = controlstore.Open(filepath.Join(s.Root, "control.db"))
 			if err != nil {
-				return nil, err
+				return PlatformConfig{}, err
 			}
 			defer store.Close()
 		}
 		state, err := store.State(ctx)
 		if err != nil {
-			return nil, err
+			return PlatformConfig{}, err
 		}
 		c, err := decodePlatform(state.Applied)
 		if err != nil {
-			return nil, err
+			return c, err
 		}
-		return configuredEntries(c, scope)
+		return observedConfig(ctx, store, c)
 	}
 	var app App
 	if ok, err := ReadJSON(filepath.Join(s.Root, "app.json"), &app); err != nil {
-		return nil, err
+		return PlatformConfig{}, err
 	} else if !ok {
-		return nil, errors.New("ordinary node is not initialized")
-	}
-	if scope == normalScope {
-		return managedNodes(app)
+		return PlatformConfig{}, errors.New("ordinary node is not initialized")
 	}
 	settings, private, err := loadVPN(s.Root)
-	if err != nil {
-		return nil, err
-	}
-	p, ok := settings.Profiles[settings.ActiveCountry]
-	if !ok {
-		return nil, errors.New("VPNGate has no selected country")
-	}
-	p.Secrets = private[settings.ActiveCountry]
-	return managedNodes(App{Profile: p, Inbounds: MakeInbounds(p, "vg-"+settings.ActiveCountry+"-")})
+	return PlatformConfig{App: app, VPN: settings, VPNSecrets: private}, err
 }
 
 func configuredEntries(c PlatformConfig, scope string) ([]ManagedNode, error) {

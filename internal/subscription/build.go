@@ -44,10 +44,18 @@ type Run struct {
 }
 
 type Runtime struct {
-	Sources    map[string]SourceCache   `json:"sources"`
-	Runs       []Run                    `json:"runs"`
-	Resources  map[string]ResourceCache `json:"resources,omitempty"`
-	Deliveries map[string]DeliveryState `json:"deliveries,omitempty"`
+	Sources    map[string]SourceCache        `json:"sources"`
+	Runs       []Run                         `json:"runs"`
+	Resources  map[string]ResourceCache      `json:"resources,omitempty"`
+	Deliveries map[string]DeliveryState      `json:"deliveries,omitempty"`
+	Accounts   map[string]AccountSourceState `json:"accounts,omitempty"`
+}
+
+// AccountSourceState identifies rendering inputs, excluding rapidly changing
+// traffic counters. Availability changes also cover expiry and quota renewal.
+type AccountSourceState struct {
+	Revision  int64 `json:"revision"`
+	Available bool  `json:"available"`
 }
 
 type DeliveryState struct {

@@ -160,7 +160,9 @@ func (s *Store) guard(ctx context.Context, id, peer string, now int64) error {
 	return tx.Commit()
 }
 
-var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("invalid-password-placeholder"), 12)
+// A precomputed cost-12 hash keeps unknown-user comparisons equally expensive
+// without doing password hashing when an unrelated manager command starts.
+var dummyHash = []byte("$2a$12$R9h/cIPz0gi.URNNX3kh2OPST9/PgBkqquzi.Ss7KIUgO2t0jWMUW")
 
 func (s *Store) Login(ctx context.Context, id, password, code, peer string) (Session, error) {
 	now := time.Now()

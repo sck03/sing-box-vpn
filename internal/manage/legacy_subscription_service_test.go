@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 )
@@ -20,22 +19,6 @@ type systemSubscriptionService struct{ root string }
 
 func querySubscriptionUnit(ctx context.Context, query string, negative ...int) (bool, error) {
 	return queryUnit(ctx, "sb-subscription", query, negative...)
-}
-
-func queryUnit(ctx context.Context, unit, query string, negative ...int) (bool, error) {
-	data, err := commandOutput(ctx, "systemctl", query, "--quiet", unit)
-	if err == nil {
-		return true, nil
-	}
-	var exit *exec.ExitError
-	if len(data) == 0 && errors.As(err, &exit) {
-		for _, code := range negative {
-			if exit.ExitCode() == code {
-				return false, nil
-			}
-		}
-	}
-	return false, fmt.Errorf("query subscription service: %w: %s", err, data)
 }
 
 func (s systemSubscriptionService) state(ctx context.Context) (bool, bool, error) {

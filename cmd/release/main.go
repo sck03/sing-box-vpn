@@ -165,7 +165,7 @@ func build() error {
 		}
 		return nil
 	}
-	for _, member := range []string{"sb.sh", "install.sh", "lib", "addons", "internal", "cmd", "scripts", "go.mod", "go.sum", "package.json", "package-lock.json", "third_party", "manifest.go", "versions.json", "LICENSE", "NOTICE.md", "README.md", "VPNGate-实施方案.md", "docs", ".github"} {
+	for _, member := range []string{"sb.sh", "install.sh", "lib", "addons", "internal", "cmd", "scripts", "go.mod", "go.sum", "package.json", "package-lock.json", "third_party", "manifest.go", "versions.json", "LICENSE", "NOTICE.md", "README.md", "docs", ".github"} {
 		if err = add(filepath.Join(root, member), member); err != nil {
 			writer.Close()
 			gz.Close()

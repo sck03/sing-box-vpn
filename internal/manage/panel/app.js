@@ -31,6 +31,20 @@ const navigationGroups = [
   ["网络与节点", ["inbounds", "routing", "outbounds", "vpngate"]],
   ["系统管理", ["certificates", "maintenance", "admins"]],
 ];
+const descriptions = {
+  overview: "查看服务健康、配置同步与最近任务。",
+  inbounds: "配置用户连接的入口和对外发布地址。",
+  accounts: "管理额度、有效期与节点授权。",
+  subscribers: "将同一用户的多份权益集中管理。",
+  grants: "管理分享链接的有效期、下载次数与撤销状态。",
+  subscriptions: "组合节点来源，生成客户端配置并自动分发。",
+  routing: "设置流量去向与域名解析规则。",
+  outbounds: "管理外部代理、网络检测与隧道。",
+  vpngate: "选择出口地区，查看网关连接状态。",
+  certificates: "统一管理节点证书与续期。",
+  maintenance: "查看操作结果、运行日志与恢复工具。",
+  admins: "管理控制台访问权限与账户安全。",
+};
 const canView = (id, role) =>
   role === "admin" ||
   ["overview", "accounts", "subscribers"].includes(id) ||
@@ -147,6 +161,7 @@ async function renderPage() {
   ctx.updateOverview = null;
   const definition = pages.find((v) => v[0] === page) || pages[0];
   $("#page-title").textContent = definition[1];
+  $("#page-description").textContent = descriptions[definition[0]];
   document.title = definition[1] + " · sing-box-vpn";
   for (const item of $("#navigation").querySelectorAll("button"))
     item.setAttribute(

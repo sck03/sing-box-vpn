@@ -3,13 +3,11 @@ package manage
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"time"
 
+	"github.com/sck03/sing-box-vpn/internal/accounting"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
-
-type accountExportConfigKey struct{}
 
 // accountNodes is shared by direct downloads, account subscription sources and
 // previews. Callers own the publication lock; this function never acquires it.
@@ -23,18 +21,17 @@ func (s AccountService) accountNodes(ctx context.Context, id, scope string, tuic
 	if err != nil {
 		return nil, err
 	}
-	var app App
-	if _, err = ReadJSON(filepath.Join(s.Root, "app.json"), &app); err != nil {
-		return nil, err
-	}
-	settings, _, err := loadVPN(s.Root)
+	config, err := s.configSnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var private map[string]Secrets
-	if config, ok := ctx.Value(accountExportConfigKey{}).(PlatformConfig); ok {
-		app, settings, private = config.App, config.VPN, config.VPNSecrets
-	}
+	return accountNodes(ctx, store, config, usage, scope, tuicPort)
+}
+
+// The renderer consumes one value snapshot; it never reads configuration files
+// or resolves a second applied revision halfway through an export.
+func accountNodes(ctx context.Context, store *accounting.Store, config PlatformConfig, usage accounting.Usage, scope string, tuicPort int) ([]sub.Node, error) {
+	app, settings := config.App, config.VPN
 	var nodes []sub.Node
 	certificates := certificateCache{}
 	for _, runtime := range []string{normalScope, vpngateScope} {
@@ -44,22 +41,11 @@ func (s AccountService) accountNodes(ctx context.Context, id, scope string, tuic
 		if runtime == vpngateScope && settings.ActiveCountry == "" {
 			continue
 		}
-		var entries []ManagedNode
-		if private != nil {
-			if runtime == normalScope {
-				entries, err = managedNodes(app)
-			} else {
-				p := settings.Profiles[settings.ActiveCountry]
-				p.Secrets = private[settings.ActiveCountry]
-				entries, err = managedNodes(App{Profile: p, Inbounds: MakeInbounds(p, "vg-"+settings.ActiveCountry+"-")})
-			}
-		} else {
-			entries, err = s.accountEntries(ctx, runtime)
-		}
+		entries, err := configuredEntries(config, runtime)
 		if err != nil {
 			return nil, err
 		}
-		credentials, err := store.AccountCredentials(ctx, id, runtime)
+		credentials, err := store.AccountCredentials(ctx, usage.ID, runtime)
 		if err != nil {
 			return nil, err
 		}

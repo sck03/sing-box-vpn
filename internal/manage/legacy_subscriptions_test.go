@@ -64,10 +64,10 @@ func RunSubscriptions(ctx context.Context, args []string, input io.Reader, outpu
 	}
 	if operation == "export" && *file != "" {
 		var result bytes.Buffer
-		if err := (SubscriptionService{Root: *root, Core: *core}).Execute(ctx, command, &result); err != nil {
+		if err := (SubscriptionService{Root: *root, Core: *core}).legacyExecute(ctx, command, &result); err != nil {
 			return err
 		}
 		return AtomicBytes(*file, result.Bytes(), 0600)
 	}
-	return (SubscriptionService{Root: *root, Core: *core}).Execute(ctx, command, output)
+	return (SubscriptionService{Root: *root, Core: *core}).legacyExecute(ctx, command, output)
 }

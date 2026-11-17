@@ -106,6 +106,92 @@ host.replaceChildren(remote);
 await new Promise((resolve) => setTimeout(resolve, 0));
 assert.equal(calls.at(-1).offset, 20);
 assert.match(remote.textContent, /page-20/);
+const nextPage = [...remote.querySelectorAll("button")].find(
+  (b) => b.textContent === "下一页",
+);
+nextPage.click();
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(calls.at(-1).offset, 40);
+assert.equal(
+  nextPage.disabled,
+  true,
+  "busy release enabled the last-page button",
+);
+const lastPageCalls = calls.length;
+nextPage.click();
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(calls.length, lastPageCalls, "last page sent an extra request");
+
+const preciseDate = "2026-11-17T12:34:59.123Z";
+formDialog(
+  "修改名称",
+  [
+    { key: "name", label: "名称" },
+    { key: "expires_at", label: "到期", type: "date" },
+  ],
+  { name: "Original", expires_at: preciseDate },
+  (value) => {
+    saved = value;
+  },
+);
+document.querySelector('dialog input[aria-label="名称"]').value = "Updated";
+document
+  .querySelector("dialog form")
+  .dispatchEvent(new Event("submit", { cancelable: true }));
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(saved.expires_at, preciseDate, "unchanged date lost precision");
+assert.equal(saved.name, "Updated");
+
+const { canViewTask } = await import("../internal/manage/panel/tasks.js");
+assert.equal(
+  !!canViewTask(
+    { kind: "apply", details: { actor: "operator" } },
+    { id: "operator", role: "operator" },
+  ),
+  true,
+);
+assert.equal(
+  !!canViewTask(
+    { kind: "apply", details: { actor: "other" } },
+    { id: "operator", role: "operator" },
+  ),
+  false,
+);
+assert.equal(
+  !!canViewTask(
+    { details: { operators: true } },
+    { id: "viewer", role: "viewer" },
+  ),
+  false,
+);
+
+const { createAccountShare } =
+  await import("../internal/manage/panel/sharing.js");
+let createdShare;
+await createAccountShare([{ id: "a", name: "Alice" }], {
+  request: async (path, body) => {
+    if (path === "/api/clients") return { uri: { label: "URI" } };
+    createdShare = body;
+    return { user_url: "https://example.com/user#test" };
+  },
+  render() {},
+});
+document.querySelector('dialog input[aria-label="授权 ID"]').value = "share";
+document
+  .querySelector("dialog form")
+  .dispatchEvent(new Event("submit", { cancelable: true }));
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(createdShare.account_id, "a");
+assert.equal(
+  document.querySelector("dialog").open,
+  true,
+  "save closed the share result",
+);
+assert.match(document.querySelector("dialog").textContent, /分享已创建/);
+assert.equal(
+  document.querySelector('input[aria-label="分享地址"]').value,
+  "https://example.com/user#test",
+);
 
 const { grants } = await import("../internal/manage/panel/accounts.js");
 const pages = await grants({

@@ -112,7 +112,7 @@ func checkSubscriptionOutput(ctx context.Context, root, core, id, endpoint strin
 		if err != nil {
 			return err
 		}
-		c, local, err = captureSubscriptionSources(ctx, root, c, local)
+		c, local, r.Accounts, err = captureSubscriptionSources(ctx, root, c, local)
 		return err
 	}); err != nil {
 		return err

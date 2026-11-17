@@ -16,15 +16,40 @@ import {
 const protocols = ["vless", "vmess", "hysteria2", "tuic", "anytls"];
 const nodeFields = [
   { key: "id", label: "入站 ID", required: true },
-  { key: "protocol", label: "协议", type: "select", options: protocols },
+  {
+    key: "protocol",
+    label: "协议",
+    type: "select",
+    options: protocols,
+    readonly: true,
+  },
   { key: "port", label: "监听端口", type: "number", min: 1, max: 65535 },
   { key: "disabled", label: "停用入站", type: "bool" },
   { key: "tls.server_name", label: "TLS / Reality SNI" },
   { key: "tls.enabled", label: "启用 TLS", type: "bool" },
-  { key: "tls.handshake_host", label: "Reality 握手域名" },
-  { key: "tls.handshake_port", label: "Reality 握手端口", type: "number" },
-  { key: "transport.path", label: "WebSocket 路径" },
-  { key: "transport.host", label: "WebSocket Host" },
+  {
+    key: "tls.handshake_host",
+    label: "Reality 握手域名",
+    visible: (v) => v.protocol === "vless",
+  },
+  {
+    key: "tls.handshake_port",
+    label: "Reality 握手端口",
+    type: "number",
+    min: 1,
+    max: 65535,
+    visible: (v) => v.protocol === "vless",
+  },
+  {
+    key: "transport.path",
+    label: "WebSocket 路径",
+    visible: (v) => v.protocol === "vmess",
+  },
+  {
+    key: "transport.host",
+    label: "WebSocket Host",
+    visible: (v) => v.protocol === "vmess",
+  },
 ];
 export async function inbounds(ctx) {
   const c = await ctx.config();

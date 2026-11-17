@@ -20,9 +20,11 @@ const subscriptionsLocal = "subscriptions/local.json"
 const subscriptionsSnapshot = "subscriptions/published.json"
 
 func loadSubscriptions(root string) (sub.Config, sub.Runtime, map[string][]sub.Node, error) {
-	c := sub.DefaultConfig()
-	if _, err := ReadJSON(filepath.Join(root, subscriptionsConfig), &c); err != nil {
+	var c sub.Config
+	if found, err := ReadJSON(filepath.Join(root, subscriptionsConfig), &c); err != nil {
 		return c, sub.Runtime{}, nil, err
+	} else if !found {
+		c = sub.DefaultConfig()
 	}
 	if err := c.Validate(); err != nil {
 		return c, sub.Runtime{}, nil, err
@@ -67,21 +69,25 @@ func buildSubscriptions(ctx context.Context, root, core string, c sub.Config, r 
 	return compileSubscriptions(ctx, root, core, c, r, local, false)
 }
 
-func compileSubscriptions(ctx context.Context, root, core string, c sub.Config, r sub.Runtime, local map[string][]sub.Node, available bool, stores ...*accounting.Store) (fileBundle, sub.Snapshot, map[string]sub.Preview, error) {
-	c, local, err := captureSubscriptionSources(ctx, root, c, local, stores...)
+func compileSubscriptions(ctx context.Context, root, core string, c sub.Config, r sub.Runtime, local map[string][]sub.Node, available bool, services ...AccountService) (fileBundle, sub.Snapshot, map[string]sub.Preview, error) {
+	c, local, accounts, err := captureSubscriptionSources(ctx, root, c, local, services...)
 	if err != nil {
 		return nil, sub.Snapshot{}, nil, err
 	}
+	r.Accounts = accounts
 	return compilePreparedSubscriptions(ctx, root, core, c, r, local, available)
 }
 
 // Capture account material while the caller owns the publication lock. Core
 // validation consumes the resulting value snapshot and does not need that lock.
-func captureSubscriptionSources(ctx context.Context, root string, c sub.Config, local map[string][]sub.Node, stores ...*accounting.Store) (sub.Config, map[string][]sub.Node, error) {
+func captureSubscriptionSources(ctx context.Context, root string, c sub.Config, local map[string][]sub.Node, services ...AccountService) (sub.Config, map[string][]sub.Node, map[string]sub.AccountSourceState, error) {
 	service := AccountService{Root: root}
-	if len(stores) > 0 {
-		service.Store = stores[0]
+	if len(services) > 0 {
+		service = services[0]
 	}
+	accounts := map[string]sub.AccountSourceState{}
+	usages := map[string]accounting.Usage{}
+	now := time.Now()
 	var closeStore func()
 	defer func() {
 		if closeStore != nil {
@@ -106,21 +112,47 @@ func captureSubscriptionSources(ctx context.Context, root string, c sub.Config, 
 				var err error
 				service.Store, closeStore, err = service.openStore()
 				if err != nil {
-					return c, nil, err
+					return c, nil, nil, err
 				}
 			}
-			nodes, err := service.accountNodes(ctx, source.AccountID, source.Scope, 0)
-			if errors.Is(err, accounting.ErrDenied) || errors.Is(err, sql.ErrNoRows) {
-				nodes = nil
-				err = nil
+			if service.Config == nil {
+				config, err := service.configSnapshot(ctx)
+				if err != nil {
+					return c, nil, nil, err
+				}
+				service.Config = &config
 			}
-			if err != nil {
-				return c, nil, err
+			state, found := accounts[source.AccountID]
+			usage := usages[source.AccountID]
+			if !found {
+				var err error
+				usage, state, err = accountSourceState(ctx, service.Store, source.AccountID, now)
+				if err != nil {
+					return c, nil, nil, err
+				}
+				accounts[source.AccountID], usages[source.AccountID] = state, usage
+			}
+			var nodes []sub.Node
+			if state.Available {
+				var err error
+				nodes, err = accountNodes(ctx, service.Store, *service.Config, usage, source.Scope, 0)
+				if err != nil {
+					return c, nil, nil, err
+				}
 			}
 			local["account:"+source.ID] = nodes
 		}
 	}
-	return c, local, nil
+	return c, local, accounts, nil
+}
+
+func accountSourceState(ctx context.Context, store *accounting.Store, id string, now time.Time) (accounting.Usage, sub.AccountSourceState, error) {
+	u, err := store.DownloadAccount(ctx, id, now)
+	state := sub.AccountSourceState{Revision: u.Revision, Available: err == nil}
+	if errors.Is(err, accounting.ErrDenied) || errors.Is(err, sql.ErrNoRows) {
+		err = nil
+	}
+	return u, state, err
 }
 
 func compilePreparedSubscriptions(ctx context.Context, root, core string, c sub.Config, r sub.Runtime, local map[string][]sub.Node, available bool) (fileBundle, sub.Snapshot, map[string]sub.Preview, error) {

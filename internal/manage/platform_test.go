@@ -4,7 +4,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
-	"context"
 	"errors"
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
@@ -145,7 +144,8 @@ func TestAccountSourceUsesCandidatePublishingAddress(t *testing.T) {
 		t.Fatal(e)
 	}
 	c.App.Address = "192.0.2.44"
-	nodes, e := service.accountNodes(context.WithValue(ctx, accountExportConfigKey{}, c), "a", "normal", 0)
+	service.Config = &c
+	nodes, e := service.accountNodes(ctx, "a", "normal", 0)
 	if e != nil || len(nodes) != 5 {
 		t.Fatal(len(nodes), e)
 	}

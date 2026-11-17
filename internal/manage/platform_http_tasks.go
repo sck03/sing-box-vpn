@@ -23,7 +23,11 @@ func (s *PlatformService) serveTasks(w http.ResponseWriter, r *http.Request, acc
 			platformError(w, e)
 			return true
 		}
-		if !require(admin || v.Kind == "service" || v.Kind == "gateway" || (v.Kind == "apply" && v.Actor == access.actor)) {
+		role := "operator"
+		if admin {
+			role = "admin"
+		}
+		if !require(v.Details.Allows(role, access.actor)) {
 			return true
 		}
 		jsonResponse(w, v)

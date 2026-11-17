@@ -296,23 +296,9 @@ func (s *PlatformService) build(ctx context.Context, c PlatformConfig) (fileBund
 			return nil, errors.New("certificate files must be inside the managed root")
 		}
 	}
-	if c.Argo.Mode == "temporary" {
-		domain, err := s.Store.Observation(ctx, "argo-domain")
-		if err != nil {
-			return nil, err
-		}
-		state, err := s.Store.State(ctx)
-		if err != nil {
-			return nil, err
-		}
-		applied, err := decodePlatform(state.Applied)
-		if err != nil {
-			return nil, err
-		}
-		if applied.Argo != c.Argo {
-			domain = ""
-		}
-		c.App.Argo = Object{"domain": domain, "inbound": c.Argo.Inbound}
+	c, err := observedConfig(ctx, s.Store, c)
+	if err != nil {
+		return nil, err
 	}
 	server, err := serverForApp(c.App)
 	if err != nil {
@@ -330,7 +316,7 @@ func (s *PlatformService) build(ctx context.Context, c PlatformConfig) (fileBund
 	if err != nil {
 		return nil, err
 	}
-	files, _, _, err := compileSubscriptions(context.WithValue(ctx, accountExportConfigKey{}, c), s.Root, s.Core, c.Subscriptions, r, local, true, s.Accounts)
+	files, _, _, err := compileSubscriptions(ctx, s.Root, s.Core, c.Subscriptions, r, local, true, AccountService{Root: s.Root, Store: s.Accounts, Control: s.Store, Config: &c})
 	if err != nil {
 		return nil, err
 	}

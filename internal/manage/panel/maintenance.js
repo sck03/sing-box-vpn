@@ -1,4 +1,5 @@
 import { api, download, restoreForm } from "./api.js";
+import { taskDetails, canViewTask, taskKind, taskPhase } from "./tasks.js";
 import {
   el,
   card,
@@ -189,7 +190,7 @@ function tasksCard(tasks, ctx) {
     table(
       [
         { key: "id", label: "任务" },
-        { key: "kind", label: "操作" },
+        { label: "操作", value: (t) => taskKind(t.kind) },
         {
           label: "状态",
           render: (t) =>
@@ -208,7 +209,7 @@ function tasksCard(tasks, ctx) {
                   : "warn",
             ),
         },
-        { key: "phase", label: "阶段" },
+        { label: "阶段", value: (t) => taskPhase(t.phase) },
         {
           label: "业务结果",
           value: (t) =>
@@ -224,15 +225,10 @@ function tasksCard(tasks, ctx) {
       ],
       tasks,
       (t) => [
-        ...(ctx.session.role === "admin" ||
-        (ctx.session.role === "operator" &&
-          ["service", "gateway"].includes(t.kind))
+        ...(canViewTask(t, ctx.session)
           ? [
               button("详情", async () =>
-                showResult(
-                  "任务 #" + t.id,
-                  await api("/api/tasks/detail?id=" + t.id),
-                ),
+                taskDetails(await api("/api/tasks/detail?id=" + t.id)),
               ),
             ]
           : []),

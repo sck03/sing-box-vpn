@@ -8,7 +8,7 @@
 
 支持 Debian/Ubuntu、systemd、Linux amd64/arm64。需要 root；安装器自动安装 Python 3、OpenVPN、Certbot 等免费系统包。VPS 无需 Go 或 Node.js。VPNGate 需要 IPv4、TUN 与 network namespace。
 
-**当前 v4 使用数据库 schema 8、备份格式 7，要求全新空目录，不迁移旧数据或兼容旧管理接口。** 分支提交不等于正式发行；安装器默认获取 GitHub 最新正式 Release。部署当前分支应先构建完整包：
+**当前 v4 使用数据库 schema 9、备份格式 7，要求全新空目录，不迁移旧数据或兼容旧管理接口。** 分支提交不等于正式发行；安装器默认获取 GitHub 最新正式 Release。部署当前分支应先构建完整包：
 
 ```bash
 go run ./cmd/release
@@ -47,6 +47,7 @@ ssh -L 2096:127.0.0.1:2096 root@VPS
 - [使用指南](docs/usage.md)
 - [订阅与下载授权](docs/subscriptions.md)
 - [架构与扩展](docs/architecture.md)
+- [VPNGate 实现与边界](docs/vpngate.md)
 - [开发与发布](docs/development.md)
 - [兼容性与限制](docs/compatibility.md)
 - [本次实施和验收记录](docs/unified-management-status.md)

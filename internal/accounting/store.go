@@ -51,7 +51,11 @@ CREATE TABLE IF NOT EXISTS accounts (
  charged INTEGER NOT NULL DEFAULT 0 CHECK(charged>=0),
  upload INTEGER NOT NULL DEFAULT 0 CHECK(upload>=0),
  download INTEGER NOT NULL DEFAULT 0 CHECK(download>=0),
- policy TEXT NOT NULL DEFAULT '{}', started INTEGER, period INTEGER NOT NULL DEFAULT 0);
+ subscriber TEXT NOT NULL DEFAULT '', start_mode TEXT NOT NULL DEFAULT '', starts INTEGER,
+ duration INTEGER NOT NULL DEFAULT 0, period_kind TEXT NOT NULL DEFAULT '',
+ period_days INTEGER NOT NULL DEFAULT 0, period_day INTEGER NOT NULL DEFAULT 0,
+ timezone TEXT NOT NULL DEFAULT '', started INTEGER, period INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS account_subscriber ON accounts(subscriber);
 CREATE TABLE IF NOT EXISTS usage_periods (
  account TEXT NOT NULL REFERENCES accounts(id), period INTEGER NOT NULL,
  charged INTEGER NOT NULL, upload INTEGER NOT NULL, download INTEGER NOT NULL,
@@ -106,10 +110,10 @@ type Usage struct {
 type scanner interface{ Scan(...any) error }
 
 func readAccount(row scanner) (u Usage, err error) {
-	var expires, quota, started sql.NullInt64
-	var policy string
+	var expires, quota, starts, started sql.NullInt64
 	var created int64
-	err = row.Scan(&u.ID, &u.Name, &u.Disabled, &expires, &quota, &u.Revision, &created, &u.Charged, &u.Upload, &u.Download, &policy, &started, &u.PeriodID)
+	err = row.Scan(&u.ID, &u.Name, &u.Disabled, &expires, &quota, &u.Revision, &created, &u.Charged, &u.Upload, &u.Download,
+		&u.SubscriberID, &u.StartMode, &starts, &u.DurationSeconds, &u.Period.Kind, &u.Period.Days, &u.Period.Day, &u.Period.Timezone, &started, &u.PeriodID)
 	if err != nil {
 		return
 	}
@@ -121,11 +125,10 @@ func readAccount(row scanner) (u Usage, err error) {
 	if quota.Valid {
 		u.QuotaBytes = &quota.Int64
 	}
-	var a domain.Account
-	if err = json.Unmarshal([]byte(policy), &a); err != nil {
-		return
+	if starts.Valid {
+		v := time.Unix(starts.Int64, 0).UTC()
+		u.StartsAt = &v
 	}
-	u.SubscriberID, u.StartMode, u.StartsAt, u.DurationSeconds, u.Period = a.SubscriberID, a.StartMode, a.StartsAt, a.DurationSeconds, a.Period
 	if started.Valid {
 		t := time.Unix(started.Int64, 0).UTC()
 		u.StartedAt = &t
@@ -134,7 +137,7 @@ func readAccount(row scanner) (u Usage, err error) {
 	return
 }
 
-const accountColumns = `id,name,disabled,expires,quota,revision,created,charged,upload,download,policy,started,period`
+const accountColumns = `id,name,disabled,expires,quota,revision,created,charged,upload,download,subscriber,start_mode,starts,duration,period_kind,period_days,period_day,timezone,started,period`
 
 func (s *Store) Account(ctx context.Context, id string) (Usage, error) {
 	return readAccount(s.db.QueryRowContext(ctx, `SELECT `+accountColumns+` FROM accounts WHERE id=?`, id))
@@ -175,10 +178,6 @@ func (s *Store) SaveAccount(ctx context.Context, a domain.Account) error {
 	if _, err = tx.ExecContext(ctx, `UPDATE accounts SET revision=revision WHERE id=?`, a.ID); err != nil {
 		return err
 	}
-	policy, err := json.Marshal(a)
-	if err != nil {
-		return err
-	}
 	if a.SubscriberID != "" {
 		var exists int
 		if err = tx.QueryRowContext(ctx, `SELECT 1 FROM subscribers WHERE id=?`, a.SubscriberID).Scan(&exists); err != nil {
@@ -204,7 +203,8 @@ func (s *Store) SaveAccount(ctx context.Context, a domain.Account) error {
 		if start != nil {
 			period = start.Unix()
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO accounts(id,name,disabled,expires,quota,revision,created,policy,started,period) VALUES(?,?,?,?,?,1,?,?,?,?)`, a.ID, a.Name, a.Disabled, timestamp(a.ExpiresAt), a.QuotaBytes, now.Unix(), string(policy), timestamp(start), period)
+		_, err = tx.ExecContext(ctx, `INSERT INTO accounts(id,name,disabled,expires,quota,revision,created,subscriber,start_mode,starts,duration,period_kind,period_days,period_day,timezone,started,period) VALUES(?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?)`,
+			a.ID, a.Name, a.Disabled, timestamp(a.ExpiresAt), a.QuotaBytes, now.Unix(), a.SubscriberID, a.StartMode, timestamp(a.StartsAt), a.DurationSeconds, a.Period.Kind, a.Period.Days, a.Period.Day, a.Period.Timezone, timestamp(start), period)
 	} else {
 		old, e := readAccount(tx.QueryRowContext(ctx, `SELECT `+accountColumns+` FROM accounts WHERE id=?`, a.ID))
 		if e != nil {
@@ -216,7 +216,7 @@ func (s *Store) SaveAccount(ctx context.Context, a domain.Account) error {
 			return errors.New("start and period policy are immutable; create a new entitlement")
 		}
 		var r sql.Result
-		r, err = tx.ExecContext(ctx, `UPDATE accounts SET name=?,disabled=?,expires=?,quota=?,policy=?,revision=revision+1 WHERE id=? AND revision=?`, a.Name, a.Disabled, timestamp(a.ExpiresAt), a.QuotaBytes, string(policy), a.ID, a.Revision)
+		r, err = tx.ExecContext(ctx, `UPDATE accounts SET name=?,disabled=?,expires=?,quota=?,subscriber=?,revision=revision+1 WHERE id=? AND revision=?`, a.Name, a.Disabled, timestamp(a.ExpiresAt), a.QuotaBytes, a.SubscriberID, a.ID, a.Revision)
 		if err == nil {
 			n, e := r.RowsAffected()
 			if e != nil {

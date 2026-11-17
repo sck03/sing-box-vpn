@@ -1,12 +1,10 @@
 package manage
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
-	"github.com/sck03/sing-box-vpn/internal/application"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
@@ -95,11 +93,10 @@ func (s *PlatformService) serveGrants(w http.ResponseWriter, r *http.Request, ac
 		var v sub.Config
 		if err = decodeRequest(w, r, &v, 8<<20); err == nil {
 			data, _ := json.Marshal(v)
-			var out bytes.Buffer
-			err = (SubscriptionService{Root: s.Root, Core: s.Core}).Execute(ctx, application.SubscriptionCommand{Operation: "preview", Config: data}, &out)
+			var result Object
+			result, err = (SubscriptionService{Root: s.Root, Core: s.Core}).Preview(ctx, data)
 			if err == nil {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write(out.Bytes())
+				jsonResponse(w, result)
 				return true
 			}
 		}

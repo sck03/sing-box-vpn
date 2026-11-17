@@ -1,4 +1,4 @@
-import { el, button, help } from "./dom.js";
+import { el, button, help, setDisabled, actionGroup } from "./dom.js";
 
 export function table(columns, items, actions, options = {}) {
   const wrapper = el("div", { class: "data-table" }),
@@ -161,17 +161,28 @@ export function table(columns, items, actions, options = {}) {
           : c.value
             ? c.value(item)
             : item[c.key];
-        tr.append(el("td", {}, value ?? "—"));
+        tr.append(el("td", { "data-label": c.label }, value ?? "—"));
       }
       if (actions)
-        tr.append(el("td", {}, el("div", { class: "actions" }, actions(item))));
+        tr.append(
+          el("td", { "data-label": "操作" }, actionGroup(actions(item))),
+        );
       tbody.append(tr);
     }
     t.append(tbody);
     body.replaceChildren(
       data.length
         ? el("div", { class: "table-wrap" }, t)
-        : el("div", { class: "empty" }, "暂无记录"),
+        : el(
+            "div",
+            { class: "empty", role: "status" },
+            el("strong", {}, term ? "没有匹配的记录" : "暂无记录"),
+            help(
+              term
+                ? "试试其他关键词，或清空搜索。"
+                : "创建第一条记录后，将在这里显示。",
+            ),
+          ),
     );
     pager.replaceChildren(
       button("上一页", () => {
@@ -184,6 +195,9 @@ export function table(columns, items, actions, options = {}) {
         render();
       }),
     );
+    const buttons = pager.querySelectorAll("button");
+    setDisabled(buttons[0], page === 0);
+    setDisabled(buttons[1], page >= pages - 1);
   }
   search.addEventListener("input", () => {
     page = 0;
@@ -289,8 +303,8 @@ export async function remoteTable(columns, load, actions, options = {}) {
       }
       errors.replaceChildren();
       view.updateItems(page.items);
-      previous.disabled = offset === 0;
-      next.disabled = offset + 20 >= page.total;
+      setDisabled(previous, offset === 0);
+      setDisabled(next, offset + 20 >= page.total);
       count.textContent = `${Math.floor(offset / 20) + 1} / ${Math.max(1, Math.ceil(page.total / 20))} · ${page.total} 项`;
     } catch (error) {
       if (current === generation && error.name !== "AbortError") {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/sck03/sing-box-vpn/internal/command"
+	"github.com/sck03/sing-box-vpn/internal/hostservice"
 	"io"
 	"net"
 	"net/http"
@@ -419,21 +420,8 @@ func (s *PlatformService) setBBR(ctx context.Context, mode string) error {
 		if err = json.Unmarshal([]byte(previous), &values); err != nil {
 			return errors.New("original BBR settings are unavailable")
 		}
-		if data, err := os.ReadFile(path); err != nil {
+		if err = hostservice.RestoreNetwork(ctx, hostCommand, path, values); err != nil {
 			return err
-		} else if !bytes.HasPrefix(data, []byte("# sing-box-vpn\n")) {
-			return errors.New("sysctl file is not owned by this project")
-		}
-		if err := os.Remove(path); err != nil {
-			return err
-		}
-		for _, key := range []string{"net.core.default_qdisc", "net.ipv4.tcp_congestion_control"} {
-			if values[key] == "" || strings.ContainsAny(values[key], "\r\n\x00") {
-				return errors.New("invalid saved sysctl value")
-			}
-			if _, err = command.Output(ctx, nil, "sysctl", "-w", key+"="+values[key]); err != nil {
-				return err
-			}
 		}
 		return s.Store.Observe(ctx, "bbr-previous", "")
 	}

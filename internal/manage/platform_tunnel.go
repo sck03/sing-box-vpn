@@ -3,20 +3,20 @@ package manage
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/sck03/sing-box-vpn/internal/command"
+	"github.com/sck03/sing-box-vpn/internal/hostservice"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"strings"
+	"time"
 )
 
 var tunnelToken = regexp.MustCompile(`^[A-Za-z0-9+/=_-]+$`)
-var quickTunnelDomain = regexp.MustCompile(`https://([a-z0-9-]+\.trycloudflare\.com)`)
-var tunnelInvocation = regexp.MustCompile(`^[a-f0-9]{32}$`)
 
 func (s *PlatformService) writeTunnel(ctx context.Context, c PlatformConfig) error {
 	if c.Argo.Mode != "fixed" && c.Argo.Mode != "temporary" {
@@ -79,9 +79,9 @@ func (s *PlatformService) writeTunnel(ctx context.Context, c PlatformConfig) err
 	return err
 }
 
-// A temporary tunnel hostname is observed runtime state, not an editable secret
-// or desired configuration. A bounded log tail is sufficient even after restart.
 func (s *PlatformService) syncTunnel(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	state, err := s.Store.State(ctx)
 	if err != nil {
 		return err
@@ -93,44 +93,34 @@ func (s *PlatformService) syncTunnel(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if c.Argo.Mode != "temporary" {
-		return s.Store.Observe(ctx, "argo-domain", "")
-	}
-	invocation, err := command.Output(ctx, nil, "systemctl", "show", "sb-argo", "--property=InvocationID,ActiveState")
+	previous, err := s.Store.Observation(ctx, "argo-tunnel")
 	if err != nil {
 		return err
 	}
-	id, active := "", false
-	for _, line := range strings.Split(string(invocation), "\n") {
-		key, value, _ := strings.Cut(line, "=")
-		if key == "InvocationID" {
-			id = value
+	if c.Argo.Mode != "temporary" {
+		if previous == "" {
+			return nil
 		}
-		if key == "ActiveState" {
-			active = value == "active"
+		return s.Store.Observe(ctx, "argo-tunnel", "")
+	}
+	var next tunnelObservation
+	if previous != "" {
+		if err = json.Unmarshal([]byte(previous), &next); err != nil {
+			return err
 		}
 	}
-	domain := ""
-	if active && tunnelInvocation.MatchString(id) {
-		data, e := command.Output(ctx, nil, "journalctl", "_SYSTEMD_INVOCATION_ID="+id, "-n", "200", "--no-pager", "-o", "cat")
-		if e != nil {
-			return e
-		}
-		if len(data) > 64<<10 {
-			data = data[len(data)-(64<<10):]
-		}
-		matches := quickTunnelDomain.FindAllStringSubmatch(string(data), -1)
-		if len(matches) > 0 {
-			domain = strings.ToLower(matches[len(matches)-1][1])
-		}
+	if next.Settings != c.Argo {
+		next = tunnelObservation{Settings: c.Argo}
 	}
-	previous, err := s.Store.Observation(ctx, "argo-domain")
-	if err != nil || previous == domain {
+	next.Runtime, err = hostservice.ObserveTunnel(ctx, hostCommand, next.Runtime)
+	if err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err = s.Store.Observe(ctx, "argo-domain", domain); err != nil {
+	data, err := json.Marshal(next)
+	if err != nil || string(data) == previous {
+		return err
+	}
+	if err = s.Store.Observe(ctx, "argo-tunnel", string(data)); err != nil {
 		return err
 	}
 	files, err := s.build(ctx, c)
@@ -138,7 +128,13 @@ func (s *PlatformService) syncTunnel(ctx context.Context) error {
 		err = withStartupLock(ctx, s.Root, func() error { return publish(s.Root, files) })
 	}
 	if err != nil {
-		_ = s.Store.Observe(context.Background(), "argo-domain", previous)
+		recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		err = errors.Join(err, s.Store.Observe(recovery, "argo-tunnel", previous))
 	}
 	return err
+}
+
+func hostCommand(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return command.Output(ctx, nil, name, args...)
 }

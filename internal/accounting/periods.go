@@ -135,7 +135,7 @@ func (s *Store) advanceUsage(ctx context.Context, u Usage, now time.Time, activa
 func (s *Store) authorize(ctx context.Context, credential string, generation int64, now time.Time, activate bool) (Usage, error) {
 	u, err := readAccount(s.db.QueryRowContext(ctx, `SELECT `+accountColumns+` FROM accounts
 	 WHERE id=(SELECT account FROM credentials WHERE id=? AND generation=?)
-	 AND NOT EXISTS (SELECT 1 FROM subscribers WHERE subscribers.id=json_extract(accounts.policy,'$.subscriber_id') AND subscribers.disabled=1)`, credential, generation))
+	 AND NOT EXISTS (SELECT 1 FROM subscribers WHERE subscribers.id=accounts.subscriber AND subscribers.disabled=1)`, credential, generation))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Usage{}, ErrDenied
 	}

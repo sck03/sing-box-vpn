@@ -61,9 +61,9 @@ func (s *Store) authorizationSnapshot(ctx context.Context, runtime string, now t
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT c.id,c.generation,a.id,a.name,a.disabled,a.expires,a.quota,a.revision,a.created,a.charged,a.upload,a.download,a.policy,a.started,a.period
+	rows, err := s.db.QueryContext(ctx, `SELECT c.id,c.generation,a.id,a.name,a.disabled,a.expires,a.quota,a.revision,a.created,a.charged,a.upload,a.download,a.subscriber,a.start_mode,a.starts,a.duration,a.period_kind,a.period_days,a.period_day,a.timezone,a.started,a.period
  FROM credentials c JOIN accounts a ON a.id=c.account
- WHERE c.runtime=? AND c.id IN (SELECT value FROM json_each(?)) AND NOT EXISTS (SELECT 1 FROM subscribers s WHERE s.id=json_extract(a.policy,'$.subscriber_id') AND s.disabled=1) LIMIT 10001`, runtime, string(selected))
+ WHERE c.runtime=? AND c.id IN (SELECT value FROM json_each(?)) AND NOT EXISTS (SELECT 1 FROM subscribers s WHERE s.id=a.subscriber AND s.disabled=1) LIMIT 10001`, runtime, string(selected))
 	if err != nil {
 		return nil, err
 	}

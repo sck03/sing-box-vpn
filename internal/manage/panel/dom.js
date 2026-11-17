@@ -23,6 +23,13 @@ export function notice(message, error = false) {
   clearTimeout(notice.timer);
   notice.timer = setTimeout(() => (node.hidden = true), error ? 16000 : 6500);
 }
+const pendingControls = new WeakMap();
+// Business availability remains authoritative while an async action is busy.
+export function setDisabled(control, disabled) {
+  const pending = pendingControls.get(control);
+  if (pending) pending.disabled = disabled;
+  control.disabled = !!pending || disabled;
+}
 export function action(fn) {
   let pending = false;
   return async (event) => {
@@ -36,10 +43,15 @@ export function action(fn) {
         : target
           ? [target]
           : [];
-    const disabled = controls.map((control) => control.disabled);
     try {
       target?.setAttribute("aria-busy", "true");
       controls.forEach((control) => {
+        const state = pendingControls.get(control) || {
+          disabled: control.disabled,
+          count: 0,
+        };
+        state.count++;
+        pendingControls.set(control, state);
         control.disabled = true;
       });
       await fn(event);
@@ -48,8 +60,12 @@ export function action(fn) {
     } finally {
       pending = false;
       target?.removeAttribute("aria-busy");
-      controls.forEach((control, i) => {
-        control.disabled = disabled[i];
+      controls.forEach((control) => {
+        const state = pendingControls.get(control);
+        if (--state.count === 0) {
+          pendingControls.delete(control);
+          control.disabled = state.disabled;
+        }
       });
     }
   };
@@ -62,6 +78,35 @@ export const help = (text) => el("p", { class: "help" }, text);
 export const row = (...children) => el("div", { class: "row" }, ...children);
 export const badge = (text, kind = "") =>
   el("span", { class: "tag " + kind }, text);
+
+export function actionGroup(items, limit = 2) {
+  const controls = items.filter(Boolean);
+  const group = el("div", { class: "actions" }, controls.slice(0, limit));
+  if (controls.length <= limit) return group;
+  const toggle = el("summary", { "aria-label": "更多操作" }, "更多");
+  const more = el(
+    "details",
+    { class: "action-menu" },
+    toggle,
+    el("div", { class: "action-menu-items" }, controls.slice(limit)),
+  );
+  more.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      more.open = false;
+      toggle.focus();
+    }
+  });
+  more.addEventListener("focusout", () =>
+    queueMicrotask(() => {
+      if (!more.contains(document.activeElement)) more.open = false;
+    }),
+  );
+  more.addEventListener("click", (event) => {
+    if (event.target.closest("button")) more.open = false;
+  });
+  group.append(more);
+  return group;
+}
 export function bytes(value) {
   if (value === null || value === undefined) return "不限";
   const n = Number(value);

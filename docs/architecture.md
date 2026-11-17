@@ -1,13 +1,13 @@
 # v4 架构与维护
 
-`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema=8；平台配置 schema=4、订阅配置 schema=1 是各自独立的格式版本。面向空目录，不提供旧数据库、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责，不允许旧 CLI 修改配置投影。
+`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema=9；平台配置 schema=4、订阅配置 schema=1 是各自独立的格式版本。面向空目录，不提供旧数据库、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责，不允许旧 CLI 修改配置投影。
 
 ## 模块边界
 
 | 模块 | 职责 |
 | --- | --- |
 | internal/domain | 稳定身份、权益/周期规则，不依赖 HTTP 或 SQLite |
-| internal/application | 类型化命令、账户批量绑定用例与仓储边界；不解析 HTTP 或操作 systemd |
+| internal/application | 类型化命令、账户批量绑定用例、任务详情访问规则与仓储边界；不解析 HTTP 或操作 systemd |
 | internal/backuparchive | 有界 tar 格式与 age 认证加密；不依赖配置、SQL schema 或证书提供方 |
 | internal/clientprofile | 无存储/HTTP 依赖的客户端、模式与特性目录，统一表单、授权和渲染能力 |
 | internal/manage/accounts_queries | 返回结构化账户查询、凭据摘要和渲染产物；传输层负责编码 |
@@ -22,7 +22,7 @@
 | internal/runtime | 受管 sing-box 注册、认证后计量守卫 |
 | addons/vpngate/gateway | 独立 VPNGate 后端、netns/OpenVPN、出口验证和 SOCKS 转发 |
 | internal/command | 子进程期限、取消、有界输出 |
-| internal/hostservice | 不依赖数据库的失败服务恢复控制器，通过命令适配器访问 systemd |
+| internal/hostservice | 不依赖数据库的失败服务恢复、Argo 运行观察、可重试网络设置恢复，通过命令适配器访问主机 |
 
 面板、普通核心、VPNGate 核心、VPNGate 网关和可选下载/Argo 服务分进程运行。一个权益不创建一个进程或端口。普通与 VPNGate 同库共享额度池，网关后端不重复计费。
 
@@ -36,6 +36,8 @@ HTTP/CLI → Validate → 校验资源引用/核心配置 → revision CAS 保�
 
 配置提交在互斥锁外完成昂贵的核心校验，锁内重新核对 revision 后保存；执行时再次验证当前凭据、证书与缓存。没有仅按配置 revision 缓存整个编译结果，防止漏掉这些独立变化的输入。账户应用服务可注入已打开的控制仓库，绑定与导出读取已应用的数据库配置，不把 JSON 投影作为权威配置。
 
+账户导出一次捕获完整已应用配置；候选订阅编译显式注入候选快照，地址、入口、VPNGate 与 Argo 不混读不同版本。临时 Argo 观察包含隧道设置、systemd InvocationID 与域名；同一次运行的域名不因日志滚动丢失，设置或运行代次变化后不复用。发布失败用独立有界恢复上下文还原观察记录。BBR 恢复先校验所有权与原值，成功恢复内核值后才删除项目文件，最后清理恢复记录。
+
 ## 计量与恢复
 
 每权益每实例共享最多 64 KiB 持久预留池，批量累计检查点幂等结算。预留先落盘再交付转发，崩溃保守占用剩余额度。关闭连接时回收无引用池；无图表观看时不影响计量。周期以 IANA 时区与日历计算，短月截断，时钟回拨不回退 period ID。旧周期检查点只结算旧账期。
@@ -48,6 +50,8 @@ HTTP/CLI → Validate → 校验资源引用/核心配置 → revision CAS 保�
 
 每轮变化的池检查点通过同一数据库事务提交；采集计数后释放池锁再写数据库，Tick 与 Close 串行维护。额度预留仍先落盘，未扩大 64 KiB 边界。账户列表复用已读快照，只推进到期账期；导出按账户/实例索引读取凭据，并复用单次证书解析缓存。
 
+schema 9 将账户开始/周期策略拆为独立列，以 subscriber 索引关联订阅者，不在授权循环解析策略 JSON。IANA 时区缓存上限 128；计量维护复用句柄、池和检查点容器，并在每轮结束清空引用。密码未知用户的比较使用预计算 cost-12 bcrypt 哈希，避免所有 CLI 进程启动时计算无关密码哈希。
+
 ## 安全与资源
 
 只允许固定类型的系统动作；没有网页任意 shell。公开面板强制 TLS/可信代理；会话存哈希，CSRF、同源、Host、CSP 与服务端角色检查。SSE 每轮复核会话，状态缓存 4 秒、刷新 5 秒、慢写 10 秒截止；页面隐藏断开，无无限消息队列。
@@ -59,6 +63,8 @@ HTTP/CLI → Validate → 校验资源引用/核心配置 → revision CAS 保�
 已结束任务保留最近 200 条/30 天，详细结果总预算 8 MiB；超出部分保留明确的结果已回收标记。执行状态与业务 outcome 分别展示：passed、partial、failed、cached。刷新报告包含检查数、成功数、输出数、失败来源和最后成功时间；没有可用输出时不会标记为缓存成功。账户与下载授权 GET 接口使用分页 envelope；账户只推进当前页账期，显示订阅者停用的有效状态。空任务队列只读探测，不先取得 SQLite 写锁。批量绑定通过唯一表达式索引检查认证身份，每批只回收一次事件历史。
 
 HTTP 统一完成 Host/Origin、会话与 CSRF 检查后分发给 `platform_http_accounts.go`、`platform_http_subscriptions.go`、`platform_http_config.go`、`platform_http_tasks.go`。各业务保留显式角色和审计检查。新增接口必须通过同一入口，不能直接暴露内部 handler。
+
+任务 DTO 的 `details` 描述允许访问详情的操作员范围，前后端复用同一规则：管理员可查看，操作员可查看服务/网关任务及自己提交的 apply，viewer 不可查看。服务端始终重新授权。前端 `tasks.js` 负责详情呈现，`sharing.js` 复用权益与授权页的分享流程；按钮忙碌状态与业务禁用状态独立维护，异步结束不会错误启用末页按钮。旧订阅配置写入/计划/归档适配器只用于测试，不编入生产。
 
 `sb-recovery.timer` 在开机 5 分钟后、此后每 5 分钟加 0–30 秒抖动触发独立 oneshot。只重试项目服务名单中已安装且 failed 的单元，reset-failed 后异步启动，inactive 保持停止；数据库损坏不阻止此控制器运行。配置应用、服务操作、升级回滚共用 `.service-recovery.lock`，避免恢复与人工变更交错。永久错误仍需修正，定时重试不能修复无效配置或损坏存储。
 

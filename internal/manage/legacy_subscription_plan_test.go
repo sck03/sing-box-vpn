@@ -28,7 +28,7 @@ func subscriptionPlanIdentity(root, core string) (map[string]string, error) {
 	return identity, err
 }
 
-func (s SubscriptionService) Plan(ctx context.Context, command application.SubscriptionCommand, output io.Writer) error {
+func (s SubscriptionService) legacyPlan(ctx context.Context, command application.SubscriptionCommand, output io.Writer) error {
 	return s.plan(ctx, command, output, buildSubscriptions)
 }
 

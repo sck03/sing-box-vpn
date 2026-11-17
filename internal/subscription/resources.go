@@ -14,8 +14,12 @@ const MaxResourceBytes = MaxBody / 2
 // together with their ETags. Clone maps so preview never mutates its input.
 func PruneRuntime(c Config, r Runtime) Runtime {
 	sources, resources, deliveries := map[string]bool{}, map[string]string{}, map[string]bool{}
+	accounts := map[string]bool{}
 	for _, s := range c.Sources {
 		sources[s.ID] = r.Sources[s.ID].SourceHash == SourceHash(s)
+		if s.Kind == "account" {
+			accounts[s.AccountID] = true
+		}
 	}
 	for _, t := range c.Templates {
 		if t.URL != "" {
@@ -31,6 +35,12 @@ func PruneRuntime(c Config, r Runtime) Runtime {
 		deliveries[d.ID] = true
 	}
 	r.Sources, r.Resources, r.Deliveries = maps.Clone(r.Sources), maps.Clone(r.Resources), maps.Clone(r.Deliveries)
+	r.Accounts = maps.Clone(r.Accounts)
+	for id := range r.Accounts {
+		if !accounts[id] {
+			delete(r.Accounts, id)
+		}
+	}
 	for id := range r.Sources {
 		if !sources[id] {
 			delete(r.Sources, id)

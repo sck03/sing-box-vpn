@@ -1,12 +1,14 @@
-**VPNGate 实施方案与实现说明**
+# VPNGate 实现与运行边界
+
+[使用指南](usage.md) · [平台架构](architecture.md) · [验收记录](unified-management-status.md)
 
 目标是保留普通五协议节点，再提供一套可临时选择的 VPNGate 家宽候选节点。
 sing-box 核心支持在线更新至官方最新稳定版，最低 1.14.0，测试基线 1.14.4。
 Go 构建工具链为 1.27.3；发行包包含 Linux amd64/arm64 静态网关。
-v1.2.0 起管理、配置、证书、订阅、更新、资源下载和远端推送统一为 Go；Bash 保留安装和菜单。
+v4 管理、配置、证书、订阅、更新和资源下载由 Go 管理器提供；Bash 仅保留安装、升级与入口封装。
 
 普通节点与 VPNGate 节点各有 VLESS Reality、VMess-WS、Hysteria-2、TUIC-v5、AnyTLS。
-普通入口保留自己的端口、凭据和路由。VPNGate 入口使用独立端口、密钥和密码，同国家
+普通入口保留自己的端口和路由。VPNGate 入口使用独立端口与 TLS/Reality 材料，代理凭据绑定独立权益，同国家
 五种协议共用一个 OpenVPN 出口。切换 VPNGate IP 不改变入口链接。
 
 ```text
@@ -53,10 +55,10 @@ profile 指令最多三个参数，使用固定字段缓冲并提前拒绝多余
 
 | 文件/服务 | 职责 |
 | --- | --- |
-| sb.sh | 五协议菜单、安装、核心、路由/端口/证书/订阅 |
+| sb.sh | 管理入口、状态、诊断与恢复封装 |
 | internal/manage/ | Go 配置、原生证书/密钥、核心更新、订阅、防火墙及推送 |
 | cmd/release/ | Go 交叉编译与可复现归档、流式 SHA256 |
-| addons/vpngate/vpngate.sh | 菜单 17、国家入口、服务启停及清理 |
+| internal/manage/platform_* | 面板/API 的国家配置、持久任务、服务启停与恢复编排 |
 | addons/vpngate/gateway/ | 节点/profile、国家/ISP、代理、worker、namespace |
 | addons/vpngate/gateway/{control,socks,udp,transport}.go | 控制 HTTP、SOCKS 握手、UDP 会话、共享 IPC 帧与 TCP 中继 |
 | addons/vpngate/gateway/{server,http}.go | 共用连接退出/准入、HTTP 请求边界与节点源流式读取 |
@@ -64,22 +66,22 @@ profile 指令最多三个参数，使用固定字段缓冲并提前拒绝多余
 | addons/vpngate/gateway/{nodes,geo}.go | 节点缓存/候选与后台刷新回收、出口及 Geo/ASN 校验 |
 | addons/vpngate/gateway/source_cache.go | 候选和已验证节点的来源归属、统一缓存读写 |
 | addons/vpngate/gateway/node_source.go | CSV 完整性、候选去重排序和 Base64 解码缓冲复用 |
-| lib/services.sh | 统一服务单元、启动恢复、10 秒重试及 5 分钟最多 10 次启动 |
+| internal/manage/platform_host.go | 服务单元、失败回滚、15 秒重试及 5 分钟最多 10 次启动 |
 | internal/subscription/ | 类型化节点、来源集合、预览、独立客户端模板与快照生成 |
 | sing-box.service | 普通五协议 |
 | yg-vpngate.service | 出口管理器与认证 SOCKS5 |
 | sing-box-vpngate.service | 独立五协议 VPNGate 入口 |
-| /etc/s-box/vpngate/ | 入口设置、密钥、网关、服务端配置和独立客户端导出 |
+| /etc/s-box/control.db | 权威配置、权益、凭据、用量与任务，当前 schema 9 |
+| /etc/s-box/vpngate/ | 网关、服务端等运行投影，不作为配置真源 |
 | /var/lib/yg-vpngate/ | 缓存、profile、状态、限量日志 |
 | /run/yg-vpngate/control.sock | 仅 root 的控制接口 |
 
-菜单 9 先选择普通或 VPNGate，再输出该类型的 URI、二维码、聚合、Mihomo 与 sing-box JSON。
-普通导出位于 `/etc/s-box/`，VPNGate 导出位于 `/etc/s-box/vpngate/`；订阅 HTTP 服务只允许
-按 `/s/<令牌>/<输出ID>` 读取已验证快照中的授权输出。VPNGate 客户端仅手动选择当前国家
-节点，流量经 VPNGate，不保留普通节点或 DIRECT 回退；混合集合使用独立 VPNGate 策略组。
-菜单 17 → 14 独立修改 VPNGate 端口、协议凭据、SNI、WS 或 TLS 证书；既有普通入口不变。
-OpenClash 可使用同目录 `proxies.yaml` 作为原生节点 provider，沿用路由器自己的 DNS 与策略；
-仅含当前国家节点，不提供直连或普通节点回退。详细设置见 [OpenClash 使用](docs/usage.md#openclash)。
+在「权益与用量」绑定 VPNGate 入口，随后按运行实例导出或创建分享。
+账户下载使用 `/u/<令牌>/<格式>`；自定义输出使用 `/s/<令牌>/<输出ID>` 读取已验证快照。
+VPNGate 客户端手动选择当前国家节点，不提供普通节点或 DIRECT 回退；混合集合使用独立 VPNGate 策略组。
+国家和端口配置在 VPNGate 页面保存并应用，代理凭据通过权益绑定/轮换管理，普通入口保持独立。
+OpenClash 使用账户来源的 Mihomo provider 输出，沿用路由器自己的 DNS 与策略。
+详细设置见 [订阅与 OpenClash](subscriptions.md#openclash-与证书)。
 
 TCP 不设置定时重连。UDP 的空闲期限由双向收发共同更新，持续单向上传、下载也保持会话。
 无效包、分片、零目标端口及其他源端口不延长关联寿命；退出等待控制读取和全部目标转发回收。
@@ -96,16 +98,15 @@ TCP 不设置定时重连。UDP 的空闲期限由双向收发共同更新，持
 worker IPC 帧本身超过 65,507 字节或被截断时仍关闭连接，避免失去帧边界后继续转发。
 
 只维护现代模板，旧内核、双模板和旧 geosite/geoip 数据库不再生成，也不导入旧版配置。
-首次安装要求空配置目录，当前配置以 app.json 管理；重复初始化保留端口、用户和 Reality 密钥。
-修改不依赖行号或数组位置；Hy2 单端口转换为等值范围。全部候选配置先通过对应核心 check，再提交文件；
-配置修改与核心更新共用文件锁。证书指纹从各入口实际证书计算，单个证书更新不影响其他协议。
-多文件提交先保存私有恢复记录；服务启动前及下一次管理操作恢复未完成提交。
-也可使用 `sb recover`，恢复失败保留记录以便修复后重试。
+首次安装要求空目录；control.db 保存 desired/applied 配置，app.json 为可重建投影，重复初始化拒绝覆盖。
+修改使用稳定资源 ID；Hy2 单端口转换为等值范围。候选配置通过校验后写入持久任务，
+发布、服务应用与心跳确认成功后才更新 applied；失败恢复原配置与服务状态，账本与撤销不回滚。
+证书指纹来自各入口实际证书。`sb recover` 从已应用数据库状态重建投影。
 
 验收随代码交付：
 
 - Go：危险 profile、国家/固定模式、ASN、内核规则、过期认证、TCP/UDP 和碎片。
-- Go 管理：两套五协议、幂等初始化、独立设置、凭据隔离、链接恢复、非法配置保护、跳跃与手动组、核心回滚、订阅限制。
+- Go 管理：两套五协议、拒绝重复初始化、独立设置、凭据隔离、链接恢复、非法配置保护、跳跃与手动组、核心回滚、订阅限制。
 - 持续会话：单向 UDP 上传和下载分别运行 65 秒，验证没有空闲误判或会话重建。
 - UDP 并发：慢 DNS 时已有目标继续收发、等待包按顺序转发、拨号/队列有界、关联关闭取消全部等待。
 - 实际协议：两套 sing-box/Mihomo 原生配置、HTTP provider 和三协议 URI 共 72 条 TCP/UDP 链路。
@@ -117,5 +118,5 @@ worker IPC 帧本身超过 65,507 字节或被截断时仍关闭连接，避免�
 配置不兼容时保留旧核心，服务启动失败时自动回滚。
 仓库不包含运行密码、私钥、节点缓存、临时工具链和研究源码副本。
 VPS 不再需要项目 Python 运行时；可选 Certbot 仍由系统包管理器安装其自身依赖。
-来源见 [NOTICE.md](NOTICE.md)，使用见 [README.md](README.md)。
-2026-11-10 的 sing-box 内置 OpenVPN、Snell、OpenClash 与 VPNGate 上游核对见 [技术说明](docs/upstream.md)。
+来源见 [NOTICE.md](../NOTICE.md)，使用见 [README.md](../README.md)。
+2026-11-10 的 sing-box 内置 OpenVPN、Snell、OpenClash 与 VPNGate 上游核对见 [技术说明](upstream.md)。

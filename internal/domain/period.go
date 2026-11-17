@@ -2,9 +2,35 @@ package domain
 
 import (
 	"errors"
+	"sync"
 	"time"
 	_ "time/tzdata"
 )
+
+var periodZones = struct {
+	sync.RWMutex
+	values map[string]*time.Location
+}{values: map[string]*time.Location{}}
+
+// Time zones are immutable. Bound retained entries independently of account
+// count and never cache malformed names supplied by a request.
+func periodLocation(name string) (*time.Location, error) {
+	periodZones.RLock()
+	loc := periodZones.values[name]
+	periodZones.RUnlock()
+	if loc != nil {
+		return loc, nil
+	}
+	loc, err := time.LoadLocation(name)
+	if err == nil {
+		periodZones.Lock()
+		if len(periodZones.values) < 128 {
+			periodZones.values[name] = loc
+		}
+		periodZones.Unlock()
+	}
+	return loc, err
+}
 
 // PeriodPolicy is a calendar policy, independent of transport and persistence.
 // Days are local calendar days, not multiples of 24 hours across DST changes.
@@ -22,7 +48,7 @@ func (p PeriodPolicy) Validate() error {
 	if p.Kind != "days" && p.Kind != "monthly" {
 		return errors.New("period kind must be none, days or monthly")
 	}
-	if _, err := time.LoadLocation(p.Timezone); err != nil || p.Timezone == "" {
+	if _, err := periodLocation(p.Timezone); err != nil || p.Timezone == "" {
 		return errors.New("period requires an IANA timezone")
 	}
 	if p.Kind == "days" && (p.Days < 1 || p.Days > 3660) {
@@ -41,7 +67,7 @@ func (p PeriodPolicy) Bounds(anchor, now time.Time) (start time.Time, next *time
 	if p.Kind == "" || p.Kind == "none" || now.Before(anchor) {
 		return
 	}
-	loc, err := time.LoadLocation(p.Timezone)
+	loc, err := periodLocation(p.Timezone)
 	if err != nil {
 		return
 	}

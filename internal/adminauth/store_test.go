@@ -6,9 +6,21 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 const testPassword = "correct-password-123"
+
+func TestUnknownUserHashHasLoginCost(t *testing.T) {
+	cost, err := bcrypt.Cost(dummyHash)
+	if err != nil || cost != 12 {
+		t.Fatalf("invalid unknown-user comparison hash: cost=%d, error=%v", cost, err)
+	}
+	if err := bcrypt.CompareHashAndPassword(dummyHash, []byte(testPassword)); !errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
+		t.Fatalf("unknown-user comparison must perform a valid bcrypt check: %v", err)
+	}
+}
 
 func authFixture(t *testing.T) (*Store, string) {
 	t.Helper()

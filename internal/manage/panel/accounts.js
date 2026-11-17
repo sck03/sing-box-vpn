@@ -1,5 +1,5 @@
 import { api } from "./api.js";
-import { clientCatalog, clientOptions } from "./clients.js";
+import { createAccountShare } from "./sharing.js";
 import {
   el,
   card,
@@ -63,6 +63,7 @@ export async function accounts(ctx) {
       label: "指定开始时间",
       type: "date",
       readonly: existing,
+      visible: (v) => v.start_mode === "scheduled",
     },
     {
       key: "duration_seconds",
@@ -88,6 +89,9 @@ export async function accounts(ctx) {
       label: "间隔日数",
       type: "number",
       readonly: existing,
+      min: 1,
+      max: 3660,
+      visible: (v) => v.period?.kind === "days",
     },
     {
       key: "period.day",
@@ -96,12 +100,14 @@ export async function accounts(ctx) {
       readonly: existing,
       min: 1,
       max: 31,
+      visible: (v) => v.period?.kind === "monthly",
     },
     {
       key: "period.timezone",
       label: "IANA 时区",
       readonly: existing,
       help: "例如 Asia/Shanghai、America/New_York",
+      visible: (v) => ["days", "monthly"].includes(v.period?.kind),
     },
   ];
   const edit = (item) =>
@@ -127,8 +133,21 @@ export async function accounts(ctx) {
         ])
           if (v[key] !== undefined) account[key] = v[key];
         await api("/api/accounts", { account });
-        notice("权益已保存，运行时会检查最新状态");
+        notice("权益已保存，相关订阅会自动更新");
         ctx.render();
+        if (!item.revision) {
+          const dialog = document.querySelector("#dialog");
+          dialog.replaceChildren(
+            el("h2", {}, "权益已创建"),
+            help("接下来绑定可用入站，再创建分享地址。"),
+            row(
+              button("绑定入站", () => bind(account), "primary"),
+              button("创建分享", () => createAccountShare([account], ctx)),
+              button("稍后设置", () => dialog.close()),
+            ),
+          );
+          dialog.showModal();
+        }
       },
     );
   const bindingFields = async () => {
@@ -246,8 +265,21 @@ export async function accounts(ctx) {
     card(
       "独立权益与用量",
       help(
-        "同一订阅者可以有多个独立权益。普通与 VPNGate 绑定同一权益时共享额度。charged 包含持久预留；上下行表示已结算有效载荷。周期边界会关闭旧周期连接，客户端重连后进入新周期。",
+        "为用户创建额度与有效期，绑定节点后即可分享。普通节点与 VPNGate 可以共享同一份额度。用量包含尚未结算的预留流量。",
       ),
+      admin
+        ? el(
+            "ol",
+            { class: "workflow", "aria-label": "账户配置流程" },
+            ...[
+              ["创建权益", "设置额度与有效期"],
+              ["绑定入站", "选择用户可以连接的节点"],
+              ["创建分享", "发送订阅链接，随时查看用量"],
+            ].map(([title, detail]) =>
+              el("li", {}, el("strong", {}, title), el("small", {}, detail)),
+            ),
+          )
+        : null,
       admin
         ? button(
             "新建权益",
@@ -332,6 +364,7 @@ export async function accounts(ctx) {
           ...(admin
             ? [
                 button("编辑", () => edit(item)),
+                button("分享", () => createAccountShare([item], ctx)),
                 button("绑定", () => bind(item)),
                 button("凭据", () => credentials(item)),
                 button("导出 / 二维码", () =>
@@ -459,10 +492,7 @@ export async function subscribers(ctx) {
 
 export async function grants(ctx) {
   const request = ctx.request || api;
-  const [accounts, catalog] = await Promise.all([
-    request("/api/account-options"),
-    clientCatalog(request),
-  ]);
+  const accounts = await request("/api/account-options");
   return [
     card(
       "下载授权",
@@ -471,58 +501,7 @@ export async function grants(ctx) {
       ),
       button(
         "创建账户分享",
-        () =>
-          formDialog(
-            "新建下载授权",
-            [
-              { key: "id", label: "授权 ID", required: true },
-              {
-                key: "account_id",
-                label: "使用权益",
-                type: "select",
-                options: accounts.map((a) => [a.id, a.name]),
-              },
-              {
-                key: "scope",
-                label: "运行实例",
-                type: "select",
-                options: [
-                  ["", "普通 + VPNGate"],
-                  ["normal", "普通"],
-                  ["vpngate", "VPNGate"],
-                ],
-              },
-              {
-                key: "clients",
-                label: "允许客户端格式（可多选）",
-                type: "multiselect",
-                options: clientOptions(catalog),
-                required: true,
-                help: "实验适配需在目标客户端验证；无法保留证书校验参数的节点会拒绝导出。",
-              },
-              { key: "expires_at", label: "下载到期", type: "date" },
-              {
-                key: "max_downloads",
-                label: "下载次数上限（留空不限，0 禁止下载）",
-                type: "number",
-                nullable: true,
-                min: 0,
-              },
-            ],
-            {
-              id: "",
-              account_id: accounts[0]?.id || "",
-              scope: "",
-              clients: ["sing-box", "mihomo", "uri"],
-              expires_at: null,
-              max_downloads: null,
-            },
-            async (v) => {
-              const result = await api("/api/grants", v);
-              showResult("请保存分享地址", result.user_url);
-              ctx.render();
-            },
-          ),
+        () => createAccountShare(accounts, ctx),
         "primary",
       ),
       await remoteTable(

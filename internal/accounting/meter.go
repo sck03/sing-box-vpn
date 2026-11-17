@@ -29,8 +29,37 @@ type Meter struct {
 	pending        sync.WaitGroup
 	poolSequence   uint64
 	retired        uint64
-	detached       []*pool // idle pools retained until their final checkpoint succeeds
+	detached       []*pool      // idle pools retained until their final checkpoint succeeds
+	scratch        meterScratch // reused only under maintenance; cleared after each tick
 }
+
+type poolSnapshot struct {
+	key   string
+	value *pool
+}
+
+type meterScratch struct {
+	handles         []*Handle
+	pools           []poolSnapshot
+	wanted          map[authorizationKey]bool
+	authorizations  map[*authorization]bool
+	checkpoints     []UsageCheckpoint
+	checkpointPools []*pool
+}
+
+func (s *meterScratch) reset() {
+	clear(s.handles)
+	clear(s.pools)
+	clear(s.wanted)
+	clear(s.authorizations)
+	clear(s.checkpoints)
+	clear(s.checkpointPools)
+	s.handles = s.handles[:0]
+	s.pools = s.pools[:0]
+	s.checkpoints = s.checkpoints[:0]
+	s.checkpointPools = s.checkpointPools[:0]
+}
+
 type pool struct {
 	mu                                    sync.Mutex
 	id, account                           string
@@ -246,22 +275,25 @@ func (h *Handle) Close() {
 func (m *Meter) Tick(ctx context.Context) error {
 	m.maintenance.Lock()
 	defer m.maintenance.Unlock()
+	scratch := &m.scratch
+	defer scratch.reset()
+	if scratch.wanted == nil {
+		scratch.wanted = make(map[authorizationKey]bool)
+		scratch.authorizations = make(map[*authorization]bool)
+	}
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
 		return ErrDenied
 	}
-	handles := make([]*Handle, 0, len(m.handles))
-	pools := make(map[string]*pool, len(m.pools))
 	for h := range m.handles {
-		handles = append(handles, h)
+		scratch.handles = append(scratch.handles, h)
 	}
 	for key, p := range m.pools {
-		pools[key] = p
+		scratch.pools = append(scratch.pools, poolSnapshot{key, p})
 	}
 	m.mu.Unlock()
-	wanted := make(map[authorizationKey]bool)
-	authorizations := make(map[*authorization]bool)
+	handles, wanted, authorizations := scratch.handles, scratch.wanted, scratch.authorizations
 	for _, h := range handles {
 		wanted[authorizationKey{h.auth.credential, h.auth.generation}] = true
 		authorizations[h.auth] = true
@@ -294,9 +326,8 @@ func (m *Meter) Tick(ctx context.Context) error {
 		}
 	}
 	var result error
-	var checkpoints []UsageCheckpoint
-	var checkpointPools []*pool
-	for key, p := range pools {
+	for _, entry := range scratch.pools {
+		key, p := entry.key, entry.value
 		p.mu.Lock()
 		m.mu.Lock()
 		idle := p.refs == 0 && p.inflight == 0
@@ -306,11 +337,12 @@ func (m *Meter) Tick(ctx context.Context) error {
 		}
 		m.mu.Unlock()
 		if p.reserved && (idle || p.upload != p.savedUpload || p.download != p.savedDownload) {
-			checkpoints = append(checkpoints, UsageCheckpoint{p.id, p.upload, p.download, idle})
-			checkpointPools = append(checkpointPools, p)
+			scratch.checkpoints = append(scratch.checkpoints, UsageCheckpoint{p.id, p.upload, p.download, idle})
+			scratch.checkpointPools = append(scratch.checkpointPools, p)
 		}
 		p.mu.Unlock()
 	}
+	checkpoints, checkpointPools := scratch.checkpoints, scratch.checkpointPools
 	result = m.store.CheckpointBatch(ctx, checkpoints)
 	if result == nil {
 		for i, point := range checkpoints {
@@ -324,7 +356,8 @@ func (m *Meter) Tick(ctx context.Context) error {
 		}
 	}
 	m.mu.Lock()
-	used := map[*authorization]bool{}
+	clear(authorizations)
+	used := authorizations
 	for h := range m.handles {
 		used[h.auth] = true
 	}
