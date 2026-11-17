@@ -62,6 +62,15 @@ async function load() {
     element("h2", "添加到客户端"),
     element("p", "选择对应客户端，复制订阅链接导入，或直接下载配置。"),
   );
+  if (u.max_downloads !== null && u.downloads >= u.max_downloads) {
+    target.append(
+      element(
+        "p",
+        "下载次数已用完。用量仍可查询；已导入的配置按权益额度和有效期继续使用。",
+      ),
+    );
+    return;
+  }
   for (const client of u.clients) {
     const wrap = document.createElement("div");
     wrap.className = "client-download";

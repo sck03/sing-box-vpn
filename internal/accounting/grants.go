@@ -97,7 +97,7 @@ func (s *Store) CreateGrant(ctx context.Context, g Grant) (string, error) {
 	if err = pruneGrants(ctx, tx, time.Now()); err != nil {
 		return "", err
 	}
-	r, err := tx.ExecContext(ctx, `INSERT INTO download_grants(id,account,scope,clients,outputs,expires,max_downloads,hash) SELECT ?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM download_grants WHERE revoked=0 AND (expires IS NULL OR expires>?) AND (max_downloads IS NULL OR downloads<max_downloads))<10000`, g.ID, account, g.Scope, string(clients), string(outputs), timestamp(g.ExpiresAt), g.MaxDownloads, grantHash(token), time.Now().Unix())
+	r, err := tx.ExecContext(ctx, `INSERT INTO download_grants(id,account,scope,clients,outputs,expires,max_downloads,hash) SELECT ?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM download_grants WHERE revoked=0 AND (expires IS NULL OR expires>?) AND (account IS NOT NULL OR max_downloads IS NULL OR downloads<max_downloads))<10000`, g.ID, account, g.Scope, string(clients), string(outputs), timestamp(g.ExpiresAt), g.MaxDownloads, grantHash(token), time.Now().Unix())
 	if err != nil {
 		return "", err
 	}
@@ -161,7 +161,8 @@ func (s *Store) RevokeGrant(ctx context.Context, id string) error {
 	return err
 }
 func (s *Store) Grant(ctx context.Context, token string) (Grant, Usage, error) {
-	g, err := s.LookupGrant(ctx, token)
+	// Viewing usage does not consume or require a remaining download allowance.
+	g, err := s.lookupGrant(ctx, token)
 	if err != nil || g.AccountID == "" {
 		return g, Usage{}, ErrDenied
 	}
@@ -170,6 +171,14 @@ func (s *Store) Grant(ctx context.Context, token string) (Grant, Usage, error) {
 }
 
 func (s *Store) LookupGrant(ctx context.Context, token string) (Grant, error) {
+	g, err := s.lookupGrant(ctx, token)
+	if err == nil && g.State != "active" {
+		err = ErrDenied
+	}
+	return g, err
+}
+
+func (s *Store) lookupGrant(ctx context.Context, token string) (Grant, error) {
 	if len(token) != 64 {
 		return Grant{}, ErrDenied
 	}
@@ -178,7 +187,7 @@ func (s *Store) LookupGrant(ctx context.Context, token string) (Grant, error) {
 		return g, ErrDenied
 	}
 	now := time.Now()
-	if g.Status(now) != "active" {
+	if g.Revoked || (g.ExpiresAt != nil && !now.Before(*g.ExpiresAt)) {
 		return g, ErrDenied
 	}
 	return g, nil

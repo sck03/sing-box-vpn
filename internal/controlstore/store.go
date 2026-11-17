@@ -42,7 +42,7 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS control_state(id INTEGER PRIMARY KEY CHECK(id=1),revision INTEGER NOT NULL,applied_revision INTEGER NOT NULL,desired BLOB NOT NULL,applied BLOB NOT NULL);
-CREATE TABLE IF NOT EXISTS control_tasks(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,actor TEXT NOT NULL,lane TEXT NOT NULL DEFAULT 'control' CHECK(lane IN ('control','background')),state TEXT NOT NULL,phase TEXT NOT NULL,error TEXT NOT NULL DEFAULT '',created INTEGER NOT NULL,updated INTEGER NOT NULL,input BLOB NOT NULL,result BLOB NOT NULL DEFAULT '{}');
+CREATE TABLE IF NOT EXISTS control_tasks(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,actor TEXT NOT NULL,lane TEXT NOT NULL DEFAULT 'control' CHECK(lane IN ('control','background')),state TEXT NOT NULL,phase TEXT NOT NULL,error TEXT NOT NULL DEFAULT '',created INTEGER NOT NULL,updated INTEGER NOT NULL,input BLOB NOT NULL,result BLOB NOT NULL DEFAULT '{}',outcome TEXT NOT NULL DEFAULT '');
 CREATE INDEX IF NOT EXISTS control_task_lane ON control_tasks(state,lane,id);
 CREATE TABLE IF NOT EXISTS runtime_state(instance TEXT PRIMARY KEY,revision INTEGER NOT NULL,version TEXT NOT NULL,started INTEGER NOT NULL,heartbeat INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS observations(name TEXT PRIMARY KEY,value TEXT NOT NULL);
@@ -67,8 +67,39 @@ func (s *Store) Observe(ctx context.Context, name, value string) error {
 	return err
 }
 func (s *Store) Initialize(ctx context.Context, data []byte) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO control_state(id,revision,applied_revision,desired,applied) VALUES(1,1,1,?,?)`, data, data)
-	return err
+	return s.InitializeWith(ctx, data, nil)
+}
+
+// InitializeWith commits configuration and dependent initial records together.
+func (s *Store) InitializeWith(ctx context.Context, data []byte, initialize func(*sql.Tx) error) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `INSERT INTO control_state(id,revision,applied_revision,desired,applied) VALUES(1,1,1,?,?)`, data, data); err != nil {
+		return err
+	}
+	if initialize != nil {
+		if err = initialize(tx); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+type Revisions struct {
+	Revision        int64 `json:"revision"`
+	AppliedRevision int64 `json:"applied_revision"`
+}
+
+func (s *Store) Revisions(ctx context.Context) (v Revisions, err error) {
+	err = s.db.QueryRowContext(ctx, `SELECT revision,applied_revision FROM control_state WHERE id=1`).Scan(&v.Revision, &v.AppliedRevision)
+	return
+}
+func (s *Store) AppliedConfig(ctx context.Context) (data json.RawMessage, err error) {
+	err = s.db.QueryRowContext(ctx, `SELECT applied FROM control_state WHERE id=1`).Scan(&data)
+	return
 }
 func (s *Store) State(ctx context.Context) (v State, err error) {
 	err = s.db.QueryRowContext(ctx, `SELECT revision,applied_revision,desired,applied FROM control_state WHERE id=1`).Scan(&v.Revision, &v.AppliedRevision, &v.Desired, &v.Applied)
@@ -182,7 +213,16 @@ func (s *Store) Result(ctx context.Context, id int64, result []byte) error {
 	if len(result) > 256<<10 || !json.Valid(result) {
 		return errors.New("task result exceeds budget or is not JSON")
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE control_tasks SET result=? WHERE id=?`, result, id)
+	var summary struct {
+		Outcome string `json:"outcome"`
+	}
+	if err := json.Unmarshal(result, &summary); err != nil {
+		return err
+	}
+	if len(summary.Outcome) > 64 {
+		return errors.New("task outcome exceeds budget")
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE control_tasks SET result=?,outcome=? WHERE id=?`, result, summary.Outcome, id)
 	return err
 }
 func (s *Store) Finish(ctx context.Context, id int64, result error) error {
@@ -235,12 +275,12 @@ func (s *Store) TaskSummaries(ctx context.Context) ([]Task, error) {
 	return s.tasks(ctx, "CAST('{}' AS BLOB)")
 }
 func (s *Store) Task(ctx context.Context, id int64) (t Task, err error) {
-	err = s.db.QueryRowContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,CAST(result AS BLOB),COALESCE(json_extract(result,'$.outcome'),'') FROM control_tasks WHERE id=?`, id).Scan(&t.ID, &t.Kind, &t.Actor, &t.State, &t.Phase, &t.Error, &t.Created, &t.Updated, &t.Result, &t.Outcome)
+	err = s.db.QueryRowContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,CAST(result AS BLOB),outcome FROM control_tasks WHERE id=?`, id).Scan(&t.ID, &t.Kind, &t.Actor, &t.State, &t.Phase, &t.Error, &t.Created, &t.Updated, &t.Result, &t.Outcome)
 	t.Details = application.TaskDetails(t.Kind, t.Actor)
 	return
 }
 func (s *Store) tasks(ctx context.Context, result string) ([]Task, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,`+result+`,COALESCE(json_extract(result,'$.outcome'),'') FROM control_tasks ORDER BY id DESC LIMIT 200`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,`+result+`,outcome FROM control_tasks ORDER BY id DESC LIMIT 200`)
 	if err != nil {
 		return nil, err
 	}

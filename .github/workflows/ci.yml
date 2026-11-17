@@ -36,7 +36,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 45
     outputs:
       version: ${{ steps.version.outputs.version }}
       commit: ${{ steps.version.outputs.commit }}
@@ -79,7 +79,7 @@ jobs:
           chmod +x .build/core/mihomo
           echo "MIHOMO_BINARY=$PWD/.build/core/mihomo" >> "$GITHUB_ENV"
       - name: Go tests, race detection and 72 real subscription TCP/UDP links
-        run: RUN_UDP_IDLE_TESTS=1 go test -race -count=1 -v ./...
+        run: RUN_UDP_IDLE_TESTS=1 go test -race -timeout=25m -count=1 -v ./...
       - name: Managed runtime account isolation and real TCP/UDP links
         run: |
           go build -tags with_quic,with_utls,with_wireguard -o "$GITHUB_WORKSPACE/.build/managed-core" ./cmd/managed-core

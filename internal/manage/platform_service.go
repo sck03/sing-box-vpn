@@ -3,7 +3,6 @@ package manage
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,7 +20,6 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	"github.com/sck03/sing-box-vpn/internal/database"
 	"github.com/sck03/sing-box-vpn/internal/domain"
-	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
 type PlatformService struct {
@@ -84,46 +82,6 @@ func (s *PlatformService) signal() {
 	case s.wake <- struct{}{}:
 	default:
 	}
-}
-
-func (s *PlatformService) Initialize(ctx context.Context, address, name, admin, password string) error {
-	if _, err := s.Store.State(ctx); err == nil {
-		return errors.New("platform is already initialized")
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	if _, err := os.Stat(filepath.Join(s.Root, "app.json")); err == nil {
-		return errors.New("new platform requires a fresh directory; legacy configuration is not imported")
-	}
-	if err := initializeApp(ctx, s.Root, s.Core, address, name); err != nil {
-		return err
-	}
-	var app App
-	if _, err := ReadJSON(filepath.Join(s.Root, "app.json"), &app); err != nil {
-		return err
-	}
-	config, _, _, err := loadSubscriptions(s.Root)
-	if err != nil {
-		return err
-	}
-	config.Sources = []sub.Source{}
-	config.Collections = []sub.Collection{}
-	config.Outputs = []sub.Output{}
-	v := PlatformConfig{Schema: 4, App: app, VPN: VPNSettings{ProxyPort: 7928, Profiles: map[string]Profile{}}, VPNSecrets: map[string]Secrets{}, Gateway: Object{}, Subscriptions: config, Certificates: []CertificateAsset{}, Argo: TunnelSettings{Mode: "off"}, Listener: subscriptionSettings{Listen: "127.0.0.1", Port: 2097}}
-	data, err := encodePlatform(v)
-	if err != nil {
-		return err
-	}
-	if err = s.Auth.Bootstrap(ctx, admin, password, false); err != nil {
-		return err
-	}
-	if err = s.Store.Initialize(ctx, data); err != nil {
-		return err
-	}
-	if err = AtomicBytes(filepath.Join(s.Root, ".platform-v4"), []byte("control.db owns configuration; JSON files are generated\n"), 0600); err != nil {
-		return err
-	}
-	return AtomicJSON(filepath.Join(s.Root, "runtime-revision.json"), int64(1))
 }
 
 func (s *PlatformService) State(ctx context.Context, secret bool) (Object, error) {
@@ -506,13 +464,9 @@ func (s *PlatformService) Preset(ctx context.Context, protocol, id string) (Mana
 	return ManagedNode{}, errors.New("preset unavailable")
 }
 
-func (s *PlatformService) PrepareCountry(ctx context.Context, cc string) (PlatformConfig, error) {
-	state, err := s.Store.State(ctx)
-	if err != nil {
-		return PlatformConfig{}, err
-	}
-	c, err := decodePlatform(state.Desired)
-	if err != nil {
+func (s *PlatformService) PrepareCountry(ctx context.Context, c PlatformConfig, cc string) (PlatformConfig, error) {
+	c.normalize()
+	if err := c.Validate(); err != nil {
 		return c, err
 	}
 	if !countryPattern.MatchString(cc) {

@@ -31,7 +31,7 @@ export function jsonDialog(title, value, save) {
         "保存到草稿",
         async () => {
           await save(JSON.parse(input.value));
-          dialog.close();
+          if (dialog.contains(input)) dialog.close();
         },
         "primary",
       ),
@@ -90,10 +90,9 @@ export function formDialog(title, fields, value, save) {
         }
         input.step = "1";
       } else
-        input.value =
-          field.type === "csv"
-            ? (current || []).join(", ")
-            : (current ?? field.default ?? "");
+        input.value = ["csv", "numbers"].includes(field.type)
+          ? (current || []).join(", ")
+          : (current ?? field.default ?? "");
     }
     if (field.required) input.required = true;
     if (field.readonly) input.disabled = true;
@@ -202,10 +201,22 @@ export function formDialog(title, fields, value, save) {
               v = JSON.parse(v);
               break;
             case "csv":
+            case "numbers":
               v = v
                 .split(",")
                 .map((s) => s.trim())
                 .filter(Boolean);
+              if (field.type === "numbers") {
+                v = v.map(Number);
+                if (
+                  v.some(
+                    (n) => !Number.isSafeInteger(n) || n < 1 || n > 4294967295,
+                  )
+                )
+                  throw new Error(
+                    field.label + "需要 1–4294967295 范围内的整数",
+                  );
+              }
               break;
             case "date":
               v = v ? new Date(v).toISOString() : null;
@@ -233,6 +244,7 @@ export function resourceEditor({
   change,
   columns,
   normalize = (v) => v,
+  extraActions = () => [],
 }) {
   return card(
     title,
@@ -267,6 +279,7 @@ export function resourceEditor({
             change();
           }),
         ),
+        ...extraActions(item),
         button("复制", () => {
           const v = structuredClone(item);
           if (v.id !== undefined) v.id += "-copy";

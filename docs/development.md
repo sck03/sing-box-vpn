@@ -1,5 +1,11 @@
 # v4 开发与发布
 
+当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流四组。数据库使用 schema 10，所有旧数据库及其备份明确拒绝。
+
+`POST /api/country` 请求为 `{country,config}`，config 是完整当前草稿；返回候选配置，不修改数据库。前端拒绝用迟到结果覆盖重载或继续编辑后的草稿。可信反代必须追加真实客户端地址到 X-Forwarded-For，并设置 X-Forwarded-Proto=https。
+
+并发持久预留基准：`go test ./internal/accounting -run '^$' -bench '^BenchmarkConcurrentDurableReservations$' -benchmem -count=3 -cpu=4`。保持 WAL/FULL 与 64 KiB 单池边界，结果不能等同端到端代理带宽。
+
 Go 1.27.3，版本锁定于 versions.json。安装包包含 manager + managed-core 两个程序，每个提供 Linux amd64/arm64 静态构建，并携带项目源码及第三方许可证。前端使用原生 ES modules，无生产 Node 依赖。
 
 ```bash
@@ -14,7 +20,7 @@ go run ./cmd/release
 Windows 开发先 `. ./scripts/dev-env.ps1`。真实链路设置 `SING_BOX_BINARY`、`MIHOMO_BINARY`、`MANAGED_CORE_BINARY`；然后：
 
 ```bash
-RUN_UDP_IDLE_TESTS=1 go test -race -count=1 ./...
+RUN_UDP_IDLE_TESTS=1 go test -race -timeout=25m -count=1 ./...
 MANAGED_CORE_BINARY="$PWD/.build/managed-core" go test -race -count=1 -run '^(TestManagedAccountIsolation|TestRealFiveProtocolsTCPUDP)$' ./addons/vpngate/gateway
 MANAGED_CORE_BINARY="$PWD/.build/managed-core" go test -race -count=1 -run '^TestCredentialPublicationRetryDoesNotRepeatRotation$' ./internal/manage
 bash scripts/test-program-upgrade.sh
@@ -23,13 +29,13 @@ shellcheck --severity=warning sb.sh install.sh lib/*.sh scripts/*.sh
 
 Linux root 专项通过 `RUN_NETNS_TESTS=1`、`RUN_FIREWALL_TESTS=1`、`RUN_SERVICE_TESTS=1`、`RUN_STORAGE_TESTS=1` 启用，测试定义明确需要的二进制环境变量。仅使用专门 VM，真实 systemd/firewall 测试会创建系统资源。
 
-`npm test` 执行页面/草稿、可靠性及表格质量三组回归，覆盖重复提交、客户端字段联动、短暂断网、用户页路径前缀、状态搜索、焦点保留、单位换算和授权分页。Mihomo 分流配置检查需要 `MIHOMO_HOME/Country.mmdb`；缺失时返回未完成核心校验的明确诊断，避免在预览时下载地理数据库。原生核心校验与 sing-box 节点连通性检查分别报告，不以其中之一代替商业客户端验收。
+`npm test` 执行页面/草稿、可靠性及表格质量与工作流四组回归，覆盖重复提交、客户端字段联动、短暂断网、用户页路径前缀、状态搜索、焦点保留、单位换算和授权分页。Mihomo 分流配置检查需要 `MIHOMO_HOME/Country.mmdb`；缺失时返回未完成核心校验的明确诊断，避免在预览时下载地理数据库。原生核心校验与 sing-box 节点连通性检查分别报告，不以其中之一代替商业客户端验收。
 
 本地面板使用独立目录：manager `panel --root <空目录> --core <官方核心> --runtime <受管核心> --address 127.0.0.1 --no-system init`，stdin 为 username/password JSON；随后同样参数 `recover`、`serve`。`--no-system` 仅用于开发，系统动作明确拒绝。
 
-当前数据库 schema 9、备份格式 7。不复用早期开发目录或旧数据库；应用配置 schema 与数据库版本分别维护。对外 CLI 保留 panel、核心 prepare/check、firewall、下载监听和网关运行模式，旧 config/accounts/subscriptions/asset/remote 命令不再暴露。
+当前数据库 schema 10、备份格式 7。不复用早期开发目录或旧数据库；应用配置 schema 与数据库版本分别维护。对外 CLI 保留 panel、核心 prepare/check、firewall、下载监听和网关运行模式，旧 config/accounts/subscriptions/asset/remote 命令不再暴露。
 
-账户策略存储为独立字段，备份结构校验随 schema 更新；旧 schema 8 数据库及其备份明确拒绝。新增回归覆盖配置快照、纯账户订阅自动恢复、模板省略字段、Argo 日志滚动、BBR 部分失败重试、任务详情权限、分页边界、日期精度及分享结果窗口。`Task.details` 是服务端生成的详情访问描述，前端不再维护任务类型白名单。
+账户策略存储为独立字段，备份结构校验随 schema 更新；所有旧 schema 数据库及其备份明确拒绝。新增回归覆盖配置快照、纯账户订阅自动恢复、模板省略字段、Argo 日志滚动、BBR 部分失败重试、任务详情权限、分页边界、日期精度及分享结果窗口。`Task.details` 是服务端生成的详情访问描述，前端不再维护任务类型白名单。
 
 旧 config/subscriptions 命令适配器只保留在 `legacy_*_test.go` 中服务测试夹具，不编入生产。旧 remote 命令和 remote.json 通知旁路已移除；使用平台订阅分发资源及 webhook。新增授权列表接口：`GET /api/grants?q=...&offset=0&limit=20` 返回 `{items,total,offset,limit}`，limit 范围 1–100，条目含统一 `state`；没有旧数组接口兼容层。
 

@@ -1,14 +1,14 @@
 import { api, setCSRF } from "./api.js";
 import { overviewStream } from "./live.js";
+import { pageContext } from "./lifecycle.js";
 import { $, el, card, help, notice, action, button, showResult } from "./ui.js";
-import {
-  inbounds,
-  routing,
-  outbounds,
-  vpngate,
-  certificates,
-} from "./network.js";
-import { accounts, subscribers, grants } from "./accounts.js";
+import { inbounds, certificates } from "./network.js";
+import { routing } from "./routing.js";
+import { outbounds } from "./outbounds.js";
+import { vpngate } from "./vpngate.js";
+import { accounts } from "./accounts.js";
+import { subscribers } from "./subscribers.js";
+import { grants } from "./grants.js";
 import { subscriptions } from "./subscriptions.js";
 import { overview, maintenance, admins } from "./maintenance.js";
 const pages = [
@@ -106,8 +106,18 @@ const ctx = {
     }
     return draft;
   },
-  replaceConfig(c) {
-    draft = c;
+  async selectCountry(country) {
+    const current = await ctx.config();
+    const generation = draftGeneration;
+    const submitted = JSON.stringify(current);
+    const next = await api("/api/country", { country, config: current });
+    if (generation !== draftGeneration || current !== draft)
+      throw new DOMException("草稿已重新载入", "AbortError");
+    if (submitted !== JSON.stringify(current))
+      throw new Error("准备国家期间草稿发生变化，请重试。");
+    draft = next;
+    ctx.changed();
+    return ctx.render();
   },
   changed() {
     ctx.dirty = true;
@@ -171,9 +181,7 @@ async function renderPage() {
   try {
     $("#content").setAttribute("aria-busy", "true");
     // Each render owns its callback; a late render cannot replace the live one.
-    const view = Object.create(ctx);
-    view.signal = signal;
-    view.request = (path, body) => api(path, body, { signal });
+    const view = pageContext(ctx, signal);
     const content = await definition[2](view);
     if (generation === loading) ctx.updateOverview = view.updateOverview;
     if (generation !== loading) return;

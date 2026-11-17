@@ -19,6 +19,7 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/adminauth"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
+	"github.com/sck03/sing-box-vpn/internal/httpserver"
 )
 
 //go:embed panel/*
@@ -81,7 +82,17 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 		}
 	}
 	loginSlots := make(chan struct{}, 2)
+	requests, streams := make(httpserver.Gate, 32), make(httpserver.Gate, 32)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gate := requests
+		if r.URL.Path == "/api/events" {
+			gate = streams
+		}
+		release, ok := gate.Enter(w)
+		if !ok {
+			return
+		}
+		defer release()
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
@@ -100,6 +111,7 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 				http.Error(w, "untrusted proxy", 403)
 				return
 			}
+			peer = forwardedPeer(r.Header.Get("X-Forwarded-For"), peer, proxy)
 		}
 		if origin := r.Header.Get("Origin"); origin != "" && origin != options.PublicURL {
 			http.Error(w, "cross-origin request rejected", 403)
@@ -121,7 +133,7 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 			return
 		}
 		if strings.HasPrefix(path, "/u/") {
-			serveAccountDownload(s.Root, w, r, s.Accounts)
+			s.accountService().ServeDownload(w, r)
 			return
 		}
 		if path == "/api/auth/login" && r.Method == "POST" {
@@ -276,7 +288,7 @@ func (s *PlatformService) Serve(ctx context.Context, options PanelOptions, out i
 	go func() { worker <- s.Run(child); cancel() }()
 	server := &http.Server{Handler: s.Handler(options), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 3 * time.Minute, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
 	fmt.Fprintln(out, "管理面板："+options.PublicURL)
-	err = serveSubscription(child, listener, server)
+	err = httpserver.Serve(child, listener, server, 128)
 	cancel()
 	return errors.Join(err, <-worker)
 }

@@ -5,7 +5,8 @@ import { $, el, button, row, help, formDialog, notice } from "./ui.js";
 // Used both from an entitlement and the authorization inventory.
 export async function createAccountShare(accounts, ctx) {
   if (!accounts.length) throw new Error("请先创建权益并绑定入站。");
-  const catalog = await clientCatalog(ctx.request || api);
+  const request = ctx.workflowRequest || api;
+  const catalog = await clientCatalog(request);
   formDialog(
     "创建账户分享",
     [
@@ -52,7 +53,7 @@ export async function createAccountShare(accounts, ctx) {
       max_downloads: null,
     },
     async (value) => {
-      const result = await (ctx.request || api)("/api/grants", value);
+      const result = await request("/api/grants", value);
       const dialog = $("#dialog");
       const address = el("input", { "aria-label": "分享地址", readonly: true });
       address.value = result.user_url;

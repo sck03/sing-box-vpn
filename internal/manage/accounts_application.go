@@ -16,7 +16,7 @@ import (
 type AccountService struct {
 	Root    string
 	Store   *accounting.Store
-	Control *controlstore.Store
+	Control configurationReader
 	// Config supplies an explicit immutable candidate for compilation. Downloads
 	// leave it nil and capture the confirmed configuration once per operation.
 	Config *PlatformConfig
@@ -127,18 +127,18 @@ func (s AccountService) configSnapshot(ctx context.Context) (PlatformConfig, err
 	if s.Control != nil || platformOwned(s.Root) {
 		store := s.Control
 		if store == nil {
-			var err error
-			store, err = controlstore.Open(filepath.Join(s.Root, "control.db"))
+			opened, err := controlstore.Open(filepath.Join(s.Root, "control.db"))
 			if err != nil {
 				return PlatformConfig{}, err
 			}
-			defer store.Close()
+			defer opened.Close()
+			store = opened
 		}
-		state, err := store.State(ctx)
+		data, err := store.AppliedConfig(ctx)
 		if err != nil {
 			return PlatformConfig{}, err
 		}
-		c, err := decodePlatform(state.Applied)
+		c, err := decodePlatform(data)
 		if err != nil {
 			return c, err
 		}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	"github.com/sck03/sing-box-vpn/internal/hostservice"
 )
 
@@ -13,9 +12,15 @@ type tunnelObservation struct {
 	Runtime  hostservice.Tunnel `json:"runtime"`
 }
 
+// Consumers depend only on the immutable configuration and observation reads.
+type configurationReader interface {
+	AppliedConfig(context.Context) (json.RawMessage, error)
+	Observation(context.Context, string) (string, error)
+}
+
 // Runtime observations are versioned independently of desired configuration.
 // A candidate can reuse them only when it targets the same tunnel settings.
-func observedConfig(ctx context.Context, store *controlstore.Store, c PlatformConfig) (PlatformConfig, error) {
+func observedConfig(ctx context.Context, store configurationReader, c PlatformConfig) (PlatformConfig, error) {
 	if c.Argo.Mode != "temporary" {
 		return c, nil
 	}

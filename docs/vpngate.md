@@ -71,7 +71,7 @@ profile 指令最多三个参数，使用固定字段缓冲并提前拒绝多余
 | sing-box.service | 普通五协议 |
 | yg-vpngate.service | 出口管理器与认证 SOCKS5 |
 | sing-box-vpngate.service | 独立五协议 VPNGate 入口 |
-| /etc/s-box/control.db | 权威配置、权益、凭据、用量与任务，当前 schema 9 |
+| /etc/s-box/control.db | 权威配置、权益、凭据、用量与任务，当前 schema 10 |
 | /etc/s-box/vpngate/ | 网关、服务端等运行投影，不作为配置真源 |
 | /var/lib/yg-vpngate/ | 缓存、profile、状态、限量日志 |
 | /run/yg-vpngate/control.sock | 仅 root 的控制接口 |

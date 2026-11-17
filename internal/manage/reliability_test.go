@@ -234,7 +234,7 @@ func TestAccountDownloadsUseSharedClientCatalog(t *testing.T) {
 	for _, client := range clients {
 		t.Run(client, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			serveAccountDownload(root, w, httptest.NewRequest("GET", "/u/"+token+"/"+client, nil), store)
+			(AccountService{Root: root, Store: store}).ServeDownload(w, httptest.NewRequest("GET", "/u/"+token+"/"+client, nil))
 			if w.Code != 200 || w.Body.Len() == 0 || !strings.HasPrefix(w.Header().Get("Cache-Control"), "no-store") {
 				t.Fatal("catalog format cannot be downloaded safely", w.Code, w.Body.String())
 			}

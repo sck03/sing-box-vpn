@@ -138,11 +138,12 @@ func (s *PlatformService) serveConfiguration(w http.ResponseWriter, r *http.Requ
 			return true
 		}
 		var v struct {
-			Country string `json:"country"`
+			Country string         `json:"country"`
+			Config  PlatformConfig `json:"config"`
 		}
-		if err = decodeRequest(w, r, &v, 1024); err == nil {
+		if err = decodeRequest(w, r, &v, maxJSONFile); err == nil {
 			var c PlatformConfig
-			c, err = s.PrepareCountry(ctx, v.Country)
+			c, err = s.PrepareCountry(ctx, v.Config, v.Country)
 			if err == nil {
 				jsonResponse(w, c)
 				return true

@@ -152,7 +152,15 @@ func TestGatewayStateUsesDurableConfiguration(t *testing.T) {
 	root, core, _ := appFixture(t)
 	s, _, _ := platformFixture(t, root, core)
 	ctx := t.Context()
-	c, err := s.PrepareCountry(ctx, "JP")
+	state, err := s.Store.State(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial, err := decodePlatform(state.Desired)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := s.PrepareCountry(ctx, initial, "JP")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +178,7 @@ func TestGatewayStateUsesDurableConfiguration(t *testing.T) {
 	if _, err = s.Queue(ctx, PlatformAction{Operation: "gateway", Config: json.RawMessage(`{"op":"stop"}`)}, "operator"); err != nil {
 		t.Fatal(err)
 	}
-	state, err := s.Store.State(ctx)
+	state, err = s.Store.State(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

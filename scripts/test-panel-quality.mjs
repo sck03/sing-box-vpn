@@ -45,6 +45,11 @@ const focused = list.querySelector("tbody button");
 focused.focus();
 list.updateItems([{ id: "one", state: "inactive" }]);
 assert.equal(
+  list.querySelector("tbody .tag").textContent,
+  "inactive",
+  "focused control froze live values",
+);
+assert.equal(
   document.activeElement,
   focused,
   "live update destroyed focused action",
@@ -169,7 +174,7 @@ const { createAccountShare } =
   await import("../internal/manage/panel/sharing.js");
 let createdShare;
 await createAccountShare([{ id: "a", name: "Alice" }], {
-  request: async (path, body) => {
+  workflowRequest: async (path, body) => {
     if (path === "/api/clients") return { uri: { label: "URI" } };
     createdShare = body;
     return { user_url: "https://example.com/user#test" };
@@ -193,7 +198,7 @@ assert.equal(
   "https://example.com/user#test",
 );
 
-const { grants } = await import("../internal/manage/panel/accounts.js");
+const { grants } = await import("../internal/manage/panel/grants.js");
 const pages = await grants({
   session: { role: "admin" },
   request: async (path) =>

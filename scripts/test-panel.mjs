@@ -18,10 +18,14 @@ dom.window.HTMLDialogElement.prototype.close = function () {
   this.open = false;
 };
 globalThis.confirm = () => true;
-const { inbounds, routing, outbounds, vpngate, certificates } =
+const { inbounds, certificates } =
   await import("../internal/manage/panel/network.js");
-const { accounts, subscribers, grants } =
-  await import("../internal/manage/panel/accounts.js");
+const { routing } = await import("../internal/manage/panel/routing.js");
+const { outbounds } = await import("../internal/manage/panel/outbounds.js");
+const { vpngate } = await import("../internal/manage/panel/vpngate.js");
+const { accounts } = await import("../internal/manage/panel/accounts.js");
+const { subscribers } = await import("../internal/manage/panel/subscribers.js");
+const { grants } = await import("../internal/manage/panel/grants.js");
 const { subscriptions } =
   await import("../internal/manage/panel/subscriptions.js");
 const { overview, maintenance, admins } =
@@ -90,7 +94,7 @@ const ctx = {
   render() {},
   observeRevision() {},
   task() {},
-  replaceConfig() {},
+  selectCountry() {},
 };
 for (const page of [
   inbounds,
@@ -183,6 +187,7 @@ globalThis.location = dom.window.location;
 location.hash = "inbounds";
 const configReads = [],
   configWrites = [],
+  countries = [],
   previews = [];
 const reply = (value) => ({ ok: true, json: async () => value });
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -192,13 +197,15 @@ globalThis.fetch = (path, options) => {
       reply({ id: "admin", role: "admin", csrf: "current" }),
     );
   const queue =
-    path === "/api/config/preview"
-      ? previews
-      : path === "/api/config"
-        ? options.method === "GET"
-          ? configReads
-          : configWrites
-        : null;
+    path === "/api/country"
+      ? countries
+      : path === "/api/config/preview"
+        ? previews
+        : path === "/api/config"
+          ? options.method === "GET"
+            ? configReads
+            : configWrites
+          : null;
   assert(queue, `unexpected application request: ${path}`);
   return new Promise((resolve) =>
     queue.push({
@@ -284,6 +291,58 @@ assert.equal(
 );
 assert.equal(configWrites[3].body.config.app.name, "after-reload");
 configWrites[3].resolve({ task_id: 4 });
+await tick();
+location.hash = "vpngate";
+window.dispatchEvent(new Event("hashchange"));
+await tick();
+[...document.querySelectorAll("#content button")]
+  .find((b) => b.textContent === "选择 / 新增国家")
+  .click();
+document.querySelector('dialog select[aria-label="国家代码"]').value = "JP";
+document
+  .querySelector("dialog form")
+  .dispatchEvent(new Event("submit", { cancelable: true }));
+await tick();
+assert.equal(
+  countries[0].body.config.app.name,
+  "after-reload",
+  "country preparation discarded existing draft",
+);
+const countryDraft = structuredClone(countries[0].body.config);
+countryDraft.vpn.active_country = "JP";
+countries[0].resolve(countryDraft);
+await tick();
+document.querySelector("#save").click();
+assert.equal(configWrites[4].body.config.app.name, "after-reload");
+assert.equal(configWrites[4].body.config.vpn.active_country, "JP");
+configWrites[4].resolve({ task_id: 5 });
+await tick();
+[...document.querySelectorAll("#content button")]
+  .find((b) => b.textContent === "选择 / 新增国家")
+  .click();
+document.querySelector('dialog select[aria-label="国家代码"]').value = "US";
+document
+  .querySelector("dialog form")
+  .dispatchEvent(new Event("submit", { cancelable: true }));
+await tick();
+document.querySelector("#discard").click();
+await tick();
+configReads[2].resolve({
+  config: structuredClone(config),
+  revision: 20,
+  root: "/tmp/test",
+});
+await tick();
+countries[1].resolve(countryDraft);
+await tick();
+document.querySelector("#save").click();
+assert.equal(configWrites[5].body.revision, 20);
+assert.equal(
+  configWrites[5].body.config.vpn.active_country,
+  undefined,
+  "late country response overwrote reloaded draft",
+);
+configWrites[5].resolve({ task_id: 6 });
 await tick();
 clearTimeout(notice.timer);
 console.log(

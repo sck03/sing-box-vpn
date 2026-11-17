@@ -1,7 +1,6 @@
 package manage
 
 import (
-	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/clientprofile"
 	"net/http"
@@ -9,7 +8,7 @@ import (
 	"strings"
 )
 
-func serveAccountDownload(root string, w http.ResponseWriter, r *http.Request, stores ...*accounting.Store) {
+func (service AccountService) ServeDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -26,10 +25,6 @@ func serveAccountDownload(root string, w http.ResponseWriter, r *http.Request, s
 	if len(token) != 64 || (resource != "usage" && !clientprofile.SupportsAccount(resource)) {
 		http.NotFound(w, r)
 		return
-	}
-	service := AccountService{Root: root}
-	if len(stores) > 0 {
-		service.Store = stores[0]
 	}
 	store, closeStore, err := service.openStore()
 	if err != nil {
@@ -54,7 +49,8 @@ func serveAccountDownload(root string, w http.ResponseWriter, r *http.Request, s
 		http.Error(w, "download allowance exhausted", 403)
 		return
 	}
-	artifact, err := (AccountService{Root: root, Store: store}).Export(r.Context(), application.AccountCommand{ID: grant.AccountID, Scope: grant.Scope, Client: resource})
+	service.Store = store
+	artifact, err := service.Export(r.Context(), application.AccountCommand{ID: grant.AccountID, Scope: grant.Scope, Client: resource})
 	if err != nil {
 		http.Error(w, "account output unavailable", 503)
 		return
@@ -73,11 +69,11 @@ func serveAccountDownload(root string, w http.ResponseWriter, r *http.Request, s
 	}
 }
 
-func unifiedDownloadHandler(root string, stores ...*accounting.Store) http.Handler {
-	outputs := subscriptionHandler(root, stores...)
+func unifiedDownloadHandler(service AccountService) http.Handler {
+	outputs := subscriptionHandler(service.Root, service.Store)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/u/") {
-			serveAccountDownload(root, w, r, stores...)
+			service.ServeDownload(w, r)
 			return
 		}
 		if r.URL.Path == "/user" || r.URL.Path == "/panel/user.js" || r.URL.Path == "/panel/style.css" {

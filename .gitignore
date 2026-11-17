@@ -1,7 +1,7 @@
 .tools/
 .build/
 .test/
-.待手动删除/
+.cleanup-manual/
 __pycache__/
 *.pyc
 *.log
@@ -15,5 +15,4 @@ state.json
 *.ovpn
 *.auth
 
-/待手动删除/
 node_modules/

@@ -52,7 +52,7 @@ func (s *PlatformService) overviewSnapshot(ctx context.Context) ([]byte, error) 
 }
 
 func (s *PlatformService) collectOverview(ctx context.Context) ([]byte, error) {
-	state, err := s.Store.State(ctx)
+	state, err := s.Store.Revisions(ctx)
 	if err != nil {
 		return nil, err
 	}

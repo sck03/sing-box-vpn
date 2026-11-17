@@ -70,6 +70,31 @@ func passwordHash(password string) ([]byte, error) {
 	return bcrypt.GenerateFromPassword([]byte(password), 12)
 }
 
+// PrepareAdministrator validates and hashes before initialization touches files.
+// The returned function installs the first administrator in the caller's transaction.
+func PrepareAdministrator(id, password string) (func(context.Context, *sql.Tx) error, error) {
+	if !domain.ResourceID.MatchString(id) {
+		return nil, errors.New("invalid administrator ID")
+	}
+	p, err := passwordHash(password)
+	if err != nil {
+		return nil, err
+	}
+	return func(ctx context.Context, tx *sql.Tx) error {
+		var count int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM administrators`).Scan(&count); err != nil {
+			return err
+		}
+		if count != 0 {
+			return errors.New("administrator already initialized")
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO administrators(id,password,role) VALUES(?,?,'admin')`, id, p); err != nil {
+			return err
+		}
+		return audit(ctx, tx, "local-cli", "administrator-initialize", id, "success")
+	}, nil
+}
+
 // Bootstrap/reset is available only through the local recovery CLI. Reset is
 // explicit and revokes every prior session and authenticator for this admin.
 func (s *Store) Bootstrap(ctx context.Context, id, password string, reset bool) error {

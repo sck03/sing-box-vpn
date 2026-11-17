@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -25,6 +26,9 @@ const ReservationBytes int64 = 64 << 10
 type Store struct {
 	db                 *sql.DB
 	authorizationEpoch atomic.Uint64
+	reservationMu      sync.Mutex
+	reservations       *reservationWriter
+	closed             bool
 }
 
 func Open(path string) (*Store, error) {
@@ -41,7 +45,23 @@ func Open(path string) (*Store, error) {
 	return s, nil
 }
 
-func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) Close() error {
+	s.reservationMu.Lock()
+	if s.closed {
+		s.reservationMu.Unlock()
+		return nil
+	}
+	s.closed = true
+	writer := s.reservations
+	if writer != nil {
+		close(writer.requests)
+	}
+	s.reservationMu.Unlock()
+	if writer != nil {
+		<-writer.done
+	}
+	return s.db.Close()
+}
 
 const schema = `
 CREATE TABLE IF NOT EXISTS accounts (
@@ -366,20 +386,12 @@ func (s *Store) Reserve(ctx context.Context, id, account, runtime string, want i
 	return s.reservePeriod(ctx, id, account, runtime, want, now, u.PeriodID)
 }
 
-func (s *Store) reservePeriod(ctx context.Context, id, account, runtime string, want int64, now time.Time, periodID int64) (int64, error) {
-	if want < 1 || want > ReservationBytes {
-		return 0, errors.New("invalid reservation size")
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback()
+func reserveInTransaction(ctx context.Context, tx *sql.Tx, id, account, runtime string, want int64, now time.Time, periodID int64) (int64, error) {
 	// Acquire the SQLite writer before reading the quota, including across processes.
-	if _, err = tx.ExecContext(ctx, `UPDATE accounts SET charged=charged WHERE id=?`, account); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE accounts SET charged=charged WHERE id=?`, account); err != nil {
 		return 0, err
 	}
-	if err = checkLeaseScope(ctx, tx, id); err != nil {
+	if err := checkLeaseScope(ctx, tx, id); err != nil {
 		return 0, err
 	}
 	u, err := readAccount(tx.QueryRowContext(ctx, `SELECT `+accountColumns+` FROM accounts WHERE id=?`, account))
@@ -416,9 +428,6 @@ func (s *Store) reservePeriod(ctx context.Context, id, account, runtime string, 
 		return 0, err
 	} else if n != 1 {
 		return 0, errors.New("account counter capacity exceeded")
-	}
-	if err = tx.Commit(); err != nil {
-		return 0, err
 	}
 	return want, nil
 }

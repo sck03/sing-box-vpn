@@ -12,7 +12,7 @@ import (
 )
 
 const Filename = "control.db"
-const SchemaVersion = 9
+const SchemaVersion = 10
 
 func Open(path string) (*sql.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
@@ -39,7 +39,7 @@ func Open(path string) (*sql.DB, error) {
 		if err == nil && version != 0 && version != SchemaVersion {
 			err = fmt.Errorf("unsupported database; this release requires a new installation directory (schema %d)", SchemaVersion)
 		}
-		if err == nil {
+		if err == nil && version == 0 {
 			_, err = db.Exec(fmt.Sprintf("PRAGMA user_version=%d;", SchemaVersion))
 		}
 	}

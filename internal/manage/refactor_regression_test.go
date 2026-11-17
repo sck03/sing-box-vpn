@@ -101,12 +101,16 @@ func TestCountryNormalizesNullMapsAndBuildIgnoresBrokenProjections(t *testing.T)
 	s, c, _ := platformFixture(t, root, core)
 	c.VPN.Profiles = nil
 	c.VPNSecrets = nil
+	c.App.Name = "unsaved-country-draft"
 	if _, err := s.Store.Queue(t.Context(), "apply", "test", []byte(`{}`), 1, mustJSON(t, c)); err != nil {
 		t.Fatal(err)
 	}
-	prepared, err := s.PrepareCountry(t.Context(), "JP")
+	prepared, err := s.PrepareCountry(t.Context(), c, "JP")
 	if err != nil || len(prepared.VPN.Profiles) != 1 || len(prepared.VPNSecrets) != 1 {
 		t.Fatal(prepared.VPN, err)
+	}
+	if prepared.App.Name != "unsaved-country-draft" {
+		t.Fatal("country preparation discarded draft")
 	}
 	for _, path := range []string{subscriptionsConfig, subscriptionsSnapshot} {
 		if err = os.WriteFile(filepath.Join(root, path), []byte("broken"), 0600); err != nil {

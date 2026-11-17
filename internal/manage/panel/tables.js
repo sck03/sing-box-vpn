@@ -13,6 +13,14 @@ export function table(columns, items, actions, options = {}) {
     signature = "",
     waitingForFocus = false,
     indexed = [];
+  const scalar = (value) => (value instanceof Node ? value.textContent : value);
+  const rowKey = (item) =>
+    options.rowKey?.(item) ??
+    item.id ??
+    item.instance ??
+    item.runtime ??
+    item.name;
+  const collator = new Intl.Collator(undefined, { numeric: true });
   const preferenceKey =
     "table:" + (options.key || columns.map((c) => c.key || c.label).join("|"));
   let preference = { sort: -1, descending: false, compact: false, hidden: [] };
@@ -68,51 +76,38 @@ export function table(columns, items, actions, options = {}) {
     controls.append(choices);
   }
   function index() {
-    indexed = items.map((item) => ({
-      item,
-      text: columns
-        .map((c) => {
-          const value = c.search
-            ? c.search(item)
-            : c.value
-              ? c.value(item)
-              : c.key
-                ? item[c.key]
-                : c.render?.(item);
-          return value instanceof Node
-            ? value.textContent
-            : String(value ?? "");
-        })
-        .join(" ")
-        .toLocaleLowerCase(),
-    }));
+    indexed = items.map((item) => {
+      const values = columns.map((c) =>
+        scalar(
+          c.value ? c.value(item) : c.key ? item[c.key] : c.render?.(item),
+        ),
+      );
+      return {
+        item,
+        values,
+        text: columns
+          .map((c, i) => scalar(c.search ? c.search(item) : values[i]) ?? "")
+          .join(" ")
+          .toLocaleLowerCase(),
+      };
+    });
   }
   index();
   function render() {
     const term = search.value.trim().toLocaleLowerCase();
-    const data = indexed
-      .filter((entry) => entry.text.includes(term))
-      .map((entry) => entry.item);
+    const entries = indexed.filter((entry) => entry.text.includes(term));
     if (options.controls !== false && columns[preference.sort]) {
-      const c = columns[preference.sort];
-      const value = (item) =>
-        c.value
-          ? c.value(item)
-          : c.key
-            ? item[c.key]
-            : c.render?.(item)?.textContent;
-      data.sort((a, b) => {
-        const av = value(a),
-          bv = value(b);
+      entries.sort((a, b) => {
+        const av = a.values[preference.sort],
+          bv = b.values[preference.sort];
         const order =
           typeof av === "number" && typeof bv === "number"
             ? av - bv
-            : String(av ?? "").localeCompare(String(bv ?? ""), undefined, {
-                numeric: true,
-              });
+            : collator.compare(String(av ?? ""), String(bv ?? ""));
         return preference.descending ? -order : order;
       });
     }
+    const data = entries.map((entry) => entry.item);
     wrapper.classList.toggle("compact", !!preference.compact);
     const visible = columns
       .map((c, i) => ({ c, i }))
@@ -155,6 +150,18 @@ export function table(columns, items, actions, options = {}) {
     const tbody = el("tbody");
     for (const item of data.slice(page * 20, (page + 1) * 20)) {
       const tr = el("tr");
+      tr.rowItem = item;
+      tr.rowKey = rowKey(item);
+      tr.addEventListener(
+        "click",
+        (event) => {
+          if (tr.stale && event.target.closest("button")) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        },
+        true,
+      );
       for (const { c } of visible) {
         const value = c.render
           ? c.render(item)
@@ -208,8 +215,36 @@ export function table(columns, items, actions, options = {}) {
     const serialized = JSON.stringify(next);
     items = next;
     if (serialized === signature) return;
-    // A live update must not replace the button currently being operated.
+    // Patch visible data immediately, preserving active controls and row order.
+    // Reorder/filter and replace action closures once focus leaves the table.
     if (body.contains(document.activeElement)) {
+      signature = "";
+      const byKey = new Map(next.map((item) => [rowKey(item), item]));
+      for (const tr of body.querySelectorAll("tbody tr")) {
+        const item = tr.rowKey === undefined ? null : byKey.get(tr.rowKey);
+        const changed =
+          !item || JSON.stringify(item) !== JSON.stringify(tr.rowItem);
+        tr.stale ||= changed;
+        if (changed)
+          tr.querySelectorAll("button").forEach((control) => {
+            control.setAttribute("aria-disabled", "true");
+            control.title = "数据已更新，请移开焦点以刷新操作";
+          });
+        if (!item) continue;
+        const visible = columns.filter(
+          (_, i) => !preference.hidden.includes(i),
+        );
+        visible.forEach((c, i) => {
+          const cell = tr.children[i];
+          if (cell.contains(document.activeElement)) return;
+          const value = c.render
+            ? c.render(item)
+            : c.value
+              ? c.value(item)
+              : item[c.key];
+          cell.replaceChildren(value ?? "—");
+        });
+      }
       if (!waitingForFocus) {
         waitingForFocus = true;
         body.addEventListener(

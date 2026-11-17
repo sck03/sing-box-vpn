@@ -13,7 +13,7 @@ func pruneGrants(ctx context.Context, tx *sql.Tx, now time.Time) error {
 	_, err := tx.ExecContext(ctx, `DELETE FROM download_grants WHERE id IN (
  SELECT id FROM (SELECT id,invalid_at,ROW_NUMBER() OVER (ORDER BY invalid_at DESC,id) AS position FROM (
  SELECT id,CASE WHEN revoked=0 AND expires<=? THEN MAX(updated,expires) ELSE updated END AS invalid_at
- FROM download_grants WHERE revoked=1 OR expires<=? OR downloads>=max_downloads))
+	 FROM download_grants WHERE revoked=1 OR expires<=? OR (account IS NULL AND downloads>=max_downloads)))
  WHERE position>1000 OR invalid_at<?)`, now.Unix(), now.Unix(), now.Add(-30*24*time.Hour).Unix())
 	return err
 }

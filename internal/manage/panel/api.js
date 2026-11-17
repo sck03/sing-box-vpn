@@ -1,6 +1,9 @@
 let csrf = "";
 let sessionGeneration = 0;
+let sessionRequests = new AbortController();
 export function setCSRF(value) {
+  sessionRequests.abort();
+  sessionRequests = new AbortController();
   sessionGeneration++;
   csrf = value || "";
 }
@@ -10,7 +13,9 @@ export async function api(path, body, { blob = false, signal } = {}) {
   const response = await fetch(path, {
     method: body === undefined ? "GET" : "POST",
     credentials: "same-origin",
-    signal,
+    signal: signal
+      ? AbortSignal.any([signal, sessionRequests.signal])
+      : sessionRequests.signal,
     headers:
       body === undefined
         ? {}
