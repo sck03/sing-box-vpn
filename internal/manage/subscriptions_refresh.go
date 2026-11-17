@@ -9,11 +9,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/sck03/sing-box-vpn/internal/application"
 	strict "github.com/sck03/sing-box-vpn/internal/encoding"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
@@ -182,6 +184,10 @@ func refreshSource(ctx context.Context, client *http.Client, source sub.Source, 
 // The separate cross-process lock coalesces scheduled and manual refreshes. It
 // never holds the configuration lock while waiting on a remote server.
 func refreshSubscriptions(ctx context.Context, root, core string, force bool) error {
+	return refreshSubscriptionsResult(ctx, root, core, force, &application.RefreshResult{})
+}
+
+func refreshSubscriptionsResult(ctx context.Context, root, core string, force bool, report *application.RefreshResult) error {
 	if err := os.MkdirAll(filepath.Join(root, "subscriptions"), 0700); err != nil {
 		return err
 	}
@@ -267,6 +273,24 @@ func refreshSubscriptions(ctx context.Context, root, core string, force bool) er
 		return err
 	}
 	resourceChanged, resources, events := refreshSubscriptionResources(ctx, client, &config, runtime.Resources, now, force)
+	report.Failures = []application.RefreshFailure{}
+	for id, value := range results {
+		report.Checked++
+		if value.Error != "" {
+			report.Failures = append(report.Failures, application.RefreshFailure{ID: id, Error: value.Error, LastSuccess: value.Success})
+		} else {
+			report.Updated++
+		}
+	}
+	for id, value := range resources {
+		report.Checked++
+		if value.Error != "" {
+			report.Failures = append(report.Failures, application.RefreshFailure{ID: id, Error: value.Error})
+		} else {
+			report.Updated++
+		}
+	}
+	sort.Slice(report.Failures, func(i, j int) bool { return report.Failures[i].ID < report.Failures[j].ID })
 	err = withLock(root, func() error {
 		current, state, local, err := loadSubscriptions(root)
 		if err != nil {
@@ -303,7 +327,8 @@ func refreshSubscriptions(ctx context.Context, root, core string, force bool) er
 				events = append(events, sub.Run{Time: now, Operation: "refresh", ObjectID: id, Message: message})
 			}
 		}
-		files, _, _, buildErr := compileSubscriptions(ctx, root, core, current, state, local, !resourceChanged)
+		files, snapshot, _, buildErr := compileSubscriptions(ctx, root, core, current, state, local, !resourceChanged)
+		report.Outputs, report.ExpectedOutputs = len(snapshot.Artifacts), len(current.Outputs)
 		if buildErr != nil {
 			// A rejected resource update must be fetched again; do not retain its ETag.
 			for id := range resources {
@@ -317,6 +342,7 @@ func refreshSubscriptions(ctx context.Context, root, core string, force bool) er
 		}
 		return publish(root, files)
 	})
+	report.Complete()
 	for _, event := range events {
 		notifySubscriptionEvent(ctx, client, root, config, event)
 	}

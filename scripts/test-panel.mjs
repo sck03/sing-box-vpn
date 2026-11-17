@@ -74,7 +74,10 @@ globalThis.fetch = async (path) => ({
             runtimes: [],
             tasks: [],
           }
-        : [],
+        : String(path).startsWith("/api/grants") ||
+            String(path).startsWith("/api/accounts?")
+          ? { items: [], total: 0, offset: 0, limit: 20 }
+          : [],
 });
 const ctx = {
   session: { role: "admin" },

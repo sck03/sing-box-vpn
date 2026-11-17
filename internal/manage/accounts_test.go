@@ -58,7 +58,7 @@ func TestAccountBatchBindingIsIndependentAndAtomic(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	entries, err := svc.accountEntries("normal")
+	entries, err := svc.accountEntries(t.Context(), "normal")
 	if err != nil {
 		t.Fatal(err)
 	}

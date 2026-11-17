@@ -138,8 +138,17 @@ func Write(ctx context.Context, dst io.Writer, password []byte, manifest Manifes
 }
 
 func Read(data, password []byte) (Archive, error) {
+	return ReadFrom(bytes.NewReader(data), password)
+}
+
+// ReadFrom bounds ciphertext and plaintext separately. Callers may spool the
+// encrypted upload to disk without keeping another archive-sized memory copy.
+func ReadFrom(source io.Reader, password []byte) (Archive, error) {
 	result := Archive{Files: map[string][]byte{}}
-	if len(password) < 12 || len(password) > 1024 || len(data) > MaxArchive || !bytes.HasPrefix(data, []byte(Magic)) {
+	ciphertext := &io.LimitedReader{R: source, N: MaxArchive + 1}
+	var magic [8]byte
+	_, headerErr := io.ReadFull(ciphertext, magic[:])
+	if len(password) < 12 || len(password) > 1024 || headerErr != nil || string(magic[:]) != Magic {
 		return result, errors.New("invalid format-7 encrypted backup")
 	}
 	identity, err := age.NewScryptIdentity(string(password))
@@ -147,7 +156,7 @@ func Read(data, password []byte) (Archive, error) {
 		return result, err
 	}
 	identity.SetMaxWorkFactor(workFactor)
-	decrypted, err := age.Decrypt(bytes.NewReader(data[len(Magic):]), identity)
+	decrypted, err := age.Decrypt(ciphertext, identity)
 	if err != nil {
 		return result, errors.New("backup password incorrect or archive damaged")
 	}
@@ -201,7 +210,7 @@ func Read(data, password []byte) (Archive, error) {
 	if _, err = io.Copy(io.Discard, bounded); err != nil {
 		return result, err
 	}
-	if bounded.N <= 0 || !seen["manifest.json"] || len(result.Database) == 0 || result.Version != 7 || result.Root == "" {
+	if ciphertext.N <= 0 || bounded.N <= 0 || !seen["manifest.json"] || len(result.Database) == 0 || result.Version != 7 || result.Root == "" {
 		return result, errors.New("unsupported or incomplete backup")
 	}
 	return result, nil

@@ -1,111 +1,18 @@
-export const $ = (selector, root = document) => root.querySelector(selector);
-export function el(tag, attrs = {}, ...children) {
-  const node = document.createElement(tag);
-  for (const [key, value] of Object.entries(attrs)) {
-    if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
-    else if (key === "class") node.className = value;
-    else if (value !== undefined && value !== null)
-      node.setAttribute(key, String(value));
-  }
-  for (const child of children.flat()) {
-    if (child !== null && child !== undefined)
-      node.append(
-        child instanceof Node ? child : document.createTextNode(String(child)),
-      );
-  }
-  return node;
-}
-export function notice(message, error = false) {
-  const node = $("#notice");
-  node.textContent = message;
-  node.classList.toggle("error", error);
-  node.hidden = false;
-  clearTimeout(notice.timer);
-  notice.timer = setTimeout(() => (node.hidden = true), error ? 16000 : 6500);
-}
-export function action(fn) {
-  let pending = false;
-  return async (event) => {
-    if (event?.type === "submit") event.preventDefault();
-    if (pending) return;
-    pending = true;
-    const target = event?.currentTarget;
-    const controls =
-      target?.tagName === "FORM"
-        ? [...target.querySelectorAll("button, input[type=submit]")]
-        : target
-          ? [target]
-          : [];
-    const disabled = controls.map((control) => control.disabled);
-    try {
-      target?.setAttribute("aria-busy", "true");
-      controls.forEach((control) => {
-        control.disabled = true;
-      });
-      await fn(event);
-    } catch (error) {
-      if (error.name !== "AbortError") notice(error.message, true);
-    } finally {
-      pending = false;
-      target?.removeAttribute("aria-busy");
-      controls.forEach((control, i) => {
-        control.disabled = disabled[i];
-      });
-    }
-  };
-}
-export const button = (label, fn, kind = "") =>
-  el("button", { type: "button", class: kind, onclick: action(fn) }, label);
-export const card = (title, ...body) =>
-  el("section", { class: "card" }, el("h2", {}, title), ...body);
-export const help = (text) => el("p", { class: "help" }, text);
-export const row = (...children) => el("div", { class: "row" }, ...children);
-export const badge = (text, kind = "") =>
-  el("span", { class: "tag " + kind }, text);
-export function bytes(value) {
-  if (value === null || value === undefined) return "不限";
-  const n = Number(value);
-  if (n < 1024) return `${n} B`;
-  const units = ["KiB", "MiB", "GiB", "TiB", "PiB"];
-  let v = n / 1024,
-    i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toFixed(2)} ${units[i]}`;
-}
-export function date(value) {
-  if (!value) return "—";
-  return new Date(
-    typeof value === "number" ? value * 1000 : value,
-  ).toLocaleString();
-}
-export function getPath(object, path) {
-  return path.split(".").reduce((v, k) => v?.[k], object);
-}
-export function setPath(object, path, value) {
-  const parts = path.split(".");
-  let cursor = object;
-  for (const key of parts.slice(0, -1)) {
-    cursor[key] ??= {};
-    cursor = cursor[key];
-  }
-  cursor[parts.at(-1)] = value;
-}
-export function showResult(title, value) {
-  const dialog = $("#dialog");
-  dialog.replaceChildren(
-    el("h2", {}, title),
-    el(
-      "pre",
-      {},
-      typeof value === "string" ? value : JSON.stringify(value, null, 2),
-    ),
-    button("关闭", () => dialog.close()),
-  );
-  dialog.showModal();
-}
+export * from "./dom.js";
+export { table, remoteTable } from "./tables.js";
+import {
+  $,
+  el,
+  action,
+  button,
+  card,
+  help,
+  row,
+  getPath,
+  setPath,
+} from "./dom.js";
+import { table } from "./tables.js";
+
 export function jsonDialog(title, value, save) {
   const dialog = $("#dialog"),
     input = el("textarea", {
@@ -209,7 +116,11 @@ export function formDialog(title, fields, value, save) {
       setPath(
         current,
         field.key,
-        field.type === "bool" ? input.checked : input.value,
+        field.type === "bool"
+          ? input.checked
+          : field.type === "multiselect"
+            ? [...input.selectedOptions].map((o) => o.value)
+            : input.value,
       );
     return current;
   };
@@ -217,7 +128,9 @@ export function formDialog(title, fields, value, save) {
     let current = formValue();
     for (const [field, input] of inputs) {
       if (typeof field.options === "function") {
-        const previous = input.value;
+        const previous = input.multiple
+          ? [...input.selectedOptions].map((o) => o.value)
+          : input.value;
         const options = field.options(current);
         input.replaceChildren(
           ...options.map((option) => {
@@ -227,9 +140,18 @@ export function formDialog(title, fields, value, save) {
             return el("option", { value: v }, label);
           }),
         );
-        if ([...input.options].some((o) => o.value === previous))
+        if (input.multiple) {
+          for (const option of input.options)
+            option.selected = previous.includes(option.value);
+        } else if ([...input.options].some((o) => o.value === previous))
           input.value = previous;
-        setPath(current, field.key, input.value);
+        setPath(
+          current,
+          field.key,
+          input.multiple
+            ? [...input.selectedOptions].map((o) => o.value)
+            : input.value,
+        );
       }
       const visible = !field.visible || field.visible(current);
       input.closest("label").hidden = !visible;
@@ -301,181 +223,6 @@ export function formDialog(title, fields, value, save) {
   dialog.replaceChildren(el("h2", {}, title), form);
   dialog.showModal();
 }
-export function table(columns, items, actions) {
-  const wrapper = el("div", { class: "data-table" }),
-    search = el("input", {
-      class: "search",
-      placeholder: "搜索…",
-      "aria-label": "搜索列表",
-    }),
-    body = el("div"),
-    pager = el("div", { class: "pager" });
-  let page = 0,
-    signature = "",
-    waitingForFocus = false,
-    indexed = [];
-  function index() {
-    indexed = items.map((item) => ({
-      item,
-      text: columns
-        .map((c) => {
-          const value = c.search
-            ? c.search(item)
-            : c.value
-              ? c.value(item)
-              : c.key
-                ? item[c.key]
-                : c.render?.(item);
-          return value instanceof Node
-            ? value.textContent
-            : String(value ?? "");
-        })
-        .join(" ")
-        .toLocaleLowerCase(),
-    }));
-  }
-  index();
-  function render() {
-    const term = search.value.trim().toLocaleLowerCase();
-    const data = indexed
-      .filter((entry) => entry.text.includes(term))
-      .map((entry) => entry.item);
-    const pages = Math.max(1, Math.ceil(data.length / 20));
-    page = Math.min(page, pages - 1);
-    const t = el("table"),
-      head = el("tr");
-    for (const c of columns) head.append(el("th", {}, c.label));
-    if (actions) head.append(el("th", {}, "操作"));
-    t.append(el("thead", {}, head));
-    const tbody = el("tbody");
-    for (const item of data.slice(page * 20, (page + 1) * 20)) {
-      const tr = el("tr");
-      for (const c of columns) {
-        const value = c.render
-          ? c.render(item)
-          : c.value
-            ? c.value(item)
-            : item[c.key];
-        tr.append(el("td", {}, value ?? "—"));
-      }
-      if (actions)
-        tr.append(el("td", {}, el("div", { class: "actions" }, actions(item))));
-      tbody.append(tr);
-    }
-    t.append(tbody);
-    body.replaceChildren(
-      data.length
-        ? el("div", { class: "table-wrap" }, t)
-        : el("div", { class: "empty" }, "暂无记录"),
-    );
-    pager.replaceChildren(
-      button("上一页", () => {
-        page = Math.max(0, page - 1);
-        render();
-      }),
-      el("span", {}, `${page + 1} / ${pages} · ${data.length} 项`),
-      button("下一页", () => {
-        page = Math.min(pages - 1, page + 1);
-        render();
-      }),
-    );
-  }
-  search.addEventListener("input", () => {
-    page = 0;
-    render();
-  });
-  wrapper.append(search, body, pager);
-  wrapper.updateItems = (next) => {
-    const serialized = JSON.stringify(next);
-    items = next;
-    if (serialized === signature) return;
-    // A live update must not replace the button currently being operated.
-    if (body.contains(document.activeElement)) {
-      if (!waitingForFocus) {
-        waitingForFocus = true;
-        body.addEventListener(
-          "focusout",
-          () =>
-            queueMicrotask(() => {
-              waitingForFocus = false;
-              wrapper.updateItems(items);
-            }),
-          { once: true },
-        );
-      }
-      return;
-    }
-    signature = serialized;
-    index();
-    render();
-  };
-  signature = JSON.stringify(items);
-  render();
-  return wrapper;
-}
-export async function remoteTable(columns, load, actions) {
-  const search = el("input", {
-    class: "search",
-    "aria-label": "搜索授权",
-    placeholder: "搜索 ID、权益或状态…",
-  });
-  const body = el("div"),
-    pager = el("div", { class: "pager" });
-  const wrapper = el("div", { class: "remote-table" }, search, body, pager);
-  let offset = 0,
-    generation = 0,
-    timer;
-  async function refresh() {
-    const current = ++generation;
-    wrapper.setAttribute("aria-busy", "true");
-    try {
-      const page = await load({ q: search.value, offset, limit: 20 });
-      if (current !== generation) return;
-      if (offset > 0 && offset >= page.total) {
-        offset = Math.max(0, Math.floor((page.total - 1) / 20) * 20);
-        return refresh();
-      }
-      const view = table(columns, page.items, actions);
-      view.querySelector(".search").remove();
-      view.querySelector(".pager").remove();
-      body.replaceChildren(view);
-      const previous = button("上一页", () => {
-        offset = Math.max(0, offset - 20);
-        return refresh();
-      });
-      const next = button("下一页", () => {
-        offset += 20;
-        return refresh();
-      });
-      previous.disabled = offset === 0;
-      next.disabled = offset + 20 >= page.total;
-      pager.replaceChildren(
-        previous,
-        el(
-          "span",
-          {},
-          `${Math.floor(offset / 20) + 1} / ${Math.max(1, Math.ceil(page.total / 20))} · ${page.total} 项`,
-        ),
-        next,
-      );
-    } catch (error) {
-      if (current === generation && error.name !== "AbortError") {
-        body.replaceChildren(help(error.message), button("重试", refresh));
-      }
-    } finally {
-      if (current === generation) wrapper.removeAttribute("aria-busy");
-    }
-  }
-  search.addEventListener("input", () => {
-    clearTimeout(timer);
-    ++generation;
-    offset = 0;
-    timer = setTimeout(refresh, 180);
-  });
-  await refresh();
-  return wrapper;
-}
-
 export function resourceEditor({
   title,
   items,

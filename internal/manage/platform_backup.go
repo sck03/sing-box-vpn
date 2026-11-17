@@ -364,6 +364,7 @@ func (s *PlatformService) servePlatformBackup(w http.ResponseWriter, r *http.Req
 	}
 	defer s.backupBusy.Store(false)
 	var v backupRequest
+	defer v.Close()
 	if err := readBackupRequest(w, r, &v); err != nil {
 		platformError(w, err)
 		return
@@ -389,7 +390,7 @@ func (s *PlatformService) servePlatformBackup(w http.ResponseWriter, r *http.Req
 		_, _ = io.Copy(w, file)
 		return
 	}
-	b, err := decodePlatformBackup(v.Backup, []byte(v.Password))
+	b, err := backuparchive.ReadFrom(v.Backup, []byte(v.Password))
 	if err != nil {
 		platformError(w, err)
 		return
@@ -442,6 +443,9 @@ func (s *PlatformService) servePlatformBackup(w http.ResponseWriter, r *http.Req
 		}
 	}
 	if err == nil {
+		err = AtomicBytes(filepath.Join(destination, ".managed-material"), []byte("sing-box-vpn restored certificates\n"), 0600)
+	}
+	if err == nil {
 		var id int64
 		id, err = s.QueueApply(r.Context(), c, v.Revision, actor)
 		if err == nil {
@@ -456,12 +460,16 @@ func (s *PlatformService) servePlatformBackup(w http.ResponseWriter, r *http.Req
 // RestoreDisaster accepts an empty root only. All proxy users are disabled and
 // all download/session tokens are revoked until the operator reconciles usage.
 func RestoreDisaster(ctx context.Context, root string, data, password []byte, admin, newPassword string) error {
+	return restoreDisasterFrom(ctx, root, bytes.NewReader(data), password, admin, newPassword)
+}
+
+func restoreDisasterFrom(ctx context.Context, root string, source io.Reader, password []byte, admin, newPassword string) error {
 	if entries, err := os.ReadDir(root); err == nil && len(entries) > 0 {
 		return errors.New("disaster recovery requires an empty destination")
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	b, err := decodePlatformBackup(data, password)
+	b, err := backuparchive.ReadFrom(source, password)
 	if err != nil {
 		return err
 	}
@@ -490,7 +498,7 @@ func RestoreDisaster(ctx context.Context, root string, data, password []byte, ad
 	if err != nil {
 		return err
 	}
-	_, err = db.ExecContext(ctx, `DELETE FROM admin_sessions; DELETE FROM administrators; UPDATE accounts SET disabled=1,revision=revision+1; UPDATE download_grants SET revoked=1; DELETE FROM control_tasks; DELETE FROM runtime_state;`)
+	_, err = db.ExecContext(ctx, `DELETE FROM admin_sessions; DELETE FROM administrators; UPDATE accounts SET disabled=1,revision=revision+1; UPDATE download_grants SET revoked=1; DELETE FROM control_tasks; DELETE FROM runtime_state; UPDATE credential_publications SET published=0,loaded=0;`)
 	if err == nil {
 		raw, e := encodePlatform(c)
 		err = e

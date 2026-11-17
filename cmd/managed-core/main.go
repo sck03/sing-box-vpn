@@ -54,7 +54,11 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	meter := accounting.NewMeter(store, *instance)
-	core, err := runtime.New(ctx, data, store, *instance, meter)
+	credentials, credentialRevision, err := store.CredentialSnapshot(ctx, *instance)
+	if err != nil {
+		return err
+	}
+	core, err := runtime.New(ctx, data, credentials, meter)
 	if err != nil {
 		return err
 	}
@@ -62,6 +66,10 @@ func run() error {
 		return core.Close()
 	}
 	if err = core.Start(); err != nil {
+		core.Close()
+		return err
+	}
+	if err = store.CredentialsLoaded(ctx, *instance, credentialRevision); err != nil {
 		core.Close()
 		return err
 	}

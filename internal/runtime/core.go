@@ -154,12 +154,8 @@ func BindUsers(raw []byte, credentials []domain.Credential) ([]byte, error) {
 	return json.Marshal(config)
 }
 
-func New(ctx context.Context, raw []byte, store *accounting.Store, runtimeID string, meter *accounting.Meter) (*box.Box, error) {
-	credentials, err := store.Credentials(ctx, runtimeID)
-	if err != nil {
-		return nil, err
-	}
-	raw, err = BindUsers(raw, credentials)
+func New(ctx context.Context, raw []byte, credentials []domain.Credential, meter *accounting.Meter) (*box.Box, error) {
+	raw, err := BindUsers(raw, credentials)
 	if err != nil {
 		return nil, err
 	}

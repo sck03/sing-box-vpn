@@ -149,6 +149,11 @@ func (s *Store) ClaimLane(ctx context.Context, lane string) (Task, error) {
 }
 
 func (s *Store) claim(ctx context.Context, lane string) (v Task, err error) {
+	// Idle workers must not contend with durable data-plane reservations.
+	var queued int
+	if err = s.db.QueryRowContext(ctx, `SELECT 1 FROM control_tasks WHERE state='queued' AND (?='' OR lane=?) LIMIT 1`, lane, lane).Scan(&queued); err != nil {
+		return v, err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return v, err

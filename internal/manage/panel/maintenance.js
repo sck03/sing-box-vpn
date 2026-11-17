@@ -16,6 +16,53 @@ import {
 export async function overview(ctx) {
   const data = ctx.overview || (await (ctx.request || api)("/api/overview"));
   ctx.observeRevision(data.revision);
+  const health = el("div", { class: "health-summary", role: "status" });
+  function updateHealth(next) {
+    const failed = next.services.filter(
+      (s) => s.ActiveState === "failed",
+    ).length;
+    const pending = (next.credentials || []).filter(
+      (v) => v.revision > v.published || v.revision > v.loaded,
+    ).length;
+    const configurationPending = next.revision !== next.applied_revision;
+    const online = next.runtimes.some((v) => v.recent);
+    const uncertain = next.services.some(
+      (s) => s.error || s.state === "unavailable",
+    );
+    const warning = pending || configurationPending || !online || uncertain;
+    const title = failed
+      ? `${failed} 个服务异常`
+      : configurationPending
+        ? "配置尚未应用完成"
+        : pending
+          ? `${pending} 个实例有待加载凭据`
+          : uncertain
+            ? "主机服务状态不可用"
+            : !online
+              ? "未收到近期运行心跳"
+              : "配置与凭据已同步";
+    health.replaceChildren(
+      badge(
+        failed ? "需要处理" : warning ? "请查看状态" : "运行状态",
+        failed ? "bad" : warning ? "warn" : "good",
+      ),
+      el(
+        "div",
+        {},
+        el("strong", {}, title),
+        el(
+          "p",
+          {},
+          failed
+            ? "系统会定期重试失败服务，可在下方查看状态和日志。"
+            : pending
+              ? "已停止的实例会在下次启动时加载；运行中的实例会自动重试发布。"
+              : "配置版本、进程心跳和出口可达性分别检查；出口与目标可达性请使用网络检测确认。",
+        ),
+      ),
+    );
+  }
+  updateHealth(data);
   const stats = el(
     "div",
     { class: "stats" },
@@ -41,6 +88,7 @@ export async function overview(ctx) {
     ),
   );
   const content = [
+    health,
     stats,
     card(
       "运行实例",
@@ -98,11 +146,24 @@ export async function overview(ctx) {
       ),
     ),
     tasksCard(data.tasks, ctx),
+    card(
+      "凭据发布",
+      table(
+        [
+          { key: "runtime", label: "实例" },
+          { key: "revision", label: "目标版本" },
+          { key: "published", label: "已发布" },
+          { key: "loaded", label: "已加载" },
+        ],
+        data.credentials || [],
+      ),
+    ),
   ];
   const tables = content.flatMap((node) => [
     ...node.querySelectorAll(".data-table"),
   ]);
   ctx.updateOverview = (next) => {
+    updateHealth(next);
     ctx.observeRevision(next.revision);
     const values = [
       next.applied_revision === next.revision ? "已同步" : "待应用",
@@ -113,8 +174,8 @@ export async function overview(ctx) {
     stats.querySelectorAll("strong").forEach((node, i) => {
       node.textContent = values[i];
     });
-    [next.runtimes, next.services, next.tasks].forEach((items, i) =>
-      tables[i].updateItems(items),
+    [next.runtimes, next.services, next.tasks, next.credentials || []].forEach(
+      (items, i) => tables[i].updateItems(items),
     );
   };
   return content;
@@ -133,7 +194,13 @@ function tasksCard(tasks, ctx) {
           label: "状态",
           render: (t) =>
             badge(
-              t.state,
+              {
+                queued: "排队中",
+                running: "执行中",
+                succeeded: "已完成",
+                failed: "失败",
+                cancelled: "已取消",
+              }[t.state] || t.state,
               t.state === "succeeded"
                 ? "good"
                 : t.state === "failed"
@@ -143,11 +210,14 @@ function tasksCard(tasks, ctx) {
         },
         { key: "phase", label: "阶段" },
         {
-          label: "检测结论",
+          label: "业务结果",
           value: (t) =>
-            ({ passed: "全部通过", partial: "部分失败", failed: "检测失败" })[
-              t.outcome
-            ] || "—",
+            ({
+              passed: "全部通过",
+              partial: "部分失败",
+              failed: "失败",
+              cached: "使用旧缓存",
+            })[t.outcome] || "—",
         },
         { label: "时间", value: (t) => date(t.updated) },
         { key: "error", label: "结果" },
@@ -182,6 +252,9 @@ function tasksCard(tasks, ctx) {
 }
 export async function maintenance(ctx) {
   const data = await (ctx.request || api)("/api/overview");
+  const tasks = tasksCard(data.tasks, ctx);
+  ctx.updateOverview = (next) =>
+    tasks.querySelector(".data-table").updateItems(next.tasks);
   const logs = card(
     "运行日志",
     row(
@@ -199,8 +272,7 @@ export async function maintenance(ctx) {
       ),
     ),
   );
-  if (ctx.session.role === "operator")
-    return [logs, tasksCard(data.tasks, ctx)];
+  if (ctx.session.role === "operator") return [logs, tasks];
   const file = el("input", {
       type: "file",
       accept: ".sbvpn",
@@ -315,7 +387,7 @@ export async function maintenance(ctx) {
         ),
       ),
     ),
-    tasksCard(data.tasks, ctx),
+    tasks,
   ];
 }
 export async function admins(ctx) {

@@ -5,10 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/sck03/sing-box-vpn/internal/accounting"
+	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
@@ -26,13 +27,40 @@ func loadSubscriptions(root string) (sub.Config, sub.Runtime, map[string][]sub.N
 	if err := c.Validate(); err != nil {
 		return c, sub.Runtime{}, nil, err
 	}
-	r := sub.Runtime{Sources: map[string]sub.SourceCache{}}
-	if _, err := ReadJSON(filepath.Join(root, subscriptionsRuntime), &r); err != nil {
+	r, err := loadSubscriptionRuntime(root)
+	if err != nil {
 		return c, r, nil, err
 	}
 	local := map[string][]sub.Node{}
-	_, err := ReadJSON(filepath.Join(root, subscriptionsLocal), &local)
+	_, err = ReadJSON(filepath.Join(root, subscriptionsLocal), &local)
 	return c, r, local, err
+}
+
+func loadSubscriptionRuntime(root string) (sub.Runtime, error) {
+	r := sub.Runtime{Sources: map[string]sub.SourceCache{}}
+	_, err := ReadJSON(filepath.Join(root, subscriptionsRuntime), &r)
+	return r, err
+}
+
+// Called under the publication lock during explicit recovery/startup only.
+// The cache is rebuildable; retain the damaged bytes for diagnosis and record
+// the loss, while I/O errors still fail rather than masquerading as empty data.
+func recoverSubscriptionRuntime(root string) error {
+	path := filepath.Join(root, subscriptionsRuntime)
+	var state sub.Runtime
+	found, err := ReadJSON(path, &state)
+	if err == nil {
+		return nil
+	}
+	if !found {
+		return err
+	}
+	if err = os.Rename(path, filepath.Join(root, "subscriptions/runtime.corrupt.json")); err != nil {
+		return err
+	}
+	state = sub.Runtime{Sources: map[string]sub.SourceCache{}}
+	state.Record("cache-recovery", "", "Damaged subscription cache quarantined; remote sources must refresh", time.Now())
+	return AtomicJSON(path, state)
 }
 
 func buildSubscriptions(ctx context.Context, root, core string, c sub.Config, r sub.Runtime, local map[string][]sub.Node) (fileBundle, sub.Snapshot, map[string]sub.Preview, error) {
@@ -110,8 +138,10 @@ func compilePreparedSubscriptions(ctx context.Context, root, core string, c sub.
 		return nil, snapshot, previews, err
 	}
 	var previous sub.Snapshot
+	// This is only a validation cache. A broken projection is rebuilt, never
+	// allowed to prevent recovery of the database-owned configuration.
 	if _, err := ReadJSON(filepath.Join(root, subscriptionsSnapshot), &previous); err != nil {
-		return nil, snapshot, previews, err
+		previous = sub.Snapshot{}
 	}
 	templates := map[string]sub.Template{}
 	effective, err := sub.ResolveResources(c, r.Resources)

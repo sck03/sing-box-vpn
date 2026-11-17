@@ -90,7 +90,7 @@ try:
     raise AssertionError("download limit was bypassed")
 except urllib.error.HTTPError as error:
     assert error.code in [403, 404], error.code
-usage=next(a for a in api("/api/accounts") if a["id"]==account["id"])
+usage=next(a for a in api("/api/accounts?q="+account["id"])["items"] if a["id"]==account["id"])
 assert usage["started_at"] is None
 print("HTTP: login, independent account, binding, export, QR and first-use grant passed",flush=True)
 
@@ -103,7 +103,13 @@ task(operation="service", service="sing-box", value="start")
 apply(original)
 print("systemd: stopped state preserved after configuration application",flush=True)
 
-enabled=subprocess.check_output(["systemctl","is-enabled","sing-box"],text=True).strip()
+def unit_enabled_state():
+    result = subprocess.run(["systemctl", "is-enabled", "sing-box"], text=True, capture_output=True)
+    assert result.returncode in (0, 1), result.stderr
+    return result.stdout.strip()
+
+
+enabled=unit_enabled_state()
 with socket.socket() as occupied:
     occupied.bind(("0.0.0.0",0));occupied.listen()
     bad=copy.deepcopy(original)
@@ -111,10 +117,10 @@ with socket.socket() as occupied:
     node["port"]=occupied.getsockname()[1]
     result=apply(bad,"failed")
     assert result["phase"]=="rolled-back",result
-assert subprocess.check_output(["systemctl","is-enabled","sing-box"],text=True).strip()==enabled
+assert unit_enabled_state()==enabled
 assert subprocess.run(["systemctl","is-active","--quiet","sing-box"]).returncode==0
 apply(original)
-usage=next(a for a in api("/api/accounts") if a["id"]==account["id"])
+usage=next(a for a in api("/api/accounts?q="+account["id"])["items"] if a["id"]==account["id"])
 account["revision"]=usage["revision"];account["disabled"]=True
 api("/api/accounts",{"account":account})
 api("/api/grants/revoke",{"id":identifier})

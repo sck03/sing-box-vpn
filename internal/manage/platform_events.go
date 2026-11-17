@@ -68,6 +68,10 @@ func (s *PlatformService) collectOverview(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	publications, err := s.Accounts.CredentialPublications(ctx)
+	if err != nil {
+		return nil, err
+	}
 	// Overview is shared across all roles and refreshed frequently. Detailed
 	// results are fetched explicitly by authorized task viewers.
 	for i := range tasks {
@@ -76,7 +80,7 @@ func (s *PlatformService) collectOverview(ctx context.Context) ([]byte, error) {
 			tasks[i].Error = "任务失败，请查看任务详情"
 		}
 	}
-	return json.Marshal(Object{"revision": state.Revision, "applied_revision": state.AppliedRevision, "services": services, "runtimes": runtimes, "tasks": tasks})
+	return json.Marshal(Object{"revision": state.Revision, "applied_revision": state.AppliedRevision, "services": services, "runtimes": runtimes, "tasks": tasks, "credentials": publications})
 }
 func (s *PlatformService) streamOverview(w http.ResponseWriter, r *http.Request, token string) {
 	controller := http.NewResponseController(w)

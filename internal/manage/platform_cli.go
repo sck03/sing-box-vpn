@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	strict "github.com/sck03/sing-box-vpn/internal/encoding"
 )
@@ -40,6 +41,12 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 		*runtime = filepath.Join(*root, "managed-core")
 	}
 	op := f.Args()[0]
+	if op == "recover-services" {
+		if *noSystem {
+			return errors.New("system operations are disabled")
+		}
+		return recoverServices(ctx, *root)
+	}
 	decode := func(v any) error {
 		limit := maxJSONFile
 		data, err := io.ReadAll(io.LimitReader(input, int64(limit)+1))
@@ -63,14 +70,7 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 			return err
 		}
 		defer file.Close()
-		backup, err := io.ReadAll(io.LimitReader(file, maxPlatformBackup+1))
-		if err != nil {
-			return err
-		}
-		if len(backup) > maxPlatformBackup {
-			return errors.New("backup exceeds 96 MiB")
-		}
-		return RestoreDisaster(ctx, *root, backup, []byte(v.Password), v.Username, v.NewPassword)
+		return restoreDisasterFrom(ctx, *root, file, []byte(v.Password), v.Username, v.NewPassword)
 	}
 	s, err := OpenPlatform(*root, *core, *runtime, *noSystem)
 	if err != nil {
@@ -138,6 +138,18 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 			return e
 		}
 		return json.NewEncoder(output).Encode(state)
+	case "wait-runtime":
+		var v struct {
+			Instance string `json:"instance"`
+			Started  int64  `json:"started"`
+		}
+		if err := decode(&v); err != nil {
+			return err
+		}
+		if (v.Instance != "normal" && v.Instance != "vpngate") || v.Started <= 0 || v.Started > time.Now().UnixNano() {
+			return errors.New("invalid runtime readiness request")
+		}
+		return s.awaitRuntime(ctx, v.Instance, v.Started)
 	case "command":
 		var v PlatformAction
 		if err = decode(&v); err != nil {
@@ -162,6 +174,9 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 		}
 		return json.NewEncoder(output).Encode(Object{"task_id": id})
 	case "recover":
+		if e := withStartupLock(ctx, s.Root, func() error { return recoverSubscriptionRuntime(s.Root) }); e != nil {
+			return e
+		}
 		state, e := s.Store.State(ctx)
 		if e != nil {
 			return e

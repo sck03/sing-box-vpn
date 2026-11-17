@@ -80,7 +80,7 @@ func validatePEM(cert, key []byte, domainName string) (*x509.Certificate, error)
 	}
 	return leaf, nil
 }
-func (s *PlatformService) ImportCertificate(v CertificateImport) (CertificateAsset, error) {
+func (s *PlatformService) ImportCertificate(ctx context.Context, v CertificateImport) (CertificateAsset, error) {
 	if !domain.ResourceID.MatchString(v.ID) || len(v.Certificate) > 256<<10 || len(v.Key) > 64<<10 {
 		return CertificateAsset{}, errors.New("invalid certificate ID or PEM size")
 	}
@@ -90,10 +90,16 @@ func (s *PlatformService) ImportCertificate(v CertificateImport) (CertificateAss
 	digest := sha256.Sum256([]byte(v.Certificate + v.Key))
 	dir := filepath.Join(s.Root, "certificates", v.ID+"-"+hex.EncodeToString(digest[:8]))
 	asset := CertificateAsset{ID: v.ID, Domain: v.Domain, Certificate: filepath.ToSlash(filepath.Join(dir, "cert.pem")), Key: filepath.ToSlash(filepath.Join(dir, "key.pem")), Provider: "import"}
-	if err := AtomicBytes(asset.Key, []byte(v.Key), 0600); err != nil {
-		return asset, err
-	}
-	return asset, AtomicBytes(asset.Certificate, []byte(v.Certificate), 0600)
+	err := withStartupLock(ctx, s.Root, func() error {
+		if err := AtomicBytes(asset.Key, []byte(v.Key), 0600); err != nil {
+			return err
+		}
+		if err := AtomicBytes(asset.Certificate, []byte(v.Certificate), 0600); err != nil {
+			return err
+		}
+		return AtomicBytes(filepath.Join(dir, ".managed-material"), []byte("sing-box-vpn imported certificate\n"), 0600)
+	})
+	return asset, err
 }
 func (s *PlatformService) CertificateStatus(ctx context.Context) ([]Object, error) {
 	state, err := s.Store.State(ctx)

@@ -1,0 +1,334 @@
+import { el, button, help } from "./dom.js";
+
+export function table(columns, items, actions, options = {}) {
+  const wrapper = el("div", { class: "data-table" }),
+    search = el("input", {
+      class: "search",
+      placeholder: "搜索…",
+      "aria-label": "搜索列表",
+    }),
+    body = el("div"),
+    pager = el("div", { class: "pager" });
+  let page = 0,
+    signature = "",
+    waitingForFocus = false,
+    indexed = [];
+  const preferenceKey =
+    "table:" + (options.key || columns.map((c) => c.key || c.label).join("|"));
+  let preference = { sort: -1, descending: false, compact: false, hidden: [] };
+  if (options.controls !== false) {
+    try {
+      preference = {
+        ...preference,
+        ...JSON.parse(window.localStorage.getItem(preferenceKey) || "{}"),
+      };
+    } catch {}
+  }
+  if (!Array.isArray(preference.hidden)) preference.hidden = [];
+  function savePreference() {
+    try {
+      window.localStorage.setItem(preferenceKey, JSON.stringify(preference));
+    } catch {}
+  }
+  const controls = el("div", { class: "table-tools" }, search);
+  if (options.controls !== false) {
+    controls.append(
+      button("切换密度", () => {
+        preference.compact = !preference.compact;
+        savePreference();
+        render();
+      }),
+    );
+    const choices = el(
+      "details",
+      { class: "column-picker" },
+      el("summary", {}, "显示列"),
+    );
+    columns.forEach((c, i) => {
+      const input = el("input", {
+        type: "checkbox",
+        "aria-label": "显示" + c.label,
+      });
+      input.checked = !preference.hidden.includes(i);
+      input.addEventListener("change", () => {
+        preference.hidden = columns
+          .map((_, j) => j)
+          .filter((j) =>
+            j === i ? !input.checked : preference.hidden.includes(j),
+          );
+        if (preference.hidden.length === columns.length) {
+          preference.hidden = preference.hidden.filter((j) => j !== i);
+          input.checked = true;
+        }
+        savePreference();
+        render();
+      });
+      choices.append(el("label", {}, input, c.label));
+    });
+    controls.append(choices);
+  }
+  function index() {
+    indexed = items.map((item) => ({
+      item,
+      text: columns
+        .map((c) => {
+          const value = c.search
+            ? c.search(item)
+            : c.value
+              ? c.value(item)
+              : c.key
+                ? item[c.key]
+                : c.render?.(item);
+          return value instanceof Node
+            ? value.textContent
+            : String(value ?? "");
+        })
+        .join(" ")
+        .toLocaleLowerCase(),
+    }));
+  }
+  index();
+  function render() {
+    const term = search.value.trim().toLocaleLowerCase();
+    const data = indexed
+      .filter((entry) => entry.text.includes(term))
+      .map((entry) => entry.item);
+    if (options.controls !== false && columns[preference.sort]) {
+      const c = columns[preference.sort];
+      const value = (item) =>
+        c.value
+          ? c.value(item)
+          : c.key
+            ? item[c.key]
+            : c.render?.(item)?.textContent;
+      data.sort((a, b) => {
+        const av = value(a),
+          bv = value(b);
+        const order =
+          typeof av === "number" && typeof bv === "number"
+            ? av - bv
+            : String(av ?? "").localeCompare(String(bv ?? ""), undefined, {
+                numeric: true,
+              });
+        return preference.descending ? -order : order;
+      });
+    }
+    wrapper.classList.toggle("compact", !!preference.compact);
+    const visible = columns
+      .map((c, i) => ({ c, i }))
+      .filter(({ i }) => !preference.hidden.includes(i));
+    const pages = Math.max(1, Math.ceil(data.length / 20));
+    page = Math.min(page, pages - 1);
+    const t = el("table"),
+      head = el("tr");
+    for (const { c, i } of visible) {
+      head.append(
+        options.controls === false
+          ? el("th", {}, c.label)
+          : el(
+              "th",
+              {
+                "aria-sort":
+                  preference.sort === i
+                    ? preference.descending
+                      ? "descending"
+                      : "ascending"
+                    : "none",
+              },
+              button(
+                c.label,
+                () => {
+                  preference.descending =
+                    preference.sort === i && !preference.descending;
+                  preference.sort = i;
+                  page = 0;
+                  savePreference();
+                  render();
+                },
+                "column-sort",
+              ),
+            ),
+      );
+    }
+    if (actions) head.append(el("th", {}, "操作"));
+    t.append(el("thead", {}, head));
+    const tbody = el("tbody");
+    for (const item of data.slice(page * 20, (page + 1) * 20)) {
+      const tr = el("tr");
+      for (const { c } of visible) {
+        const value = c.render
+          ? c.render(item)
+          : c.value
+            ? c.value(item)
+            : item[c.key];
+        tr.append(el("td", {}, value ?? "—"));
+      }
+      if (actions)
+        tr.append(el("td", {}, el("div", { class: "actions" }, actions(item))));
+      tbody.append(tr);
+    }
+    t.append(tbody);
+    body.replaceChildren(
+      data.length
+        ? el("div", { class: "table-wrap" }, t)
+        : el("div", { class: "empty" }, "暂无记录"),
+    );
+    pager.replaceChildren(
+      button("上一页", () => {
+        page = Math.max(0, page - 1);
+        render();
+      }),
+      el("span", {}, `${page + 1} / ${pages} · ${data.length} 项`),
+      button("下一页", () => {
+        page = Math.min(pages - 1, page + 1);
+        render();
+      }),
+    );
+  }
+  search.addEventListener("input", () => {
+    page = 0;
+    render();
+  });
+  wrapper.append(controls, body, pager);
+  wrapper.updateItems = (next) => {
+    const serialized = JSON.stringify(next);
+    items = next;
+    if (serialized === signature) return;
+    // A live update must not replace the button currently being operated.
+    if (body.contains(document.activeElement)) {
+      if (!waitingForFocus) {
+        waitingForFocus = true;
+        body.addEventListener(
+          "focusout",
+          () =>
+            queueMicrotask(() => {
+              waitingForFocus = false;
+              wrapper.updateItems(items);
+            }),
+          { once: true },
+        );
+      }
+      return;
+    }
+    signature = serialized;
+    index();
+    render();
+  };
+  signature = JSON.stringify(items);
+  render();
+  return wrapper;
+}
+export async function remoteTable(columns, load, actions, options = {}) {
+  const search = el("input", {
+    class: "search",
+    "aria-label": options.label || "搜索授权",
+    placeholder: options.placeholder || "搜索 ID、权益或状态…",
+  });
+  const body = el("div"),
+    pager = el("div", { class: "pager" }),
+    errors = el("div", { role: "status" }),
+    controls = el("div", { class: "table-tools" }, search),
+    sort = el("select", { "aria-label": "排序字段" }),
+    direction = el(
+      "select",
+      { "aria-label": "排序方向" },
+      el("option", { value: "asc" }, "升序"),
+      el("option", { value: "desc" }, "降序"),
+    );
+  if (options.sortOptions) {
+    sort.append(
+      ...options.sortOptions.map(([value, label]) =>
+        el("option", { value }, label),
+      ),
+    );
+    controls.append(sort, direction);
+  }
+  const wrapper = el(
+    "div",
+    { class: "remote-table" },
+    controls,
+    errors,
+    body,
+    pager,
+  );
+  const view = table(columns, [], actions, { controls: false });
+  view.querySelector(".table-tools").remove();
+  view.querySelector(".pager").remove();
+  body.append(view);
+  let offset = 0,
+    generation = 0,
+    timer,
+    busy = false;
+  const previous = button("上一页", () => {
+    offset = Math.max(0, offset - 20);
+    return refresh(true);
+  });
+  const next = button("下一页", () => {
+    offset += 20;
+    return refresh(true);
+  });
+  const count = el("span");
+  pager.append(previous, count, next);
+  async function refresh(force = false) {
+    if (options.signal?.aborted || (busy && !force) || (timer && !force))
+      return;
+    const current = ++generation;
+    busy = true;
+    wrapper.setAttribute("aria-busy", "true");
+    try {
+      const params = { q: search.value, offset, limit: 20 };
+      if (options.sortOptions)
+        Object.assign(params, { sort: sort.value, direction: direction.value });
+      const page = await load(params);
+      if (!page || !Array.isArray(page.items) || !Number.isInteger(page.total))
+        throw new Error("列表接口响应格式错误");
+      if (current !== generation || options.signal?.aborted) return;
+      if (offset > 0 && offset >= page.total) {
+        offset = Math.max(0, Math.floor((page.total - 1) / 20) * 20);
+        return refresh(true);
+      }
+      errors.replaceChildren();
+      view.updateItems(page.items);
+      previous.disabled = offset === 0;
+      next.disabled = offset + 20 >= page.total;
+      count.textContent = `${Math.floor(offset / 20) + 1} / ${Math.max(1, Math.ceil(page.total / 20))} · ${page.total} 项`;
+    } catch (error) {
+      if (current === generation && error.name !== "AbortError") {
+        errors.replaceChildren(
+          help(error.message),
+          button("重试", () => refresh(true)),
+        );
+      }
+    } finally {
+      if (current === generation) {
+        busy = false;
+        wrapper.removeAttribute("aria-busy");
+      }
+    }
+  }
+  search.addEventListener("input", () => {
+    clearTimeout(timer);
+    ++generation;
+    offset = 0;
+    timer = setTimeout(() => {
+      timer = null;
+      void refresh(true);
+    }, 180);
+  });
+  for (const field of [sort, direction])
+    field.addEventListener("change", () => {
+      offset = 0;
+      void refresh(true);
+    });
+  await refresh();
+  wrapper.refresh = refresh;
+  options.signal?.addEventListener(
+    "abort",
+    () => {
+      clearTimeout(timer);
+      generation++;
+    },
+    { once: true },
+  );
+  return wrapper;
+}

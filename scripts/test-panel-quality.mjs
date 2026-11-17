@@ -129,6 +129,71 @@ assert.equal(
   [...host.querySelectorAll(".tag")].some((n) => n.textContent === "有效"),
   false,
 );
+
+const { maintenance } = await import("../internal/manage/panel/maintenance.js");
+const maintenanceContext = {
+  session: { role: "operator" },
+  request: async () => ({
+    tasks: [{ id: 42, kind: "service", state: "running", phase: "executing" }],
+  }),
+};
+host.replaceChildren(...(await maintenance(maintenanceContext)));
+assert.match(host.textContent, /执行中/);
+maintenanceContext.updateOverview({
+  tasks: [{ id: 42, kind: "service", state: "succeeded", phase: "succeeded" }],
+});
+assert.match(host.textContent, /已完成/);
+assert.doesNotMatch(host.textContent, /执行中/);
+
+const sortable = table(
+  [{ key: "count", label: "数量" }],
+  [{ count: 20 }, { count: 3 }],
+  null,
+  { key: "sorting-regression" },
+);
+host.replaceChildren(sortable);
+sortable.querySelector("th button").click();
+await Promise.resolve();
+assert.equal(sortable.querySelector("td").textContent, "3");
+const restored = table(
+  [{ key: "count", label: "数量" }],
+  [{ count: 20 }, { count: 3 }],
+  null,
+  { key: "sorting-regression" },
+);
+assert.equal(restored.querySelector("td").textContent, "3");
+
+const controller = new AbortController();
+let currentName = "A",
+  pageCalls = 0;
+const paged = await remoteTable(
+  [{ key: "name", label: "名称" }],
+  async (params) => {
+    pageCalls++;
+    assert.equal(params.sort, "name");
+    return { items: [{ id: "a", name: currentName }], total: 1 };
+  },
+  () => [document.createElement("button")],
+  {
+    signal: controller.signal,
+    sortOptions: [["name", "名称"]],
+  },
+);
+host.replaceChildren(paged);
+const liveButton = paged.querySelector("tbody button");
+liveButton.focus();
+currentName = "B";
+await paged.refresh();
+assert.equal(document.activeElement, liveButton);
+paged.querySelector("input").focus();
+await Promise.resolve();
+assert.equal(paged.querySelector("td").textContent, "B");
+paged.querySelector("input").dispatchEvent(new Event("input"));
+const beforeAbort = pageCalls;
+controller.abort();
+await new Promise((resolve) => setTimeout(resolve, 220));
+await paged.refresh();
+assert.equal(pageCalls, beforeAbort, "aborted page kept polling");
 console.log(
-  "Panel quality checks passed: rendered-status search, unchanged DOM, focus retention, unit conversion, remote pagination, expired/exhausted grants.",
+  "Panel quality checks passed: task updates, sorting, pagination, focus retention, abort cleanup, status and unit conversion.",
 );

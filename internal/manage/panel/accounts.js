@@ -21,13 +21,11 @@ const states = {
   exhausted: "额度耗尽",
   expired: "已到期",
   disabled: "已禁用",
+  subscriber_disabled: "订阅者已停用",
 };
 export async function accounts(ctx) {
   const request = ctx.request || api;
-  const [items, people] = await Promise.all([
-    request("/api/accounts"),
-    request("/api/subscribers"),
-  ]);
+  const people = await request("/api/subscribers");
   const admin = ctx.session.role === "admin";
   const fields = (existing) => [
     { key: "id", label: "权益 ID", required: true, readonly: existing },
@@ -133,25 +131,40 @@ export async function accounts(ctx) {
         ctx.render();
       },
     );
-  const bind = (item) =>
+  const bindingFields = async () => {
+    const scopes = ["normal", "vpngate"];
+    const choices = await Promise.all(
+      scopes.map((scope) => request("/api/inbound-options?scope=" + scope)),
+    );
+    return [
+      {
+        key: "scope",
+        label: "运行实例",
+        type: "select",
+        options: [
+          ["normal", "普通节点"],
+          ["vpngate", "VPNGate"],
+        ],
+      },
+      {
+        key: "inbound_ids",
+        label: "入站入口（可多选）",
+        type: "multiselect",
+        wide: true,
+        options: (value) =>
+          choices[scopes.indexOf(value.scope)].map((entry) => [
+            entry.id,
+            entry.name,
+          ]),
+        help: "显示已应用配置中的启用入口；不选表示绑定该实例全部启用入口。",
+      },
+    ];
+  };
+  const bind = async (item) =>
     formDialog(
       "绑定入站",
       [
-        {
-          key: "scope",
-          label: "运行实例",
-          type: "select",
-          options: [
-            ["normal", "普通节点"],
-            ["vpngate", "VPNGate"],
-          ],
-        },
-        {
-          key: "inbound_ids",
-          label: "入站 ID，逗号分隔；留空绑定该实例全部启用入口",
-          type: "csv",
-          wide: true,
-        },
+        ...(await bindingFields()),
         { key: "uuid", label: "自定义 UUID（留空随机）" },
         {
           key: "password",
@@ -229,7 +242,7 @@ export async function accounts(ctx) {
     );
     dialog.showModal();
   };
-  return [
+  const content = [
     card(
       "独立权益与用量",
       help(
@@ -261,37 +274,28 @@ export async function accounts(ctx) {
           )
         : null,
       admin
-        ? button("批量绑定入站", () =>
+        ? button("批量绑定入站", async () =>
             formDialog(
               "批量绑定（最多 100 个权益）",
               [
                 {
                   key: "account_ids",
-                  label: "权益 ID，逗号分隔",
-                  type: "csv",
+                  label: "权益（可多选，最多 100 个）",
+                  type: "multiselect",
+                  options: (await request("/api/account-options")).map(
+                    (item) => [item.id, item.name],
+                  ),
                   required: true,
                   wide: true,
                 },
-                {
-                  key: "scope",
-                  label: "运行实例",
-                  type: "select",
-                  options: [
-                    ["normal", "普通节点"],
-                    ["vpngate", "VPNGate"],
-                  ],
-                },
-                {
-                  key: "inbound_ids",
-                  label: "入站 ID，逗号分隔；留空绑定全部启用入口",
-                  type: "csv",
-                  wide: true,
-                },
+                ...(await bindingFields()),
               ],
               { account_ids: [], scope: "normal", inbound_ids: [] },
               (v) => {
                 if (!v.account_ids.length)
                   throw new Error("请选择至少一个权益");
+                if (v.account_ids.length > 100)
+                  throw new Error("每次最多绑定 100 个权益");
                 return ctx.task({
                   operation: "account",
                   account: { operation: "bind", ...v },
@@ -300,7 +304,7 @@ export async function accounts(ctx) {
             ),
           )
         : null,
-      table(
+      await remoteTable(
         [
           { key: "name", label: "名称" },
           { key: "id", label: "权益 ID" },
@@ -323,7 +327,7 @@ export async function accounts(ctx) {
           { label: "代理到期", value: (a) => date(a.expires_at) },
           { label: "下次重置", value: (a) => date(a.next_reset) },
         ],
-        items,
+        (params) => request("/api/accounts?" + new URLSearchParams(params)),
         (item) => [
           ...(admin
             ? [
@@ -385,9 +389,24 @@ export async function accounts(ctx) {
             ),
           ),
         ],
+        {
+          signal: ctx.signal,
+          label: "搜索权益",
+          placeholder: "搜索 ID、名称或订阅者…",
+          sortOptions: [
+            ["created", "创建时间"],
+            ["name", "名称"],
+            ["id", "ID"],
+          ],
+        },
       ),
     ),
   ];
+  const list = content[0].querySelector(".remote-table");
+  ctx.updateOverview = () => {
+    void list.refresh();
+  };
+  return content;
 }
 
 export async function subscribers(ctx) {
@@ -441,7 +460,7 @@ export async function subscribers(ctx) {
 export async function grants(ctx) {
   const request = ctx.request || api;
   const [accounts, catalog] = await Promise.all([
-    request("/api/accounts"),
+    request("/api/account-options"),
     clientCatalog(request),
   ]);
   return [
@@ -556,6 +575,7 @@ export async function grants(ctx) {
             "danger",
           ),
         ],
+        { signal: ctx.signal },
       ),
     ),
   ];

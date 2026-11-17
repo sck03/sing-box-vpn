@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/sck03/sing-box-vpn/internal/application"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -72,8 +73,12 @@ func TestSubscriptionRequiredSourceApplyAndRefresh(t *testing.T) {
 		t.Fatal("304 lost cached nodes/usage")
 	}
 	fail.Store(true)
-	if err := refreshSubscriptions(context.Background(), root, core, true); err != nil {
+	var report application.RefreshResult
+	if err := refreshSubscriptionsResult(context.Background(), root, core, true, &report); err != nil {
 		t.Fatal(err)
+	}
+	if report.Outcome != "cached" || len(report.Failures) != 1 || report.Outputs == 0 {
+		t.Fatal("upstream failure hidden", report)
 	}
 	_, state, _, _ = loadSubscriptions(root)
 	if state.Sources["remote"].Failures != 1 || !bytes.Equal(before, readBytes(t, filepath.Join(root, "proxies.yaml"))) {

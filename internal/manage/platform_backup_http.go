@@ -4,14 +4,24 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 )
 
 type backupRequest struct {
-	Password string `json:"password"`
-	Backup   []byte `json:"-"`
-	Apply    bool   `json:"-"`
-	Revision int64  `json:"-"`
+	Password string   `json:"password"`
+	Backup   *os.File `json:"-"`
+	Apply    bool     `json:"-"`
+	Revision int64    `json:"-"`
+}
+
+func (v *backupRequest) Close() {
+	if v.Backup != nil {
+		name := v.Backup.Name()
+		v.Backup.Close()
+		os.Remove(name)
+		v.Backup = nil
+	}
 }
 
 // Restore receives the encrypted file as binary multipart data. Browser and
@@ -42,7 +52,24 @@ func readBackupRequest(w http.ResponseWriter, r *http.Request, v *backupRequest)
 		seen[name] = true
 		limit := int64(1024)
 		if name == "backup" {
-			limit = maxPlatformBackup
+			file, e := os.CreateTemp("", "sbvpn-restore-*")
+			if e != nil {
+				part.Close()
+				return e
+			}
+			v.Backup = file
+			n, e := io.Copy(file, io.LimitReader(part, maxPlatformBackup+1))
+			part.Close()
+			if e != nil {
+				return e
+			}
+			if n > maxPlatformBackup {
+				return errors.New("restore field exceeds size limit")
+			}
+			if _, e = file.Seek(0, io.SeekStart); e != nil {
+				return e
+			}
+			continue
 		}
 		data, err := io.ReadAll(io.LimitReader(part, limit+1))
 		part.Close()
@@ -53,8 +80,6 @@ func readBackupRequest(w http.ResponseWriter, r *http.Request, v *backupRequest)
 			return errors.New("restore field exceeds size limit")
 		}
 		switch name {
-		case "backup":
-			v.Backup = data
 		case "password":
 			v.Password = string(data)
 		case "apply":

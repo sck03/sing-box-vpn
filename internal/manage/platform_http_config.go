@@ -1,0 +1,191 @@
+package manage
+
+import (
+	"encoding/json"
+	"net/http"
+)
+
+func (s *PlatformService) serveConfiguration(w http.ResponseWriter, r *http.Request, access panelAccess) bool {
+	ctx, path := r.Context(), r.URL.Path
+	admin, operator, require, audit := access.admin, access.operator, access.require, access.audit
+	var err error
+	if path == "/api/inbounds/impact" && r.Method == "GET" {
+		if !require(admin) {
+			return true
+		}
+		v, e := s.InboundImpact(ctx, r.URL.Query().Get("scope"), r.URL.Query().Get("id"))
+		if e != nil {
+			platformError(w, e)
+		} else {
+			jsonResponse(w, v)
+		}
+		return true
+	}
+	if path == "/api/network" && r.Method == "GET" {
+		if !require(operator) {
+			return true
+		}
+		v, e := s.NetworkSettings(ctx)
+		if e != nil {
+			platformError(w, e)
+		} else {
+			jsonResponse(w, v)
+		}
+		return true
+	}
+	if path == "/api/config/preview" && r.Method == "POST" {
+		if !require(admin) {
+			return true
+		}
+		var c PlatformConfig
+		if err = decodeRequest(w, r, &c, 16<<20); err == nil {
+			var files fileBundle
+			files, err = s.build(ctx, c)
+			if err == nil {
+				var preview any
+				if err = json.Unmarshal(files["sb.json"], &preview); err == nil {
+					redactPlatform(preview)
+					jsonResponse(w, Object{"valid": true, "ordinary_server": preview})
+					return true
+				}
+			}
+		}
+		platformError(w, err)
+		return true
+	}
+	if path == "/api/server" && r.Method == "POST" {
+		if !require(admin) {
+			return true
+		}
+		var app App
+		if err = decodeRequest(w, r, &app, 8<<20); err == nil {
+			var v Object
+			v, err = serverForApp(app)
+			if err == nil {
+				jsonResponse(w, v)
+				return true
+			}
+		}
+		platformError(w, err)
+		return true
+	}
+	if path == "/api/state" && r.Method == "GET" {
+		v, e := s.State(ctx, false)
+		if e != nil {
+			platformError(w, e)
+		} else {
+			jsonResponse(w, v)
+		}
+		return true
+	}
+	if path == "/api/config" {
+		if !require(admin) {
+			return true
+		}
+		if r.Method == "GET" {
+			if !audit("configuration-secret-read", "") {
+				return true
+			}
+			v, e := s.State(ctx, true)
+			if e != nil {
+				platformError(w, e)
+			} else {
+				jsonResponse(w, v)
+			}
+			return true
+		}
+		if r.Method == "POST" {
+			var v struct {
+				Revision int64          `json:"revision"`
+				Config   PlatformConfig `json:"config"`
+			}
+			if err = decodeRequest(w, r, &v, 16<<20); err == nil {
+				if !audit("configuration-save", "") {
+					return true
+				}
+				var id int64
+				id, err = s.QueueApply(ctx, v.Config, v.Revision, access.actor)
+				if err == nil {
+					jsonResponse(w, Object{"task_id": id})
+					return true
+				}
+			}
+			platformError(w, err)
+			return true
+		}
+	}
+	if path == "/api/preset" && r.Method == "POST" {
+		if !require(admin) {
+			return true
+		}
+		var v struct {
+			ID       string `json:"id"`
+			Protocol string `json:"protocol"`
+		}
+		if err = decodeRequest(w, r, &v, 1024); err == nil {
+			var node ManagedNode
+			node, err = s.Preset(ctx, v.Protocol, v.ID)
+			if err == nil {
+				jsonResponse(w, node)
+				return true
+			}
+		}
+		platformError(w, err)
+		return true
+	}
+	if path == "/api/country" && r.Method == "POST" {
+		if !require(admin) {
+			return true
+		}
+		var v struct {
+			Country string `json:"country"`
+		}
+		if err = decodeRequest(w, r, &v, 1024); err == nil {
+			var c PlatformConfig
+			c, err = s.PrepareCountry(ctx, v.Country)
+			if err == nil {
+				jsonResponse(w, c)
+				return true
+			}
+		}
+		platformError(w, err)
+		return true
+	}
+	if path == "/api/gateway" && r.Method == "GET" {
+		v, e := s.gateway(ctx, r.URL.Query().Get("resource"), nil)
+		if e != nil {
+			platformError(w, e)
+		} else {
+			jsonResponse(w, v)
+		}
+		return true
+	}
+	if path == "/api/certificates" {
+		if r.Method == "GET" {
+			v, e := s.CertificateStatus(ctx)
+			if e != nil {
+				platformError(w, e)
+			} else {
+				jsonResponse(w, v)
+			}
+			return true
+		}
+		if r.Method == "POST" {
+			if !require(admin) || !audit("certificate-import", "") {
+				return true
+			}
+			var v CertificateImport
+			if err = decodeRequest(w, r, &v, 384<<10); err == nil {
+				var asset CertificateAsset
+				asset, err = s.ImportCertificate(ctx, v)
+				if err == nil {
+					jsonResponse(w, asset)
+					return true
+				}
+			}
+			platformError(w, err)
+			return true
+		}
+	}
+	return false
+}

@@ -43,9 +43,9 @@ for scenario in stopped active fail; do
         [[ $("$MANAGER") == new && $(<"$APP_HOME/version") == new ]]
     fi
     if [[ "$scenario" == stopped ]]; then
-        ! grep -q '^restart ' "$TEST_LOG"
+        if grep -q '^restart ' "$TEST_LOG"; then exit 1; fi
     fi
-    ! grep -Eq '^(enable|disable|start)|^restart (sing-box|yg-vpngate)' "$TEST_LOG"
+    if grep -Eq '^(enable|disable|start)|^restart (sing-box|yg-vpngate)' "$TEST_LOG"; then exit 1; fi
 done
 echo 'Program upgrade: stopped, active and rollback scenarios passed.'
 
@@ -69,7 +69,7 @@ MOCK
     chmod +x "$base/bin/systemctl" "$base/bin/sleep"
     set +e
     env PATH="$base/bin:$PATH" PANEL_TEST_BASE="$base" PANEL_TEST_SCENARIO="$scenario" \
-        bash "$ROOT/lib/restart-panel.sh" "$base/stage" "$base/app" "$base/manager" "$base/runtime" sing-box sb-panel > "$base/result" 2>&1
+        bash "$ROOT/lib/restart-panel.sh" "$base/stage" "$base/app" "$base/manager" "$base/runtime" "$base" sing-box sb-panel > "$base/result" 2>&1
     result=$?
     set -e
     if [[ "$scenario" == panel-fail ]]; then
@@ -77,7 +77,7 @@ MOCK
         grep -q '^restart sing-box$' "$base/log"
     else
         [[ "$result" == 0 && $("$base/manager") == new && $(<"$base/app/version") == new ]]
-        ! grep -q '^restart sing-box$' "$base/log"
+        if grep -q '^restart sing-box$' "$base/log"; then exit 1; fi
     fi
 done
 echo 'Deferred panel restart: success and failed restart rollback passed.'

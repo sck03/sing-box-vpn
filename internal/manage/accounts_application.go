@@ -10,11 +10,17 @@ import (
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
+	"github.com/sck03/sing-box-vpn/internal/controlstore"
 )
 
 type AccountService struct {
-	Root  string
-	Store *accounting.Store
+	Root    string
+	Store   *accounting.Store
+	Control *controlstore.Store
+}
+
+func (s *PlatformService) accountService() AccountService {
+	return AccountService{Root: s.Root, Store: s.Accounts, Control: s.Store}
 }
 
 type bindingRepository struct{ *accounting.Store }
@@ -61,7 +67,7 @@ func (s AccountService) Execute(ctx context.Context, c application.AccountComman
 		return store.SaveAccount(ctx, c.Account)
 	case "bind":
 		return withStartupLock(ctx, s.Root, func() error {
-			entries, err := s.accountEntries(c.Scope)
+			entries, err := s.accountEntries(ctx, c.Scope)
 			if err != nil {
 				return err
 			}
@@ -103,7 +109,27 @@ func (s AccountService) Execute(ctx context.Context, c application.AccountComman
 	}
 }
 
-func (s AccountService) accountEntries(scope string) ([]ManagedNode, error) {
+func (s AccountService) accountEntries(ctx context.Context, scope string) ([]ManagedNode, error) {
+	if platformOwned(s.Root) {
+		store := s.Control
+		if store == nil {
+			var err error
+			store, err = controlstore.Open(filepath.Join(s.Root, "control.db"))
+			if err != nil {
+				return nil, err
+			}
+			defer store.Close()
+		}
+		state, err := store.State(ctx)
+		if err != nil {
+			return nil, err
+		}
+		c, err := decodePlatform(state.Applied)
+		if err != nil {
+			return nil, err
+		}
+		return configuredEntries(c, scope)
+	}
 	var app App
 	if ok, err := ReadJSON(filepath.Join(s.Root, "app.json"), &app); err != nil {
 		return nil, err
@@ -123,4 +149,19 @@ func (s AccountService) accountEntries(scope string) ([]ManagedNode, error) {
 	}
 	p.Secrets = private[settings.ActiveCountry]
 	return managedNodes(App{Profile: p, Inbounds: MakeInbounds(p, "vg-"+settings.ActiveCountry+"-")})
+}
+
+func configuredEntries(c PlatformConfig, scope string) ([]ManagedNode, error) {
+	if scope == normalScope {
+		return managedNodes(c.App)
+	}
+	if scope != vpngateScope {
+		return nil, errors.New("invalid runtime scope")
+	}
+	p, ok := c.VPN.Profiles[c.VPN.ActiveCountry]
+	if !ok {
+		return nil, errors.New("VPNGate has no selected country")
+	}
+	p.Secrets = c.VPNSecrets[c.VPN.ActiveCountry]
+	return managedNodes(App{Profile: p, Inbounds: MakeInbounds(p, "vg-"+c.VPN.ActiveCountry+"-")})
 }

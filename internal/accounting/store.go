@@ -71,6 +71,12 @@ CREATE TABLE IF NOT EXISTS credentials (
  generation INTEGER NOT NULL, secret BLOB NOT NULL,
  UNIQUE(account,runtime,inbound));
 CREATE INDEX IF NOT EXISTS credential_runtime ON credentials(runtime,inbound);
+CREATE UNIQUE INDEX IF NOT EXISTS credential_identity ON credentials(runtime,inbound,
+ CASE WHEN protocol IN ('anytls','hysteria2') THEN json_extract(secret,'$.password') ELSE json_extract(secret,'$.uuid') END);
+CREATE TABLE IF NOT EXISTS credential_publications (
+ runtime TEXT PRIMARY KEY, revision INTEGER NOT NULL DEFAULT 0,
+ published INTEGER NOT NULL DEFAULT 0, loaded INTEGER NOT NULL DEFAULT 0);
+INSERT OR IGNORE INTO credential_publications(runtime) VALUES('normal'),('vpngate');
 CREATE TABLE IF NOT EXISTS revoked_credentials (id TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS leases (
  id TEXT PRIMARY KEY, account TEXT NOT NULL REFERENCES accounts(id),
@@ -87,13 +93,14 @@ CREATE TABLE IF NOT EXISTS events (
 
 type Usage struct {
 	domain.Account
-	Charged   int64      `json:"charged_bytes"`
-	Upload    int64      `json:"upload_bytes"`
-	Download  int64      `json:"download_bytes"`
-	StartedAt *time.Time `json:"started_at"`
-	PeriodID  int64      `json:"period_id"`
-	NextReset *time.Time `json:"next_reset"`
-	State     string     `json:"state"`
+	Charged            int64      `json:"charged_bytes"`
+	Upload             int64      `json:"upload_bytes"`
+	Download           int64      `json:"download_bytes"`
+	StartedAt          *time.Time `json:"started_at"`
+	PeriodID           int64      `json:"period_id"`
+	NextReset          *time.Time `json:"next_reset"`
+	State              string     `json:"state"`
+	SubscriberDisabled bool       `json:"subscriber_disabled"`
 }
 
 type scanner interface{ Scan(...any) error }
@@ -233,6 +240,10 @@ func record(ctx context.Context, tx *sql.Tx, id, kind, detail string) error {
 	if _, err := tx.ExecContext(ctx, `INSERT INTO events(at,account,kind,detail) VALUES(?,?,?,?)`, time.Now().Unix(), id, kind, detail); err != nil {
 		return err
 	}
+	return pruneEvents(ctx, tx)
+}
+
+func pruneEvents(ctx context.Context, tx *sql.Tx) error {
 	_, err := tx.ExecContext(ctx, `DELETE FROM events WHERE sequence < (SELECT COALESCE(MAX(sequence),0)-10000 FROM events)`)
 	return err
 }
@@ -244,6 +255,9 @@ func (s *Store) Bind(ctx context.Context, c domain.Credential) error {
 // BindBatch publishes every credential in one transaction. A conflict on any
 // inbound leaves all accounts unchanged.
 func (s *Store) BindBatch(ctx context.Context, credentials []domain.Credential) error {
+	if len(credentials) == 0 {
+		return nil
+	}
 	if len(credentials) > 10000 {
 		return errors.New("credential batch limit exceeded")
 	}
@@ -262,10 +276,20 @@ func (s *Store) BindBatch(ctx context.Context, credentials []domain.Credential) 
 	if count+len(credentials) > 10000 {
 		return errors.New("credential limit exceeded")
 	}
+	changed := map[string]bool{}
 	for _, c := range credentials {
 		if err = bindCredential(ctx, tx, c); err != nil {
 			return err
 		}
+		changed[c.RuntimeID] = true
+	}
+	for scope := range changed {
+		if err = advanceCredentials(ctx, tx, scope); err != nil {
+			return err
+		}
+	}
+	if err = pruneEvents(ctx, tx); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -285,13 +309,10 @@ func bindCredential(ctx context.Context, tx *sql.Tx, c domain.Credential) error 
 	if revoked > 0 {
 		return errors.New("credential ID was revoked; create a new credential ID")
 	}
-	if err = uniqueCredential(ctx, tx, c); err != nil {
-		return err
-	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO credentials(id,account,runtime,inbound,protocol,generation,secret) VALUES(?,?,?,?,?,?,?)`, c.ID, c.AccountID, c.RuntimeID, c.InboundID, c.Protocol, c.Generation, data); err != nil {
 		return err
 	}
-	if err = record(ctx, tx, c.AccountID, "bind", c.RuntimeID+"/"+c.InboundID); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT INTO events(at,account,kind,detail) VALUES(?,?,'bind',?)`, time.Now().Unix(), c.AccountID, c.RuntimeID+"/"+c.InboundID); err != nil {
 		return err
 	}
 	return nil
@@ -499,9 +520,6 @@ func (s *Store) Rotate(ctx context.Context, id, uuid, password string, expected 
 	c.Generation++
 	c.UUID = uuid
 	c.Password = password
-	if err = uniqueCredential(ctx, tx, c); err != nil {
-		return err
-	}
 	data, err = json.Marshal(c)
 	if err != nil {
 		return err
@@ -520,23 +538,10 @@ func (s *Store) Rotate(ctx context.Context, id, uuid, password string, expected 
 	if err = record(ctx, tx, c.AccountID, "rotate", fmt.Sprintf("credential %s generation %d", id, c.Generation)); err != nil {
 		return err
 	}
-	return tx.Commit()
-}
-
-func uniqueCredential(ctx context.Context, tx *sql.Tx, c domain.Credential) error {
-	field, value := "$.uuid", c.UUID
-	if c.Protocol == "anytls" || c.Protocol == "hysteria2" {
-		field, value = "$.password", c.Password
-	}
-	var count int
-	err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM credentials WHERE runtime=? AND inbound=? AND id<>? AND json_extract(secret,?)=?`, c.RuntimeID, c.InboundID, c.ID, field, value).Scan(&count)
-	if err != nil {
+	if err = advanceCredentials(ctx, tx, c.RuntimeID); err != nil {
 		return err
 	}
-	if count > 0 {
-		return errors.New("credential is already assigned on this inbound")
-	}
-	return nil
+	return tx.Commit()
 }
 
 func (s *Store) Unbind(ctx context.Context, id string, generation int64) error {
@@ -546,18 +551,18 @@ func (s *Store) Unbind(ctx context.Context, id string, generation int64) error {
 		return err
 	}
 	defer tx.Rollback()
-	r, err := tx.ExecContext(ctx, `DELETE FROM credentials WHERE id=? AND generation=?`, id, generation)
-	if err != nil {
-		return err
-	}
-	n, err := r.RowsAffected()
-	if err == nil && n != 1 {
+	var scope string
+	err = tx.QueryRowContext(ctx, `DELETE FROM credentials WHERE id=? AND generation=? RETURNING runtime`, id, generation).Scan(&scope)
+	if errors.Is(err, sql.ErrNoRows) {
 		return ErrConflict
 	}
 	if err != nil {
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO revoked_credentials(id) VALUES(?)`, id); err != nil {
+		return err
+	}
+	if err = advanceCredentials(ctx, tx, scope); err != nil {
 		return err
 	}
 	return tx.Commit()

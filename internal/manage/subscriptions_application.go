@@ -36,7 +36,11 @@ func (s SubscriptionService) Execute(ctx context.Context, command application.Su
 	case "deliver":
 		return deliverSubscriptions(ctx, root, id, false, output)
 	case "refresh":
-		return refreshSubscriptions(ctx, root, core, true)
+		var result application.RefreshResult
+		if err := refreshSubscriptionsResult(ctx, root, core, true, &result); err != nil {
+			return err
+		}
+		return jsonEncoder(output).Encode(result)
 	case "preview", "apply":
 		return s.Plan(ctx, command, output)
 	}

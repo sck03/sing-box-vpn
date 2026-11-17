@@ -1,4 +1,5 @@
 import { api, setCSRF } from "./api.js";
+import { overviewStream } from "./live.js";
 import { $, el, card, help, notice, action, button, showResult } from "./ui.js";
 import {
   inbounds,
@@ -64,8 +65,6 @@ let page = "overview",
   draftGeneration = 0,
   configLoad = null,
   loading = 0,
-  refreshTimer,
-  events,
   pageRequest;
 const ctx = {
   session: null,
@@ -122,9 +121,7 @@ const ctx = {
     ctx.updateOverview = null;
     $("#task-status").hidden = true;
     setCSRF("");
-    clearTimeout(refreshTimer);
-    events?.close();
-    events = null;
+    stream.stop();
     $("#shell").hidden = true;
     $("#login").hidden = false;
     $("#login-form").reset();
@@ -160,6 +157,7 @@ async function renderPage() {
     $("#content").setAttribute("aria-busy", "true");
     // Each render owns its callback; a late render cannot replace the live one.
     const view = Object.create(ctx);
+    view.signal = signal;
     view.request = (path, body) => api(path, body, { signal });
     const content = await definition[2](view);
     if (generation === loading) ctx.updateOverview = view.updateOverview;
@@ -183,54 +181,36 @@ async function renderPage() {
     if (generation === loading) $("#content").removeAttribute("aria-busy");
   }
 }
+const stream = overviewStream({
+  request: api,
+  unauthorized: () => ctx.logoutLocal(),
+  disconnected: () => {
+    $("#task-status").hidden = false;
+    $("#task-status").textContent = "实时连接中断，正在重连";
+  },
+  snapshot(data) {
+    ctx.overview = data;
+    ctx.observeRevision(ctx.overview.revision);
+    const active = ctx.overview.tasks.filter((task) =>
+      ["queued", "running"].includes(task.state),
+    );
+    const failed = ctx.overview.tasks.filter(
+      (task) =>
+        task.state === "failed" ||
+        ["partial", "cached", "failed"].includes(task.outcome),
+    );
+    const status = $("#task-status");
+    status.hidden = active.length === 0 && failed.length === 0;
+    status.href = ctx.session.role === "viewer" ? "#overview" : "#maintenance";
+    status.textContent = active.length
+      ? `${active.length} 个任务正在处理 · 查看进度`
+      : `${failed.length} 个任务需要关注 · 查看详情`;
+    status.classList.toggle("error", !active.length && failed.length > 0);
+    ctx.updateOverview?.(ctx.overview);
+  },
+});
 function schedule() {
-  clearTimeout(refreshTimer);
-  if (!ctx.session || document.hidden) {
-    events?.close();
-    events = null;
-    return;
-  }
-  if (!events) {
-    const source = new EventSource("/api/events");
-    events = source;
-    source.addEventListener("overview", (event) => {
-      if (events !== source || !ctx.session) return;
-      ctx.overview = JSON.parse(event.data);
-      ctx.observeRevision(ctx.overview.revision);
-      const active = ctx.overview.tasks.filter((task) =>
-        ["queued", "running"].includes(task.state),
-      );
-      const failed = ctx.overview.tasks.filter(
-        (task) => task.state === "failed",
-      );
-      const status = $("#task-status");
-      status.hidden = active.length === 0 && failed.length === 0;
-      status.href =
-        ctx.session.role === "viewer" ? "#overview" : "#maintenance";
-      status.textContent = active.length
-        ? `${active.length} 个任务正在处理 · 查看进度`
-        : `${failed.length} 个任务执行失败 · 查看详情`;
-      status.classList.toggle("error", !active.length && failed.length > 0);
-      ctx.updateOverview?.(ctx.overview);
-    });
-    source.onerror = () => {
-      if (events !== source) return;
-      source.close();
-      events = null;
-      refreshTimer = setTimeout(async () => {
-        try {
-          await api("/api/auth/session");
-          schedule();
-        } catch (error) {
-          if (error.status === 401) ctx.logoutLocal();
-          else if (error.name !== "AbortError") {
-            notice("连接暂时中断，正在重连；编辑草稿已保留。", true);
-            refreshTimer = setTimeout(schedule, 5000);
-          }
-        }
-      }, 5000);
-    };
-  }
+  stream.setActive(!!ctx.session && !document.hidden);
 }
 async function connected(session) {
   ctx.session = session;

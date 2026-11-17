@@ -54,7 +54,7 @@ func (s AccountService) accountNodes(ctx context.Context, id, scope string, tuic
 				entries, err = managedNodes(App{Profile: p, Inbounds: MakeInbounds(p, "vg-"+settings.ActiveCountry+"-")})
 			}
 		} else {
-			entries, err = s.accountEntries(runtime)
+			entries, err = s.accountEntries(ctx, runtime)
 		}
 		if err != nil {
 			return nil, err

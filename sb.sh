@@ -48,7 +48,7 @@ install_main() (
         local code=$?
         trap - EXIT
         if ((code != 0 && created)); then
-            if ((units)); then systemctl disable --now sing-box sb-panel 2>/dev/null || true; fi
+            if ((units)); then systemctl disable --now sb-recovery.timer sing-box sb-panel 2>/dev/null || true; fi
             [[ ! -d "$APP_HOME" ]] || mv -- "$APP_HOME" "${APP_HOME}.install-failed.$failure_stamp"
             [[ ! -d "$SB_ROOT" ]] || mv -- "$SB_ROOT" "${SB_ROOT}.install-failed.$failure_stamp"
             echo "安装失败，诊断材料保留在 .install-failed.$failure_stamp 目录；可重新运行安装。" >&2
@@ -74,8 +74,8 @@ install_main() (
     fi
     panel recover
     panel validate
-    panel install-services
     units=1
+    panel install-services
     ln -sfn "$APP_HOME/sb.sh" /usr/bin/sb
     systemctl enable --now sing-box sb-panel
     systemctl is-active --quiet sing-box sb-panel
@@ -89,6 +89,8 @@ uninstall_main() {
     [[ "$APP_HOME" == /opt/sing-box-vpn && -f "$APP_HOME/.managed" && "$SB_ROOT" == /etc/s-box && -f "$SB_ROOT/.platform-v4" ]] || {
         echo '卸载只接受带 v4 标记的默认目录；自定义目录请手动清理' >&2; return 1;
     }
+    systemctl disable --now sb-recovery.timer 2>/dev/null || true
+    systemctl stop sb-recovery.service 2>/dev/null || true
     systemctl disable --now sb-panel sb-subscription sb-argo sing-box-vpngate yg-vpngate sing-box 2>/dev/null || true
     "$MANAGER" cleanup --config "$SB_ROOT/vpngate/gateway.json" 2>/dev/null || true
     "$MANAGER" firewall --root "$SB_ROOT" --remove
@@ -96,6 +98,7 @@ uninstall_main() {
     for service in sb-panel sb-subscription sb-argo sing-box-vpngate yg-vpngate sing-box; do
         rm -f -- "/etc/systemd/system/$service.service"
     done
+    rm -f -- /etc/systemd/system/sb-recovery.service /etc/systemd/system/sb-recovery.timer
     rm -f -- /usr/bin/sb "$MANAGER" /etc/sysctl.d/90-sing-box-vpn.conf
     rm -rf -- "$SB_ROOT" "$APP_HOME"
     systemctl daemon-reload

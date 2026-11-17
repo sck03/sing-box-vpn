@@ -20,11 +20,7 @@ export async function subscriptions(ctx) {
   const c = await ctx.config(),
     s = c.subscriptions;
   const request = ctx.request || api;
-  const [catalog, grants] = await Promise.all([
-    clientCatalog(request),
-    request("/api/grants"),
-  ]);
-  const outputGrants = grants.filter((g) => g.outputs?.length);
+  const catalog = await clientCatalog(request);
   s.rule_sets ??= [];
   const change = () => {
     ctx.changed();
@@ -112,21 +108,32 @@ export async function subscriptions(ctx) {
           type: "select",
           options: ["account", "remote", "inline"],
         },
-        { key: "account_id", label: "权益 ID（账户来源）" },
+        {
+          key: "account_id",
+          label: "权益 ID（账户来源）",
+          visible: (v) => v.kind === "account",
+        },
         {
           key: "scope",
           label: "本地范围",
           type: "select",
           options: ["normal", "vpngate", ""],
+          visible: (v) => v.kind === "account",
         },
-        { key: "url", label: "远端 URL" },
+        { key: "url", label: "远端 URL", visible: (v) => v.kind === "remote" },
         {
           key: "format",
           label: "格式",
           type: "select",
           options: ["uri", "sing-box", "mihomo", "base64", "nodes"],
         },
-        { key: "content", label: "内联内容", type: "textarea", wide: true },
+        {
+          key: "content",
+          label: "内联内容",
+          type: "textarea",
+          wide: true,
+          visible: (v) => v.kind === "inline",
+        },
         { key: "required", label: "必需来源", type: "bool" },
         { key: "interval_seconds", label: "刷新间隔（秒）", type: "number" },
         {
@@ -156,7 +163,12 @@ export async function subscriptions(ctx) {
       items: s.collections,
       fields: [
         ...common,
-        { key: "sources", label: "来源 ID，逗号分隔", type: "csv" },
+        {
+          key: "sources",
+          label: "选择来源",
+          type: "multiselect",
+          options: s.sources.map((v) => [v.id, v.name || v.id]),
+        },
         {
           key: "processor",
           label: "过滤 / 排序 / 去重",
@@ -286,7 +298,12 @@ export async function subscriptions(ctx) {
           "输出授权",
           [
             { key: "id", label: "授权 ID", required: true },
-            { key: "outputs", label: "输出 ID，逗号分隔", type: "csv" },
+            {
+              key: "outputs",
+              label: "选择输出",
+              type: "multiselect",
+              options: s.outputs.map((v) => [v.id, v.name || v.id]),
+            },
             { key: "expires_at", label: "下载到期", type: "date" },
             {
               key: "max_downloads",
@@ -309,24 +326,7 @@ export async function subscriptions(ctx) {
           },
         ),
       ),
-      table(
-        [
-          { key: "id", label: "授权" },
-          { label: "输出", value: (g) => g.outputs.join(", ") },
-          { label: "状态", value: (g) => (g.revoked ? "已撤销" : "有效") },
-        ],
-        outputGrants,
-        (g) => [
-          button(
-            "撤销",
-            async () => {
-              await api("/api/grants/revoke", { id: g.id });
-              ctx.render();
-            },
-            "danger",
-          ),
-        ],
-      ),
+      el("p", {}, el("a", { href: "#grants" }, "查看与撤销全部下载授权 →")),
     ),
     card(
       "诊断与立即分发",

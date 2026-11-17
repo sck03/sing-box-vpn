@@ -16,6 +16,7 @@ Windows 开发先 `. ./scripts/dev-env.ps1`。真实链路设置 `SING_BOX_BINAR
 ```bash
 RUN_UDP_IDLE_TESTS=1 go test -race -count=1 ./...
 MANAGED_CORE_BINARY="$PWD/.build/managed-core" go test -race -count=1 -run '^(TestManagedAccountIsolation|TestRealFiveProtocolsTCPUDP)$' ./addons/vpngate/gateway
+MANAGED_CORE_BINARY="$PWD/.build/managed-core" go test -race -count=1 -run '^TestCredentialPublicationRetryDoesNotRepeatRotation$' ./internal/manage
 bash scripts/test-program-upgrade.sh
 shellcheck --severity=warning sb.sh install.sh lib/*.sh scripts/*.sh
 ```
@@ -26,9 +27,13 @@ Linux root 专项通过 `RUN_NETNS_TESTS=1`、`RUN_FIREWALL_TESTS=1`、`RUN_SERV
 
 本地面板使用独立目录：manager `panel --root <空目录> --core <官方核心> --runtime <受管核心> --address 127.0.0.1 --no-system init`，stdin 为 username/password JSON；随后同样参数 `recover`、`serve`。`--no-system` 仅用于开发，系统动作明确拒绝。
 
-当前数据库 schema 7、备份格式 7。不复用早期开发目录或旧数据库；应用配置 schema 与数据库版本分别维护。对外 CLI 保留 panel、核心 prepare/check、firewall、下载监听和网关运行模式，旧 config/accounts/subscriptions/asset/remote 命令不再暴露。
+当前数据库 schema 8、备份格式 7。不复用早期开发目录或旧数据库；应用配置 schema 与数据库版本分别维护。对外 CLI 保留 panel、核心 prepare/check、firewall、下载监听和网关运行模式，旧 config/accounts/subscriptions/asset/remote 命令不再暴露。
 
 旧 config/subscriptions 命令适配器只保留在 `legacy_*_test.go` 中服务测试夹具，不编入生产。旧 remote 命令和 remote.json 通知旁路已移除；使用平台订阅分发资源及 webhook。新增授权列表接口：`GET /api/grants?q=...&offset=0&limit=20` 返回 `{items,total,offset,limit}`，limit 范围 1–100，条目含统一 `state`；没有旧数组接口兼容层。
+
+账户列表同样返回分页对象：`GET /api/accounts?q=...&offset=0&limit=20&sort=created&direction=asc`。搜索 ID、名称、订阅者 ID；sort 仅允许 created/name/id，direction 仅允许 asc/desc，offset 为 0–100000。账户 DTO 包含 `subscriber_disabled` 和有效 `state`。管理员选择器使用 `GET /api/account-options` 的 `{id,name}[]`（账户总量上限 1000）以及 `GET /api/inbound-options?scope=normal|vpngate` 的已应用启用入口；不使用列表第一页代替所有选项。未配置 VPNGate 时入口选项为空数组。
+
+主机升级调用 `panel --root <目录> wait-runtime`，stdin 为 `{"instance":"normal","started":<Unix纳秒>}`，等待 started 不早于本次重启的近期心跳，最长 20 秒。`recover-services` 在打开数据库之前执行，独立于面板健康；服务变更与升级共用恢复文件锁。
 
 `internal/backuparchive` 单独负责格式 7（8 字节项目标记 + age 流 + tar），使用 scrypt 工作因子 16 并限制解密工作因子。禁止恢复前使用尚未完成认证的条目。新增测试覆盖密文损坏、截断、路径限制、并发发布锁、授权生命周期、任务预算、状态搜索与分页。
 

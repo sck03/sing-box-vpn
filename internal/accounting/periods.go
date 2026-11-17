@@ -31,6 +31,9 @@ func (u *Usage) describe(now time.Time) {
 	if u.Disabled {
 		u.State = "disabled"
 	}
+	if u.SubscriberDisabled {
+		u.State = "subscriber_disabled"
+	}
 }
 
 // Advance is called by runtimes as well as queries. Downloading a subscription
@@ -50,11 +53,21 @@ func (s *Store) CurrentAccounts(ctx context.Context, now time.Time) ([]Usage, er
 	if err != nil {
 		return nil, err
 	}
+	people, err := s.Subscribers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	disabled := make(map[string]bool, len(people))
+	for _, person := range people {
+		disabled[person.ID] = person.Disabled
+	}
 	for i, u := range accounts {
 		accounts[i], err = s.advanceUsage(ctx, u, now, false)
 		if err != nil {
 			return nil, err
 		}
+		accounts[i].SubscriberDisabled = disabled[u.SubscriberID]
+		accounts[i].describe(now)
 	}
 	return accounts, nil
 }

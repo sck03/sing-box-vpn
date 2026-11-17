@@ -117,7 +117,9 @@ const config = {
 const realTimeout = globalThis.setTimeout;
 let retry, authError;
 globalThis.setTimeout = (fn, delay, ...args) =>
-  delay === 5000 ? ((retry = fn), -1) : realTimeout(fn, delay, ...args);
+  delay >= 1000 && delay <= 30500
+    ? ((retry = fn), -1)
+    : realTimeout(fn, delay, ...args);
 const tick = () => new Promise((resolve) => realTimeout(resolve, 0));
 const sources = [];
 globalThis.EventSource = class {
@@ -166,7 +168,6 @@ sources.at(-1).onerror();
 await retry();
 assert.equal(document.querySelector("#shell").hidden, false);
 assert.equal(document.querySelector("#draft").hidden, false);
-retry();
 authError = "expired";
 sources.at(-1).onerror();
 await retry();

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -96,11 +97,13 @@ func restoreRequest(t *testing.T, data []byte, fields map[string]string) *httpte
 	r := multipartRestoreRequest(t, data, fields)
 	w := httptest.NewRecorder()
 	var value backupRequest
+	defer value.Close()
 	if err := readBackupRequest(w, r, &value); err != nil {
 		w.WriteHeader(400)
 		return w
 	}
-	if !bytes.Equal(value.Backup, data) || value.Password != fields["password"] {
+	got, err := io.ReadAll(value.Backup)
+	if err != nil || !bytes.Equal(got, data) || value.Password != fields["password"] {
 		t.Fatal("multipart lost backup bytes")
 	}
 	w.WriteHeader(200)

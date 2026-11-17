@@ -165,8 +165,7 @@ func redactPlatform(v any) {
 }
 
 func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revision int64, actor string) (int64, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	c.normalize()
 	if c.Argo.Mode == "fixed" {
 		c.App.Argo = Object{"domain": c.Argo.Domain, "inbound": c.Argo.Inbound}
 	} else if c.Argo.Mode == "off" || c.Argo.Mode == "" {
@@ -185,6 +184,18 @@ func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revi
 	// Validate before persisting intent. No service or public artifact changes.
 	if _, err = s.build(ctx, c); err != nil {
 		return 0, err
+	}
+	// Expensive core validation does not hold the configuration mutation mutex.
+	// Recheck the revision under the mutex before capturing/persisting intent;
+	// execution validates again against then-current credentials and material.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state, err = s.Store.State(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if state.Revision != revision {
+		return 0, controlstore.ErrConflict
 	}
 	active := []string{}
 	enabled := []string{}
@@ -287,6 +298,9 @@ func (s *PlatformService) Run(ctx context.Context) error {
 		return err
 	}
 	if err = withStartupLock(ctx, s.Root, func() error {
+		if e := recoverSubscriptionRuntime(s.Root); e != nil {
+			return e
+		}
 		files, e := s.build(ctx, c)
 		if e != nil {
 			return e
@@ -407,78 +421,19 @@ func (s *PlatformService) execute(ctx context.Context, id int64, a PlatformActio
 	}
 	switch a.Operation {
 	case "account":
-		if a.Account.Operation == "rotate" || a.Account.Operation == "unbind" {
-			found := false
-			for _, scope := range []string{"normal", "vpngate"} {
-				credentials, e := s.Accounts.Credentials(ctx, scope)
-				if e != nil {
-					return e
-				}
-				for _, credential := range credentials {
-					if credential.ID == a.Account.ID {
-						if a.Account.Scope != "" && a.Account.Scope != scope {
-							return errors.New("credential belongs to a different runtime")
-						}
-						a.Account.Scope, found = scope, true
-					}
-				}
-			}
-			if !found {
-				return errors.New("credential not found")
-			}
-		}
-		var active []string
-		if !s.NoSystem {
-			var e error
-			active, e = s.activeServices(ctx)
-			if e != nil {
-				return e
-			}
-		}
-		var out bytes.Buffer
-		err := (AccountService{Root: s.Root, Store: s.Accounts}).Execute(ctx, a.Account, &out)
-		if err != nil {
-			return err
-		}
-		state, err := s.Store.State(ctx)
-		if err != nil {
-			return err
-		}
-		c, err := decodePlatform(state.Applied)
-		if err != nil {
-			return err
-		}
-		files, err := s.build(ctx, c)
-		if err != nil {
-			return err
-		}
-		if err = s.checkRuntime(ctx, files); err != nil {
-			return err
-		}
-		if err = withStartupLock(ctx, s.Root, func() error { return publish(s.Root, files) }); err != nil {
-			return err
-		}
-		if !s.NoSystem {
-			for _, scope := range []string{"normal", "vpngate"} {
-				if a.Account.Scope != "" && a.Account.Scope != scope {
-					continue
-				}
-				if !slices.Contains(active, scopeService(scope)) {
-					continue
-				}
-				if err = s.service(ctx, scopeService(scope), "restart"); err != nil {
-					return err
-				}
-			}
-		}
-		if out.Len() > 0 {
-			return s.Store.Result(ctx, id, out.Bytes())
-		}
-		return nil
+		return s.executeAccount(ctx, id, a.Account)
 	case "subscription":
 		if a.Automatic {
 			if a.Subscription.Operation == "refresh" {
-				return refreshSubscriptions(ctx, s.Root, s.Core, false)
+				var result application.RefreshResult
+				if err := refreshSubscriptionsResult(ctx, s.Root, s.Core, false, &result); err != nil {
+					return err
+				}
+				data, err := json.Marshal(result)
+				if err != nil {
+					return err
+				}
+				return s.Store.Result(ctx, id, data)
 			}
 			return deliverSubscriptions(ctx, s.Root, "", true, new(bytes.Buffer))
 		}

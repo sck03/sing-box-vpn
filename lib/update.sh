@@ -3,7 +3,7 @@
 upgrade_program() (
     set -Eeuo pipefail
     require_system
-    local arch stage unit state switched=0 binaries=0
+    local arch stage unit state started switched=0 binaries=0
     local -a running=()
     arch=$(arch_name)
     [[ -f "$APP_HOME/.managed" && -f "$SB_ROOT/.platform-v4" && -x "$MANAGER" && -x "$RUNTIME" ]] || {
@@ -11,6 +11,8 @@ upgrade_program() (
     }
     exec 9>"$SB_ROOT/.upgrade.lock"
     flock -n 9 || { echo '另一个升级任务正在运行' >&2; return 1; }
+    exec 8>"$SB_ROOT/.service-recovery.lock"
+    flock -w 60 8 || { echo '服务仍在切换，请稍后重试升级' >&2; return 1; }
     [[ $(systemctl show sb-panel-upgrade-restart.timer --property=ActiveState --value) != active ]] || {
         echo '上一升级仍在等待面板重启' >&2; return 1;
     }
@@ -66,12 +68,20 @@ upgrade_program() (
     mv -f -- "$RUNTIME.new" "$RUNTIME"
     for unit in "${running[@]}"; do
         if [[ "$unit" == sb-panel && "${SB_DEFER_PANEL_RESTART:-0}" == 1 ]]; then continue; fi
+        started=$(date +%s%N)
         systemctl restart "$unit"
         systemctl is-active --quiet "$unit"
+        case "$unit" in
+            sing-box|sing-box-vpngate)
+                local instance=normal
+                [[ "$unit" != sing-box-vpngate ]] || instance=vpngate
+                printf '{"instance":"%s","started":%s}\n' "$instance" "$started" | "$MANAGER" panel --root "$SB_ROOT" wait-runtime
+                ;;
+        esac
     done
     install -m 0755 "$stage/runtime.previous" "$RUNTIME.previous"
     if [[ "${SB_DEFER_PANEL_RESTART:-0}" == 1 && " ${running[*]} " == *' sb-panel '* ]]; then
-        systemd-run --unit=sb-panel-upgrade-restart --on-active=10s --collect /bin/bash "$stage/restart-panel.sh" "$stage" "$APP_HOME" "$MANAGER" "$RUNTIME" "${running[@]}"
+        systemd-run --unit=sb-panel-upgrade-restart --on-active=10s --collect /bin/bash "$stage/restart-panel.sh" "$stage" "$APP_HOME" "$MANAGER" "$RUNTIME" "$SB_ROOT" "${running[@]}"
     fi
     trap - EXIT
     echo "程序和受管核心已更新；上一发行包保存在 $stage，账户账本和服务启用状态保留。"

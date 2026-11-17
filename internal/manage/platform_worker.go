@@ -28,6 +28,7 @@ func (s *PlatformService) runLane(ctx context.Context, lane string) error {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	nextMaintenance, nextSubscriptions, nextRetention := time.Time{}, time.Time{}, time.Time{}
+	nextCredentials, credentialDelay := time.Time{}, 5*time.Second
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -35,10 +36,21 @@ func (s *PlatformService) runLane(ctx context.Context, lane string) error {
 		// Schedule between tasks as well as while idle; a busy queue must not
 		// starve refresh or renewal. Store deduplication bounds automatic work.
 		if lane == "control" {
+			if time.Now().After(nextCredentials) {
+				reconcile, stop := context.WithTimeout(ctx, 60*time.Second)
+				err := withServiceLock(reconcile, s.Root, func() error { return s.reconcileCredentials(reconcile) })
+				stop()
+				if err != nil {
+					credentialDelay = min(credentialDelay*2, 5*time.Minute)
+				} else {
+					credentialDelay = 5 * time.Second
+				}
+				nextCredentials = time.Now().Add(credentialDelay)
+			}
 			if time.Now().After(nextRetention) {
 				nextRetention = time.Now().Add(time.Hour)
 				maintenance, stop := context.WithTimeout(ctx, 30*time.Second)
-				err := errors.Join(s.Accounts.PruneHistory(maintenance, time.Now()), s.Store.PruneHistory(maintenance, time.Now()))
+				err := errors.Join(s.Accounts.PruneHistory(maintenance, time.Now()), s.Store.PruneHistory(maintenance, time.Now()), s.pruneCertificates(maintenance, time.Now()))
 				if err != nil {
 					_ = s.Auth.Audit(maintenance, "scheduler", "history-retention", "", "failed")
 				}
@@ -89,13 +101,17 @@ func (s *PlatformService) runTask(ctx context.Context, task controlstore.Task) e
 		var input applyInput
 		err = json.Unmarshal(task.Input, &input)
 		if err == nil {
-			err = s.apply(child, task.ID, input)
+			err = withServiceLock(child, s.Root, func() error { return s.apply(child, task.ID, input) })
 		}
 	} else {
 		var action PlatformAction
 		err = json.Unmarshal(task.Input, &action)
 		if err == nil {
-			err = s.execute(child, task.ID, action)
+			if action.Operation == "outbound-probe" || action.Operation == "program-upgrade" || action.Operation == "subscription" {
+				err = s.execute(child, task.ID, action)
+			} else {
+				err = withServiceLock(child, s.Root, func() error { return s.execute(child, task.ID, action) })
+			}
 		}
 	}
 	cancel()

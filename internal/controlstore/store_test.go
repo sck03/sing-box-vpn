@@ -1,10 +1,43 @@
 package controlstore
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 )
+
+func TestIdleClaimDoesNotWaitForAccountingWriter(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "control.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err = s.Initialize(t.Context(), []byte(`{}`)); err != nil {
+		t.Fatal(err)
+	}
+	peer, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer peer.Close()
+	writer, err := peer.db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Rollback()
+	if _, err = writer.ExecContext(t.Context(), `UPDATE control_state SET revision=revision`); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	if _, err = s.ClaimLane(ctx, "control"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("idle worker contended with writer: %v", err)
+	}
+}
 
 func TestTaskRecoveryAndConfigurationRevisions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "control.db")

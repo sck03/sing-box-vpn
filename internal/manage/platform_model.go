@@ -326,7 +326,7 @@ func (s *PlatformService) build(ctx context.Context, c PlatformConfig) (fileBund
 	}
 	// v4 publishes only explicitly authorized account sources and imported nodes.
 	local := map[string][]sub.Node{}
-	_, r, _, err := loadSubscriptions(s.Root)
+	r, err := loadSubscriptionRuntime(s.Root)
 	if err != nil {
 		return nil, err
 	}
@@ -357,6 +357,18 @@ func (s *PlatformService) build(ctx context.Context, c PlatformConfig) (fileBund
 func decodePlatform(data []byte) (PlatformConfig, error) {
 	var c PlatformConfig
 	err := strict.JSON(data, &c, maxJSONFile)
+	c.normalize()
 	return c, err
+}
+func (c *PlatformConfig) normalize() {
+	if c.VPN.Profiles == nil {
+		c.VPN.Profiles = map[string]Profile{}
+	}
+	if c.VPNSecrets == nil {
+		c.VPNSecrets = map[string]Secrets{}
+	}
+	if c.Gateway == nil {
+		c.Gateway = Object{}
+	}
 }
 func encodePlatform(c PlatformConfig) ([]byte, error) { return json.Marshal(c) }
