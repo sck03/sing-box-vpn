@@ -18,7 +18,7 @@
 
 ## 验证
 
-Windows amd64：Go 1.27.3、Node 24.18、官方 sing-box 1.14.4、Mihomo 1.19.33。Linux 专项在独立 Ubuntu amd64 VM 中执行，QEMU TCG，2 vCPU / 2 GiB。
+Windows amd64：Go 1.27.3、Node 24.18、官方 sing-box 1.14.4、Mihomo 1.19.33。本地 Linux 专项使用独立 Ubuntu amd64 VM，QEMU TCG，2 vCPU / 2 GiB；远端完整 CI 使用 GitHub 的 Ubuntu 24.04 runner。
 
 | 检查 | 结果 |
 | --- | --- |
@@ -30,8 +30,11 @@ Windows amd64：Go 1.27.3、Node 24.18、官方 sing-box 1.14.4、Mihomo 1.19.33
 | Windows 面板启动 | 11 月 18 日重新构建管理器，独立目录初始化、recover 与 no-system serve 成功，首页返回 HTTP 200 |
 | Linux 存储故障 | ENOSPC 时不交付未提交预留，释放空间后恢复，integrity_check=ok；SIGKILL 后不错误退款；合批失败隔离通过 |
 | Linux 管理回归 | 网关状态、初始化发布重试、耗尽后用量、SSE 容量隔离、反代信任链、国家选择空映射通过 |
+| Linux 系统与安装 | 本次 CI 的 OpenVPN/netns、隧道 DNS、IPv4/IPv6 防火墙、systemd 恢复、全新安装及部署回滚全部通过 |
 | 发行构建 | Linux amd64/arm64 管理器与受管核心成功构建；arm64 未做实体运行测试 |
 | 格式和静态检查 | gofmt、Prettier、ShellCheck、diff whitespace 检查通过 |
+
+代码提交 `13f6a53` 的 [GitHub CI](https://github.com/sck03/sing-box-vpn/actions/runs/44173927127) 于北京时间 2026-11-18 05:04 完成，验证作业所有步骤通过，包含 72 条订阅 TCP/UDP 链路、受管核心隔离及凭据发布重试。逐项结果见 [CI 验收数据](validation/2026-11-18-schema10-ci.json)。后续提交仅补充验收文档；该分支运行未发布 Release。
 
 并发持久预留基准从 31.41–38.80 MB/s 提升到 96.98–132.16 MB/s。单池吞吐存在波动，分配略增；不将该微基准等同于代理带宽或整机资源改善。所有样本及环境见 [性能说明](optimization.md#schema-10-本机对照) 和 [原始数据](validation/2026-11-17-schema10-performance.json)。
 
@@ -39,10 +42,10 @@ Windows amd64：Go 1.27.3、Node 24.18、官方 sing-box 1.14.4、Mihomo 1.19.33
 
 11 月 18 日续接时，内置浏览器与 Chrome 绑定分别报 `constraints`、`timeoutMs` 内部错误；原生窗口检查随后因无法可靠确认当前 URL 被工具停止。因此本轮未完成真实桌面/移动端截图与视觉验收。已完成 DOM 功能回归，不能据此声称实际布局已验收。
 
-本轮未重新执行完整 Linux 安装/升级、systemd、防火墙/netns 矩阵、公网 ACME、第三方 VPNGate 志愿线路、物理断电、整机重启或长期满载。相关 CI 步骤保留；历史 Linux 系统测试结果不能冒充本轮结果。闭源客户端与实体 OpenClash 路由器需对应环境验证。
+本轮 Linux 安装、升级脚本、systemd、防火墙和 netns 验证已由上述 CI 补齐。仍未执行公网 ACME、第三方 VPNGate 志愿线路、物理断电、整机重启或长期满载。闭源客户端与实体 OpenClash 路由器需对应环境验证；arm64 仅通过交叉构建。
 
 ## 清理与交付
 
 无用临时二进制、基线归档和面板测试数据集中到仓库根目录 `.cleanup-manual/`，可整体手动删除。11 月 18 日已核对清理路径位于工作区内且没有符号链接或运行中的二进制，但自动审批仍以 `blocked by policy` 拒绝删除；按用户指定的备选方式，将续接测试文件也归入同一目录。原中文待删除目录已归入其中，避免 Go 包扫描报非法路径。该目录被 Git/Go 扫描忽略，不进入发行包。保留许可证、回归夹具、开发工具、必要缓存及虚拟机基础磁盘；测试服务器和虚拟机均已停止。
 
-交付目标为 GitHub `main`，合并所有有效工作后仅保留本地与远端 `main`。当前完整发行包位于 `.build/release/`。提交推送不等于正式发布 Release、生产部署或 GitHub Actions 通过。
+代码与验收文档统一交付到 GitHub `main`；原 `codex/platform-refactor` 的有效提交已全部合入，核对祖先关系后删除该分支，本地与远端只保留 `main`。当前完整发行包位于 `.build/release/`，随最终验收文档重新构建并校验。代码已通过上述 CI；正式发布 Release 和生产部署仍需单独执行。
