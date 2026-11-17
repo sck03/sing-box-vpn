@@ -31,6 +31,7 @@ type Task struct {
 	Updated int64           `json:"updated"`
 	Input   json.RawMessage `json:"-"`
 	Result  json.RawMessage `json:"result,omitempty"`
+	Outcome string          `json:"outcome,omitempty"`
 }
 
 func Open(path string) (*Store, error) {
@@ -189,8 +190,7 @@ func (s *Store) Finish(ctx context.Context, id int64, result error) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `DELETE FROM control_tasks WHERE state IN ('succeeded','failed','cancelled') AND id<(SELECT COALESCE(MAX(id),0)-200 FROM control_tasks)`)
-	return err
+	return s.PruneHistory(ctx, time.Now())
 }
 func (s *Store) Applied(ctx context.Context, revision int64) error {
 	r, err := s.db.ExecContext(ctx, `UPDATE control_state SET applied=desired,applied_revision=revision WHERE id=1 AND revision=?`, revision)
@@ -228,11 +228,11 @@ func (s *Store) TaskSummaries(ctx context.Context) ([]Task, error) {
 	return s.tasks(ctx, "CAST('{}' AS BLOB)")
 }
 func (s *Store) Task(ctx context.Context, id int64) (t Task, err error) {
-	err = s.db.QueryRowContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,CAST(result AS BLOB) FROM control_tasks WHERE id=?`, id).Scan(&t.ID, &t.Kind, &t.Actor, &t.State, &t.Phase, &t.Error, &t.Created, &t.Updated, &t.Result)
+	err = s.db.QueryRowContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,CAST(result AS BLOB),COALESCE(json_extract(result,'$.outcome'),'') FROM control_tasks WHERE id=?`, id).Scan(&t.ID, &t.Kind, &t.Actor, &t.State, &t.Phase, &t.Error, &t.Created, &t.Updated, &t.Result, &t.Outcome)
 	return
 }
 func (s *Store) tasks(ctx context.Context, result string) ([]Task, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,`+result+` FROM control_tasks ORDER BY id DESC LIMIT 200`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,`+result+`,COALESCE(json_extract(result,'$.outcome'),'') FROM control_tasks ORDER BY id DESC LIMIT 200`)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +240,7 @@ func (s *Store) tasks(ctx context.Context, result string) ([]Task, error) {
 	v := []Task{}
 	for rows.Next() {
 		var t Task
-		if err = rows.Scan(&t.ID, &t.Kind, &t.Actor, &t.State, &t.Phase, &t.Error, &t.Created, &t.Updated, &t.Result); err != nil {
+		if err = rows.Scan(&t.ID, &t.Kind, &t.Actor, &t.State, &t.Phase, &t.Error, &t.Created, &t.Updated, &t.Result, &t.Outcome); err != nil {
 			return nil, err
 		}
 		v = append(v, t)

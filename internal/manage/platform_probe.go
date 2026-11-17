@@ -40,7 +40,9 @@ func (s *PlatformService) probeOutbound(ctx context.Context, task int64, id, end
 	started := time.Now()
 	probeErr := probeCoreConfig(ctx, s.Root, s.Core, endpoint, config)
 	result := Object{"outbound": id, "success": probeErr == nil, "milliseconds": time.Since(started).Milliseconds()}
+	result["outcome"] = "passed"
 	if probeErr != nil {
+		result["outcome"] = "failed"
 		result["error"] = probeErr.Error()
 	}
 	raw, err := json.Marshal(result)

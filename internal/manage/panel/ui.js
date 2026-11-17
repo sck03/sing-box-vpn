@@ -138,7 +138,8 @@ export function formDialog(title, fields, value, save) {
     area = el("div", { class: "fields" });
   const inputs = [];
   for (const field of fields) {
-    const current = getPath(value, field.key);
+    const raw = getPath(value, field.key);
+    const current = field.scale && raw != null ? raw / field.scale : raw;
     let input;
     if (field.type === "select" || field.type === "multiselect") {
       input = el("select");
@@ -190,6 +191,7 @@ export function formDialog(title, fields, value, save) {
     if (field.readonly) input.disabled = true;
     if (field.min !== undefined) input.min = field.min;
     if (field.max !== undefined) input.max = field.max;
+    if (field.scale) input.step = "any";
     input.setAttribute("aria-label", field.label);
     const label = el(
       "label",
@@ -238,6 +240,7 @@ export function formDialog(title, fields, value, save) {
   refreshFields();
   form.append(
     area,
+    el("p", { class: "form-error", role: "alert", hidden: true }),
     row(
       button("取消", () => dialog.close()),
       el("button", { class: "primary", type: "submit" }, "保存"),
@@ -247,42 +250,51 @@ export function formDialog(title, fields, value, save) {
     "submit",
     action(async (event) => {
       event.preventDefault();
-      const result = structuredClone(value);
-      for (const [field, input] of inputs) {
-        if (field.readonly || input.disabled) continue;
-        let v = input.value;
-        switch (field.type) {
-          case "multiselect":
-            v = [...input.selectedOptions].map((o) => o.value);
-            break;
-          case "bool":
-            v = input.checked;
-            break;
-          case "number":
-            if (v === "") {
-              v = field.nullable ? null : 0;
-            } else {
-              v = Number(v);
-              if (!Number.isSafeInteger(v))
-                throw new Error(field.label + "需要安全范围内的整数");
-            }
-            break;
-          case "json":
-            v = JSON.parse(v);
-            break;
-          case "csv":
-            v = v
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean);
-            break;
-          case "date":
-            v = v ? new Date(v).toISOString() : null;
-            break;
+      const errorNode = form.querySelector(".form-error");
+      errorNode.hidden = true;
+      try {
+        const result = structuredClone(value);
+        for (const [field, input] of inputs) {
+          if (field.readonly || input.disabled) continue;
+          let v = input.value;
+          switch (field.type) {
+            case "multiselect":
+              v = [...input.selectedOptions].map((o) => o.value);
+              break;
+            case "bool":
+              v = input.checked;
+              break;
+            case "number":
+              if (v === "") {
+                v = field.nullable ? null : 0;
+              } else {
+                v = Number(v) * (field.scale || 1);
+                if (field.scale) v = Math.round(v);
+                if (!Number.isSafeInteger(v))
+                  throw new Error(field.label + "需要安全范围内的整数");
+              }
+              break;
+            case "json":
+              v = JSON.parse(v);
+              break;
+            case "csv":
+              v = v
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean);
+              break;
+            case "date":
+              v = v ? new Date(v).toISOString() : null;
+              break;
+          }
+          setPath(result, field.key, v);
         }
-        setPath(result, field.key, v);
+        await save(result);
+      } catch (error) {
+        errorNode.textContent = error.message;
+        errorNode.hidden = false;
+        return;
       }
-      await save(result);
       if (dialog.contains(form)) dialog.close();
     }),
   );
@@ -298,16 +310,36 @@ export function table(columns, items, actions) {
     }),
     body = el("div"),
     pager = el("div", { class: "pager" });
-  let page = 0;
+  let page = 0,
+    signature = "",
+    waitingForFocus = false,
+    indexed = [];
+  function index() {
+    indexed = items.map((item) => ({
+      item,
+      text: columns
+        .map((c) => {
+          const value = c.search
+            ? c.search(item)
+            : c.value
+              ? c.value(item)
+              : c.key
+                ? item[c.key]
+                : c.render?.(item);
+          return value instanceof Node
+            ? value.textContent
+            : String(value ?? "");
+        })
+        .join(" ")
+        .toLocaleLowerCase(),
+    }));
+  }
+  index();
   function render() {
-    const term = search.value.toLowerCase();
-    const data = items.filter((item) =>
-      columns.some((c) =>
-        String(c.value ? c.value(item) : (item[c.key] ?? ""))
-          .toLowerCase()
-          .includes(term),
-      ),
-    );
+    const term = search.value.trim().toLocaleLowerCase();
+    const data = indexed
+      .filter((entry) => entry.text.includes(term))
+      .map((entry) => entry.item);
     const pages = Math.max(1, Math.ceil(data.length / 20));
     page = Math.min(page, pages - 1);
     const t = el("table"),
@@ -354,12 +386,96 @@ export function table(columns, items, actions) {
   });
   wrapper.append(search, body, pager);
   wrapper.updateItems = (next) => {
+    const serialized = JSON.stringify(next);
     items = next;
+    if (serialized === signature) return;
+    // A live update must not replace the button currently being operated.
+    if (body.contains(document.activeElement)) {
+      if (!waitingForFocus) {
+        waitingForFocus = true;
+        body.addEventListener(
+          "focusout",
+          () =>
+            queueMicrotask(() => {
+              waitingForFocus = false;
+              wrapper.updateItems(items);
+            }),
+          { once: true },
+        );
+      }
+      return;
+    }
+    signature = serialized;
+    index();
     render();
   };
+  signature = JSON.stringify(items);
   render();
   return wrapper;
 }
+export async function remoteTable(columns, load, actions) {
+  const search = el("input", {
+    class: "search",
+    "aria-label": "搜索授权",
+    placeholder: "搜索 ID、权益或状态…",
+  });
+  const body = el("div"),
+    pager = el("div", { class: "pager" });
+  const wrapper = el("div", { class: "remote-table" }, search, body, pager);
+  let offset = 0,
+    generation = 0,
+    timer;
+  async function refresh() {
+    const current = ++generation;
+    wrapper.setAttribute("aria-busy", "true");
+    try {
+      const page = await load({ q: search.value, offset, limit: 20 });
+      if (current !== generation) return;
+      if (offset > 0 && offset >= page.total) {
+        offset = Math.max(0, Math.floor((page.total - 1) / 20) * 20);
+        return refresh();
+      }
+      const view = table(columns, page.items, actions);
+      view.querySelector(".search").remove();
+      view.querySelector(".pager").remove();
+      body.replaceChildren(view);
+      const previous = button("上一页", () => {
+        offset = Math.max(0, offset - 20);
+        return refresh();
+      });
+      const next = button("下一页", () => {
+        offset += 20;
+        return refresh();
+      });
+      previous.disabled = offset === 0;
+      next.disabled = offset + 20 >= page.total;
+      pager.replaceChildren(
+        previous,
+        el(
+          "span",
+          {},
+          `${Math.floor(offset / 20) + 1} / ${Math.max(1, Math.ceil(page.total / 20))} · ${page.total} 项`,
+        ),
+        next,
+      );
+    } catch (error) {
+      if (current === generation && error.name !== "AbortError") {
+        body.replaceChildren(help(error.message), button("重试", refresh));
+      }
+    } finally {
+      if (current === generation) wrapper.removeAttribute("aria-busy");
+    }
+  }
+  search.addEventListener("input", () => {
+    clearTimeout(timer);
+    ++generation;
+    offset = 0;
+    timer = setTimeout(refresh, 180);
+  });
+  await refresh();
+  return wrapper;
+}
+
 export function resourceEditor({
   title,
   items,

@@ -7,16 +7,21 @@ import (
 	"github.com/google/uuid"
 	"io"
 	"path/filepath"
-	"slices"
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
-	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 type AccountService struct {
 	Root  string
 	Store *accounting.Store
+}
+
+type bindingRepository struct{ *accounting.Store }
+
+func (r bindingRepository) RequireAccount(ctx context.Context, id string) error {
+	_, err := r.Account(ctx, id)
+	return err
 }
 
 func (s AccountService) openStore() (*accounting.Store, func(), error) {
@@ -55,74 +60,20 @@ func (s AccountService) Execute(ctx context.Context, c application.AccountComman
 	case "save":
 		return store.SaveAccount(ctx, c.Account)
 	case "bind":
-		if !slices.Contains([]string{normalScope, vpngateScope}, c.Scope) {
-			return errors.New("invalid runtime scope")
-		}
-		ids := c.AccountIDs
-		if len(ids) == 0 {
-			ids = []string{c.ID}
-		}
-		if len(ids) > 100 || (len(c.AccountIDs) > 0 && c.ID != "") {
-			return errors.New("select 1–100 account IDs, without a separate id")
-		}
-		if len(ids) > 1 && (c.UUID != "" || c.Password != "") {
-			return errors.New("batch binding requires independent random credentials")
-		}
-		seen := map[string]bool{}
-		for _, id := range ids {
-			if seen[id] {
-				return errors.New("duplicate account ID")
-			}
-			seen[id] = true
-			if _, err = store.Account(ctx, id); err != nil {
-				return err
-			}
-		}
 		return withStartupLock(ctx, s.Root, func() error {
 			entries, err := s.accountEntries(c.Scope)
 			if err != nil {
 				return err
 			}
-			for _, id := range c.InboundIDs {
-				if !slices.ContainsFunc(entries, func(v ManagedNode) bool { return v.ID == id && !v.Disabled }) {
-					return fmt.Errorf("inbound %s is missing or disabled", id)
-				}
+			available := make([]application.BindingEntry, 0, len(entries))
+			for _, entry := range entries {
+				available = append(available, application.BindingEntry{ID: entry.ID, Protocol: entry.Protocol, Disabled: entry.Disabled})
 			}
-			existing, err := store.Credentials(ctx, c.Scope)
+			result, err := application.BindAccounts(ctx, bindingRepository{store}, c, available)
 			if err != nil {
 				return err
 			}
-			pending := []domain.Credential{}
-			for _, id := range ids {
-				selected := 0
-				for _, entry := range entries {
-					if len(c.InboundIDs) > 0 && !slices.Contains(c.InboundIDs, entry.ID) {
-						continue
-					}
-					if entry.Disabled {
-						continue
-					}
-					selected++
-					if slices.ContainsFunc(existing, func(v domain.Credential) bool { return v.AccountID == id && v.InboundID == entry.ID }) {
-						continue
-					}
-					credential := domain.Credential{ID: hexSecret()[:32], AccountID: id, RuntimeID: c.Scope, InboundID: entry.ID, Protocol: entry.Protocol, Generation: 1, UUID: randomUUID(), Password: randomSecret()}
-					if c.UUID != "" {
-						credential.UUID = c.UUID
-					}
-					if c.Password != "" {
-						credential.Password = c.Password
-					}
-					pending = append(pending, credential)
-				}
-				if selected == 0 {
-					return errors.New("no enabled inbounds selected")
-				}
-			}
-			if err = store.BindBatch(ctx, pending); err != nil {
-				return err
-			}
-			return jsonEncoder(out).Encode(Object{"status": "saved", "runtime": c.Scope, "accounts": len(ids), "created": len(pending)})
+			return jsonEncoder(out).Encode(result)
 		})
 	case "credentials":
 		result, err := s.Credentials(ctx, c.ID, c.Scope)

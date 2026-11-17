@@ -57,6 +57,10 @@ func jsonResponse(w http.ResponseWriter, value any) {
 }
 func platformError(w http.ResponseWriter, err error) {
 	code := 400
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		code = http.StatusServiceUnavailable
+		w.Header().Set("Retry-After", "1")
+	}
 	if errors.Is(err, controlstore.ErrConflict) || errors.Is(err, accounting.ErrConflict) {
 		code = 409
 	}
@@ -501,7 +505,21 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 				return
 			}
 			if r.Method == "GET" {
-				v, e := s.Accounts.Grants(ctx)
+				offset, limit := 0, 20
+				query := r.URL.Query()
+				if raw := query.Get("offset"); raw != "" {
+					if offset, err = strconv.Atoi(raw); err != nil {
+						platformError(w, errors.New("invalid pagination offset"))
+						return
+					}
+				}
+				if raw := query.Get("limit"); raw != "" {
+					if limit, err = strconv.Atoi(raw); err != nil {
+						platformError(w, errors.New("invalid pagination limit"))
+						return
+					}
+				}
+				v, e := s.Accounts.GrantPage(ctx, query.Get("q"), offset, limit)
 				if e != nil {
 					platformError(w, e)
 				} else {

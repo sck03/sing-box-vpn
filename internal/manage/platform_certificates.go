@@ -42,7 +42,8 @@ func (s *PlatformService) scheduleCertificates(ctx context.Context) error {
 		}
 		cert, e1 := os.ReadFile(asset.Certificate)
 		key, e2 := os.ReadFile(asset.Key)
-		if e1 == nil && e2 == nil {
+		_, lineageErr := os.Stat(filepath.Join(s.Root, "acme", "config", "renewal", asset.ID+".conf"))
+		if e1 == nil && e2 == nil && lineageErr == nil {
 			if leaf, e := validatePEM(cert, key, asset.Domain); e == nil && time.Until(leaf.NotAfter) > 30*24*time.Hour {
 				continue
 			}
@@ -110,6 +111,13 @@ func (s *PlatformService) CertificateStatus(ctx context.Context) ([]Object, erro
 	result := []Object{}
 	for _, asset := range c.Certificates {
 		v := Object{"id": asset.ID, "domain": asset.Domain, "provider": asset.Provider, "used_by": []string{}}
+		v["renewal_state"] = "manual"
+		if asset.Provider == "certbot" {
+			v["renewal_state"] = "automatic"
+			if _, err := os.Stat(filepath.Join(s.Root, "acme", "config", "renewal", asset.ID+".conf")); err != nil {
+				v["renewal_state"] = "registration_pending"
+			}
+		}
 		used := []string{}
 		for _, node := range nodes {
 			if node.TLS.Certificate == asset.Certificate {
@@ -183,9 +191,10 @@ func (s *PlatformService) renewCertificate(ctx context.Context, id string) error
 	if _, err = validatePEM(cert, key, asset.Domain); err != nil {
 		return err
 	}
-	// Only canonical paths inside the project certificate directory can be replaced.
-	if asset.Certificate != filepath.ToSlash(filepath.Join(s.Root, "certificates", id, "cert.pem")) || asset.Key != filepath.ToSlash(filepath.Join(s.Root, "certificates", id, "key.pem")) {
-		return errors.New("ACME asset paths are not canonical")
+	// Restored assets retain their provider and renew in their staged directory.
+	// Never let a certificate task replace files outside the managed material tree.
+	if !managedCertificatePair(s.Root, asset) {
+		return errors.New("ACME asset paths escape the managed certificate directory")
 	}
 	old := fileBundle{}
 	next := fileBundle{}
@@ -233,6 +242,17 @@ func (s *PlatformService) renewCertificate(ctx context.Context, id string) error
 		return errors.Join(err, rollback)
 	}
 	return nil
+}
+
+func managedCertificatePair(root string, asset CertificateAsset) bool {
+	base := filepath.Join(root, "certificates")
+	for _, path := range []string{asset.Certificate, asset.Key} {
+		rel, err := filepath.Rel(base, path)
+		if err != nil || !filepath.IsLocal(rel) {
+			return false
+		}
+	}
+	return filepath.Base(asset.Certificate) == "cert.pem" && filepath.Base(asset.Key) == "key.pem" && filepath.Dir(asset.Certificate) == filepath.Dir(asset.Key)
 }
 
 func certificateUses(c PlatformConfig, path, service string) bool {

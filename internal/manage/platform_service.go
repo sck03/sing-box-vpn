@@ -35,6 +35,8 @@ type PlatformService struct {
 	statusMu            sync.Mutex
 	statusAt            time.Time
 	status              []byte
+	statusVersion       uint64
+	statusLoading       chan struct{}
 	backupBusy          atomic.Bool
 }
 type PlatformAction struct {
@@ -464,11 +466,7 @@ func (s *PlatformService) execute(ctx context.Context, id int64, a PlatformActio
 				if !slices.Contains(active, scopeService(scope)) {
 					continue
 				}
-				started := time.Now().UnixNano()
 				if err = s.service(ctx, scopeService(scope), "restart"); err != nil {
-					return err
-				}
-				if err = s.awaitRuntime(ctx, scope, started); err != nil {
 					return err
 				}
 			}

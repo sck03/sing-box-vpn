@@ -51,6 +51,7 @@ type authorization struct {
 	until      time.Time
 	epoch      uint64
 	err        error
+	checkedAt  time.Time
 }
 type Handle struct {
 	meter  *Meter
@@ -75,14 +76,18 @@ func (a *authorization) check(ctx context.Context, store *Store, force bool) (Us
 		query, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 		a.usage, a.err = store.authorize(query, a.credential, a.generation, now, false)
-		a.epoch, a.until = epoch, now.Add(AuthorizationInterval)
-		for _, deadline := range []*time.Time{a.usage.ExpiresAt, a.usage.NextReset} {
-			if deadline != nil && deadline.Before(a.until) {
-				a.until = *deadline
-			}
-		}
+		a.setDeadline(now, epoch)
 	}
 	return a.usage, a.err
+}
+
+func (a *authorization) setDeadline(now time.Time, epoch uint64) {
+	a.epoch, a.checkedAt, a.until = epoch, now, now.Add(AuthorizationInterval)
+	for _, deadline := range []*time.Time{a.usage.ExpiresAt, a.usage.NextReset} {
+		if deadline != nil && deadline.Before(a.until) {
+			a.until = *deadline
+		}
+	}
 }
 
 func (m *Meter) Open(ctx context.Context, user, inbound string, closer io.Closer) (*Handle, error) {
@@ -255,11 +260,35 @@ func (m *Meter) Tick(ctx context.Context) error {
 		pools[key] = p
 	}
 	m.mu.Unlock()
-	checked := map[*authorization]bool{}
+	wanted := make(map[authorizationKey]bool)
+	authorizations := make(map[*authorization]bool)
 	for _, h := range handles {
-		force := !checked[h.auth]
-		checked[h.auth] = true
-		if err := h.authorized(ctx, force); err != nil {
+		wanted[authorizationKey{h.auth.credential, h.auth.generation}] = true
+		authorizations[h.auth] = true
+	}
+	if len(wanted) > 0 {
+		now, epoch := time.Now(), m.store.authorizationEpoch.Load()
+		snapshot, err := m.store.authorizationSnapshot(ctx, m.runtime, now, wanted)
+		if err != nil {
+			m.Shutdown()
+			return err
+		}
+		for a := range authorizations {
+			a.mu.Lock()
+			if !a.checkedAt.After(now) {
+				var ok bool
+				a.usage, ok = snapshot[authorizationKey{a.credential, a.generation}]
+				a.err = nil
+				if !ok {
+					a.err = ErrDenied
+				}
+				a.setDeadline(now, epoch)
+			}
+			a.mu.Unlock()
+		}
+	}
+	for _, h := range handles {
+		if err := h.authorized(ctx, false); err != nil {
 			h.Close()
 			_ = h.closer.Close()
 		}

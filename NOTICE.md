@@ -24,6 +24,10 @@ QR generation and WireGuard, are preserved in third_party/modules/.
 These are free/open-source
 dependencies; external hosting, domains and optional delivery services are separate.
 No s-ui or 2s-ui implementation or frontend assets were copied into this project.
+The 2026-11-17 organization, dashboard and recovery review references s-ui,
+Zashboard, metacubexd and Gluetun as design comparisons. Their code and assets
+are not vendored. Backup format 7 links filippo.io/age v1.3.1; its BSD-3-Clause
+license and linked dependencies are included in third_party/modules/.
 
 MIT License
 

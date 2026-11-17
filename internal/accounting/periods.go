@@ -120,24 +120,21 @@ func (s *Store) advanceUsage(ctx context.Context, u Usage, now time.Time, activa
 }
 
 func (s *Store) authorize(ctx context.Context, credential string, generation int64, now time.Time, activate bool) (Usage, error) {
-	var account string
-	var disabled bool
-	err := s.db.QueryRowContext(ctx, `SELECT c.account, COALESCE(s.disabled,0)
-	 FROM credentials c JOIN accounts a ON a.id=c.account
-	 LEFT JOIN subscribers s ON s.id=json_extract(a.policy,'$.subscriber_id')
-	 WHERE c.id=? AND c.generation=?`, credential, generation).Scan(&account, &disabled)
-	if errors.Is(err, sql.ErrNoRows) || disabled {
+	u, err := readAccount(s.db.QueryRowContext(ctx, `SELECT `+accountColumns+` FROM accounts
+	 WHERE id=(SELECT account FROM credentials WHERE id=? AND generation=?)
+	 AND NOT EXISTS (SELECT 1 FROM subscribers WHERE subscribers.id=json_extract(accounts.policy,'$.subscriber_id') AND subscribers.disabled=1)`, credential, generation))
+	if errors.Is(err, sql.ErrNoRows) {
 		return Usage{}, ErrDenied
 	}
 	if err != nil {
 		return Usage{}, err
 	}
-	u, err := s.Advance(ctx, account, now, activate)
+	u, err = s.advanceUsage(ctx, u, now, activate)
 	if err != nil {
 		return u, err
 	}
 	// Outstanding reservations may still be spent when charged equals quota.
-	if u.Disabled || u.StartedAt == nil || now.Before(*u.StartedAt) || (u.ExpiresAt != nil && !now.Before(*u.ExpiresAt)) || (u.QuotaBytes != nil && u.Charged > *u.QuotaBytes) {
+	if !permitted(u, now) {
 		return u, ErrDenied
 	}
 	return u, nil

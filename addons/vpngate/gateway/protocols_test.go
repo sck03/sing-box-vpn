@@ -252,12 +252,19 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 	}
 	vpnProfile.RealitySNI, vpnProfile.HandshakeHost, vpnProfile.HandshakePort = profile.RealitySNI, profile.HandshakeHost, profile.HandshakePort
 	vpnProfile.VMessTLS = true
-	// Exercise the same custom-credential path used by the menus before making
-	// real TCP/UDP connections with each ordinary and gateway protocol.
-	app := manage.App{Name: "protocol-test", Address: "127.0.0.1", Profile: profile, Inbounds: manage.MakeInbounds(profile, ""), SocksPort: 40000}
-	if err := manage.CommitApp(ctx, root, binary, &app); err != nil {
-		t.Fatal(err)
+	// Exercise custom credentials and Unicode paths through the shared
+	// configuration publisher before making real TCP/UDP connections.
+	profile.WSPath = "/普通/连接-._~"
+	vpnProfile.WSPath = "/VPNGate/日本-._~"
+	for _, kind := range manage.Protocols {
+		profile.Secrets.UUID[kind] = "01234567-89ab-4cde-8f01-23456789abcd"
+		profile.Secrets.Passwords[kind] = "01234567-89ab-4cde-8f01-23456789abcd"
+		vpnProfile.Secrets.UUID[kind] = "12345678-9abc-4def-8012-3456789abcde"
+		vpnProfile.Secrets.Passwords[kind] = "12345678-9abc-4def-8012-3456789abcde"
 	}
+	vpnProfile.Secrets.UUID["tuic"] = "23456789-abcd-4ef0-8123-456789abcdef"
+	vpnProfile.Secrets.Passwords["tuic"] = "independent TUIC @:/?# password"
+	app := manage.App{Name: "protocol-test", Address: "127.0.0.1", Profile: profile, Inbounds: manage.MakeInbounds(profile, ""), SocksPort: 40000}
 	vpnProfile.Country = "JP"
 	secret := vpnProfile.Secrets
 	secret.SocksUser, secret.SocksPass = cfg.ProxyUser, cfg.ProxyPass
@@ -271,16 +278,8 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, args := range [][]string{
-		{"ws", "/普通/连接-._~"},
-		{"ws", "/VPNGate/日本-._~", "--scope", "vpngate"},
-		{"credentials", "all", "01234567-89ab-4cde-8f01-23456789abcd"},
-		{"credentials", "all", "12345678-9abc-4def-8012-3456789abcde", "--scope", "vpngate"},
-		{"credentials", "tuic", "23456789-abcd-4ef0-8123-456789abcdef", "independent TUIC @:/?# password", "--scope", "vpngate"},
-	} {
-		if err := manage.RunConfig(ctx, append([]string{"--root", root, "--core", binary}, args...), io.Discard); err != nil {
-			t.Fatal("custom protocol credentials", err)
-		}
+	if err := manage.CommitApp(ctx, root, binary, &app); err != nil {
+		t.Fatal("custom protocol credentials", err)
 	}
 	subscriptionPort, err := manage.AvailablePort(used)
 	if err != nil {
@@ -296,9 +295,6 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := manage.AtomicJSON(filepath.Join(root, "subscription.json"), manage.Object{"enabled": true, "port": subscriptionPort, "token": token, "listen": "127.0.0.1"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := manage.RunConfig(ctx, []string{"--root", root, "--core", binary, "subscription-init", "--port", strconv.Itoa(subscriptionPort)}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	subscriptionCtx, stopSubscription := context.WithCancel(ctx)

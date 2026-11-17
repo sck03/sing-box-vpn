@@ -41,6 +41,13 @@
         <div class="brand">
           ◈ <span>sing-box-vpn<small>统一控制台 / v4</small></span>
         </div>
+        <button
+          id="menu-toggle"
+          aria-controls="navigation"
+          aria-expanded="false"
+        >
+          打开导航
+        </button>
         <nav id="navigation" aria-label="主导航"></nav>
         <div class="identity">
           <span id="identity"></span><button id="logout">退出登录</button>
@@ -52,7 +59,10 @@
             <span class="eyebrow">CONTROL CENTER</span>
             <h1 id="page-title">运行概览</h1>
           </div>
-          <button id="refresh">刷新状态</button>
+          <div class="row">
+            <button id="theme-toggle" aria-label="切换明暗主题">切换主题</button
+            ><button id="refresh">刷新状态</button>
+          </div>
         </header>
         <section id="draft" class="draft" hidden>
           <span id="draft-message">配置有未保存的更改</span>
@@ -62,6 +72,7 @@
             ><button id="save" class="primary">校验并应用配置</button>
           </div>
         </section>
+        <a id="task-status" class="task-status" href="#maintenance" hidden></a>
         <div id="content"></div>
         <footer>普通节点与 VPNGate 独立运行 · 额度在受管运行时执行</footer>
       </main>

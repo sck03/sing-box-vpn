@@ -24,6 +24,20 @@ type Grant struct {
 	MaxDownloads *int64     `json:"max_downloads"`
 	Downloads    int64      `json:"downloads"`
 	Revoked      bool       `json:"revoked"`
+	State        string     `json:"state"`
+}
+
+func (g Grant) Status(now time.Time) string {
+	if g.Revoked {
+		return "revoked"
+	}
+	if g.ExpiresAt != nil && !now.Before(*g.ExpiresAt) {
+		return "expired"
+	}
+	if g.MaxDownloads != nil && g.Downloads >= *g.MaxDownloads {
+		return "exhausted"
+	}
+	return "active"
 }
 
 func grantHash(token string) string {
@@ -75,7 +89,15 @@ func (s *Store) CreateGrant(ctx context.Context, g Grant) (string, error) {
 	if g.AccountID != "" {
 		account = g.AccountID
 	}
-	r, err := s.db.ExecContext(ctx, `INSERT INTO download_grants(id,account,scope,clients,outputs,expires,max_downloads,hash) SELECT ?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM download_grants)<10000`, g.ID, account, g.Scope, string(clients), string(outputs), timestamp(g.ExpiresAt), g.MaxDownloads, grantHash(token))
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	if err = pruneGrants(ctx, tx, time.Now()); err != nil {
+		return "", err
+	}
+	r, err := tx.ExecContext(ctx, `INSERT INTO download_grants(id,account,scope,clients,outputs,expires,max_downloads,hash) SELECT ?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM download_grants WHERE revoked=0 AND (expires IS NULL OR expires>?) AND (max_downloads IS NULL OR downloads<max_downloads))<10000`, g.ID, account, g.Scope, string(clients), string(outputs), timestamp(g.ExpiresAt), g.MaxDownloads, grantHash(token), time.Now().Unix())
 	if err != nil {
 		return "", err
 	}
@@ -86,7 +108,10 @@ func (s *Store) CreateGrant(ctx context.Context, g Grant) (string, error) {
 	if n != 1 {
 		return "", errors.New("download grant limit reached")
 	}
-	return token, nil
+	if err = pruneGrants(ctx, tx, time.Now()); err != nil {
+		return "", err
+	}
+	return token, tx.Commit()
 }
 func readGrant(row scanner) (g Grant, err error) {
 	var clients, outputs string
@@ -109,13 +134,14 @@ func readGrant(row scanner) (g Grant, err error) {
 	if limit.Valid {
 		g.MaxDownloads = &limit.Int64
 	}
+	g.State = g.Status(time.Now())
 	return
 }
 
 const grantColumns = `id,account,scope,clients,outputs,expires,max_downloads,downloads,revoked`
 
 func (s *Store) Grants(ctx context.Context) ([]Grant, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+grantColumns+` FROM download_grants ORDER BY id LIMIT 10000`)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+grantColumns+` FROM download_grants ORDER BY created DESC,id LIMIT 11000`)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +157,7 @@ func (s *Store) Grants(ctx context.Context) ([]Grant, error) {
 	return out, rows.Err()
 }
 func (s *Store) RevokeGrant(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE download_grants SET revoked=1 WHERE id=?`, id)
+	_, err := s.db.ExecContext(ctx, `UPDATE download_grants SET revoked=1,updated=? WHERE id=? AND revoked=0`, time.Now().Unix(), id)
 	return err
 }
 func (s *Store) Grant(ctx context.Context, token string) (Grant, Usage, error) {
@@ -152,7 +178,7 @@ func (s *Store) LookupGrant(ctx context.Context, token string) (Grant, error) {
 		return g, ErrDenied
 	}
 	now := time.Now()
-	if g.Revoked || (g.ExpiresAt != nil && !now.Before(*g.ExpiresAt)) {
+	if g.Status(now) != "active" {
 		return g, ErrDenied
 	}
 	return g, nil
@@ -172,7 +198,7 @@ func (s *Store) CountDownload(ctx context.Context, token, client string) error {
 	} else if !slices.Contains(g.Outputs, client) {
 		return ErrDenied
 	}
-	r, err := s.db.ExecContext(ctx, `UPDATE download_grants SET downloads=downloads+1 WHERE hash=? AND revoked=0 AND (expires IS NULL OR expires>?) AND (max_downloads IS NULL OR downloads<max_downloads)`, grantHash(token), time.Now().Unix())
+	r, err := s.db.ExecContext(ctx, `UPDATE download_grants SET downloads=downloads+1,updated=? WHERE hash=? AND revoked=0 AND (expires IS NULL OR expires>?) AND (max_downloads IS NULL OR downloads<max_downloads)`, time.Now().Unix(), grantHash(token), time.Now().Unix())
 	if err != nil {
 		return err
 	}

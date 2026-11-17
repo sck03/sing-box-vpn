@@ -12,7 +12,7 @@ import (
 )
 
 const Filename = "control.db"
-const SchemaVersion = 6
+const SchemaVersion = 7
 
 func Open(path string) (*sql.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {

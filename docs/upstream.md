@@ -7,6 +7,16 @@
 核对日期：**2026-11-10**。以下来自官方发布记录、对应标签的文档/源码和 VPNGate 官网。
 上游支持某项功能，不代表本项目已经接入其配置和出口验证。
 
+## 管理平台设计参考（2026-11-17）
+
+| 项目 | 本轮采用的设计方向 | 对应实现 |
+| --- | --- | --- |
+| [s-ui](https://github.com/alireza0/s-ui)（GPL-3.0） | 将业务用例与 HTTP、持久化、运行时发布分开 | `application.BindAccounts` 负责账户绑定用例，manage 适配配置，accounting 负责原子写入；备份容器独立为 backuparchive |
+| [Zashboard](https://github.com/Zephyruso/zashboard)（MIT） / [metacubexd](https://github.com/MetaCubeX/metacubexd)（MIT） | 运行状态优先、主题切换、紧凑导航、表格状态保留 | 在线实例与失败任务概览、跨页任务提示、明暗主题、移动端导航、服务端授权分页、可见文本搜索和焦点保留 |
+| [Gluetun](https://github.com/qdm12/gluetun)（MIT） | 将进程存活、业务就绪与故障恢复分开；故障时禁止绕过隧道 | 服务启动统一等待受管核心心跳；故障回滚恢复服务状态；保留并验收 VPNGate netns 的断线拒绝直连、进程崩溃与重新连接 |
+
+这些是结构和交互参考；本轮没有复制上述项目源码，也没有引入其前端框架或整套 VPN 后端。开源许可证和来源记录见 [NOTICE](../NOTICE.md)。性能、故障测试及尚未覆盖的条件见 [实施记录](unified-management-status.md)。
+
 ## sing-box
 
 最新稳定版仍为 [1.14.4](https://github.com/SagerNet/sing-box/releases/tag/v1.14.4)，

@@ -48,9 +48,22 @@ func (s *PlatformService) service(ctx context.Context, name, action string) erro
 	if !slices.Contains(platformServices, name) || !slices.Contains([]string{"start", "stop", "restart", "try-restart", "enable", "disable"}, action) {
 		return errors.New("unsupported service action")
 	}
+	started := time.Now().UnixNano()
+	if action == "start" {
+		if _, e := command.Output(ctx, nil, "systemctl", "is-active", "--quiet", name); e == nil {
+			started = 0
+		}
+	}
 	_, err := command.Output(ctx, nil, "systemctl", action, name)
 	if err == nil && (action == "start" || action == "restart") {
 		_, err = command.Output(ctx, nil, "systemctl", "is-active", "--quiet", name)
+		if err == nil && (name == "sing-box" || name == "sing-box-vpngate") {
+			instance := "normal"
+			if name == "sing-box-vpngate" {
+				instance = "vpngate"
+			}
+			err = s.awaitRuntime(ctx, instance, started)
+		}
 	}
 	return err
 }
@@ -228,18 +241,8 @@ func (s *PlatformService) applyHost(ctx context.Context, c, old PlatformConfig, 
 			}
 			action = operation
 		}
-		started := time.Now().UnixNano()
 		if err := s.service(ctx, item.Name, action); err != nil {
 			return err
-		}
-		if (action == "start" || action == "restart") && (item.Name == "sing-box" || item.Name == "sing-box-vpngate") {
-			instance := "normal"
-			if item.Name == "sing-box-vpngate" {
-				instance = "vpngate"
-			}
-			if err := s.awaitRuntime(ctx, instance, started); err != nil {
-				return err
-			}
 		}
 	}
 	return nil

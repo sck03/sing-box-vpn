@@ -87,6 +87,10 @@ func BindUsers(raw []byte, credentials []domain.Credential) ([]byte, error) {
 		return nil, errors.New("at most 256 managed inbounds")
 	}
 	tags := map[string]bool{}
+	byInbound := make(map[string][]domain.Credential)
+	for _, credential := range credentials {
+		byInbound[credential.InboundID] = append(byInbound[credential.InboundID], credential)
+	}
 	for _, node := range nodes {
 		var kind, tag string
 		if err := json.Unmarshal(node["type"], &kind); err != nil {
@@ -113,10 +117,7 @@ func BindUsers(raw []byte, credentials []domain.Credential) ([]byte, error) {
 		if len(originalUsers) > 0 {
 			flow, _ = originalUsers[0]["flow"].(string)
 		}
-		for _, c := range credentials {
-			if c.InboundID != tag {
-				continue
-			}
+		for _, c := range byInbound[tag] {
 			if c.Protocol != kind {
 				return nil, errors.New("credential protocol changed")
 			}

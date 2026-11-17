@@ -812,6 +812,15 @@ export async function certificates(ctx) {
           { key: "domain", label: "域名" },
           { key: "provider", label: "续期归属" },
           {
+            label: "自动续期",
+            value: (a) =>
+              ({
+                automatic: "已登记",
+                registration_pending: "待自动登记（需端口 80）",
+                manual: "手动更新",
+              })[status.find((v) => v.id === a.id)?.renewal_state] || "待应用",
+          },
+          {
             label: "有效期",
             value: (a) =>
               status.find((v) => v.id === a.id)?.expires_at ||

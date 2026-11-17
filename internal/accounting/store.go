@@ -62,18 +62,22 @@ CREATE TABLE IF NOT EXISTS subscribers (
 CREATE TABLE IF NOT EXISTS download_grants (
  id TEXT PRIMARY KEY,account TEXT REFERENCES accounts(id),scope TEXT NOT NULL,
  clients TEXT NOT NULL,outputs TEXT NOT NULL,expires INTEGER,max_downloads INTEGER,hash TEXT NOT NULL UNIQUE,
- downloads INTEGER NOT NULL DEFAULT 0,revoked INTEGER NOT NULL DEFAULT 0);
+ downloads INTEGER NOT NULL DEFAULT 0,revoked INTEGER NOT NULL DEFAULT 0,
+ created INTEGER NOT NULL DEFAULT (unixepoch()), updated INTEGER NOT NULL DEFAULT (unixepoch()));
+CREATE INDEX IF NOT EXISTS grant_retention ON download_grants(updated);
 CREATE TABLE IF NOT EXISTS credentials (
  id TEXT PRIMARY KEY, account TEXT NOT NULL REFERENCES accounts(id),
  runtime TEXT NOT NULL, inbound TEXT NOT NULL, protocol TEXT NOT NULL,
  generation INTEGER NOT NULL, secret BLOB NOT NULL,
  UNIQUE(account,runtime,inbound));
+CREATE INDEX IF NOT EXISTS credential_runtime ON credentials(runtime,inbound);
 CREATE TABLE IF NOT EXISTS revoked_credentials (id TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS leases (
  id TEXT PRIMARY KEY, account TEXT NOT NULL REFERENCES accounts(id),
  runtime TEXT NOT NULL, reserved INTEGER NOT NULL, upload INTEGER NOT NULL DEFAULT 0,
  download INTEGER NOT NULL DEFAULT 0, closed INTEGER NOT NULL DEFAULT 0,
  period INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS lease_period ON leases(account,period,closed);
 CREATE TABLE IF NOT EXISTS lease_scopes (
  id TEXT PRIMARY KEY, retired INTEGER NOT NULL DEFAULT 0, closed INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS events (

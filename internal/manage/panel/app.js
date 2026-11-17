@@ -30,6 +30,33 @@ const navigationGroups = [
   ["网络与节点", ["inbounds", "routing", "outbounds", "vpngate"]],
   ["系统管理", ["certificates", "maintenance", "admins"]],
 ];
+const canView = (id, role) =>
+  role === "admin" ||
+  ["overview", "accounts", "subscribers"].includes(id) ||
+  (role === "operator" && id === "maintenance");
+const setMenu = (open) => {
+  $("#shell").classList.toggle("nav-open", open);
+  $("#menu-toggle").setAttribute("aria-expanded", String(open));
+  $("#menu-toggle").textContent = open ? "收起导航" : "打开导航";
+};
+$("#menu-toggle").addEventListener("click", () =>
+  setMenu(!$("#shell").classList.contains("nav-open")),
+);
+$("#theme-toggle").addEventListener("click", () => {
+  const theme =
+    document.documentElement.dataset.theme === "light" ? "dark" : "light";
+  document.documentElement.dataset.theme = theme;
+  try {
+    window.localStorage.setItem("panel-theme", theme);
+  } catch {}
+});
+try {
+  document.documentElement.dataset.theme =
+    window.localStorage.getItem("panel-theme") ||
+    (window.matchMedia?.("(prefers-color-scheme: light)").matches
+      ? "light"
+      : "dark");
+} catch {}
 let page = "overview",
   draft = null,
   original = null,
@@ -93,6 +120,7 @@ const ctx = {
     resetDraft();
     ctx.overview = null;
     ctx.updateOverview = null;
+    $("#task-status").hidden = true;
     setCSRF("");
     clearTimeout(refreshTimer);
     events?.close();
@@ -130,29 +158,11 @@ async function renderPage() {
     );
   try {
     $("#content").setAttribute("aria-busy", "true");
-    let content;
-    if (
-      ctx.session.role !== "admin" &&
-      !["overview", "accounts", "subscribers"].includes(page) &&
-      !(ctx.session.role === "operator" && page === "maintenance")
-    ) {
-      const data = await api("/api/state", undefined, { signal });
-      content = [
-        card(
-          "只读配置摘要",
-          help(
-            "当前角色可以查看状态与用量。编辑配置、代理秘密和管理员设置需要管理员角色。",
-          ),
-          el("pre", {}, JSON.stringify(data.config, null, 2)),
-        ),
-      ];
-    } else {
-      // Each render owns its callback; a late render cannot replace the live one.
-      const view = Object.create(ctx);
-      view.request = (path, body) => api(path, body, { signal });
-      content = await definition[2](view);
-      if (generation === loading) ctx.updateOverview = view.updateOverview;
-    }
+    // Each render owns its callback; a late render cannot replace the live one.
+    const view = Object.create(ctx);
+    view.request = (path, body) => api(path, body, { signal });
+    const content = await definition[2](view);
+    if (generation === loading) ctx.updateOverview = view.updateOverview;
     if (generation !== loading) return;
     $("#content").replaceChildren(...content);
     schedule();
@@ -175,7 +185,7 @@ async function renderPage() {
 }
 function schedule() {
   clearTimeout(refreshTimer);
-  if (!ctx.session || page !== "overview" || document.hidden) {
+  if (!ctx.session || document.hidden) {
     events?.close();
     events = null;
     return;
@@ -184,8 +194,23 @@ function schedule() {
     const source = new EventSource("/api/events");
     events = source;
     source.addEventListener("overview", (event) => {
-      if (events !== source || !ctx.session || page !== "overview") return;
+      if (events !== source || !ctx.session) return;
       ctx.overview = JSON.parse(event.data);
+      ctx.observeRevision(ctx.overview.revision);
+      const active = ctx.overview.tasks.filter((task) =>
+        ["queued", "running"].includes(task.state),
+      );
+      const failed = ctx.overview.tasks.filter(
+        (task) => task.state === "failed",
+      );
+      const status = $("#task-status");
+      status.hidden = active.length === 0 && failed.length === 0;
+      status.href =
+        ctx.session.role === "viewer" ? "#overview" : "#maintenance";
+      status.textContent = active.length
+        ? `${active.length} 个任务正在处理 · 查看进度`
+        : `${failed.length} 个任务执行失败 · 查看详情`;
+      status.classList.toggle("error", !active.length && failed.length > 0);
       ctx.updateOverview?.(ctx.overview);
     });
     source.onerror = () => {
@@ -214,33 +239,33 @@ async function connected(session) {
   $("#shell").hidden = false;
   $("#identity").textContent = session.id + " · " + session.role;
   $("#navigation").replaceChildren(
-    ...navigationGroups.map(([title, ids]) => {
-      const visible = ids
-        .map((id) => pages.find((p) => p[0] === id))
-        .filter(
-          (p) =>
-            session.role === "admin" ||
-            (!["grants", "admins"].includes(p[0]) &&
-              (p[0] !== "maintenance" || session.role === "operator")),
+    ...navigationGroups
+      .map(([title, ids]) => {
+        const visible = ids
+          .map((id) => pages.find((p) => p[0] === id))
+          .filter((p) => canView(p[0], session.role));
+        if (!visible.length) return null;
+        return el(
+          "section",
+          { class: "nav-group", "aria-label": title },
+          el("span", { class: "nav-label" }, title),
+          ...visible.map(([id, label]) => {
+            const b = button(label, () => {
+              page = id;
+              location.hash = id;
+              setMenu(false);
+              renderPage();
+            });
+            b.dataset.page = id;
+            return b;
+          }),
         );
-      return el(
-        "section",
-        { class: "nav-group", "aria-label": title },
-        el("span", { class: "nav-label" }, title),
-        ...visible.map(([id, label]) => {
-          const b = button(label, () => {
-            page = id;
-            location.hash = id;
-            renderPage();
-          });
-          b.dataset.page = id;
-          return b;
-        }),
-      );
-    }),
+      })
+      .filter(Boolean),
   );
   page = location.hash.slice(1) || "overview";
-  if (!pages.some((p) => p[0] === page)) page = "overview";
+  if (!pages.some((p) => p[0] === page) || !canView(page, session.role))
+    page = "overview";
   await renderPage();
 }
 $("#login-form").addEventListener(
@@ -344,7 +369,13 @@ document.addEventListener("visibilitychange", () => {
 window.addEventListener("hashchange", () => {
   const next = location.hash.slice(1);
   if (next && next !== page) {
-    page = next;
+    page =
+      ctx.session &&
+      pages.some((p) => p[0] === next) &&
+      canView(next, ctx.session.role)
+        ? next
+        : "overview";
+    setMenu(false);
     renderPage();
   }
 });

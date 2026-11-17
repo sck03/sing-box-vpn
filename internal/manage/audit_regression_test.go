@@ -133,8 +133,8 @@ func TestLargePlatformBackupRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(data) <= 8<<20 {
-		t.Fatal("fixture does not cover former 8 MiB limit")
+	if len(data) <= 7<<20 {
+		t.Fatal("fixture does not cover large binary archive")
 	}
 	backup, err := decodePlatformBackup(data, password)
 	if err != nil || len(backup.Database) <= 7<<20 {

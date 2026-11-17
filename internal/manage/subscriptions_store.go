@@ -40,7 +40,16 @@ func buildSubscriptions(ctx context.Context, root, core string, c sub.Config, r 
 }
 
 func compileSubscriptions(ctx context.Context, root, core string, c sub.Config, r sub.Runtime, local map[string][]sub.Node, available bool, stores ...*accounting.Store) (fileBundle, sub.Snapshot, map[string]sub.Preview, error) {
-	r = sub.PruneRuntime(c, r)
+	c, local, err := captureSubscriptionSources(ctx, root, c, local, stores...)
+	if err != nil {
+		return nil, sub.Snapshot{}, nil, err
+	}
+	return compilePreparedSubscriptions(ctx, root, core, c, r, local, available)
+}
+
+// Capture account material while the caller owns the publication lock. Core
+// validation consumes the resulting value snapshot and does not need that lock.
+func captureSubscriptionSources(ctx context.Context, root string, c sub.Config, local map[string][]sub.Node, stores ...*accounting.Store) (sub.Config, map[string][]sub.Node, error) {
 	service := AccountService{Root: root}
 	if len(stores) > 0 {
 		service.Store = stores[0]
@@ -69,7 +78,7 @@ func compileSubscriptions(ctx context.Context, root, core string, c sub.Config, 
 				var err error
 				service.Store, closeStore, err = service.openStore()
 				if err != nil {
-					return nil, sub.Snapshot{}, nil, err
+					return c, nil, err
 				}
 			}
 			nodes, err := service.accountNodes(ctx, source.AccountID, source.Scope, 0)
@@ -78,11 +87,16 @@ func compileSubscriptions(ctx context.Context, root, core string, c sub.Config, 
 				err = nil
 			}
 			if err != nil {
-				return nil, sub.Snapshot{}, nil, err
+				return c, nil, err
 			}
 			local["account:"+source.ID] = nodes
 		}
 	}
+	return c, local, nil
+}
+
+func compilePreparedSubscriptions(ctx context.Context, root, core string, c sub.Config, r sub.Runtime, local map[string][]sub.Node, available bool) (fileBundle, sub.Snapshot, map[string]sub.Preview, error) {
+	r = sub.PruneRuntime(c, r)
 	build := sub.Build
 	if available {
 		build = sub.BuildAvailable

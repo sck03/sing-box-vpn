@@ -27,7 +27,7 @@ func (s *PlatformService) runWorkers(ctx context.Context) error {
 func (s *PlatformService) runLane(ctx context.Context, lane string) error {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
-	nextMaintenance, nextSubscriptions := time.Time{}, time.Time{}
+	nextMaintenance, nextSubscriptions, nextRetention := time.Time{}, time.Time{}, time.Time{}
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -35,6 +35,15 @@ func (s *PlatformService) runLane(ctx context.Context, lane string) error {
 		// Schedule between tasks as well as while idle; a busy queue must not
 		// starve refresh or renewal. Store deduplication bounds automatic work.
 		if lane == "control" {
+			if time.Now().After(nextRetention) {
+				nextRetention = time.Now().Add(time.Hour)
+				maintenance, stop := context.WithTimeout(ctx, 30*time.Second)
+				err := errors.Join(s.Accounts.PruneHistory(maintenance, time.Now()), s.Store.PruneHistory(maintenance, time.Now()))
+				if err != nil {
+					_ = s.Auth.Audit(maintenance, "scheduler", "history-retention", "", "failed")
+				}
+				stop()
+			}
 			if time.Now().After(nextSubscriptions) {
 				nextSubscriptions = time.Now().Add(time.Minute)
 				if err := s.scheduleSubscriptions(ctx); err != nil {

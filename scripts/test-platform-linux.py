@@ -6,11 +6,14 @@ Creates one disabled test entitlement; changes ordinary log verbosity and
 temporarily stops/restarts the ordinary instance, then verifies rollback.
 """
 import copy
+import hashlib
 import http.cookiejar
 import json
 import os
 import socket
+import ssl
 import subprocess
+import tempfile
 import time
 import urllib.request
 import urllib.error
@@ -28,7 +31,13 @@ def api(path, data=None):
 def wait(task, expected="succeeded"):
     deadline = time.monotonic() + 300
     while time.monotonic() < deadline:
-        value = next(v for v in api("/api/overview")["tasks"] if v["id"] == task)
+        try:
+            value = api("/api/tasks/detail?id=" + str(task))
+        except urllib.error.HTTPError as error:
+            if error.code != 503:
+                raise
+            time.sleep(1)
+            continue
         if value["state"] in ["failed", "succeeded", "cancelled"]:
             assert value["state"] == expected, value
             return value
@@ -110,4 +119,27 @@ account["revision"]=usage["revision"];account["disabled"]=True
 api("/api/accounts",{"account":account})
 api("/api/grants/revoke",{"id":identifier})
 print("systemd: failed runtime application rolled back configuration and active/enabled state",flush=True)
+
+# Verify a certificate update reaches a real TLS listener, then restore it.
+with tempfile.TemporaryDirectory(prefix="sbvpn-cert-accept-") as directory:
+    cert_path, key_path = directory + "/cert.pem", directory + "/key.pem"
+    subprocess.run(["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1",
+                    "-nodes", "-keyout", key_path, "-out", cert_path, "-days", "2", "-subj", "/CN=localhost",
+                    "-addext", "subjectAltName=DNS:localhost"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    with open(cert_path) as cert_file, open(key_path) as key_file:
+        cert, key = cert_file.read(), key_file.read()
+    asset = api("/api/certificates", {"id": identifier + "-cert", "domain": "localhost", "certificate": cert, "key": key})
+    updated = copy.deepcopy(original)
+    updated["certificates"].append(asset)
+    node = next(v for v in updated["app"]["nodes"] if v["protocol"] == "anytls")
+    node["tls"].update({"certificate": asset["certificate"], "key": asset["key"], "server_name": "localhost"})
+    try:
+        apply(updated)
+        with socket.create_connection(("127.0.0.1", node["port"]), timeout=10) as connection:
+            with ssl._create_unverified_context().wrap_socket(connection, server_hostname="localhost") as secured:
+                actual = hashlib.sha256(secured.getpeercert(binary_form=True)).digest()
+        assert actual == hashlib.sha256(ssl.PEM_cert_to_DER_cert(cert)).digest()
+    finally:
+        apply(original)
+print("TLS: imported certificate reached the live listener; original configuration restored", flush=True)
 api("/api/auth/logout",{})

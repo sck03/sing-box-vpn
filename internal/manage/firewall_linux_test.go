@@ -23,7 +23,9 @@ func TestLinuxMultiportFirewall(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Fatal("namespace firewall acceptance requires root")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	// QEMU/TCG process startup can consume most of a short suite-wide budget.
+	// Each UDP probe still has its independent 400 ms network deadline below.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	t.Cleanup(cancel)
 	run := func(args ...string) []byte {
 		t.Helper()

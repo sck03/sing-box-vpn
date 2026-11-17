@@ -332,10 +332,6 @@ func notifySubscriptionEvent(ctx context.Context, client *http.Client, root stri
 	if c.Webhook != "" {
 		failures = append(failures, remoteRequest(ctx, client, c.Webhook, "POST", event, nil, nil))
 	}
-	var remote remoteSettings
-	if _, err := ReadJSON(filepath.Join(root, "remote.json"), &remote); err == nil && remote.Telegram != nil {
-		failures = append(failures, remoteRequest(ctx, client, "https://api.telegram.org/bot"+remote.Telegram.Token+"/sendMessage", "POST", Object{"chat_id": remote.Telegram.ChatID, "text": event.ObjectID + ": " + event.Message}, nil, nil))
-	}
 	if err := errors.Join(failures...); err != nil {
 		_ = withLock(root, func() error {
 			_, state, _, loadErr := loadSubscriptions(root)

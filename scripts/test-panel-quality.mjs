@@ -1,0 +1,134 @@
+import assert from "node:assert/strict";
+import { JSDOM } from "jsdom";
+import { readFile } from "node:fs/promises";
+
+const dom = new JSDOM(
+  await readFile(
+    new URL("../internal/manage/panel/index.html", import.meta.url),
+    "utf8",
+  ),
+  { url: "http://localhost" },
+);
+for (const key of ["window", "document", "Node", "Event", "FormData"])
+  globalThis[key] = dom.window[key];
+dom.window.HTMLDialogElement.prototype.showModal = function () {
+  this.open = true;
+};
+dom.window.HTMLDialogElement.prototype.close = function () {
+  this.open = false;
+};
+const { table, badge, formDialog, remoteTable } =
+  await import("../internal/manage/panel/ui.js");
+const host = document.querySelector("#content");
+document.querySelector("#shell").hidden = false;
+const list = table(
+  [{ label: "状态", render: (v) => badge(v.state) }],
+  [{ id: "one", state: "active" }],
+  () => [document.createElement("button")],
+);
+host.replaceChildren(list);
+list.querySelector("input").value = "active";
+list.querySelector("input").dispatchEvent(new Event("input"));
+assert.equal(
+  list.querySelectorAll("tbody tr").length,
+  1,
+  "visible status must be searchable",
+);
+const original = list.querySelector("tbody");
+list.updateItems([{ id: "one", state: "active" }]);
+assert.equal(
+  list.querySelector("tbody"),
+  original,
+  "unchanged update rebuilt DOM",
+);
+const focused = list.querySelector("tbody button");
+focused.focus();
+list.updateItems([{ id: "one", state: "inactive" }]);
+assert.equal(
+  document.activeElement,
+  focused,
+  "live update destroyed focused action",
+);
+list.updateItems([{ id: "one", state: "active" }]);
+list.querySelector("input").focus();
+await Promise.resolve();
+assert.equal(list.querySelectorAll("tbody tr").length, 1);
+assert.equal(
+  list.querySelector("tbody .tag").textContent,
+  "active",
+  "deferred update replaced the latest state",
+);
+
+let saved;
+formDialog(
+  "额度",
+  [
+    {
+      key: "quota",
+      label: "额度 GiB",
+      type: "number",
+      scale: 1073741824,
+      nullable: true,
+    },
+  ],
+  { quota: 1073741824 },
+  (v) => {
+    saved = v;
+  },
+);
+const field = document.querySelector("dialog input");
+assert.equal(field.value, "1");
+field.value = "1.5";
+document
+  .querySelector("dialog form")
+  .dispatchEvent(new Event("submit", { cancelable: true }));
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(saved.quota, 1610612736);
+field.value = "0.1";
+document
+  .querySelector("dialog form")
+  .dispatchEvent(new Event("submit", { cancelable: true }));
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(saved.quota, Math.round(0.1 * 1073741824));
+
+const calls = [];
+const remote = await remoteTable(
+  [{ key: "id", label: "授权" }],
+  async (params) => {
+    calls.push(params);
+    return { items: [{ id: "page-" + params.offset }], total: 45 };
+  },
+);
+host.replaceChildren(remote);
+[...remote.querySelectorAll("button")]
+  .find((b) => b.textContent === "下一页")
+  .click();
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(calls.at(-1).offset, 20);
+assert.match(remote.textContent, /page-20/);
+
+const { grants } = await import("../internal/manage/panel/accounts.js");
+const pages = await grants({
+  session: { role: "admin" },
+  request: async (path) =>
+    path.startsWith("/api/grants?")
+      ? {
+          items: [
+            { id: "expired", state: "expired", expires_at: "2020-01-01" },
+            { id: "used", state: "exhausted", downloads: 1, max_downloads: 1 },
+          ],
+          total: 2,
+        }
+      : [],
+  render() {},
+});
+host.replaceChildren(...pages);
+assert.match(host.textContent, /已到期/);
+assert.match(host.textContent, /次数用尽/);
+assert.equal(
+  [...host.querySelectorAll(".tag")].some((n) => n.textContent === "有效"),
+  false,
+);
+console.log(
+  "Panel quality checks passed: rendered-status search, unchanged DOM, focus retention, unit conversion, remote pagination, expired/exhausted grants.",
+);

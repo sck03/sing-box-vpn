@@ -3,6 +3,7 @@ module github.com/sck03/sing-box-vpn
 go 1.27.3
 
 require (
+	filippo.io/age v1.3.1
 	github.com/google/uuid v1.6.0
 	github.com/sagernet/sing v0.9.7-0.20261023115459-5dc452e537bf
 	github.com/sagernet/sing-box v1.14.4
@@ -13,6 +14,7 @@ require (
 )
 
 require (
+	filippo.io/hpke v0.4.0 // indirect
 	github.com/ajg/form v1.9.0 // indirect
 	github.com/andybalholm/brotli v1.3.0 // indirect
 	github.com/anytls/sing-anytls v0.0.11 // indirect

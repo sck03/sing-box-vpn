@@ -24,8 +24,8 @@ export async function overview(ctx) {
         data.applied_revision === data.revision ? "已同步" : "待应用",
         "配置状态",
       ],
-      [data.revision, "期望版本"],
-      [data.applied_revision, "实际版本"],
+      [data.runtimes.filter((v) => v.recent).length, "近期在线实例"],
+      [data.tasks.filter((v) => v.state === "failed").length, "失败任务"],
       [
         data.tasks.filter((t) => ["queued", "running"].includes(t.state))
           .length,
@@ -106,8 +106,8 @@ export async function overview(ctx) {
     ctx.observeRevision(next.revision);
     const values = [
       next.applied_revision === next.revision ? "已同步" : "待应用",
-      next.revision,
-      next.applied_revision,
+      next.runtimes.filter((v) => v.recent).length,
+      next.tasks.filter((v) => v.state === "failed").length,
       next.tasks.filter((t) => ["queued", "running"].includes(t.state)).length,
     ];
     stats.querySelectorAll("strong").forEach((node, i) => {
@@ -142,6 +142,13 @@ function tasksCard(tasks, ctx) {
             ),
         },
         { key: "phase", label: "阶段" },
+        {
+          label: "检测结论",
+          value: (t) =>
+            ({ passed: "全部通过", partial: "部分失败", failed: "检测失败" })[
+              t.outcome
+            ] || "—",
+        },
         { label: "时间", value: (t) => date(t.updated) },
         { key: "error", label: "结果" },
       ],
@@ -290,26 +297,7 @@ export async function maintenance(ctx) {
       ),
     ),
     backup,
-    card(
-      "运行日志",
-      row(
-        ...[
-          "sing-box",
-          "sing-box-vpngate",
-          "yg-vpngate",
-          "sb-argo",
-          "sb-panel",
-          "sb-subscription",
-        ].map((service) =>
-          button(service, async () =>
-            showResult(
-              service,
-              (await api("/api/logs?service=" + service)).log,
-            ),
-          ),
-        ),
-      ),
-    ),
+    logs,
     card(
       "高级网络设置",
       help(

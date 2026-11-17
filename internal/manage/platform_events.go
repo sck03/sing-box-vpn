@@ -13,15 +13,45 @@ import (
 func (s *PlatformService) invalidateOverview() {
 	s.statusMu.Lock()
 	s.statusAt = time.Time{}
+	s.statusVersion++
 	s.statusMu.Unlock()
 }
 
 func (s *PlatformService) overviewSnapshot(ctx context.Context) ([]byte, error) {
-	s.statusMu.Lock()
-	defer s.statusMu.Unlock()
-	if time.Since(s.statusAt) < 4*time.Second && s.status != nil {
-		return s.status, nil
+	for {
+		s.statusMu.Lock()
+		if time.Since(s.statusAt) < 4*time.Second && s.status != nil {
+			data := s.status
+			s.statusMu.Unlock()
+			return data, nil
+		}
+		if pending := s.statusLoading; pending != nil {
+			s.statusMu.Unlock()
+			select {
+			case <-pending:
+				continue
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		pending, version := make(chan struct{}), s.statusVersion
+		s.statusLoading = pending
+		s.statusMu.Unlock()
+		child, cancel := context.WithTimeout(ctx, 10*time.Second)
+		data, err := s.collectOverview(child)
+		cancel()
+		s.statusMu.Lock()
+		if err == nil && version == s.statusVersion {
+			s.status, s.statusAt = data, time.Now()
+		}
+		s.statusLoading = nil
+		close(pending)
+		s.statusMu.Unlock()
+		return data, err
 	}
+}
+
+func (s *PlatformService) collectOverview(ctx context.Context) ([]byte, error) {
 	state, err := s.Store.State(ctx)
 	if err != nil {
 		return nil, err
@@ -46,11 +76,7 @@ func (s *PlatformService) overviewSnapshot(ctx context.Context) ([]byte, error) 
 			tasks[i].Error = "任务失败，请查看任务详情"
 		}
 	}
-	data, err := json.Marshal(Object{"revision": state.Revision, "applied_revision": state.AppliedRevision, "services": services, "runtimes": runtimes, "tasks": tasks})
-	if err == nil {
-		s.status, s.statusAt = data, time.Now()
-	}
-	return data, err
+	return json.Marshal(Object{"revision": state.Revision, "applied_revision": state.AppliedRevision, "services": services, "runtimes": runtimes, "tasks": tasks})
 }
 func (s *PlatformService) streamOverview(w http.ResponseWriter, r *http.Request, token string) {
 	controller := http.NewResponseController(w)

@@ -7,6 +7,7 @@ import {
   button,
   help,
   table,
+  remoteTable,
   formDialog,
   showResult,
   badge,
@@ -39,11 +40,12 @@ export async function accounts(ctx) {
     },
     {
       key: "quota_bytes",
-      label: "每周期额度（字节）",
+      label: "每周期额度（GiB）",
       type: "number",
+      scale: 1073741824,
       nullable: true,
       min: 0,
-      help: "留空不限；0 表示零额度。1 GiB = 1073741824 字节。",
+      help: "留空不限；0 表示零额度。支持小数，保存时取最接近的整数字节。",
     },
     { key: "expires_at", label: "绝对到期时间", type: "date" },
     { key: "disabled", label: "管理员禁用", type: "bool" },
@@ -66,8 +68,9 @@ export async function accounts(ctx) {
     },
     {
       key: "duration_seconds",
-      label: "有效时长（秒，0 不限）",
+      label: "有效时长（天，0 不限）",
       type: "number",
+      scale: 86400,
       readonly: existing,
       min: 0,
     },
@@ -437,8 +440,7 @@ export async function subscribers(ctx) {
 
 export async function grants(ctx) {
   const request = ctx.request || api;
-  const [items, accounts, catalog] = await Promise.all([
-    request("/api/grants"),
+  const [accounts, catalog] = await Promise.all([
     request("/api/accounts"),
     clientCatalog(request),
   ]);
@@ -504,7 +506,7 @@ export async function grants(ctx) {
           ),
         "primary",
       ),
-      table(
+      await remoteTable(
         [
           { key: "id", label: "授权 ID" },
           {
@@ -518,11 +520,26 @@ export async function grants(ctx) {
           { label: "下载到期", value: (g) => date(g.expires_at) },
           {
             label: "状态",
+            value: (g) =>
+              ({
+                active: "有效",
+                revoked: "已撤销",
+                expired: "已到期",
+                exhausted: "次数用尽",
+              })[g.state] || "未知",
             render: (g) =>
-              badge(g.revoked ? "已撤销" : "有效", g.revoked ? "bad" : "good"),
+              badge(
+                {
+                  active: "有效",
+                  revoked: "已撤销",
+                  expired: "已到期",
+                  exhausted: "次数用尽",
+                }[g.state] || "未知",
+                g.state === "active" ? "good" : "warn",
+              ),
           },
         ],
-        items,
+        (params) => request("/api/grants?" + new URLSearchParams(params)),
         (g) => [
           button(
             "撤销",

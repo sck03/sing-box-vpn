@@ -6,13 +6,11 @@ import (
 	"errors"
 	"flag"
 	"io"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/sck03/sing-box-vpn/internal/application"
-	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
 func RunSubscriptions(ctx context.Context, args []string, input io.Reader, output io.Writer) error {
@@ -72,31 +70,4 @@ func RunSubscriptions(ctx context.Context, args []string, input io.Reader, outpu
 		return AtomicBytes(*file, result.Bytes(), 0600)
 	}
 	return (SubscriptionService{Root: *root, Core: *core}).Execute(ctx, command, output)
-}
-
-func readSubscriptionFile(path string) ([]byte, error) {
-	return readLimitedRegularFile(path, sub.MaxBody)
-}
-
-func readLimitedRegularFile(path string, limit int64) ([]byte, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() || info.Size() > limit {
-		return nil, errors.New("input must be a regular file within the size limit")
-	}
-	data, err := io.ReadAll(io.LimitReader(f, limit+1))
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(data)) > limit {
-		return nil, errors.New("input file too large")
-	}
-	return data, nil
 }

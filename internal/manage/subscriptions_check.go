@@ -103,12 +103,22 @@ func checkSubscriptionOutput(ctx context.Context, root, core, id, endpoint strin
 	var nodes []sub.Node
 	var target, verification string
 	var diagnostics []sub.Diagnostic
+	var c sub.Config
+	var r sub.Runtime
+	var local map[string][]sub.Node
 	if err := withStartupLock(ctx, root, func() error {
-		c, r, local, err := loadSubscriptions(root)
+		var err error
+		c, r, local, err = loadSubscriptions(root)
 		if err != nil {
 			return err
 		}
-		_, snapshot, previews, err := compileSubscriptions(ctx, root, core, c, r, local, true)
+		c, local, err = captureSubscriptionSources(ctx, root, c, local)
+		return err
+	}); err != nil {
+		return err
+	}
+	if err := func() error {
+		_, snapshot, previews, err := compilePreparedSubscriptions(ctx, root, core, c, r, local, true)
 		if err != nil {
 			return err
 		}
@@ -142,7 +152,7 @@ func checkSubscriptionOutput(ctx context.Context, root, core, id, endpoint strin
 			return errors.New("probe output must select 1-64 nodes; use a smaller collection")
 		}
 		return nil
-	}); err != nil {
+	}(); err != nil {
 		return err
 	}
 	// Prevent several CLI/browser sessions from spawning unbounded probe cores.
@@ -190,6 +200,12 @@ func checkSubscriptionOutput(ctx context.Context, root, core, id, endpoint strin
 		}); err != nil {
 			return err
 		}
-		return jsonEncoder(output).Encode(Object{"endpoint": endpoint, "client": target, "artifact_validation": verification, "connectivity_engine": "sing-box", "diagnostics": diagnostics, "passed": passed, "total": len(results), "nodes": results})
+		outcome := "passed"
+		if passed == 0 {
+			outcome = "failed"
+		} else if passed < len(results) {
+			outcome = "partial"
+		}
+		return jsonEncoder(output).Encode(Object{"outcome": outcome, "endpoint": endpoint, "client": target, "artifact_validation": verification, "connectivity_engine": "sing-box", "diagnostics": diagnostics, "passed": passed, "total": len(results), "nodes": results})
 	})
 }

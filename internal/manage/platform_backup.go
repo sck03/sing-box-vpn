@@ -1,88 +1,92 @@
 package manage
 
 import (
+	"bytes"
 	"context"
+	"crypto/tls"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/adminauth"
+	"github.com/sck03/sing-box-vpn/internal/backuparchive"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	"github.com/sck03/sing-box-vpn/internal/database"
-	strict "github.com/sck03/sing-box-vpn/internal/encoding"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"time"
 )
 
-const platformBackupMagic = "SBVPNV06"
-const maxPlatformBackup = 96 << 20
+const maxPlatformBackup = backuparchive.MaxArchive
 
 // Binary multipart upload plus a bounded metadata envelope.
 const maxPlatformBackupRequest = maxPlatformBackup + (16 << 10)
 
-type platformBackup struct {
-	Version  int               `json:"version"`
-	Root     string            `json:"root"`
-	Database []byte            `json:"database"`
-	Files    map[string][]byte `json:"files"`
-	Created  time.Time         `json:"created"`
-}
+type platformBackup = backuparchive.Archive
 
 func (s *PlatformService) Backup(ctx context.Context, password []byte) ([]byte, error) {
+	var out bytes.Buffer
+	err := s.BackupTo(ctx, &out, password)
+	return out.Bytes(), err
+}
+
+func (s *PlatformService) BackupTo(ctx context.Context, out io.Writer, password []byte) error {
 	if len(password) < 12 || len(password) > 1024 {
-		return nil, errors.New("backup password must contain 12–1024 bytes")
+		return errors.New("backup password must contain 12–1024 bytes")
 	}
 	stage, err := os.MkdirTemp(s.Root, ".backup-")
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer os.RemoveAll(stage)
 	snapshot := filepath.Join(stage, "snapshot.db")
+	files := map[string]string{}
+	// Publication and snapshot capture share a lock; encryption and download do
+	// not hold it. The SQL snapshot and all referenced pairs form one generation.
+	err = withStartupLock(ctx, s.Root, func() error {
+		return s.captureBackup(ctx, stage, snapshot, files)
+	})
+	if err != nil {
+		return err
+	}
+	return backuparchive.Write(ctx, out, password, backuparchive.Manifest{Root: s.Root, Created: time.Now().UTC()}, snapshot, files)
+}
+
+func (s *PlatformService) captureBackup(ctx context.Context, stage, snapshot string, files map[string]string) error {
 	db, err := database.Open(filepath.Join(s.Root, database.Filename))
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer db.Close()
 	// VACUUM INTO obtains a transactionally consistent online snapshot including
 	// outstanding quota reservations; it never copies a live WAL file piecemeal.
 	if _, err = db.ExecContext(ctx, `VACUUM INTO ?`, snapshot); err != nil {
-		return nil, err
+		return err
 	}
-	data, err := readLimitedRegularFile(snapshot, 48<<20)
-	if err != nil {
-		return nil, err
-	}
-	if len(data) > 48<<20 {
-		return nil, errors.New("database exceeds backup budget")
-	}
-	backup := platformBackup{Version: 6, Root: s.Root, Database: data, Files: map[string][]byte{}, Created: time.Now().UTC()}
-	rawBytes := len(data)
 	copyDB, err := database.Open(snapshot)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer copyDB.Close()
 	var desired, applied []byte
 	if err = copyDB.QueryRowContext(ctx, `SELECT desired,applied FROM control_state WHERE id=1`).Scan(&desired, &applied); err != nil {
-		return nil, err
+		return err
 	}
 	for _, raw := range [][]byte{desired, applied} {
 		c, e := decodePlatform(raw)
 		if e != nil {
-			return nil, e
+			return e
 		}
 		for _, path := range certificatePaths(c) {
 			rel, e := filepath.Rel(s.Root, path)
 			if e != nil || !filepath.IsLocal(rel) {
-				return nil, errors.New("backup requires certificate files inside the managed root")
+				return errors.New("backup requires certificate files inside the managed root")
 			}
 			rel = filepath.ToSlash(rel)
-			if _, ok := backup.Files[rel]; ok {
+			if _, ok := files[rel]; ok {
 				continue
 			}
 			value, e := readLimitedRegularFile(path, 1<<20)
@@ -90,34 +94,84 @@ func (s *PlatformService) Backup(ctx context.Context, password []byte) ([]byte, 
 				continue
 			}
 			if e != nil {
-				return nil, e
+				return e
 			}
-			if len(value) > 1<<20 || len(backup.Files) >= 2048 {
-				return nil, errors.New("certificate backup budget exceeded")
+			if len(value) > backuparchive.MaxFile || len(files) >= backuparchive.MaxFiles {
+				return errors.New("certificate backup budget exceeded")
 			}
-			backup.Files[rel] = value
-			rawBytes += len(value)
-			if rawBytes > (maxPlatformBackup-(1<<20))*3/4 {
-				return nil, errors.New("backup exceeds encoded size budget")
+			staged := filepath.Join(stage, "files", filepath.FromSlash(rel))
+			if e = AtomicBytes(staged, value, 0600); e != nil {
+				return e
 			}
+			files[rel] = staged
+		}
+		if err = validateBackupPairs(c, s.Root, files); err != nil {
+			return err
 		}
 	}
-	plain, err := json.Marshal(backup)
-	if err != nil {
-		return nil, err
+	return nil
+}
+
+func validateBackupPairs(c PlatformConfig, root string, files map[string]string) error {
+	return validateCertificatePairs(c, func(path string) ([]byte, error) {
+		rel, err := filepath.Rel(root, path)
+		if err != nil || !filepath.IsLocal(rel) {
+			return nil, errors.New("invalid certificate pair path")
+		}
+		staged, ok := files[filepath.ToSlash(rel)]
+		if !ok {
+			return nil, os.ErrNotExist
+		}
+		return os.ReadFile(staged)
+	})
+}
+
+func validateArchivedPairs(c PlatformConfig, b platformBackup) error {
+	return validateCertificatePairs(c, func(path string) ([]byte, error) {
+		rel, err := filepath.Rel(b.Root, path)
+		if err != nil || !filepath.IsLocal(rel) {
+			return nil, errors.New("invalid certificate archive path")
+		}
+		data, ok := b.Files[filepath.ToSlash(rel)]
+		if !ok {
+			return nil, os.ErrNotExist
+		}
+		return data, nil
+	})
+}
+
+func validateCertificatePairs(c PlatformConfig, read func(string) ([]byte, error)) error {
+	pairs := [][2]string{{c.App.Profile.Certificate, c.App.Profile.Key}}
+	for _, in := range c.App.Inbounds {
+		t := object(in["tls"])
+		pairs = append(pairs, [2]string{text(t["certificate_path"]), text(t["key_path"])})
 	}
-	if len(plain) > maxPlatformBackup-128 {
-		return nil, errors.New("backup exceeds 96 MiB")
+	for _, p := range c.VPN.Profiles {
+		pairs = append(pairs, [2]string{p.Certificate, p.Key})
 	}
-	salt := randomBytes(16)
-	cipher, err := backupCipher(password, salt)
-	if err != nil {
-		return nil, err
+	for _, a := range c.Certificates {
+		pairs = append(pairs, [2]string{a.Certificate, a.Key})
 	}
-	header := append([]byte(platformBackupMagic), salt...)
-	nonce := randomBytes(cipher.NonceSize())
-	header = append(header, nonce...)
-	return cipher.Seal(header, nonce, plain, header), nil
+	for _, pair := range pairs {
+		if pair[0] == "" && pair[1] == "" {
+			continue
+		}
+		cert, certErr := read(pair[0])
+		key, keyErr := read(pair[1])
+		if errors.Is(certErr, os.ErrNotExist) && errors.Is(keyErr, os.ErrNotExist) && pendingCertificatePath(c, pair[0]) && pendingCertificatePath(c, pair[1]) {
+			continue
+		}
+		if certErr != nil {
+			return certErr
+		}
+		if keyErr != nil {
+			return keyErr
+		}
+		if _, e := tls.X509KeyPair(cert, key); e != nil {
+			return fmt.Errorf("backup certificate pair: %w", e)
+		}
+	}
+	return nil
 }
 func pendingCertificatePath(c PlatformConfig, path string) bool {
 	for _, in := range c.App.Inbounds {
@@ -145,6 +199,8 @@ func certificatePaths(c PlatformConfig) []string {
 			paths = append(paths, v)
 		}
 	}
+	add(c.App.Profile.Certificate)
+	add(c.App.Profile.Key)
 	for _, in := range c.App.Inbounds {
 		t := object(in["tls"])
 		add(text(t["certificate_path"]))
@@ -161,30 +217,7 @@ func certificatePaths(c PlatformConfig) []string {
 	return paths
 }
 func decodePlatformBackup(data, password []byte) (platformBackup, error) {
-	var backup platformBackup
-	if len(password) < 12 || len(password) > 1024 || len(data) < 52 || len(data) > maxPlatformBackup || string(data[:8]) != platformBackupMagic {
-		return backup, errors.New("invalid schema-6 encrypted backup")
-	}
-	cipher, err := backupCipher(password, data[8:24])
-	if err != nil {
-		return backup, err
-	}
-	plain, err := cipher.Open(nil, data[24:36], data[36:], data[:36])
-	if err != nil {
-		return backup, errors.New("backup password incorrect or archive damaged")
-	}
-	if err = strict.JSON(plain, &backup, maxPlatformBackup); err != nil {
-		return backup, err
-	}
-	if backup.Version != 6 || len(backup.Database) > 48<<20 || len(backup.Files) > 2048 {
-		return backup, errors.New("unsupported backup format or size")
-	}
-	for path, value := range backup.Files {
-		if !filepath.IsLocal(path) || filepath.ToSlash(filepath.Clean(path)) != path || strings.Contains(path, "\\") || len(value) > 1<<20 || (!strings.HasSuffix(path, ".pem") && !strings.HasSuffix(path, ".key")) {
-			return backup, errors.New("invalid certificate backup entry")
-		}
-	}
-	return backup, nil
+	return backuparchive.Read(data, password)
 }
 func inspectBackupDatabase(ctx context.Context, path string, data []byte) (PlatformConfig, Object, error) {
 	if err := AtomicBytes(path, data, 0600); err != nil {
@@ -265,6 +298,9 @@ func inspectBackupDatabase(ctx context.Context, path string, data []byte) (Platf
 	return c, summary, nil
 }
 func relocateBackup(c *PlatformConfig, b platformBackup, destination string) error {
+	if err := validateArchivedPairs(*c, b); err != nil {
+		return err
+	}
 	mapPath := func(path string) (string, error) {
 		if path == "" {
 			return "", nil
@@ -313,9 +349,6 @@ func relocateBackup(c *PlatformConfig, b platformBackup, destination string) err
 		if err != nil {
 			return err
 		}
-		if a.Provider == "certbot" {
-			a.Provider = "import"
-		}
 	}
 	return nil
 }
@@ -336,14 +369,24 @@ func (s *PlatformService) servePlatformBackup(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if r.URL.Path == "/api/backup" {
-		data, err := s.Backup(r.Context(), []byte(v.Password))
+		file, err := os.CreateTemp(s.Root, ".backup-download-*")
+		if err != nil {
+			platformError(w, err)
+			return
+		}
+		defer func() { file.Close(); os.Remove(file.Name()) }()
+		err = s.BackupTo(r.Context(), file, []byte(v.Password))
 		if err != nil {
 			platformError(w, err)
 			return
 		}
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Content-Disposition", `attachment; filename="sing-box-vpn-v4.sbvpn"`)
-		_, _ = w.Write(data)
+		if _, err = file.Seek(0, io.SeekStart); err != nil {
+			platformError(w, err)
+			return
+		}
+		_, _ = io.Copy(w, file)
 		return
 	}
 	b, err := decodePlatformBackup(v.Backup, []byte(v.Password))
@@ -392,13 +435,6 @@ func (s *PlatformService) servePlatformBackup(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if err = relocateBackup(&c, b, destination); err == nil {
-		for i := range c.Certificates {
-			a := &c.Certificates[i]
-			if a.Provider == "certbot" {
-				a.Certificate = filepath.ToSlash(filepath.Join(s.Root, "certificates", a.ID, "cert.pem"))
-				a.Key = filepath.ToSlash(filepath.Join(s.Root, "certificates", a.ID, "key.pem"))
-			}
-		}
 		for path, data := range b.Files {
 			if err = AtomicBytes(filepath.Join(destination, filepath.FromSlash(path)), data, 0600); err != nil {
 				break
