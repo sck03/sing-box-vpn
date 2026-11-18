@@ -3,8 +3,6 @@ package manage
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -12,6 +10,7 @@ import (
 	"net/mail"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"time"
 )
@@ -40,12 +39,11 @@ func (s *PlatformService) scheduleCertificates(ctx context.Context) error {
 		if time.Now().Unix()-attempt < int64((12 * time.Hour).Seconds()) {
 			continue
 		}
-		cert, e1 := os.ReadFile(asset.Certificate)
-		key, e2 := os.ReadFile(asset.Key)
-		if e1 == nil && e2 == nil && acmeRegistrationReady(s.Root, asset) {
-			if leaf, e := validatePEM(cert, key, asset.Domain); e == nil && time.Until(leaf.NotAfter) > acmeRenewBefore {
-				continue
-			}
+		material, err := readCertificateMaterial(asset)
+		now := time.Now()
+		if err == nil && material.validateTime(now) == nil && material.leaf.NotAfter.Sub(now) > acmeRenewBefore &&
+			acmeRegistrationReady(s.Root, asset, material) {
+			continue
 		}
 		if _, err = s.Queue(ctx, PlatformAction{Operation: "certificate-renew", ID: asset.ID}, "scheduler"); err != nil {
 			return err
@@ -62,23 +60,6 @@ type CertificateImport struct {
 	Key         string `json:"key"`
 }
 
-func validatePEM(cert, key []byte, domainName string) (*x509.Certificate, error) {
-	pair, err := tls.X509KeyPair(cert, key)
-	if err != nil {
-		return nil, errors.New("certificate and private key do not match")
-	}
-	leaf, err := x509.ParseCertificate(pair.Certificate[0])
-	if err != nil {
-		return nil, err
-	}
-	if err = leaf.VerifyHostname(domainName); err != nil {
-		return nil, err
-	}
-	if time.Now().Before(leaf.NotBefore) || !time.Now().Before(leaf.NotAfter) {
-		return nil, errors.New("certificate is not currently valid")
-	}
-	return leaf, nil
-}
 func (s *PlatformService) ImportCertificate(ctx context.Context, v CertificateImport) (CertificateAsset, error) {
 	if !domain.ResourceID.MatchString(v.ID) || len(v.Certificate) > 256<<10 || len(v.Key) > 64<<10 {
 		return CertificateAsset{}, errors.New("invalid certificate ID or PEM size")
@@ -113,43 +94,41 @@ func (s *PlatformService) CertificateStatus(ctx context.Context) ([]Object, erro
 	if err != nil {
 		return nil, err
 	}
-	result := []Object{}
+	usedBy := make(map[string][]string)
+	for _, node := range nodes {
+		usedBy[node.TLS.Certificate] = append(usedBy[node.TLS.Certificate], node.ID)
+	}
+	for cc, profile := range c.VPN.Profiles {
+		usedBy[profile.Certificate] = append(usedBy[profile.Certificate], "vpngate/"+cc)
+	}
+	for _, uses := range usedBy {
+		sort.Strings(uses)
+	}
+	result := make([]Object, 0, len(c.Certificates))
 	for _, asset := range c.Certificates {
-		v := Object{"id": asset.ID, "domain": asset.Domain, "provider": asset.Provider, "used_by": []string{}}
+		uses := usedBy[asset.Certificate]
+		if uses == nil {
+			uses = []string{}
+		}
+		v := Object{"id": asset.ID, "domain": asset.Domain, "provider": asset.Provider, "used_by": uses}
+		material, err := readCertificateMaterial(asset)
 		v["renewal_state"] = "manual"
 		if automaticCertificate(asset) {
 			v["renewal_state"] = "automatic"
-			if !acmeRegistrationReady(s.Root, asset) {
+			if !acmeRegistrationReady(s.Root, asset, material) {
 				v["renewal_state"] = "registration_pending"
 			}
 		}
-		used := []string{}
-		for _, node := range nodes {
-			if node.TLS.Certificate == asset.Certificate {
-				used = append(used, node.ID)
+		if err == nil {
+			now := time.Now()
+			err = material.validateTime(now)
+			if err == nil {
+				v["expires_at"] = material.leaf.NotAfter
+				v["days_left"] = int(material.leaf.NotAfter.Sub(now).Hours() / 24)
 			}
 		}
-		for cc, p := range c.VPN.Profiles {
-			if p.Certificate == asset.Certificate {
-				used = append(used, "vpngate/"+cc)
-			}
-		}
-		v["used_by"] = used
-		cert, e := os.ReadFile(asset.Certificate)
-		if e == nil {
-			var key []byte
-			key, e = os.ReadFile(asset.Key)
-			if e == nil {
-				var leaf *x509.Certificate
-				leaf, e = validatePEM(cert, key, asset.Domain)
-				if e == nil {
-					v["expires_at"] = leaf.NotAfter
-					v["days_left"] = int(time.Until(leaf.NotAfter).Hours() / 24)
-				}
-			}
-		}
-		if e != nil {
-			v["error"] = e.Error()
+		if err != nil {
+			v["error"] = err.Error()
 		}
 		result = append(result, v)
 	}

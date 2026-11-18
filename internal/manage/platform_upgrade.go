@@ -45,7 +45,7 @@ func (s *PlatformService) upgradeProgram(ctx context.Context, version string) er
 		}
 	}
 	if chosen.URL != "https://github.com/sck03/sing-box-vpn/releases/download/"+release.Tag+"/"+name || !digestPattern.MatchString(chosen.Digest) {
-		return errors.New("release has no verified v4 bundle")
+		return errors.New("release has no verified compatible bundle")
 	}
 	stage, err := os.MkdirTemp(s.Root, ".program-update-")
 	if err != nil {

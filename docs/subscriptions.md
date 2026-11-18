@@ -1,4 +1,4 @@
-# v4 订阅与下载授权
+# 订阅与下载授权
 
 [使用指南](usage.md) · [架构](architecture.md)
 

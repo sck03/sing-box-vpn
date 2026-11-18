@@ -48,7 +48,7 @@ func TestEncryptedPlatformBackupDisasterLedger(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	c.Certificates = append(c.Certificates, CertificateAsset{ID: "pending", Domain: "example.com", Provider: "certbot", Certificate: filepath.ToSlash(filepath.Join(root, "certificates/pending/cert.pem")), Key: filepath.ToSlash(filepath.Join(root, "certificates/pending/key.pem"))})
+	c.Certificates = append(c.Certificates, CertificateAsset{ID: "pending", Domain: "example.com", Provider: "acme", Certificate: filepath.ToSlash(filepath.Join(root, "certificates/pending/cert.pem")), Key: filepath.ToSlash(filepath.Join(root, "certificates/pending/key.pem"))})
 	id, e := s.Store.Queue(ctx, "apply", "test", []byte(`{}`), 1, mustJSON(t, c))
 	if e != nil {
 		t.Fatal(e)

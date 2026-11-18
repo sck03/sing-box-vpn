@@ -335,6 +335,10 @@ func TestLegoIssueReuseRenewAndFailure(t *testing.T) {
 func TestACMERegistrationTracksPublishedPair(t *testing.T) {
 	ca, root := newLocalACMECA(t), t.TempDir()
 	asset := acmeTestAsset(root)
+	registrationReady := func() bool {
+		material, err := readCertificateMaterial(asset)
+		return err == nil && acmeRegistrationReady(root, asset, material)
+	}
 	key, err := certcrypto.GeneratePrivateKey(certcrypto.EC256)
 	if err != nil {
 		t.Fatal(err)
@@ -350,7 +354,7 @@ func TestACMERegistrationTracksPublishedPair(t *testing.T) {
 	if err = AtomicJSON(acmeCertificatePath(root, asset.ID), record); err != nil {
 		t.Fatal(err)
 	}
-	if acmeRegistrationReady(root, asset) {
+	if registrationReady() {
 		t.Fatal("unpublished issuance counted as registered")
 	}
 	if err = AtomicBytes(asset.Certificate, record.Certificate, 0600); err != nil {
@@ -359,13 +363,13 @@ func TestACMERegistrationTracksPublishedPair(t *testing.T) {
 	if err = AtomicBytes(asset.Key, record.PrivateKey, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if !acmeRegistrationReady(root, asset) {
+	if !registrationReady() {
 		t.Fatal("published issuance did not complete registration")
 	}
 	if err = AtomicBytes(asset.Certificate, ca.signed(asset.Domain, key.Public(), 24*time.Hour), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if acmeRegistrationReady(root, asset) {
+	if registrationReady() {
 		t.Fatal("rolled-back certificate hid a pending publication")
 	}
 }

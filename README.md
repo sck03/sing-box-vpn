@@ -1,4 +1,4 @@
-# sing-box-vpn v4
+# sing-box-vpn
 
 面向新部署的 sing-box 统一管理平台。Web 面板管理五协议入站、独立账户与周期额度、订阅与分发、服务端路由与 DNS、WireGuard/WARP、Argo、VPNGate、证书和维护任务。
 
@@ -18,17 +18,19 @@ bash <(wget -qO- https://raw.githubusercontent.com/sck03/sing-box-vpn/main/insta
 
 证书申请与续期内置 **lego Go 库**，当前使用 HTTP-01 验证；自签证书与 PEM 导入也由 Go 完成。OpenVPN 仍是 VPNGate 建立隧道所需的系统程序，Go 管理器不能代替它。VPNGate 需要 IPv4、TUN 与 network namespace。
 
-**当前 v4 使用数据库 schema 11、备份格式 7，首次安装要求空目录，不迁移旧数据或兼容旧管理接口。** 一键入口需要 GitHub 上已发布完整的 v4 正式 Release；仅推送分支还不够，旧版 Release 会被明确拒绝。开发者构建和本地发行包安装见[开发与发布](docs/development.md)。
+**当前平台使用数据库 schema 11、备份格式 7，首次安装要求空目录，不迁移旧数据或兼容旧管理接口。** 发行标签使用 `v主版本.次版本.补丁版本`，例如 `v5.0.0`；不限定主版本号。版本标签与平台数据格式分别校验，缺少当前架构管理器、受管核心或维护文件的包会被拒绝。开发者构建和本地发行包安装见[开发与发布](docs/development.md)。
 
 安装后可随时使用：
 
 ```bash
 sb             # 打开维护菜单
-sb upgrade     # 下载并升级到最新 v4 正式版
+sb upgrade     # 下载并升级到最新正式版
 sb uninstall   # 确认后删除程序和数据
 ```
 
 也可直接运行 `bash <(wget -qO- https://raw.githubusercontent.com/sck03/sing-box-vpn/main/install.sh) uninstall`。卸载调用本机脚本，无需下载发行包；仅删除本项目标记的默认目录和服务，保留系统共享软件包。自动化卸载可显式加 `--yes`。
+
+菜单显示管理程序实际返回的版本，不从标题或发行包文件名推测。在线安装/升级会保存正在使用的入口，避免发行包内较早的入口覆盖修复。推送 main 会更新在线入口；Go 程序的改动仍需重新构建并发布 Release 才进入 VPS 安装包。
 
 安装后面板默认 `127.0.0.1:2096`，使用安装时设置的管理员账号：
 

@@ -1,4 +1,4 @@
-# v4 架构与维护
+# 架构与维护
 
 `control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 11；平台配置 schema=4、节点文档 schema=2、订阅配置 schema=2 是各自独立的格式版本。面向空目录，不提供旧数据库、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责，不允许旧 CLI 修改配置投影。
 
@@ -20,6 +20,7 @@
 | internal/manage/platform_* | 应用编排、配置图校验、备份、证书、主机服务、HTTP/CLI |
 | internal/manage/platform_compile | 候选准备、运行恢复编译、完整草稿预览及输出诊断 |
 | internal/manage/platform_acme | 内置 lego 客户端、HTTP-01 验证、账户与签发结果持久化；复用平台任务调度与证书发布 |
+| internal/manage/certificate_material | 独立的 PEM 匹配、域名验证与有效期检查；已解析材料供状态、续期和导入复用，无共享过期缓存 |
 | internal/manage/platform_task_output | 有界结果落盘、秘密隐藏以及取消后的部分结果保留 |
 | internal/manage/subscriptions_status、subscriptions_notification | 只读运行状态投影、独立通知活动记录；状态查询跳过缓存中的节点和模板正文 |
 | internal/manage/panel | 原生 ES 模块 SPA，共享表单/列表/草稿，静态嵌入二进制 |
@@ -58,11 +59,13 @@ HTTP/CLI → Validate → 校验资源引用/核心配置 → revision CAS 保�
 
 备份在发布锁内使用 VACUUM INTO 取得数据库快照、复制引用证书并检查证书/私钥匹配；锁外将暂存文件以 tar + age 流式认证加密写入下载暂存文件，不再经过 JSON/Base64。数据库上限 80 MiB，完整加密文件上限 96 MiB。恢复读完 age 的认证尾部后才接受内容，校验数据库结构等于本发行 schema，拒绝额外 trigger/view、重复文件、链接和路径逃逸。同机恢复保留安全和账本；灾难恢复临时目录完成后发布，禁用所有权益并撤销 token。
 
-恢复保留 ACME 资产、域名及邮箱，恢复目录内的材料可原地续期。历史 `provider: certbot` 只作为已有 v4 数据的标记读取，申请和续期统一使用 lego，不执行外部 Certbot。ACME 账户与签发缓存不进入备份：本机登记及缓存仍匹配已发布材料时继续续期；新主机显示 registration_pending，由调度重新登记，需要公网端口 80。服务 start/restart 共用运行时心跳确认，证书更新失败走同一就绪检查和回滚路径。
+恢复保留当前 ACME 资产、域名及邮箱，恢复目录内的材料可原地续期。提供方仅接受 `acme` / `import`，不保留旧 Certbot 兼容分支。ACME 账户与签发缓存不进入备份：本机登记及缓存仍匹配已发布材料时继续续期；新主机显示 registration_pending，由调度重新登记，需要公网端口 80。服务 start/restart 共用运行时心跳确认，证书更新失败走同一就绪检查和回滚路径。
 
 lego 的账户私钥、登记与签发结果保存于 `acme/lego/`，以 0600 原子写入。每 12 小时检查续期，证书不足 30 天时申请；已签发但发布失败的结果会被复用。目录请求也受任务取消控制，HTTP-01 临时监听随验证结束释放。当前使用 Let's Encrypt、ECDSA P-256 和 HTTP-01，未接入 DNS-01 或泛域名表单。
 
-安装器读取正式 v4 发行包并校验 SHA256，基础系统包保留 VPNGate 所需 OpenVPN，不安装 Python 或 Certbot。管理员凭据通过 stdin 交给 Go；开发验收脚本使用的 Python 不属于 VPS 运行依赖。受管核心不注册上游 ACME/Origin CA 提供器，发行构建检查拒绝链接 CertMagic/acmez。
+安装器独立验证正式版本标签、包内容约定和 SHA256，不用 Release 主版本推测平台数据格式。菜单读取管理器实际版本；安装时保留当前入口，避免包内较早入口使菜单退回固定版本。基础系统包保留 VPNGate 所需 OpenVPN，不安装 Python 或 Certbot。管理员凭据通过 stdin 交给 Go；开发验收脚本使用的 Python 不属于 VPS 运行依赖。受管核心不注册上游 ACME/Origin CA 提供器，发行构建检查拒绝链接 CertMagic/acmez。
+
+证书状态查询每个资产只读取一次当前 PEM 对，并复用 Go TLS 已解析的叶证书。登记检查用字节一致性将该验证结果复用到签发缓存；不会额外读取当前证书或重复解析私钥。引用入口按证书路径一次建立索引并稳定排序。缓存材料的解析与有效期判定分开，使过期证书仍能作为续期输入，状态查询始终检查当前文件。
 
 每轮变化的池检查点通过同一数据库事务提交；采集计数后释放池锁再写数据库，Tick 与 Close 串行维护。额度预留仍先落盘，未扩大 64 KiB 边界。账户列表复用已读快照，只推进到期账期；导出按账户/实例索引读取凭据，并复用单次证书解析缓存。
 

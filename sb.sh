@@ -33,12 +33,12 @@ install_main() (
     require_system
     local arch address
     arch=$(arch_name)
-    [[ ! -e "$APP_HOME" ]] || { echo '程序目录已存在；v4 不导入旧版本，请使用空目录' >&2; return 1; }
+    [[ ! -e "$APP_HOME" ]] || { echo '程序目录已存在；首次安装请使用空目录，已有安装请使用升级' >&2; return 1; }
     if [[ -d "$SB_ROOT" && -n $(find "$SB_ROOT" -mindepth 1 -maxdepth 1 -print -quit) ]]; then
         echo '首次安装要求空配置目录；不兼容旧数据与接口' >&2; return 1
     fi
     [[ -x "$SCRIPT_ROOT/.bin/linux-$arch/yg-vpngate" && -x "$SCRIPT_ROOT/.bin/linux-$arch/managed-core" ]] || {
-        echo '需要完整 v4 发行包；源码请先 go run ./cmd/release' >&2; return 1;
+        echo '需要完整发行包；源码请先 go run ./cmd/release' >&2; return 1;
     }
     address=${SB_ADDRESS:-}
     if [[ -z "$address" ]]; then read -r -p '发布地址（VPS IP 或域名）: ' address </dev/tty; fi
@@ -82,7 +82,8 @@ install_main() (
     ln -sfn "$APP_HOME/sb.sh" /usr/bin/sb
     systemctl enable --now sing-box sb-panel
     systemctl is-active --quiet sing-box sb-panel
-    echo 'v4 已安装。面板默认仅监听 127.0.0.1:2096。'
+    printf '已安装：%s\n' "$("$MANAGER" --version)"
+    echo '面板默认仅监听 127.0.0.1:2096。'
     echo '本机执行 SSH 端口转发：ssh -L 2096:127.0.0.1:2096 root@VPS，然后打开 http://127.0.0.1:2096'
     echo '在面板创建权益并绑定入站后才允许代理认证。公开访问需在 panel.json 配置 TLS 或可信 HTTPS 反向代理。'
     echo '以后输入 sb 打开维护菜单；sb upgrade 升级；sb uninstall 卸载。'
@@ -92,7 +93,7 @@ uninstall_main() {
     require_system
     [[ "$APP_HOME" == /opt/sing-box-vpn && ! -L "$APP_HOME" && -f "$APP_HOME/.managed" &&
        "$SB_ROOT" == /etc/s-box && ! -L "$SB_ROOT" && -f "$SB_ROOT/.platform-v4" ]] || {
-        echo '卸载只接受带 v4 标记的默认目录；自定义目录请手动清理' >&2; return 1;
+        echo '卸载只接受带本项目标记的默认目录；自定义目录请手动清理' >&2; return 1;
     }
     if [[ "${1:-}" != --yes ]]; then
         local answer

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Swap verified v4 manager/runtime together, preserve stopped and disabled units.
+# Swap verified manager/runtime together, preserve stopped and disabled units.
 upgrade_program() (
     set -Eeuo pipefail
     require_system
@@ -7,7 +7,7 @@ upgrade_program() (
     local -a running=()
     arch=$(arch_name)
     [[ -f "$APP_HOME/.managed" && -f "$SB_ROOT/.platform-v4" && -x "$MANAGER" && -x "$RUNTIME" ]] || {
-        echo '升级要求完整 v4 安装，不支持旧版本迁移' >&2; return 1;
+        echo '升级要求当前平台的完整安装，不支持旧数据格式迁移' >&2; return 1;
     }
     exec 9>"$SB_ROOT/.upgrade.lock"
     flock -n 9 || { echo '另一个升级任务正在运行' >&2; return 1; }
@@ -17,7 +17,7 @@ upgrade_program() (
         echo '上一升级仍在等待面板重启' >&2; return 1;
     }
     [[ "$SCRIPT_ROOT" != "$APP_HOME" && -x "$SCRIPT_ROOT/.bin/linux-$arch/yg-vpngate" && -x "$SCRIPT_ROOT/.bin/linux-$arch/managed-core" ]] || {
-        echo '升级需要解压后的完整 v4 发行包' >&2; return 1;
+        echo '升级需要解压后的完整发行包' >&2; return 1;
     }
     for unit in yg-vpngate sing-box sing-box-vpngate sb-subscription sb-argo sb-panel; do
         state=$(systemctl show "$unit" --property=ActiveState --value)

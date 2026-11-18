@@ -350,7 +350,7 @@ export async function certificates(ctx) {
         ],
         c.certificates,
         (a) => [
-          ...(["acme", "certbot"].includes(a.provider)
+          ...(a.provider === "acme"
             ? [
                 button("申请 / 续期", () =>
                   ctx.task({ operation: "certificate-renew", id: a.id }),

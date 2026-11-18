@@ -1,6 +1,6 @@
 # 上游技术与协议
 
-> 历史研究与验收记录：保留当时的版本、命令和结果，不作为 v4 部署操作指南。当前实现与验证范围见 [统一管理实施记录](unified-management-status.md)，安装步骤见 [v4 使用指南](usage.md)。
+> 历史研究与验收记录：保留当时的版本、命令和结果，不作为 v4 部署操作指南。当前实现与验证范围见 [统一管理实施记录](unified-management-status.md)，安装步骤见 [使用指南](usage.md)。
 
 [返回项目首页](../README.md) · [OpenClash 使用](subscriptions.md#openclash-与证书) · [兼容性与验收](compatibility.md)
 

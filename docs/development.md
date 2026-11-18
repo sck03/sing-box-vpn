@@ -1,4 +1,4 @@
-# v4 开发与发布
+# 开发与发布
 
 当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流五组。数据库使用 schema 11，所有旧数据库及其备份明确拒绝。
 
@@ -22,16 +22,21 @@ go run ./cmd/release
 上述构建只在开发机或 CI 执行，VPS 安装直接使用 README 中的一键入口。需要部署尚未发布的分支时，将构建产物复制到 VPS 后执行：
 
 ```bash
-tar -xzf sing-box-vpn-v4.0.0.tar.gz
+VERSION=v5.0.0 # 改成要安装的发行版本
+tar -xzf "sing-box-vpn-${VERSION}.tar.gz"
 cd sing-box-vpn
 sudo bash install.sh --local
 ```
 
-已有 v4 安装会自动切换为升级，也可指定 `--local --upgrade`。正式发行需包含完整压缩包及 `SHA256SUMS`；安装器拒绝 v2/v3、缺失或重复的校验值、不安全的归档路径和链接。无参数打开菜单，`install`/`upgrade` 可直接执行，`uninstall --yes` 用于显式无交互卸载。`SB_ADDRESS` 和 `SB_ADMIN_JSON_FILE` 保留自动化安装支持；JSON 文件须由管理员以 0600 权限保护并在使用后删除。
+已有当前平台安装会自动切换为升级，也可指定 `--local --upgrade`。安装器与 CI 接受标准正式标签 `vMAJOR.MINOR.PATCH`，例如 v5.0.0、v6.2.3，主版本不决定数据兼容性。预发布后缀、缺失版本段、前导零等无效标签会被拒绝。
+
+正式发行需包含完整压缩包及 `SHA256SUMS`。安装器验证唯一校验值、归档路径/类型，以及当前架构的管理器、受管核心和维护脚本；本地包安装也检查同一内容约定。数据格式继续由平台验证，不提供旧数据迁移。无参数打开菜单，`install`/`upgrade` 可直接执行，`uninstall --yes` 用于显式无交互卸载。`SB_ADDRESS` 和 `SB_ADMIN_JSON_FILE` 保留自动化安装支持；JSON 文件须由管理员以 0600 权限保护并在使用后删除。
+
+菜单从管理器 `--version` 读取已安装版本，并限制版本查询等待时间。在线安装将当前入口的函数与固定仓库地址保存到解压目录，再交由发行包安装；不会从已消费的管道重新读取脚本，也不会把管理员输入或环境中的秘密写进入口。`.platform-v4` 和 systemd 所有权标记标识平台格式，与 Release 主版本无关。
 
 交互管理员输入通过 `panel --admin-stdin init/reset-admin` 读取两个 NUL 分隔字段，账号密码不经命令参数、环境变量或 Python 转义。默认 CLI 仍接受原来的 stdin JSON。
 
-证书只由平台内置的 lego v5.6.0 负责申请和续期，使用 HTTP-01、Let's Encrypt、ECDSA P-256。平台保留每 12 小时检查和不足 30 天续期策略；已申请结果缓存于 `acme/lego/`，服务发布失败后复用结果重试。账户私钥、登记和缓存证书以 0600 原子保存；备份恢复缺少登记时自动补登记。历史 `provider: certbot` 按 ACME 资产读取，执行仍统一走 lego。
+证书只由平台内置的 lego v5.6.0 负责申请和续期，使用 HTTP-01、Let's Encrypt、ECDSA P-256。平台保留每 12 小时检查和不足 30 天续期策略；已申请结果缓存于 `acme/lego/`，服务发布失败后复用结果重试。账户私钥、登记和缓存证书以 0600 原子保存；备份恢复缺少登记时自动补登记。证书提供方仅接受 `acme` / `import`，不接受旧 `certbot` 标记或提供迁移。
 
 受管核心不启用上游 `with_acme` 或 Cloudflare Origin CA 提供器。发布器按 Linux amd64/arm64 的实际构建依赖检查，拒绝链接 CertMagic/acmez；sing-box 上游模块元数据中的可选依赖不等于进入发行二进制。
 
@@ -108,4 +113,4 @@ CI 的独立下载验证和全新安装步骤均显式传递该只读令牌；�
 
 无法自动删除的条目集中移动到 `.cleanup-manual/` 后手动删除；仅有残留时创建此目录。它已被 Git 忽略，不能提交到 main 或打入发行包。Windows 删除/移动使用原生 PowerShell，并先确认实际绝对路径位于项目目录内。
 
-交付前核对本地分支和远端 heads，将有效改动提交到 main；仅在确认其他分支提交已合入后删除那些分支。`git fetch --all --prune` 清除失效的远端跟踪引用。保留正式版本标签，分支清理不删除 Release。main 推送触发 CI 验证；用户可安装的 v4 版本仍需通过既有发布流程上传完整归档和 SHA256SUMS。
+交付前核对本地分支和远端 heads，将有效改动提交到 main；仅在确认其他分支提交已合入后删除那些分支。`git fetch --all --prune` 清除失效的远端跟踪引用。保留正式版本标签，分支清理不删除 Release。main 推送触发 CI 验证；用户可安装的版本仍需通过既有发布流程上传完整归档和 SHA256SUMS。

@@ -6,23 +6,31 @@ REPOSITORY=https://github.com/sck03/sing-box-vpn
 installer_error() { echo "$*" >&2; return 1; }
 installer_help() {
     cat <<'HELP'
-sing-box-vpn v4 一键安装与维护
+sing-box-vpn 一键安装与维护
   bash install.sh                  打开菜单
-  bash install.sh install          安装；已有 v4 时升级
-  bash install.sh upgrade          升级已有 v4
+  bash install.sh install          安装；已有当前平台时升级
+  bash install.sh upgrade          升级已有安装
   bash install.sh uninstall        卸载（确认后删除程序和数据）
   bash install.sh uninstall --yes  无交互卸载
   bash install.sh --local          从解压后的完整发行包安装/升级
   bash install.sh --local --upgrade
 
 支持 Debian/Ubuntu + systemd，Linux amd64/arm64，需要 root。
-自动下载正式 v4 Release 并校验 SHA256；VPS 无需 Go、Node.js 或 Python。
-SB_RELEASE_VERSION=v4.x.x 可指定正式版本。
+自动下载正式 Release 并校验 SHA256；VPS 无需 Go、Node.js 或 Python。
+SB_RELEASE_VERSION=vMAJOR.MINOR.PATCH 可指定正式版本，例如 v5.0.0。
 HELP
 }
 installer_installed() {
+    # This is a persistent platform-format marker, not a release major version.
     [[ -f "${SB_HOME:-/opt/sing-box-vpn}/.managed" &&
        -f "${SB_ROOT:-/etc/s-box}/.platform-v4" ]]
+}
+installer_arch() {
+    case $(uname -m) in
+        x86_64) echo amd64;;
+        aarch64|arm64) echo arm64;;
+        *) installer_error '仅支持 Linux amd64 / arm64'; return 1;;
+    esac
 }
 installer_require_system() {
     [[ $(uname -s) == Linux ]] || { installer_error '需要 Linux Debian/Ubuntu + systemd'; return 1; }
@@ -31,17 +39,24 @@ installer_require_system() {
     source /etc/os-release
     [[ "$ID" == debian || "$ID" == ubuntu ]] || { installer_error '当前仅支持 Debian / Ubuntu'; return 1; }
     command -v systemctl >/dev/null || { installer_error '需要 systemd'; return 1; }
-    case $(uname -m) in
-        x86_64|aarch64|arm64) ;;
-        *) installer_error '仅支持 Linux amd64 / arm64'; return 1;;
-    esac
+    installer_arch >/dev/null
 }
-installer_menu() {
-    echo 'sing-box-vpn v4'
-    if installer_installed; then echo '当前状态：已安装 v4'; else echo '当前状态：未安装 v4'; fi
+installer_menu_text() {
+    echo 'sing-box-vpn 安装与维护'
+    if installer_installed; then
+        echo '当前状态：已安装'
+        local manager="${SB_MANAGER:-/usr/local/bin/yg-vpngate}" installed_version
+        if [[ -x "$manager" ]] && installed_version=$(timeout 5 "$manager" --version 2>/dev/null) && [[ -n "$installed_version" ]]; then
+            printf '当前版本：%s\n' "$installed_version"
+        else
+            echo '当前版本：未知（管理程序不可用）'
+        fi
+    else
+        echo '当前状态：未安装'
+    fi
     cat <<'MENU'
   1) 安装 / 更新到最新正式版
-  2) 升级已有 v4
+  2) 升级已有安装
   3) 面板访问方式
   4) 运行状态
   5) 诊断
@@ -50,6 +65,9 @@ installer_menu() {
   8) 卸载（删除程序和数据）
   0) 退出
 MENU
+}
+installer_menu() {
+    installer_menu_text
     local choice
     if ! read -r -p '请选择 [1]: ' choice </dev/tty; then
         installer_error '无交互终端；请指定 install、upgrade 或 uninstall --yes'
@@ -61,6 +79,34 @@ MENU
         7) ACTION=recover;; 8) ACTION=uninstall;; 0) ACTION='exit';;
         *) installer_error '无效选择'; return 1;;
     esac
+}
+installer_validate_package() {
+    local source=$1 arch member
+    arch=$(installer_arch)
+    # Check the package contract instead of guessing its format from its tag.
+    for member in sb.sh install.sh versions.json lib/update.sh lib/ownership.sh lib/restart-panel.sh \
+        ".bin/linux-$arch/yg-vpngate" ".bin/linux-$arch/managed-core"; do
+        [[ -f "$source/$member" && ! -L "$source/$member" ]] || {
+            installer_error "发行包不完整或不支持当前平台（缺少 $member）"; return 1;
+        }
+    done
+    [[ -x "$source/.bin/linux-$arch/yg-vpngate" && -x "$source/.bin/linux-$arch/managed-core" ]] || {
+        installer_error '发行包中的管理程序或受管核心不可执行'; return 1;
+    }
+}
+installer_write_entrypoint() {
+    local destination=$1 temporary
+    temporary=$(mktemp "${destination}.XXXXXXXX")
+    {
+        printf '%s\n' '#!/usr/bin/env bash' '# Generated from the running sing-box-vpn installer (GPL-3.0).' 'set -Eeuo pipefail'
+        printf 'REPOSITORY=%q\n' "$REPOSITORY"
+        declare -f installer_error installer_help installer_installed installer_arch installer_require_system \
+            installer_menu_text installer_menu installer_validate_package installer_write_entrypoint \
+            installer_download_tools installer_download installer_main
+        printf '%s\n' 'if [[ -z "${BASH_SOURCE[0]:-}" || "${BASH_SOURCE[0]}" == "$0" ]]; then installer_main "$@"; fi'
+    } > "$temporary"
+    chmod 0755 "$temporary"
+    mv -f -- "$temporary" "$destination"
 }
 installer_download_tools() {
     local -a missing=()
@@ -78,14 +124,14 @@ installer_download() (
     if [[ -z "$version" ]]; then
         if ! url=$(curl -fLsSI --proto '=https' --proto-redir '=https' --retry 2 --connect-timeout 15 --max-time 60 \
             -o /dev/null -w '%{url_effective}' "$REPOSITORY/releases/latest"); then
-            installer_error '无法获取正式 Release；请检查网络或是否已发布 v4 发行包'
+            installer_error '无法获取正式 Release；请检查网络或是否已发布完整发行包'
             return 1
         fi
         [[ "$url" == "$REPOSITORY/releases/tag/"* ]] || { installer_error '无法确认正式发行地址'; return 1; }
         version="${url##*/}"
     fi
-    [[ "$version" =~ ^v4\.[0-9]+\.[0-9]+$ ]] || {
-        installer_error "正式版本 $version 与 v4 安装器不兼容；需要先发布完整的 v4.x.x Release"
+    [[ "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
+        installer_error "发行版本号无效：$version；需要正式版本 vMAJOR.MINOR.PATCH"
         return 1
     }
     archive="sing-box-vpn-$version.tar.gz"
@@ -118,9 +164,10 @@ installer_download() (
         [[ "$member" == -* || "$member" == d* ]] || { installer_error '发行包包含链接或特殊文件'; return 1; }
     done < "$scratch/types"
     tar -xzf "$scratch/$archive" -C "$scratch" --no-same-owner --no-same-permissions --keep-old-files
-    [[ -f "$scratch/sing-box-vpn/sb.sh" && -f "$scratch/sing-box-vpn/lib/update.sh" ]] || {
-        installer_error '不是完整的 v4 发行包'; return 1;
-    }
+    installer_validate_package "$scratch/sing-box-vpn"
+    # A published archive may contain an older bootstrap. Preserve this entry
+    # for the installed menu, even when invoked from a pipe or /dev/fd.
+    installer_write_entrypoint "$scratch/sing-box-vpn/install.sh"
     bash "$scratch/sing-box-vpn/sb.sh" "$action"
 )
 installer_main() {
@@ -154,14 +201,14 @@ installer_main() {
     [[ "$ACTION" != exit ]] || return 0
     if [[ "$ACTION" == install ]] && installer_installed; then ACTION=upgrade; fi
     if [[ "$ACTION" != install ]] && ! installer_installed; then
-        installer_error '未找到完整的 v4 安装；请先选择安装'; return 1
+        installer_error '未找到当前平台的完整安装；请先选择安装'; return 1
     fi
     case "$ACTION" in
         install|upgrade)
             if ((local_install)); then
                 [[ -f "${BASH_SOURCE[0]}" ]] || { installer_error '--local 需要解压后的发行包'; return 1; }
                 source_root="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)"
-                [[ -f "$source_root/sb.sh" ]] || { installer_error '当前目录不是完整发行包'; return 1; }
+                installer_validate_package "$source_root"
                 bash "$source_root/sb.sh" "$ACTION"
             else
                 installer_download "$ACTION"
