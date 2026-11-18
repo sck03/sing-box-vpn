@@ -142,6 +142,8 @@ jobs:
       - name: Build both release architectures
         run: go run ./cmd/release
       - name: Fresh v4 installation and panel deployment rollback
+        env:
+          SBVPN_GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           test_password="$(openssl rand -hex 24)"
@@ -151,7 +153,7 @@ jobs:
           printf '{"username":"admin","password":"%s"}' "$test_password" > "$admin_file"
           mkdir -p .test/platform-install
           tar -xzf .build/release/sing-box-vpn-*.tar.gz -C .test/platform-install
-          sudo env SB_ADDRESS=127.0.0.1 SB_ADMIN_JSON_FILE="$admin_file" bash .test/platform-install/sing-box-vpn/sb.sh install
+          sudo --preserve-env=SBVPN_GITHUB_TOKEN env SB_ADDRESS=127.0.0.1 SB_ADMIN_JSON_FILE="$admin_file" bash .test/platform-install/sing-box-vpn/sb.sh install
           SB_TEST_PASSWORD="$test_password" python3 scripts/test-platform-linux.py
       - uses: actions/upload-artifact@v7.0.2
         with:

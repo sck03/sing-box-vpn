@@ -79,4 +79,6 @@ CI 另执行 `scripts/test-install-ownership.sh` 和真实面板 API 工作流�
 
 官方 Release 元数据可通过 `SBVPN_GITHUB_TOKEN` 使用可选的 GitHub API 令牌，CI 使用自带的临时只读令牌以避免共享出口的匿名限流。该令牌仅用于 HTTPS 的 `api.github.com` 上 sing-box、cloudflared 和本项目的 Release 元数据路径，不发送给下载地址或其他远端，不写入配置或日志。
 
+CI 的独立下载验证和全新安装步骤均显式传递该只读令牌；通过 sudo 启动安装器时使用 `--preserve-env=SBVPN_GITHUB_TOKEN`，避免安装阶段退回匿名元数据请求。
+
 验收证据写入 [实施记录](unified-management-status.md)，区分单元测试、真实网络测试、系统测试和未测范围。历史性能数据不能充当新版本提升结论。格式化 Go 使用 gofmt，前端使用 Prettier；发布不依赖前端构建工具。
