@@ -24,6 +24,9 @@
     "cause": "Serve rejected the CI loopback ephemeral listener 127.0.0.1:0 before readiness",
     "local_reproduction": "confirmed",
     "fix": "Only explicit no-system loopback development Serve permits port zero; saved settings remain strict; readiness checks report process exit and timeout logs",
+    "subsequent_failed_run": "https://github.com/sck03/sing-box-vpn/actions/runs/44275774635",
+    "subsequent_cause": "Fresh-install acceptance still requested a share from the default loopback origin; the production share guard correctly returned HTTP 400",
+    "subsequent_fix": "Fresh-install fixture verifies rejection without a grant record, applies a synthetic HTTPS download origin, verifies sharing locally, and restores original configuration",
     "new_remote_result": "Must be checked against the pushed main commit; this record describes local verification"
   },
   "initial_entitlement_page_comparison": {

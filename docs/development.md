@@ -105,6 +105,8 @@ CI 执行全量 race、真实客户端矩阵、ShellCheck、升级状态测试�
 
 CI 另执行 `scripts/test-install-ownership.sh` 和真实面板 API 工作流。所有回滚单元测试应包含非项目同名单元和符号链接，避免只在空宿主环境中证明成功路径。
 
+`scripts/test-platform-linux.py` 的全新安装分享验收先确认默认回环地址拒绝创建令牌，再在可丢弃安装中配置测试用 HTTPS 下载源站，验证分享和次数限制，随后恢复原配置。测试下载仍使用本机面板，不访问该测试域名；不能通过放宽公网地址校验迁就旧夹具。
+
 官方 Release 元数据可通过 `SBVPN_GITHUB_TOKEN` 使用可选的 GitHub API 令牌，CI 使用自带的临时只读令牌以避免共享出口的匿名限流。该令牌仅用于 HTTPS 的 `api.github.com` 上 sing-box、cloudflared 和本项目的 Release 元数据路径，不发送给下载地址或其他远端，不写入配置或日志。
 
 CI 的独立下载验证和全新安装步骤均显式传递该只读令牌；通过 sudo 启动安装器时使用 `--preserve-env=SBVPN_GITHUB_TOKEN`，避免安装阶段退回匿名元数据请求。

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Destructive acceptance on a disposable v4 installation only.
+"""Destructive acceptance on a disposable current installation only.
 
 Run on the isolated Linux VM with SB_TEST_PASSWORD in the environment.
 Creates one disabled test entitlement; changes ordinary log verbosity and
@@ -80,8 +80,21 @@ task(operation="account", account={"operation": "bind", "id": account["id"], "sc
 export = api("/api/accounts/export", {"id": account["id"], "client": "uri", "scope": "normal"})
 assert len(export["content"].strip().splitlines()) == 5
 assert api("/api/qr", {"content": export["content"].splitlines()[0]})["image"].startswith("data:image/png;base64,")
-grant = api("/api/grants", {"id": identifier, "account_id": account["id"], "scope": "normal", "clients": ["uri"], "max_downloads": 1})
-assert "/user#" in grant["user_url"]
+share = {"id": identifier, "account_id": account["id"], "scope": "normal", "clients": ["uri"], "max_downloads": 1}
+try:
+    api("/api/grants", share)
+    raise AssertionError("loopback installation generated an unusable share")
+except urllib.error.HTTPError as error:
+    assert error.code == 400, error.code
+    assert "127.0.0.1" in error.read().decode()
+assert not api("/api/grants?q=" + identifier)["items"]
+# Advertise a synthetic HTTPS origin only in this disposable installation.
+# Downloads below still use the local panel; no external site is contacted.
+published = copy.deepcopy(original)
+published["listener"] = {"enabled": True, "listen": "127.0.0.1", "port": 2097, "public_base_url": "https://subscriptions.example.test"}
+apply(published)
+grant = api("/api/grants", share)
+assert grant["user_url"].startswith("https://subscriptions.example.test/user#")
 download_url = base + "/u/" + grant["token"] + "/uri"
 with opener.open(download_url, timeout=30) as response:
     assert len(response.read().decode().strip().splitlines()) == 5
@@ -93,6 +106,7 @@ except urllib.error.HTTPError as error:
 usage=next(a for a in api("/api/accounts?q="+account["id"])["items"] if a["id"]==account["id"])
 assert usage["started_at"] is None
 print("HTTP: login, independent account, binding, export, QR and first-use grant passed",flush=True)
+apply(original)
 
 task(operation="service", service="sing-box", value="stop")
 changed=copy.deepcopy(original)
