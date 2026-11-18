@@ -212,16 +212,18 @@ export async function overview(ctx) {
   };
   const shortcuts = [
     ["inbounds", "配置节点", "选择协议，设置端口与发布地址"],
-    ["accounts", "添加用户并分享", "创建权益、绑定入口、发送分享链接"],
+    ctx.session.role === "admin"
+      ? ["accounts", "添加用户并分享", "创建权益、绑定入口、发送分享链接"]
+      : ["accounts", "查看用户用量", "流量、有效期与历史账期"],
     ["access", "设置公网访问", "配置 HTTPS 与可分享的订阅地址"],
     [
-      "maintenance",
+      "maintenance/logs",
       "查看任务与日志",
       ctx.session.role === "operator"
         ? "检查操作结果和运行日志"
         : "检查操作结果、备份和程序更新",
     ],
-  ].filter(([id]) => canView(id, ctx.session.role));
+  ].filter(([id]) => canView(id.split("/")[0], ctx.session.role));
   return [
     health,
     stats,

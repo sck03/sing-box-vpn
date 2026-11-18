@@ -10,7 +10,7 @@ export function sectionLoader(root, load, signal) {
     root.setAttribute("aria-busy", "true");
     root.replaceChildren(help("正在载入…"));
     pending = Promise.resolve()
-      .then(load)
+      .then(() => (signal?.aborted ? null : load()))
       .then((content) => {
         if (signal?.aborted) return;
         root.replaceChildren(...(Array.isArray(content) ? content : [content]));

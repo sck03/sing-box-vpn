@@ -1,15 +1,14 @@
 import { el, button } from "./dom.js";
 import {
   groups,
-  pages,
+  pageFor,
   canView,
   groupFor,
+  groupLabel,
   searchPages,
 } from "./page-catalog.js";
 
-const selected = new Map();
 export function navigation(role, select, current) {
-  selected.clear();
   const common = [],
     advanced = [];
   for (const group of groups) {
@@ -17,75 +16,68 @@ export function navigation(role, select, current) {
     if (!visible.length) continue;
     if (group.advanced) {
       for (const id of visible) {
-        const item = button(pages.find((page) => page.id === id).title, () =>
-          select(id),
-        );
+        const item = button(pageFor(id, role).title, () => select(id));
         item.dataset.page = id;
         advanced.push(item);
       }
     } else {
-      const item = button(group.label, () =>
-        select(selected.get(group.id) || visible[0]),
-      );
+      const item = button(groupLabel(group, role), () => select(visible[0]));
       item.dataset.page = visible[0];
       item.dataset.group = group.id;
       common.push(item);
     }
   }
-  return [
-    ["common", "常用功能", common],
-    ["advanced", "高级功能（可选）", advanced],
-  ]
-    .filter(([, , items]) => items.length)
-    .map(([id, title, items]) => {
-      const group = el(
-        "details",
-        { class: "nav-group", "data-navigation": id },
-        el("summary", { class: "nav-label" }, title),
-        el("div", { class: "nav-items" }, items),
+  const items = [
+    el("div", { class: "nav-items", "data-navigation": "common" }, common),
+  ];
+  if (!advanced.length) return items;
+  const group = el(
+    "details",
+    { class: "nav-group", "data-navigation": "advanced" },
+    el("summary", { class: "nav-label" }, "高级功能"),
+    el("div", { class: "nav-items" }, advanced),
+  );
+  let saved;
+  try {
+    saved = window.localStorage.getItem("sbvpn-navigation:advanced");
+  } catch {}
+  group.open = !!groupFor(current)?.advanced || saved === "open";
+  group.addEventListener("toggle", () => {
+    try {
+      window.localStorage.setItem(
+        "sbvpn-navigation:advanced",
+        group.open ? "open" : "closed",
       );
-      let saved;
-      try {
-        saved = window.localStorage.getItem("sbvpn-navigation:" + id);
-      } catch {}
-      group.open =
-        saved === "open" ||
-        (id === "common" && saved !== "closed") ||
-        (id === "advanced" && groupFor(current)?.advanced);
-      group.addEventListener("toggle", () => {
-        try {
-          window.localStorage.setItem(
-            "sbvpn-navigation:" + id,
-            group.open ? "open" : "closed",
-          );
-        } catch {}
-      });
-      return group;
-    });
+    } catch {}
+  });
+  return [...items, group];
 }
 export function markNavigation(root, page, reveal) {
   const group = groupFor(page);
-  selected.set(group.id, page);
   for (const item of root.querySelectorAll("button[data-page]")) {
     const active = item.dataset.group
       ? item.dataset.group === group.id
       : item.dataset.page === page;
     item.setAttribute("aria-current", active ? "page" : "false");
-    if (active && reveal) item.closest("details").open = true;
+    const container = item.closest("details");
+    if (container && active && reveal) container.open = true;
   }
 }
 export function pageTabs(root, current, role, select) {
   const group = groupFor(current),
-    ids = group.pages.filter((id) => canView(id, role));
+    ids = group.advanced ? [] : group.pages.filter((id) => canView(id, role));
   root.hidden = ids.length < 2;
+  if (root.hidden) {
+    root.replaceChildren();
+    delete root.dataset.group;
+    return;
+  }
   const identity = group.id + ":" + role;
   if (root.dataset.group !== identity) {
     root.dataset.group = identity;
     root.replaceChildren(
       ...ids.map((id, index) => {
-        const tab = button(pages.find((page) => page.id === id).title, () =>
-          select(id),
-        );
+        const tab = button(pageFor(id, role).title, () => select(id));
         tab.id = "page-tab-" + id;
         tab.dataset.page = id;
         tab.setAttribute("role", "tab");
@@ -130,7 +122,19 @@ export function featureSearch(input, results, role, select) {
             "span",
             {},
             el("strong", {}, page.title),
-            el("small", {}, groupFor(page.id).label + " · " + page.description),
+            el(
+              "small",
+              {},
+              [
+                groupLabel(groupFor(page.id), role),
+                pageFor(page.id, role).title,
+              ]
+                .filter(
+                  (value, i, all) =>
+                    value !== page.title && all.indexOf(value) === i,
+                )
+                .join(" → ") || page.description,
+            ),
           ),
           () => {
             clear();
@@ -157,6 +161,20 @@ export function featureSearch(input, results, role, select) {
     if (event.key === "Enter") {
       event.preventDefault();
       results.querySelector("button")?.click();
+    }
+  };
+  results.onkeydown = (event) => {
+    const buttons = [...results.querySelectorAll("button")];
+    const index = buttons.indexOf(event.target);
+    if (event.key === "Escape") {
+      clear();
+      input.focus();
+    } else if (index >= 0 && ["ArrowDown", "ArrowUp"].includes(event.key)) {
+      event.preventDefault();
+      (event.key === "ArrowUp"
+        ? buttons[index - 1] || input
+        : buttons[Math.min(index + 1, buttons.length - 1)]
+      ).focus();
     }
   };
   return clear;

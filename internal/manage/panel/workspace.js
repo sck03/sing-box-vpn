@@ -1,8 +1,9 @@
 import { el, button } from "./dom.js";
 import { sectionLoader } from "./sections.js";
+import { sectionsFor } from "./page-catalog.js";
 
-const selected = new Map();
-export function workspace(key, sections, { signal, active } = {}) {
+export function workspace(key, contentById, ctx) {
+  const sections = sectionsFor(key, ctx.session.role);
   const navigation = el("div", {
     class: "workspace-tabs",
     role: "tablist",
@@ -13,7 +14,6 @@ export function workspace(key, sections, { signal, active } = {}) {
     panels = [],
     loaders = [];
   function choose(index) {
-    selected.set(key, index);
     tabs.forEach((tab, i) => {
       tab.setAttribute("aria-selected", String(i === index));
       tab.tabIndex = i === index ? 0 : -1;
@@ -21,8 +21,11 @@ export function workspace(key, sections, { signal, active } = {}) {
     });
     return loaders[index]?.();
   }
-  sections.forEach(([label, content], i) => {
-    const tab = button(label, () => choose(i));
+  const activate = (i) =>
+    ctx.navigate ? ctx.navigate(key + "/" + sections[i][0]) : choose(i);
+  sections.forEach(([id, label], i) => {
+    const content = contentById[id];
+    const tab = button(label, () => activate(i));
     tab.id = `${key}-tab-${i}`;
     tab.setAttribute("role", "tab");
     tab.setAttribute("aria-controls", `${key}-pane-${i}`);
@@ -40,7 +43,7 @@ export function workspace(key, sections, { signal, active } = {}) {
       }[event.key];
       if (next !== undefined) {
         event.preventDefault();
-        choose(next);
+        activate(next);
         tabs[next].focus();
       }
     });
@@ -48,19 +51,19 @@ export function workspace(key, sections, { signal, active } = {}) {
     panels.push(panel);
     loaders.push(
       typeof content === "function"
-        ? sectionLoader(panel, content, signal)
+        ? sectionLoader(panel, content, ctx.signal)
         : null,
     );
     navigation.append(tab);
     root.append(panel);
   });
-  const requested = active
-    ? sections.findIndex((section) => section[2] === active)
-    : -1;
-  choose(
-    requested >= 0
-      ? requested
-      : Math.min(selected.get(key) || 0, sections.length - 1),
-  );
+  ctx.showSection = (id) =>
+    choose(
+      Math.max(
+        0,
+        sections.findIndex(([key]) => key === id),
+      ),
+    );
+  ctx.showSection(ctx.section);
   return root;
 }

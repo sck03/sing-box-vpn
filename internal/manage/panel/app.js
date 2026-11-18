@@ -9,7 +9,7 @@ import {
   pageTabs,
   featureSearch,
 } from "./navigation.js";
-import { pageFor, groupFor, routeFor } from "./page-catalog.js";
+import { pageFor, groupFor, groupLabel, routeFor } from "./page-catalog.js";
 import { $, el, card, help, notice, action, button, showResult } from "./ui.js";
 const setMenu = (open) => {
   $("#shell").classList.toggle("nav-open", open);
@@ -29,6 +29,7 @@ let page = "overview",
   configLoad = null,
   loading = 0,
   pageRequest,
+  showSection,
   clearSearch;
 const ctx = {
   session: null,
@@ -89,6 +90,8 @@ const ctx = {
   logoutLocal() {
     ++loading;
     pageRequest?.abort();
+    showSection = null;
+    setMenu(false);
     ctx.session = null;
     resetDraft();
     ctx.overview = null;
@@ -119,11 +122,13 @@ async function renderPage() {
   pageRequest = new AbortController();
   const signal = pageRequest.signal;
   const generation = ++loading;
+  showSection = null;
   ctx.updateOverview = null;
   const definition = pageFor(page, ctx.session.role);
-  const group = groupFor(page);
-  $("#page-title").textContent = group.label;
-  $("#page-group").textContent = definition.title;
+  const label = groupLabel(groupFor(page), ctx.session.role);
+  $("#page-title").textContent = definition.title;
+  $("#page-group").textContent = label;
+  $("#page-group").hidden = label === definition.title;
   $("#page-description").textContent = definition.description;
   document.title = definition.title + " · sing-box-vpn";
   pageTabs($("#page-tabs"), page, ctx.session.role, navigate);
@@ -138,13 +143,19 @@ async function renderPage() {
   navigationPage = page;
   try {
     $("#content").setAttribute("aria-busy", "true");
+    $("#content").inert = true;
     // Each render owns its callback; a late render cannot replace the live one.
     const view = pageContext(ctx, signal);
     view.section = section;
+    view.navigate = (id) => !signal.aborted && navigate(id);
+    const initialSnapshot = ctx.overview;
     const content = await definition.load(view);
-    if (generation === loading) ctx.updateOverview = view.updateOverview;
     if (generation !== loading) return;
+    showSection = view.showSection;
+    ctx.updateOverview = view.updateOverview;
     $("#content").replaceChildren(...content);
+    if (ctx.overview && ctx.overview !== initialSnapshot)
+      ctx.updateOverview?.(ctx.overview);
     schedule();
   } catch (error) {
     if (generation !== loading || !ctx.session || error.name === "AbortError")
@@ -160,7 +171,10 @@ async function renderPage() {
         );
     }
   } finally {
-    if (generation === loading) $("#content").removeAttribute("aria-busy");
+    if (generation === loading) {
+      $("#content").removeAttribute("aria-busy");
+      $("#content").inert = false;
+    }
   }
 }
 const stream = overviewStream({
@@ -186,7 +200,8 @@ const stream = overviewStream({
     );
     const status = $("#task-status");
     status.hidden = active.length === 0 && failed.length === 0;
-    status.href = ctx.session.role === "viewer" ? "#overview" : "#maintenance";
+    status.href =
+      ctx.session.role === "viewer" ? "#overview" : "#maintenance/logs";
     status.textContent = active.length
       ? `${active.length} 个任务正在处理 · 查看进度`
       : `${failed.length} 个任务需要关注 · 查看详情`;
@@ -201,11 +216,17 @@ function schedule() {
 function navigate(id) {
   if (!ctx.session) return;
   const next = routeFor(id, ctx.session.role);
+  if (location.hash !== "#" + next.hash)
+    window.history.pushState(null, "", "#" + next.hash);
+  return applyRoute(next);
+}
+function applyRoute(next) {
   setMenu(false);
   if (page === next.page && section === next.section) return;
+  const samePage = page === next.page;
   page = next.page;
   section = next.section;
-  location.hash = next.hash;
+  if (samePage && showSection) return showSection(section);
   return renderPage();
 }
 async function connected(session) {
@@ -335,12 +356,7 @@ window.addEventListener("hashchange", () => {
   const next = routeFor(location.hash.slice(1), ctx.session.role);
   if (location.hash && location.hash !== "#" + next.hash)
     window.history.replaceState(null, "", "#" + next.hash);
-  if (next.page !== page || next.section !== section) {
-    page = next.page;
-    section = next.section;
-    setMenu(false);
-    renderPage();
-  }
+  applyRoute(next);
 });
 api("/api/auth/session")
   .then(connected)

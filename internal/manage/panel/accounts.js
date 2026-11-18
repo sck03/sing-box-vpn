@@ -292,7 +292,9 @@ export async function accounts(ctx) {
     card(
       "独立权益与用量",
       help(
-        "为用户创建额度与有效期，绑定节点后即可分享。普通节点与 VPNGate 可以共享同一份额度。用量包含尚未结算的预留流量。",
+        admin
+          ? "为用户创建额度与有效期，绑定节点后即可分享。普通节点与 VPNGate 可以共享同一份额度。用量包含尚未结算的预留流量。"
+          : "用量包含尚未结算的预留流量。",
       ),
       admin
         ? el(
@@ -391,9 +393,9 @@ export async function accounts(ctx) {
         (item) => [
           ...(admin
             ? [
-                button("编辑", () => edit(item)),
-                button("分享", () => createAccountShare([item], ctx)),
                 button("绑定", () => bind(item)),
+                button("分享", () => createAccountShare([item], ctx)),
+                button("编辑", () => edit(item)),
                 button("凭据", () => credentials(item)),
                 button("导出 / 二维码", async () =>
                   formDialog(

@@ -13,25 +13,36 @@ import {
   notice,
 } from "./ui.js";
 export async function maintenance(ctx) {
-  const data = ctx.overview || (await (ctx.request || api)("/api/overview"));
-  const metadata = await capabilities(ctx.request || api);
-  const tasks = tasksCard(data.tasks, ctx);
-  ctx.updateOverview = (next) =>
-    tasks.querySelector(".data-table").updateItems(next.tasks);
-  const logs = card(
-    "运行日志",
-    row(
-      ...[
-        ...(metadata.services || []).map((service) => service.name),
-        "sb-panel",
-      ].map((service) =>
-        button(service, async () =>
-          showResult(service, (await api("/api/logs?service=" + service)).log),
+  let latest = ctx.overview,
+    taskTable;
+  ctx.updateOverview = (next) => {
+    latest = next;
+    taskTable?.updateItems(next.tasks);
+  };
+  async function logsAndTasks() {
+    const metadata = await capabilities(ctx.request || api);
+    const data = latest || (await (ctx.request || api)("/api/overview"));
+    const tasks = tasksCard((latest || data).tasks, ctx);
+    taskTable = tasks.querySelector(".data-table");
+    const logs = card(
+      "运行日志",
+      row(
+        ...[
+          ...(metadata.services || []).map((service) => service.name),
+          "sb-panel",
+        ].map((service) =>
+          button(service, async () =>
+            showResult(
+              service,
+              (await api("/api/logs?service=" + service)).log,
+            ),
+          ),
         ),
       ),
-    ),
-  );
-  if (ctx.session.role === "operator") return [logs, tasks];
+    );
+    return [tasks, logs];
+  }
+  if (ctx.session.role === "operator") return logsAndTasks();
   const backup = () => {
     const file = el("input", {
         type: "file",
@@ -45,6 +56,16 @@ export async function maintenance(ctx) {
         placeholder: "备份口令（至少 12 字节）",
       });
     let preview = null;
+    const matchesSelection = (candidate) =>
+      candidate &&
+      candidate.backup === file.files[0] &&
+      candidate.password === password.value;
+    file.addEventListener("change", () => {
+      preview = null;
+    });
+    password.addEventListener("input", () => {
+      preview = null;
+    });
     return card(
       "全量加密备份与恢复",
       help(
@@ -79,13 +100,15 @@ export async function maintenance(ctx) {
             "/api/restore",
             restoreForm(candidate.backup, candidate.password),
           );
+          if (!matchesSelection(candidate) || ctx.signal?.aborted) return;
           preview = { ...candidate, revision: result.revision };
           showResult("恢复预览", result);
         }),
         button(
           "应用已预览配置",
           async () => {
-            if (!preview) throw new Error("请先预览备份");
+            if (!matchesSelection(preview))
+              throw new Error("请先预览当前选择的备份");
             if (
               !confirm(
                 "恢复配置并应用到当前运行实例？最新权益、用量与撤销记录将保留。",
@@ -150,13 +173,8 @@ export async function maintenance(ctx) {
   return [
     workspace(
       "maintenance",
-      [
-        ["任务与日志", [tasks, logs], "logs"],
-        ["备份与恢复", backup, "backup"],
-        ["程序更新", upgrade, "upgrade"],
-        ["网络调优", network, "network"],
-      ],
-      { signal: ctx.signal, active: ctx.section },
+      { logs: logsAndTasks, backup, upgrade, network },
+      ctx,
     ),
   ];
 }

@@ -20,10 +20,18 @@ for (const key of [
 ])
   globalThis[key] = dom.window[key];
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-const { routeFor, searchPages } =
-  await import("../internal/manage/panel/page-catalog.js");
+const { routeFor, searchPages } = await import(
+  "../internal/manage/panel/page-catalog.js"
+);
 assert.equal(searchPages("Argo", "admin")[0].route, "outbounds/argo");
 assert.equal(searchPages("备份", "admin")[0].route, "maintenance/backup");
+assert.equal(
+  searchPages("系统设置 备份", "admin")[0].route,
+  "maintenance/backup",
+);
+assert.equal(searchPages("新增节点", "admin")[0].route, "inbounds");
+assert.equal(searchPages("添加用户", "viewer").length, 0);
+assert.equal(searchPages("查流量", "viewer")[0].route, "accounts");
 assert.equal(searchPages("Argo", "viewer").length, 0);
 assert.equal(searchPages("备份", "operator").length, 0);
 assert.equal(routeFor("maintenance/backup", "operator").section, "");
@@ -34,17 +42,19 @@ assert.equal(routeFor("outbounds/unknown", "admin").hash, "outbounds");
 const { workspace } = await import("../internal/manage/panel/workspace.js");
 const { sectionLoader } = await import("../internal/manage/panel/sections.js");
 let optionalLoads = 0;
-const tabs = workspace("optional", [
-  ["普通", []],
-  [
-    "可选",
-    () => {
+const tabs = workspace(
+  "maintenance",
+  {
+    logs: [],
+    upgrade: [],
+    network: [],
+    backup: () => {
       optionalLoads++;
       return document.createElement("p");
     },
-    "optional",
-  ],
-]);
+  },
+  { session: { role: "admin" } },
+);
 document.querySelector("#content").replaceChildren(tabs);
 assert.equal(optionalLoads, 0);
 tabs.querySelectorAll("button")[1].click();
@@ -153,10 +163,12 @@ await tick();
 await tick();
 assert(requests.includes("/api/subscribers"));
 
-const { subscriptions } =
-  await import("../internal/manage/panel/subscriptions.js");
+const { subscriptions } = await import(
+  "../internal/manage/panel/subscriptions.js"
+);
 const before = JSON.stringify(config);
 const compiler = await subscriptions({
+  ...context,
   config: async () => config,
   render() {},
   changed() {},
@@ -176,8 +188,40 @@ assert(
 compiler[1].querySelectorAll('[role="tab"]')[5].click();
 await tick();
 assert(requests.includes("/api/subscriptions/status"));
+const statusReads = [];
+await subscriptions({
+  ...context,
+  section: "status",
+  config: async () => config,
+  request: async (path) => {
+    statusReads.push(path);
+    return [];
+  },
+});
+await tick();
+assert(statusReads.includes("/api/subscriptions/status"));
+assert(
+  !statusReads.includes("/api/account-options") &&
+    !statusReads.includes("/api/clients"),
+);
 
 const { maintenance } = await import("../internal/manage/panel/maintenance.js");
+let backgroundReads = 0;
+const directBackup = await maintenance({
+  ...context,
+  section: "backup",
+  request() {
+    backgroundReads++;
+    throw Error("unexpected read");
+  },
+});
+await tick();
+assert(directBackup[0].querySelector('[type="file"]'));
+assert.equal(
+  backgroundReads,
+  0,
+  "opening backup must not request logs, capabilities or overview",
+);
 const maintenancePage = await maintenance({ ...context, overview: snapshot });
 document.querySelector("#content").replaceChildren(...maintenancePage);
 assert(
@@ -204,6 +248,60 @@ assert.equal(
   backupFile,
   "tab changes should preserve backup selections",
 );
+const pane = document.querySelector("#maintenance-pane-1");
+const password = pane.querySelector('[type="password"]');
+const backupButton = (label) =>
+  [...pane.querySelectorAll("button")].find((b) => b.textContent === label);
+const fakeFile = (name) => new window.File(["backup"], name);
+let picked = fakeFile("a.sbvpn");
+Object.defineProperty(backupFile, "files", { get: () => [picked] });
+password.value = "example password";
+const panelFetch = globalThis.fetch;
+let restores = 0,
+  finishPreview;
+globalThis.fetch = async (path) => {
+  assert.equal(path, "/api/restore");
+  restores++;
+  if (restores === 2)
+    await new Promise((resolve) => {
+      finishPreview = resolve;
+    });
+  return { ok: true, json: async () => ({ revision: 3 }) };
+};
+const restoreDialog = document.querySelector("#dialog");
+restoreDialog.showModal = () => {};
+globalThis.confirm = () => true;
+backupButton("预览恢复").click();
+await tick();
+assert.match(restoreDialog.textContent, /恢复预览/);
+password.value += " changed";
+password.dispatchEvent(new Event("input"));
+backupButton("应用已预览配置").click();
+await tick();
+assert.equal(
+  restores,
+  1,
+  "changed password must invalidate a finished preview",
+);
+backupButton("预览恢复").click();
+await tick();
+picked = fakeFile("b.sbvpn");
+backupFile.dispatchEvent(new Event("change"));
+finishPreview();
+await tick();
+backupButton("应用已预览配置").click();
+await tick();
+assert.equal(
+  restores,
+  2,
+  "late preview of another file must not authorize a restore",
+);
+backupButton("预览恢复").click();
+await tick();
+backupButton("应用已预览配置").click();
+await tick();
+assert.equal(restores, 4, "a new matching preview must allow restore");
+globalThis.fetch = panelFetch;
 
 const streams = [];
 globalThis.EventSource = class {
@@ -217,15 +315,58 @@ await import("../internal/manage/panel/app.js");
 await tick();
 await tick();
 assert.equal(streams.length, 1);
+const networkReads = () =>
+  requests.filter((path) => path === "/api/server").length;
+const beforeArgo = networkReads();
 location.hash = "outbounds/argo";
 window.dispatchEvent(new Event("hashchange"));
 await tick();
 await tick();
 const argo = document.querySelector("#outbounds-tab-2");
+assert.equal(document.querySelector("#page-title").textContent, "出站与隧道");
+assert.equal(document.querySelector("#page-tabs").childElementCount, 0);
+assert.equal(
+  networkReads(),
+  beforeArgo,
+  "Argo must not render the effective proxy config",
+);
 assert.equal(argo.getAttribute("aria-selected"), "true");
 assert.match(
   document.querySelector("#outbounds-pane-2").textContent,
   /Argo 隧道/,
+);
+document.querySelector("#outbounds-tab-1").click();
+await tick();
+assert.equal(location.hash, "#outbounds/warp");
+assert.equal(networkReads(), beforeArgo + 1);
+const historyMove = async (method) => {
+  const moved = new Promise((done) =>
+    window.addEventListener("hashchange", done, { once: true }),
+  );
+  window.history[method]();
+  await moved;
+  await tick();
+};
+await historyMove("back");
+assert.equal(location.hash, "#outbounds/argo");
+assert.equal(
+  document.querySelector("#outbounds-tab-2"),
+  argo,
+  "same-page history must retain controls",
+);
+assert.equal(argo.getAttribute("aria-selected"), "true");
+await historyMove("forward");
+assert.equal(location.hash, "#outbounds/warp");
+assert.equal(
+  document.querySelector("#outbounds-tab-1").getAttribute("aria-selected"),
+  "true",
+);
+document.querySelector("#outbounds-tab-0").click();
+await tick();
+assert.equal(
+  networkReads(),
+  beforeArgo + 1,
+  "proxy and warp share their model read",
 );
 location.hash = "";
 window.dispatchEvent(new Event("hashchange"));

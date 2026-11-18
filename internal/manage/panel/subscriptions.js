@@ -1,5 +1,6 @@
 import { api } from "./api.js";
 import { workspace } from "./workspace.js";
+import { disclosure } from "./sections.js";
 import { showConfiguration } from "./config-preview.js";
 import { subscriptionStatus } from "./subscription-status.js";
 import { clientCatalog, templateFields, normalizeTemplate } from "./clients.js";
@@ -32,10 +33,12 @@ export async function subscriptions(ctx) {
   ])
     s[key] ??= [];
   const request = ctx.request || api;
-  const [catalog, accountOptions] = await Promise.all([
-    clientCatalog(request),
-    request("/api/account-options"),
-  ]);
+  let clients;
+  const getClients = () =>
+    (clients ??= clientCatalog(request).catch((error) => {
+      clients = null;
+      throw error;
+    }));
   const change = () => {
     c.subscriptions = s;
     ctx.changed();
@@ -48,27 +51,28 @@ export async function subscriptions(ctx) {
         help(
           "本机用户在「权益与用量」绑定入站后点击分享即可，无需配置来源、集合和输出。下面的高级工作区用于组合第三方节点、自定义模板和自动分发。第三方节点的流量由其服务商控制。",
         ),
-        el(
-          "details",
-          { class: "advanced" },
-          el("summary", {}, "客户端适配与验证范围"),
-          help(
-            "原生核心校验与节点连通性分开报告。实验适配表示尚未通过目标应用实机导入；证书固定、传输方式与端口跳跃还需逐节点匹配。",
-          ),
-          table(
-            [
-              { key: "label", label: "客户端" },
-              { label: "支持输出", value: (p) => p.modes.join(" / ") },
-              {
-                label: "验证",
-                value: (p) =>
-                  p.tested_version
-                    ? p.verification + " · " + p.tested_version
-                    : p.verification,
-              },
-            ],
-            Object.values(catalog),
-          ),
+        disclosure(
+          "客户端适配与验证范围",
+          async () => [
+            help(
+              "原生核心校验与节点连通性分开报告。实验适配表示尚未通过目标应用实机导入；证书固定、传输方式与端口跳跃还需逐节点匹配。",
+            ),
+            table(
+              [
+                { key: "label", label: "客户端" },
+                { label: "支持输出", value: (p) => p.modes.join(" / ") },
+                {
+                  label: "验证",
+                  value: (p) =>
+                    p.tested_version
+                      ? p.verification + " · " + p.tested_version
+                      : p.verification,
+                },
+              ],
+              Object.values(await getClients()),
+            ),
+          ],
+          ctx.signal,
         ),
         row(
           button(
@@ -110,7 +114,7 @@ export async function subscriptions(ctx) {
           el("a", { href: "#access" }, "设置公网访问与订阅地址 →"),
         ),
       ),
-    () =>
+    async () =>
       resourceEditor({
         title: "订阅来源",
         items: s.sources,
@@ -126,7 +130,10 @@ export async function subscriptions(ctx) {
             key: "account_id",
             label: "权益 ID（账户来源）",
             type: "select",
-            options: accountOptions.map((a) => [a.id, a.name]),
+            options: (await request("/api/account-options")).map((a) => [
+              a.id,
+              a.name,
+            ]),
             required: true,
             visible: (v) => v.kind === "account",
           },
@@ -201,8 +208,9 @@ export async function subscriptions(ctx) {
         defaults: { id: "", name: "", sources: [], processor: {} },
         change,
       }),
-    () =>
-      resourceEditor({
+    async () => {
+      const catalog = await getClients();
+      return resourceEditor({
         title: "客户端模板",
         items: s.templates,
         fields: templateFields(catalog),
@@ -221,7 +229,8 @@ export async function subscriptions(ctx) {
           { key: "mode", label: "模式" },
         ],
         change,
-      }),
+      });
+    },
     () =>
       resourceEditor({
         title: "规则资源",
@@ -414,15 +423,15 @@ export async function subscriptions(ctx) {
     content[0](),
     workspace(
       "subscriptions",
-      [
-        ["来源", content[1], "sources"],
-        ["集合", content[2], "collections"],
-        ["模板与规则", () => [content[3](), content[4]()], "templates"],
-        ["输出与授权", () => [content[5](), content[7]()], "outputs"],
-        ["分发与检测", () => [content[6](), content[8]()], "deliveries"],
-        ["运行状态", () => subscriptionStatus(ctx), "status"],
-      ],
-      { signal: ctx.signal, active: ctx.section },
+      {
+        sources: content[1],
+        collections: content[2],
+        templates: async () => [await content[3](), content[4]()],
+        outputs: () => [content[5](), content[7]()],
+        deliveries: () => [content[6](), content[8]()],
+        status: () => subscriptionStatus(ctx),
+      },
+      ctx,
     ),
   ];
 }

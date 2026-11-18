@@ -24,8 +24,9 @@ globalThis.fetch = async (path) => ({
 });
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const { formDialog, table } = await import("../internal/manage/panel/ui.js");
-const { validatePassword } =
-  await import("../internal/manage/panel/capabilities.js");
+const { validatePassword } = await import(
+  "../internal/manage/panel/capabilities.js"
+);
 assert.doesNotThrow(() =>
   validatePassword("一二三四五六", capabilitiesFixture.password_bytes),
 );
@@ -49,8 +50,9 @@ assert.equal(
   null,
 );
 
-const { gatewayFields } =
-  await import("../internal/manage/panel/network-fields.js");
+const { gatewayFields } = await import(
+  "../internal/manage/panel/network-fields.js"
+);
 formDialog(
   "网关",
   gatewayFields(capabilitiesFixture.gateway.limits),
@@ -64,8 +66,9 @@ const connections = document.querySelector('[aria-label="最大连接数"]');
 connections.value = "2048";
 assert.equal(connections.checkValidity(), false);
 
-const { outboundFields, normalizeOutbound } =
-  await import("../internal/manage/panel/outbound-fields.js");
+const { outboundFields, normalizeOutbound } = await import(
+  "../internal/manage/panel/outbound-fields.js"
+);
 let submitted;
 formDialog(
   "出站",
@@ -93,18 +96,14 @@ assert.equal(submitted.tls.server_name, "example.com");
 assert.equal(submitted.version, undefined);
 
 const { workspace } = await import("../internal/manage/panel/workspace.js");
-let pages = workspace("test-workspace", [
-  ["来源", []],
-  ["输出", []],
-]);
+const panes = { logs: [], backup: [], upgrade: [], network: [] };
+const adminContext = { session: { role: "admin" } };
+let pages = workspace("maintenance", panes, adminContext);
 document.body.append(pages);
 pages.querySelectorAll('[role="tab"]')[1].click();
 assert.equal(pages.querySelectorAll('[role="tabpanel"]')[1].hidden, false);
 pages.remove();
-pages = workspace("test-workspace", [
-  ["来源", []],
-  ["输出", []],
-]);
+pages = workspace("maintenance", panes, { ...adminContext, section: "backup" });
 assert.equal(
   pages.querySelectorAll('[role="tab"]')[1].getAttribute("aria-selected"),
   "true",
@@ -146,8 +145,9 @@ const panel = document.createElement("div");
 panel.append(...operator);
 assert(panel.textContent.includes("换 IP"));
 assert(!panel.textContent.includes("选择 / 新增国家"));
-const { subscriptionStatus } =
-  await import("../internal/manage/panel/subscription-status.js");
+const { subscriptionStatus } = await import(
+  "../internal/manage/panel/subscription-status.js"
+);
 const activity = await subscriptionStatus({
   request: async () => ({
     resources: [
@@ -175,21 +175,26 @@ assert(activity.textContent.includes("最后成功"));
 console.log(
   "Panel contract checks passed: UTF-8 passwords, shared gateway limits, protocol fields, workspace state, mobile sorting, usage focus, operator controls.",
 );
-const { navigation, markNavigation } =
-  await import("../internal/manage/panel/navigation.js");
+const { navigation, markNavigation } = await import(
+  "../internal/manage/panel/navigation.js"
+);
 const nav = document.createElement("nav");
 nav.append(...navigation("admin", () => {}, "overview"));
 document.body.append(nav);
-const groups = nav.querySelectorAll("details");
-assert.equal(groups[0].querySelectorAll("button").length, 4);
-assert.equal(groups[1].open, false);
-groups[1].querySelector("summary").click();
+assert.equal(
+  nav.querySelectorAll('[data-navigation="common"] > button').length,
+  4,
+);
+assert.equal(nav.querySelectorAll("details").length, 1);
+const advanced = nav.querySelector("details");
+assert.equal(advanced.open, false);
+advanced.querySelector("summary").click();
 await tick();
-assert.equal(groups[1].open, true);
+assert.equal(advanced.open, true);
 assert.equal(window.localStorage.getItem("sbvpn-navigation:advanced"), "open");
-groups[1].open = false;
+advanced.open = false;
 markNavigation(nav, "outbounds", true);
-assert.equal(groups[1].open, true);
+assert.equal(advanced.open, true);
 assert.equal(
   nav.querySelector('[data-page="outbounds"]').getAttribute("aria-current"),
   "page",

@@ -2,7 +2,7 @@
 
 当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载六组。数据库使用 schema 11，所有旧数据库及其备份明确拒绝。
 
-`scripts/test-panel-navigation.mjs` 覆盖角色过滤、搜索定位、空/非法路由、标签记忆、延迟读取合并与取消、错误重试、权益初始读取预算、稀疏订阅草稿和 SSE 启动。`TestPanelEphemeralDevelopmentListener` 实际启动回环随机端口、请求健康接口并关闭服务，同时拒绝公网随机端口；设置校验仍拒绝保存端口 0。CI 的真实面板步骤检查子进程存活和健康就绪，失败或超时打印日志。
+`scripts/test-panel-navigation.mjs` 覆盖角色过滤、搜索定位、空/非法路由、同页标签的前进/返回与表单复用、延迟读取合并与取消、错误重试、权益初始读取预算、稀疏订阅草稿和 SSE 启动。`TestPanelEphemeralDevelopmentListener` 实际启动回环随机端口、请求健康接口并关闭服务，同时拒绝公网随机端口；设置校验仍拒绝保存端口 0。CI 的真实面板步骤检查子进程存活和健康就绪，失败或超时打印日志。
 
 当前新增公网设置和服务登记回归：`go test ./internal/manage -run 'TestPanelAccess|TestPanelSettings|TestShareRejects|TestServiceCatalog|TestCertificateGarbage'`；管理员最低 8/最高 72 UTF-8 字节，`TestEightBytePasswordBoundary` 覆盖创建、登录、修改和重置。前端契约回归包含导航折叠记忆、当前分组展开、公网访问方式切换和先预览后保存；分享回归确认随机 ID 与默认继承权益策略。
 

@@ -31,7 +31,7 @@ export const pages = [
     "inbounds",
     "入站与发布",
     "配置用户连接的入口和对外发布地址。",
-    "节点 协议 vless vmess hysteria2 hy2 tuic anytls reality 端口",
+    "节点 新增节点 配置节点 协议 vless vmess hysteria2 hy2 tuic anytls reality 端口",
     "./network.js",
     "inbounds",
   ],
@@ -39,7 +39,7 @@ export const pages = [
     "certificates",
     "证书管理",
     "申请、导入与续期节点和面板证书。",
-    "证书资产 TLS PEM ACME SSL https",
+    "申请证书 续期证书 导入证书 TLS PEM ACME SSL https",
     "./network.js",
     "certificates",
   ],
@@ -47,7 +47,7 @@ export const pages = [
     "accounts",
     "权益与用量",
     "创建用户权益，绑定节点后分享；额度与有效期统一管理。",
-    "账户 用户 额度 流量 有效期 到期 绑定 凭据 历史 分组 订阅者",
+    "账户 添加用户 创建用户 新建权益 发订阅 分享 额度 查流量 有效期 到期 绑定 凭据 历史 分组 订阅者",
     "./accounts.js",
     "accounts",
     ["admin", "operator", "viewer"],
@@ -56,7 +56,7 @@ export const pages = [
     "grants",
     "分享链接",
     "查看与撤销分享，普通分享继承权益的时间和用量限制。",
-    "订阅 下载 授权 分享 撤销 二维码",
+    "订阅 下载 授权 分享 取消分享 撤销链接 二维码",
     "./grants.js",
     "grants",
   ],
@@ -138,7 +138,7 @@ export const sections = {
     ["logging", "日志与缓存", "日志 缓存 运行参数"],
   ],
   maintenance: [
-    ["logs", "任务与日志", "日志 任务 结果 进度"],
+    ["logs", "任务与日志", "日志 任务 结果 进度", ["admin", "operator"]],
     ["backup", "备份与恢复", "备份 恢复"],
     ["upgrade", "程序更新", "升级 更新 回滚"],
     ["network", "网络调优", "BBR FQ 网络调优"],
@@ -156,6 +156,12 @@ export const canView = (id, role) =>
   byID.get(id)?.roles.includes(role) || false;
 export function pageFor(id, role) {
   const page = byID.get(canView(id, role) ? id : "overview");
+  if (page.id === "accounts" && role !== "admin")
+    return {
+      ...page,
+      description: "查看用户用量、额度、有效期和历史账期。",
+      keywords: "账户 用户 查流量 到期 历史",
+    };
   return page.id === "maintenance" && role === "operator"
     ? {
         ...page,
@@ -166,13 +172,23 @@ export function pageFor(id, role) {
 }
 export const groupFor = (id) =>
   groups.find((group) => group.pages.includes(id));
+export const groupLabel = (group, role) => {
+  const visible = group.pages.filter((id) => canView(id, role));
+  return !group.advanced && visible.length === 1
+    ? pageFor(visible[0], role).title
+    : group.label;
+};
+export const sectionsFor = (id, role) =>
+  canView(id, role)
+    ? (sections[id] || []).filter(([, , , roles = ["admin"]]) =>
+        roles.includes(role),
+      )
+    : [];
 export function routeFor(value, role) {
   const [id, requested = ""] = value.split("/");
   const page = pageFor(id, role);
   const section =
-    page.id === id &&
-    sections[id]?.some(([key]) => key === requested) &&
-    (role === "admin" || (id === "maintenance" && requested === "logs"))
+    page.id === id && sectionsFor(id, role).some(([key]) => key === requested)
       ? requested
       : "";
   return {
@@ -188,14 +204,17 @@ export function searchPages(query, role) {
     .filter((page) => canView(page.id, role))
     .map((page) => pageFor(page.id, role))
     .flatMap((page) => {
-      const matches = (text) =>
-        terms.every((term) => text.toLocaleLowerCase().includes(term));
-      const children = (sections[page.id] || [])
-        .filter(
-          ([key, title, keywords]) =>
-            routeFor(page.id + "/" + key, role).section &&
-            matches(title + " " + keywords),
-        )
+      const parent =
+        `${groupLabel(groupFor(page.id), role)} ${page.title}`.toLocaleLowerCase();
+      const matches = (text) => terms.every((term) => text.includes(term));
+      const children = sectionsFor(page.id, role)
+        .filter(([, title, keywords]) => {
+          const field = `${title} ${keywords}`.toLocaleLowerCase();
+          return (
+            terms.some((term) => field.includes(term)) &&
+            matches(parent + " " + field)
+          );
+        })
         .map(([key, title]) => ({
           ...page,
           title,
@@ -204,7 +223,7 @@ export function searchPages(query, role) {
       return children.length
         ? children
         : matches(
-              `${groupFor(page.id).label} ${page.title} ${page.description} ${page.keywords}`,
+              `${parent} ${page.description} ${page.keywords}`.toLocaleLowerCase(),
             )
           ? [{ ...page, route: page.id }]
           : [];
