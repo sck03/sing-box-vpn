@@ -33,9 +33,9 @@ Windows amd64：Go 1.27.3、Node 24.18、官方 sing-box 1.14.4、Mihomo 1.19.33
 | ShellCheck / 格式检查 | 通过 |
 | Linux amd64/arm64 发行构建 | 两种架构的管理器和受管核心通过交叉构建 |
 | 性能样本 | 三次当前基线，详见性能说明；不作为端到端带宽提升证明 |
-| 本次 GitHub CI | 推送本次代码后记录，不能使用上一提交的成功结果替代 |
+| 本次 GitHub CI | 代码提交 78388e3 的 verify 作业全部通过，共 26 个成功步骤 |
 
-数据见 [schema 11 验证记录](validation/2026-11-18-schema11.json)。本地未运行 Windows race；完整 Linux race、netns、防火墙、systemd、全新安装和双架构验证由本次 CI 记录。
+代码提交 `78388e30b6f4073d9f24c400810eecef45ae06b5` 的 [GitHub CI](https://github.com/sck03/sing-box-vpn/actions/runs/44213674140) 于北京时间 2026-11-18 09:20 完成，verify 全部通过。覆盖完整 Linux race、真实协议矩阵、面板 API、netns、防火墙、存储故障、systemd、全新安装和双架构构建。本次为 main 分支验证，Release 作业按设计跳过。逐项数据见 [schema 11 验证记录](validation/2026-11-18-schema11.json)。后续文档提交只补充验收事实和文档链接；本地未运行 Windows race。
 
 ## 验证边界
 
@@ -47,4 +47,4 @@ Windows amd64：Go 1.27.3、Node 24.18、官方 sing-box 1.14.4、Mihomo 1.19.33
 
 保留开发工具、依赖缓存、Linux 测试基础磁盘、许可证与有效回归夹具。自动审批以 `blocked by policy` 拒绝递归删除，因此按用户指定的备选方式，将本轮无用二进制、归档、数据库和日志集中到 `.cleanup-manual/schema11-refactor-20261118/`，上一轮残留也归入同一 `.cleanup-manual/` 根目录。该目录不进入 Git、Go 包扫描或发行包；测试面板与虚拟机均已停止。
 
-代码和文档交付到 GitHub `main`。本轮开始时本地及远端均只有 main，交付前再次核对。推送分支触发验证，不等于发布正式 Release 或部署生产服务。
+代码和文档交付到 GitHub `main`。本轮开始时以及交付前均通过本地分支列表和远端 heads 核对，只有 main，无未合并分支。当前完整双架构发行包位于 `.build/release/`，含源码、许可证、校验值和当前文档。分支推送触发验证，不等于发布正式 Release 或部署生产服务。
