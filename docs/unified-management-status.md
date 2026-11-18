@@ -18,7 +18,7 @@
 
 ## 本轮验证
 
-逐项补查时发现远程模板/Webhook 的专用状态展示尚未完全落地，已补充管理员状态接口、独立通知记录和前端状态工作区，并增加成功/失败/更换地址/权限/脱敏回归。此补充提交的 CI 结果将在推送后单独记录，下面 78388e3 的结果仅对应前一代码提交。
+逐项补查时发现远程模板/Webhook 的专用状态展示尚未完全落地，补充提交 `99102ad` 已增加管理员状态接口、独立通知记录和前端状态工作区，成功/失败/更换地址/权限/脱敏回归通过。首次补充 CI 在安装器获取官方核心时遇到 HTTP 403；`cbc4769` 修复安装步骤的只读元数据令牌传递后，最新完整 CI 已通过。
 
 Windows amd64：Go 1.27.3、Node 24.18、官方 sing-box 1.14.4、Mihomo 1.19.33。Linux 专项使用项目专用 Ubuntu amd64 VM，QEMU TCG，2 vCPU / 2 GiB。
 
@@ -35,9 +35,9 @@ Windows amd64：Go 1.27.3、Node 24.18、官方 sing-box 1.14.4、Mihomo 1.19.33
 | ShellCheck / 格式检查 | 通过 |
 | Linux amd64/arm64 发行构建 | 两种架构的管理器和受管核心通过交叉构建 |
 | 性能样本 | 三次当前基线，详见性能说明；不作为端到端带宽提升证明 |
-| 本次 GitHub CI | 代码提交 78388e3 的 verify 作业全部通过，共 26 个成功步骤 |
+| 最新 GitHub CI | 包含状态展示补充及 CI 认证修复的 cbc4769 全部通过，共 26 个成功步骤 |
 
-代码提交 `78388e30b6f4073d9f24c400810eecef45ae06b5` 的 [GitHub CI](https://github.com/sck03/sing-box-vpn/actions/runs/44213674140) 于北京时间 2026-11-18 09:20 完成，verify 全部通过。覆盖完整 Linux race、真实协议矩阵、面板 API、netns、防火墙、存储故障、systemd、全新安装和双架构构建。本次为 main 分支验证，Release 作业按设计跳过。逐项数据见 [schema 11 验证记录](validation/2026-11-18-schema11.json)。后续文档提交只补充验收事实和文档链接；本地未运行 Windows race。
+最新代码提交 `cbc4769c6f8ab8832efbd7a9a28934d3011e7137` 的 [GitHub CI](https://github.com/sck03/sing-box-vpn/actions/runs/44222548702) 于北京时间 2026-11-18 10:30 完成，verify 全部通过。覆盖完整 Linux race、真实协议矩阵、面板 API、netns、防火墙、存储故障、systemd、全新安装和双架构构建。前一阶段 `78388e3` 的 [CI](https://github.com/sck03/sing-box-vpn/actions/runs/44213674140) 同样通过；最新记录包含后续状态展示补充。本次为 main 分支验证，Release 作业按设计跳过。逐项数据见 [schema 11 验证记录](validation/2026-11-18-schema11.json)。后续文档提交只补充验收事实和文档链接；本地未运行 Windows race。
 
 ## 验证边界
 
