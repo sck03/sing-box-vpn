@@ -252,7 +252,12 @@ export async function inbounds(ctx) {
 
 export async function certificates(ctx) {
   const c = await ctx.config(),
-    status = await (ctx.request || api)("/api/certificates");
+    status = new Map(
+      (await (ctx.request || api)("/api/certificates")).map((asset) => [
+        asset.id,
+        asset,
+      ]),
+    );
   const changed = () => {
     ctx.changed();
     ctx.render();
@@ -338,19 +343,18 @@ export async function certificates(ctx) {
                 automatic: "已登记",
                 registration_pending: "待自动登记（需端口 80）",
                 manual: "手动更新",
-              })[status.find((v) => v.id === a.id)?.renewal_state] || "待应用",
+              })[status.get(a.id)?.renewal_state] || "待应用",
           },
           {
             label: "有效期",
             value: (a) =>
-              status.find((v) => v.id === a.id)?.expires_at ||
-              status.find((v) => v.id === a.id)?.error ||
-              "待申请",
+              status.get(a.id)?.days_left != null
+                ? `剩余 ${status.get(a.id).days_left} 天`
+                : status.get(a.id)?.error || "待申请",
           },
           {
             label: "引用",
-            value: (a) =>
-              (status.find((v) => v.id === a.id)?.used_by || []).join(", "),
+            value: (a) => (status.get(a.id)?.used_by || []).join(", "),
           },
         ],
         c.certificates,

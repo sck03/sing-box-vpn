@@ -101,6 +101,15 @@ func (s *PlatformService) CertificateStatus(ctx context.Context) ([]Object, erro
 	for cc, profile := range c.VPN.Profiles {
 		usedBy[profile.Certificate] = append(usedBy[profile.Certificate], "vpngate/"+cc)
 	}
+	panels, err := s.panelCertificateRefs()
+	if err != nil {
+		return nil, err
+	}
+	for label, ref := range panels {
+		if ref.Certificate != "" {
+			usedBy[ref.Certificate] = append(usedBy[ref.Certificate], label)
+		}
+	}
 	for _, uses := range usedBy {
 		sort.Strings(uses)
 	}

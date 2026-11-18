@@ -70,6 +70,9 @@ func (s *PlatformService) serveGrants(w http.ResponseWriter, r *http.Request, ac
 					err = options.validate(g.Outputs)
 				}
 				if err == nil {
+					err = s.validateShare(ctx, g)
+				}
+				if err == nil {
 					token, err = s.Accounts.CreateGrant(ctx, g)
 				}
 				if err == nil {

@@ -8,9 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -156,49 +154,5 @@ func TestSubscriptionServiceRollback(t *testing.T) {
 	}, service)
 	if err == nil || !service.applied || !service.restored || !bytes.Equal(before, readBytes(t, filepath.Join(root, "subscription.json"))) || !bytes.Equal(configBefore, readBytes(t, filepath.Join(root, subscriptionsConfig))) {
 		t.Fatal("subscription rollback failed", err)
-	}
-}
-
-type fakeRestoreServices struct {
-	before, after map[string]unitState
-	failOnce      bool
-	stops         int
-}
-
-func (s *fakeRestoreServices) states(context.Context) (map[string]unitState, error) {
-	return s.before, nil
-}
-func (s *fakeRestoreServices) stop(context.Context, map[string]unitState) error {
-	s.stops++
-	return nil
-}
-func (s *fakeRestoreServices) apply(_ context.Context, states, _ map[string]unitState) error {
-	if s.failOnce {
-		s.failOnce = false
-		return errors.New("restart failed")
-	}
-	s.after = states
-	return nil
-}
-func TestSubscriptionRestoreTransaction(t *testing.T) {
-	for _, failure := range []bool{false, true} {
-		t.Run(map[bool]string{false: "success", true: "rollback"}[failure], func(t *testing.T) {
-			root := t.TempDir()
-			if err := AtomicBytes(filepath.Join(root, "sb.json"), []byte("old"), 0600); err != nil {
-				t.Fatal(err)
-			}
-			service := &fakeRestoreServices{before: map[string]unitState{"sing-box": {true, true}, "subscription": {true, true}, "vpngate": {true, true}}, failOnce: failure}
-			err := applySubscriptionRestore(context.Background(), root, fileBundle{"sb.json": []byte("new"), "new.json": []byte("new")}, service)
-			if failure {
-				if err == nil || string(readBytes(t, filepath.Join(root, "sb.json"))) != "old" || !reflect.DeepEqual(service.after, service.before) {
-					t.Fatal("restore rollback failed", err)
-				}
-				if _, err := os.Stat(filepath.Join(root, "new.json")); !errors.Is(err, os.ErrNotExist) {
-					t.Fatal("new file survived rollback")
-				}
-			} else if err != nil || service.after["subscription"].Active || service.after["vpngate"].Enabled || !service.after["sing-box"].Active {
-				t.Fatal("restore state invalid", err)
-			}
-		})
 	}
 }

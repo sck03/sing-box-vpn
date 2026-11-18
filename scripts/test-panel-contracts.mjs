@@ -95,6 +95,41 @@ assert.equal(submitted.tls.enabled, true);
 assert.equal(submitted.tls.server_name, "example.com");
 assert.equal(submitted.version, undefined);
 
+for (const transport of [
+  { type: "grpc", service_name: "demo", idle_timeout: "1m" },
+  { type: "http", host: ["example.com"], path: "/tunnel" },
+]) {
+  const original = {
+    tag: "advanced",
+    type: "vless",
+    server: "example.com",
+    server_port: 443,
+    uuid: "f5dbdb8a-84c0-4c3a-b511-f5f599b37651",
+    transport,
+    domain_resolver: { server: "dns-local", strategy: "prefer_ipv4" },
+    tls: { enabled: true, server_name: "example.com", alpn: ["h2"] },
+  };
+  formDialog(
+    "保留出站",
+    outboundFields(capabilitiesFixture.protocols, ["upstream"], ["dns-local"]),
+    original,
+    (v) => {
+      submitted = normalizeOutbound(v, original);
+    },
+    true,
+  );
+  document.querySelector('[aria-label="出站标识"]').value = "renamed";
+  document
+    .querySelector("#dialog form")
+    .dispatchEvent(new Event("submit", { cancelable: true }));
+  await tick();
+  assert.deepEqual(
+    submitted,
+    { ...original, tag: "renamed" },
+    "rename changed advanced connection fields",
+  );
+}
+
 const { workspace } = await import("../internal/manage/panel/workspace.js");
 const panes = { logs: [], backup: [], upgrade: [], network: [] };
 const adminContext = { session: { role: "admin" } };

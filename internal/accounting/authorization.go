@@ -29,7 +29,10 @@ func (s *Store) VisibleAccount(ctx context.Context, id string, now time.Time) (U
 
 // DownloadDenial applies to a visible entitlement and its optional grant.
 func (u Usage) DownloadDenial(g Grant) string {
-	if u.State == "exhausted" {
+	switch u.State {
+	case "archived", "disabled", "expired", "subscriber_disabled":
+		return u.State
+	case "exhausted":
 		return "quota_exhausted"
 	}
 	if g.MaxDownloads != nil && g.Downloads >= *g.MaxDownloads {

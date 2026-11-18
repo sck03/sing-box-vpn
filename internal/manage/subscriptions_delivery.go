@@ -133,7 +133,7 @@ func deliverSubscriptions(ctx context.Context, root, id string, automatic bool, 
 		var snapshot sub.Snapshot
 		if err := withStartupLock(ctx, root, func() error {
 			var err error
-			c, r, _, err = loadSubscriptions(root)
+			c, r, err = loadSubscriptionState(root)
 			if err != nil {
 				return err
 			}
@@ -211,7 +211,7 @@ func deliverSubscriptions(ctx context.Context, root, id string, automatic bool, 
 		var failures []error
 		var events []sub.Run
 		err := withLock(root, func() error {
-			current, state, _, err := loadSubscriptions(root)
+			current, state, err := loadSubscriptionState(root)
 			if err != nil {
 				return err
 			}

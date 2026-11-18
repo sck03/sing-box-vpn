@@ -183,10 +183,6 @@ func refreshSource(ctx context.Context, client *http.Client, source sub.Source, 
 
 // The separate cross-process lock coalesces scheduled and manual refreshes. It
 // never holds the configuration lock while waiting on a remote server.
-func refreshSubscriptions(ctx context.Context, root, core string, force bool) error {
-	return refreshSubscriptionsResult(ctx, root, core, force, &application.RefreshResult{})
-}
-
 func refreshSubscriptionsResult(ctx context.Context, root, core string, force bool, report *application.RefreshResult) error {
 	if err := os.MkdirAll(filepath.Join(root, "subscriptions"), 0700); err != nil {
 		return err
@@ -201,7 +197,7 @@ func refreshSubscriptionsResult(ctx context.Context, root, core string, force bo
 	}
 	var config sub.Config
 	var runtime sub.Runtime
-	err = withStartupLock(ctx, root, func() error { var e error; config, runtime, _, e = loadSubscriptions(root); return e })
+	err = withStartupLock(ctx, root, func() error { var e error; config, runtime, e = loadSubscriptionState(root); return e })
 	if err != nil {
 		return err
 	}

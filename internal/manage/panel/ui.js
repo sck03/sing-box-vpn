@@ -39,7 +39,17 @@ export function jsonDialog(title, value, save) {
   );
   dialog.showModal();
 }
-export function formDialog(title, fields, value, save) {
+function selection(input) {
+  return input.multiple
+    ? [...input.selectedOptions].map((o) => o.value)
+    : input.value;
+}
+function fieldSnapshot(input) {
+  return input.type === "checkbox"
+    ? input.checked
+    : JSON.stringify(selection(input));
+}
+export function formDialog(title, fields, value, save, preserve = false) {
   const dialog = $("#dialog"),
     form = el("form"),
     area = el("div", { class: "fields" });
@@ -62,6 +72,22 @@ export function formDialog(title, fields, value, save) {
       for (const option of options || []) {
         const [v, label] = Array.isArray(option) ? option : [option, option];
         input.append(el("option", { value: v }, label));
+      }
+      const selected = input.multiple ? current || [] : [current];
+      for (const existing of selected) {
+        if (
+          existing != null &&
+          ![...input.options].some((o) => o.value === String(existing))
+        )
+          input.append(
+            el(
+              "option",
+              { value: existing },
+              typeof existing === "object"
+                ? "高级配置（保留原值）"
+                : `${existing}（当前值）`,
+            ),
+          );
       }
       input.value = current ?? field.default ?? "";
       if (input.multiple)
@@ -112,7 +138,7 @@ export function formDialog(title, fields, value, save) {
     );
     if (field.help) label.append(el("small", {}, field.help));
     target.append(label);
-    inputs.push([field, input, input.value]);
+    inputs.push([field, input, fieldSnapshot(input)]);
   }
   const formValue = () => {
     const current = structuredClone(value);
@@ -207,7 +233,12 @@ export function formDialog(title, fields, value, save) {
         const result = structuredClone(value);
         for (const [field, input, initial] of inputs) {
           if (field.readonly || input.disabled) continue;
-          if (field.type === "date" && input.value === initial) continue;
+          if (
+            (field.type === "date" ||
+              (preserve && (!field.visible || field.visible(value)))) &&
+            fieldSnapshot(input) === initial
+          )
+            continue;
           let v = input.value;
           if (field.minBytes !== undefined || field.maxBytes !== undefined) {
             const length = new TextEncoder().encode(v).length;
@@ -284,6 +315,7 @@ export function resourceEditor({
   change,
   columns,
   normalize = (v) => v,
+  preserve = false,
   extraActions = () => [],
 }) {
   return card(
@@ -314,20 +346,32 @@ export function resourceEditor({
       items,
       (item) => [
         button("编辑", () =>
-          formDialog("编辑" + title, fields, item, (v) => {
-            items[items.indexOf(item)] = normalize(v);
-            change();
-          }),
+          formDialog(
+            "编辑" + title,
+            fields,
+            item,
+            (v) => {
+              items[items.indexOf(item)] = normalize(v, item);
+              change();
+            },
+            preserve,
+          ),
         ),
         ...extraActions(item),
         button("复制", () => {
           const v = structuredClone(item);
           if (v.id !== undefined) v.id += "-copy";
           else if (v.tag) v.tag += "-copy";
-          formDialog("复制" + title, fields, v, (result) => {
-            items.push(normalize(result));
-            change();
-          });
+          formDialog(
+            "复制" + title,
+            fields,
+            v,
+            (result) => {
+              items.push(normalize(result, v));
+              change();
+            },
+            preserve,
+          );
         }),
         button("JSON", () =>
           jsonDialog(title, item, (v) => {

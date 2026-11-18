@@ -28,7 +28,7 @@ func prepareSubscriptionSources(ctx context.Context, root string, candidate sub.
 		return nil, err
 	}
 	var runtime sub.Runtime
-	if err := withStartupLock(ctx, root, func() error { var err error; _, runtime, _, err = loadSubscriptions(root); return err }); err != nil {
+	if err := withStartupLock(ctx, root, func() error { var err error; _, runtime, err = loadSubscriptionState(root); return err }); err != nil {
 		return nil, err
 	}
 	client := newHTTPClient(20 * time.Second)

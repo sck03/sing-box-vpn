@@ -3,7 +3,7 @@
 upgrade_program() (
     set -Eeuo pipefail
     require_system
-    local arch stage unit state started switched=0 binaries=0
+    local arch stage unit state started switched=0 binaries=0 task=${SB_UPGRADE_TASK_ID:-0} target=${SB_UPGRADE_TARGET_VERSION:-}
     local -a running=()
     arch=$(arch_name)
     [[ -f "$APP_HOME/.managed" && -f "$SB_ROOT/.platform-v4" && -x "$MANAGER" && -x "$RUNTIME" ]] || {
@@ -32,6 +32,11 @@ upgrade_program() (
     local candidate="$stage/program/.bin/linux-$arch"
     "$candidate/yg-vpngate" --version
     "$candidate/managed-core" --version
+    if [[ "$task" != 0 ]]; then
+        [[ "$task" =~ ^[1-9][0-9]*$ && "$target" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ && "v$("$candidate/yg-vpngate" --version)" == "$target" ]] || {
+            echo '发行包版本与升级任务不一致' >&2; return 1;
+        }
+    fi
     "$candidate/yg-vpngate" panel --root "$SB_ROOT" --core "$CORE" --runtime "$candidate/managed-core" validate
     rollback_program() {
         local code=$?
@@ -81,7 +86,12 @@ upgrade_program() (
     done
     install -m 0755 "$stage/runtime.previous" "$RUNTIME.previous"
     if [[ "${SB_DEFER_PANEL_RESTART:-0}" == 1 && " ${running[*]} " == *' sb-panel '* ]]; then
-        systemd-run --unit=sb-panel-upgrade-restart --on-active=10s --collect /bin/bash "$stage/restart-panel.sh" "$stage" "$APP_HOME" "$MANAGER" "$RUNTIME" "$SB_ROOT" "${running[@]}"
+        systemd-run --unit=sb-panel-upgrade-restart --on-active=10s --collect /bin/bash "$stage/restart-panel.sh" "$stage" "$APP_HOME" "$MANAGER" "$RUNTIME" "$SB_ROOT" "$task" "$target" "${running[@]}"
+    elif [[ "$task" != 0 ]]; then
+        printf '{"task_id":%s,"target_version":"%s","actual_version":"%s","phase":"succeeded","outcome":"passed"}\n' "$task" "$target" "$target" > "$SB_ROOT/program-upgrade.json.new"
+        chmod 600 "$SB_ROOT/program-upgrade.json.new"
+        mv -f -- "$SB_ROOT/program-upgrade.json.new" "$SB_ROOT/program-upgrade.json"
+        "$MANAGER" panel --root "$SB_ROOT" complete-upgrade
     fi
     trap - EXIT
     echo "程序和受管核心已更新；上一发行包保存在 $stage，账户账本和服务启用状态保留。"

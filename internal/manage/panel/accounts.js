@@ -167,7 +167,6 @@ export async function accounts(ctx) {
             help("接下来绑定可用入站，再创建分享地址。"),
             row(
               button("绑定入站", () => bind(account), "primary"),
-              button("创建分享", () => createAccountShare([account], ctx)),
               button("稍后设置", () => dialog.close()),
             ),
           );
@@ -289,9 +288,12 @@ export async function accounts(ctx) {
     );
     dialog.showModal();
   };
-  const lifecycle = el("select", { "aria-label": "权益范围" },
+  const lifecycle = el(
+    "select",
+    { "aria-label": "权益范围" },
     el("option", { value: "current" }, "当前权益"),
-    el("option", { value: "archived" }, "归档记录"));
+    el("option", { value: "archived" }, "归档记录"),
+  );
   const content = [
     card(
       "权益记录",
@@ -385,23 +387,67 @@ export async function accounts(ctx) {
             label: "用量 / 额度",
             value: (a) => `${bytes(a.charged_bytes)} / ${bytes(a.quota_bytes)}`,
           },
+          {
+            label: "分享状态",
+            value: (a) =>
+              a.download_denial === "no_bound_inbound"
+                ? "待绑定可用入站"
+                : a.download_denial
+                  ? states[a.state] || "不可分享"
+                  : "可分享",
+          },
           { label: "代理到期", value: (a) => date(a.effective_expires_at) },
           { label: "下次重置", value: (a) => date(a.next_reset) },
         ],
-        (params) => request("/api/accounts?" + new URLSearchParams({ ...params, archived: lifecycle.value === "archived" })),
+        (params) =>
+          request(
+            "/api/accounts?" +
+              new URLSearchParams({
+                ...params,
+                archived: lifecycle.value === "archived",
+              }),
+          ),
         (item) => [
           ...(admin && !item.archived
             ? [
-                button("绑定", () => bind(item)),
-                button("分享", () => createAccountShare([item], ctx)),
+                ...(item.download_denial
+                  ? [
+                      button(
+                        "绑定",
+                        () => bind(item),
+                        item.download_denial === "no_bound_inbound"
+                          ? "primary"
+                          : "",
+                      ),
+                    ]
+                  : [
+                      button(
+                        "分享",
+                        () => createAccountShare([item], ctx),
+                        "primary",
+                      ),
+                      button("绑定", () => bind(item)),
+                    ]),
                 button("编辑", () => edit(item)),
                 button("凭据", () => credentials(item)),
-                button("归档", async () => {
-                  if (!confirm(`永久归档「${item.name}」？凭据与下载链接将撤销，账本和历史可在归档记录中查看。`)) return;
-                  await api("/api/accounts/archive", { id: item.id, revision: item.revision });
-                  await list.refresh(true);
-                  notice("权益已归档");
-                }, "danger"),
+                button(
+                  "归档",
+                  async () => {
+                    if (
+                      !confirm(
+                        `永久归档「${item.name}」？凭据与下载链接将撤销，账本和历史可在归档记录中查看。`,
+                      )
+                    )
+                      return;
+                    await api("/api/accounts/archive", {
+                      id: item.id,
+                      revision: item.revision,
+                    });
+                    await list.refresh(true);
+                    notice("权益已归档");
+                  },
+                  "danger",
+                ),
                 button("导出 / 二维码", async () =>
                   formDialog(
                     "账户专属导出",
@@ -453,7 +499,12 @@ export async function accounts(ctx) {
         ],
         {
           signal: ctx.signal,
-          actionVersion: (a) => [a.id, a.revision],
+          actionVersion: (a) => [
+            a.id,
+            a.revision,
+            a.download_denial,
+            a.download_scopes,
+          ],
           label: "搜索权益",
           filter: lifecycle,
           placeholder: "搜索 ID、名称或用户分组…",

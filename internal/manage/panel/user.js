@@ -58,30 +58,41 @@ async function load(token, signal, current) {
   const details = element("dl", "");
   details.className = "detail-grid";
   for (const [label, value] of [
+    ["上传 / 下载", format(u.upload_bytes) + " / " + format(u.download_bytes)],
+    [
+      "权益开始",
+      u.started_at
+        ? when(u.started_at)
+        : u.start_mode === "first_use"
+          ? "首次成功代理连接时起算"
+          : "尚未开始",
+    ],
     ["代理到期", when(u.effective_expires_at)],
     ["额度重置", when(u.next_reset)],
     ["下载到期", when(u.download_expires_at)],
     ["已下载次数", u.downloads + " / " + (u.max_downloads ?? "不限")],
   ])
     details.append(element("dt", label), element("dd", value));
-  target.replaceChildren(
-    heading,
-    usage,
-    details,
-  );
+  target.replaceChildren(heading, usage, details);
   if (u.download_denial) {
     target.append(
       element(
         "p",
-        u.download_denial === "download_limit"
-          ? "下载次数已用完。仍可查询用量，已导入的配置按权益额度和有效期继续使用。"
-          : "本期流量额度已耗尽。仍可查询用量，额度恢复后可再次下载。",
+        {
+          download_limit:
+            "下载次数已用完。已导入的配置按权益额度和有效期继续使用。",
+          no_bound_inbound:
+            "此链接对应的入站已解绑或停用。请联系管理员重新绑定。",
+          quota_exhausted: "本期流量额度已耗尽，额度恢复后可再次下载。",
+        }[u.download_denial] || "权益暂不可下载。",
       ),
     );
     return;
   }
-  target.append(element("h2", "添加到客户端"),
-    element("p", "选择对应客户端，复制订阅链接导入，或直接下载配置。"));
+  target.append(
+    element("h2", "添加到客户端"),
+    element("p", "选择对应客户端，复制订阅链接导入，或直接下载配置。"),
+  );
   for (const client of u.clients) {
     const wrap = document.createElement("div");
     wrap.className = "client-download";

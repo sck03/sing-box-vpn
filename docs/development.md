@@ -75,7 +75,9 @@ Linux root 专项通过 `RUN_NETNS_TESTS=1`、`RUN_FIREWALL_TESTS=1`、`RUN_SERV
 
 账户列表同样返回分页对象：`GET /api/accounts?q=...&offset=0&limit=20&sort=created&direction=asc`。搜索 ID、名称、订阅者 ID；sort 仅允许 created/name/id，direction 仅允许 asc/desc，offset 为 0–100000。账户 DTO 包含 `subscriber_disabled` 和有效 `state`。管理员选择器使用 `GET /api/account-options` 的 `{id,name}[]`（账户总量上限 1000）以及 `GET /api/inbound-options?scope=normal|vpngate` 的已应用启用入口；不使用列表第一页代替所有选项。未配置 VPNGate 时入口选项为空数组。
 
-主机升级调用 `panel --root <目录> wait-runtime`，stdin 为 `{"instance":"normal","started":<Unix纳秒>}`，等待 started 不早于本次重启的近期心跳，最长 20 秒。`recover-services` 在打开数据库之前执行，独立于面板健康；服务变更与升级共用恢复文件锁。
+主机升级调用 `panel --root <目录> wait-runtime`，stdin 为 `{"instance":"normal","started":<Unix纳秒>}`，等待 started 不早于本次重启的近期心跳，最长 20 秒。重启助手另外调用 `wait-panel` 验证实际本机监听/TLS 和 worker 就绪，最长 30 秒；随后原子保存 `program-upgrade.json` 并调用 `complete-upgrade`。收据按任务 ID 和目标版本匹配，启动可重复消费，成功、回滚和回滚失败均有终态。等待阶段保留跨重启，20 分钟无确认结果则失败。`recover-services` 在打开数据库之前执行；服务变更与升级共用恢复文件锁。
+
+重构回归：`go test ./internal/manage -run 'TestUpgradeReceipt|TestPanelCertificateCache|TestShareReadiness|TestInvalidPanelInitialization|TestPanelHealth|TestSubscriptionSchedule'`。`BenchmarkSubscriptionScheduleRead` 对照完整投影读取与调度元数据读取；`npm test` 覆盖 gRPC/未知传输仅改标识后保留原始字段。真实浏览器覆盖菜单外点击、相邻按钮鼠标点击、键盘、触屏、权益到期字段和额度消息。
 
 `internal/backuparchive` 单独负责格式 7（8 字节项目标记 + age 流 + tar），使用 scrypt 工作因子 16 并限制解密工作因子。禁止恢复前使用尚未完成认证的条目。新增测试覆盖密文损坏、截断、路径限制、并发发布锁、授权生命周期、任务预算、状态搜索与分页。
 

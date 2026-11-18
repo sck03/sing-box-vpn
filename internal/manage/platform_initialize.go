@@ -16,6 +16,13 @@ const initializationMarker = ".initializing-platform"
 // Configuration and the first administrator commit together. Projection failure
 // leaves an explicit recovery marker; retry publishes the committed configuration.
 func (s *PlatformService) Initialize(ctx context.Context, address, name, admin, password string) error {
+	return s.initialize(ctx, address, name, admin, password, defaultPanelOptions())
+}
+
+func (s *PlatformService) initialize(ctx context.Context, address, name, admin, password string, options PanelOptions) error {
+	if err := options.Validate(); err != nil {
+		return err
+	}
 	install, err := adminauth.PrepareAdministrator(admin, password)
 	if err != nil {
 		return err
@@ -50,6 +57,9 @@ func (s *PlatformService) Initialize(ctx context.Context, address, name, admin, 
 			}
 			subscriptions := sub.DefaultConfig()
 			config = PlatformConfig{Schema: 4, App: app, VPN: VPNSettings{ProxyPort: 7928, Profiles: map[string]Profile{}}, VPNSecrets: map[string]Secrets{}, Gateway: Object{}, Subscriptions: subscriptions, Certificates: []CertificateAsset{}, Argo: TunnelSettings{Mode: "off"}, Listener: subscriptionSettings{Listen: "127.0.0.1", Port: 2097}}
+			if err := panelPortAvailable(config, options.port()); err != nil {
+				return err
+			}
 			// Validate/build before committing intent. No app.json is published yet.
 			if _, err = s.build(ctx, config); err != nil {
 				return err
@@ -65,8 +75,14 @@ func (s *PlatformService) Initialize(ctx context.Context, address, name, admin, 
 				return err
 			}
 		}
+		if err := panelPortAvailable(config, options.port()); err != nil {
+			return err
+		}
 		files, err := s.build(ctx, config)
 		if err != nil {
+			return err
+		}
+		if err := files.json("panel.json", options); err != nil {
 			return err
 		}
 		files[".platform-v4"] = []byte("control.db owns configuration; JSON files are generated\n")

@@ -17,8 +17,9 @@ dom.window.HTMLDialogElement.prototype.showModal = function () {
 dom.window.HTMLDialogElement.prototype.close = function () {
   this.open = false;
 };
-const { table, badge, formDialog, remoteTable } =
-  await import("../internal/manage/panel/ui.js");
+const { table, badge, formDialog, remoteTable } = await import(
+  "../internal/manage/panel/ui.js"
+);
 const host = document.querySelector("#content");
 document.querySelector("#shell").hidden = false;
 const list = table(
@@ -170,19 +171,36 @@ assert.equal(
   false,
 );
 
-const { createAccountShare } =
-  await import("../internal/manage/panel/sharing.js");
+const { createAccountShare } = await import(
+  "../internal/manage/panel/sharing.js"
+);
 let createdShare;
-await createAccountShare([{ id: "a", name: "Alice" }], {
-  workflowRequest: async (path, body) => {
-    if (path === "/api/clients") return { uri: { label: "URI" } };
-    createdShare = body;
-    return { user_url: "https://example.com/user#test" };
+await createAccountShare(
+  [
+    {
+      id: "a",
+      name: "Alice",
+      download_scopes: ["normal"],
+      download_denial: "",
+    },
+  ],
+  {
+    workflowRequest: async (path, body) => {
+      if (path === "/api/clients") return { uri: { label: "URI" } };
+      createdShare = body;
+      return { user_url: "https://example.com/user#test" };
+    },
+    render() {},
   },
-  render() {},
-});
-assert.equal(document.querySelector('dialog input[aria-label="授权 ID"]'), null);
-assert.equal(document.querySelector('dialog input[aria-label="下载到期"]'), null);
+);
+assert.equal(
+  document.querySelector('dialog input[aria-label="授权 ID"]'),
+  null,
+);
+assert.equal(
+  document.querySelector('dialog input[aria-label="下载到期"]'),
+  null,
+);
 document
   .querySelector("dialog form")
   .dispatchEvent(new Event("submit", { cancelable: true }));

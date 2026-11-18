@@ -12,10 +12,7 @@ import (
 func appliedDownloadOrigin(c PlatformConfig, fallback string) (string, error) {
 	origin := strings.TrimRight(fallback, "/")
 	if c.Listener.Enabled {
-		if c.Listener.PublicBaseURL == "" && loopbackHost(c.Listener.Listen) {
-			return "", errors.New("独立下载监听只绑定本机，请填写公网下载 URL 或关闭独立监听并配置「公网访问」")
-		}
-		origin = strings.TrimRight(subscriptionBase(c.Listener, c.App.Address), "/")
+		origin = strings.TrimRight(c.Listener.PublicBaseURL, "/")
 	}
 	if err := shareableURL(origin); err != nil {
 		return "", err

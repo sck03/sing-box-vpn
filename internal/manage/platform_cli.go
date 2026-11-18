@@ -82,7 +82,31 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 		return err
 	}
 	defer s.Close()
+	applyFlags := func(options PanelOptions) PanelOptions {
+		f.Visit(func(flag *flag.Flag) {
+			switch flag.Name {
+			case "listen":
+				options.Listen = *listen
+			case "public-url":
+				options.PublicURL = *public
+			case "tls-cert":
+				options.Certificate = *cert
+			case "tls-key":
+				options.Key = *key
+			case "trusted-proxy":
+				options.TrustedProxy = nil
+				if *proxy != "" {
+					options.TrustedProxy = strings.Split(*proxy, ",")
+				}
+			}
+		})
+		return options
+	}
 	switch op {
+	case "complete-upgrade":
+		return s.reconcileProgramUpgrade(ctx)
+	case "wait-panel":
+		return s.waitPanel(ctx)
 	case "init":
 		v, err := readAdministrator(input, *adminStdin)
 		if err != nil {
@@ -94,18 +118,7 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 		if v.Username == "" {
 			v.Username = "admin"
 		}
-		if err = s.Initialize(ctx, *address, *name, v.Username, v.Password); err != nil {
-			return err
-		}
-		options := PanelOptions{Listen: "127.0.0.1:2096"}
-		if *listen != "" {
-			options.Listen = *listen
-		}
-		options.PublicURL, options.Certificate, options.Key = *public, *cert, *key
-		if *proxy != "" {
-			options.TrustedProxy = strings.Split(*proxy, ",")
-		}
-		return AtomicJSON(filepath.Join(*root, "panel.json"), options)
+		return s.initialize(ctx, *address, *name, v.Username, v.Password, applyFlags(defaultPanelOptions()))
 	case "reset-admin":
 		v, err := readAdministrator(input, *adminStdin)
 		if err != nil {
@@ -130,24 +143,11 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 			return AtomicJSON(filepath.Join(s.Root, "panel.json"), options)
 		})
 	case "serve":
-		options := PanelOptions{Listen: "127.0.0.1:2096"}
-		if _, err = ReadJSON(filepath.Join(*root, "panel.json"), &options); err != nil {
+		options, _, err := s.panelSettings()
+		if err != nil {
 			return err
 		}
-		if *listen != "" {
-			options.Listen = *listen
-		}
-		if *public != "" {
-			options.PublicURL = *public
-		}
-		if *cert != "" {
-			options.Certificate = *cert
-			options.Key = *key
-		}
-		if *proxy != "" {
-			options.TrustedProxy = strings.Split(*proxy, ",")
-		}
-		return s.Serve(ctx, options, output)
+		return s.Serve(ctx, applyFlags(options), output)
 	case "status":
 		state, e := s.State(ctx, false)
 		if e != nil {

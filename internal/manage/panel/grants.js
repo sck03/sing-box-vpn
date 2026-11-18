@@ -1,6 +1,5 @@
 import { api } from "./api.js";
-import { createAccountShare } from "./sharing.js";
-import { card, help, button, remoteTable, date, badge } from "./ui.js";
+import { el, card, help, button, remoteTable, date, badge } from "./ui.js";
 export async function grants(ctx) {
   const request = ctx.request || api;
   return [
@@ -9,14 +8,10 @@ export async function grants(ctx) {
       help(
         "直接选择权益创建订阅链接，期限和流量在「权益与用量」统一管理。完整链接只展示一次，请妥善保存；撤销可阻止后续下载。高级输出的下载限制也在此列出。",
       ),
-      button(
-        "创建账户分享",
-        async () =>
-          createAccountShare(
-            await (ctx.workflowRequest || api)("/api/account-options"),
-            ctx,
-          ),
-        "primary",
+      el(
+        "a",
+        { href: "#accounts", class: "download-link" },
+        "选择可用权益创建分享",
       ),
       await remoteTable(
         [

@@ -1,12 +1,29 @@
 #!/usr/bin/env bash
 # Runs in a transient systemd unit, independently of the panel being replaced.
 set -Eeuo pipefail
-stage=$1 app=$2 manager=$3 runtime=$4 root=$5
-shift 5
+stage=$1 app=$2 manager=$3 runtime=$4 root=$5 task=$6 target=$7
+shift 7
+[[ "$task" == 0 || ( "$task" =~ ^[1-9][0-9]*$ && "$target" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ) ]]
+phase=rollback-failed outcome=failed
+record_result() {
+    local code=$? actual
+    trap - EXIT
+    if [[ "$task" != 0 ]]; then
+        actual=$("$manager" --version 2>/dev/null) || actual=
+        if [[ "$actual" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then actual="v$actual"; else actual=; fi
+        umask 077
+        printf '{"task_id":%s,"target_version":"%s","actual_version":"%s","phase":"%s","outcome":"%s"}\n' "$task" "$target" "$actual" "$phase" "$outcome" > "$root/program-upgrade.json.new"
+        mv -f -- "$root/program-upgrade.json.new" "$root/program-upgrade.json"
+        "$manager" panel --root "$root" complete-upgrade || true
+    fi
+    exit "$code"
+}
+trap record_result EXIT
 exec 8>"$root/.service-recovery.lock"
 flock -w 60 8
 [[ -d "$stage/previous" && -f "$stage/manager.previous" && -f "$stage/runtime.previous" && -f "$app/.managed" ]]
-if systemctl restart sb-panel && sleep 5 && systemctl is-active --quiet sb-panel; then
+if systemctl restart sb-panel && "$manager" panel --root "$root" wait-panel && sleep 5 && systemctl is-active --quiet sb-panel && [[ "$task" == 0 || "v$("$manager" --version)" == "$target" ]]; then
+    phase=succeeded outcome=passed
     echo 'Updated panel is running.'
     exit 0
 fi
@@ -30,5 +47,6 @@ for unit in "$@"; do
             ;;
     esac
 done
+if ((failed == 0)) && "$manager" panel --root "$root" wait-panel; then phase=rolled-back; else failed=1; fi
 echo "Rollback completed (restart failures: $failed); diagnostics: $stage" >&2
 exit 1

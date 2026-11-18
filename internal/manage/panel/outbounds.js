@@ -103,6 +103,7 @@ export async function outbounds(ctx) {
       resourceEditor({
         title: "出站与出站组",
         normalize: normalizeOutbound,
+        preserve: true,
         items: a.outbounds,
         fields: outboundFields(
           protocols,

@@ -11,6 +11,7 @@
 | internal/backuparchive                                           | 有界 tar 格式与 age 认证加密；不依赖配置、SQL schema 或证书提供方                       |
 | internal/clientprofile                                           | 无存储/HTTP 依赖的客户端、模式与特性目录，统一表单、授权和渲染能力                      |
 | internal/manage/accounts_queries                                 | 返回结构化账户查询、凭据摘要和渲染产物；传输层负责编码                                  |
+| internal/manage/account_sharing                                  | 根据已应用入口、无秘密的绑定摘要和权益状态计算可下载范围；列表、创建授权和用量共用      |
 | internal/encoding                                                | 按调用场景限制大小的严格 JSON 解码                                                      |
 | internal/database                                                | 连接策略、schema 版本与文件权限                                                         |
 | internal/gatewayconfig                                           | 网关类型、默认值、数值边界、URL/DNS/路径校验；供管理器和独立网关共同使用                |
@@ -23,6 +24,8 @@
 | internal/manage/platform_compile                                 | 候选准备、运行恢复编译、完整草稿预览及输出诊断                                          |
 | internal/manage/platform_acme                                    | 内置 lego 客户端、HTTP-01 验证、账户与签发结果持久化；复用平台任务调度与证书发布        |
 | internal/manage/certificate_material                             | 独立的 PEM 匹配、域名验证与有效期检查；已解析材料供状态、续期和导入复用，无共享过期缓存 |
+| internal/manage/panel_certificate                                | 面板 TLS 证书对的 30 秒刷新缓存；刷新失败仅保留未过期材料                               |
+| internal/manage/program_upgrade_result                           | 升级助手结果收据、监听健康探测及任务终态；不重放升级副作用                              |
 | internal/manage/platform_task_output                             | 有界结果落盘、秘密隐藏以及取消后的部分结果保留                                          |
 | internal/manage/subscriptions_status、subscriptions_notification | 只读运行状态投影、独立通知活动记录；状态查询跳过缓存中的节点和模板正文                  |
 | internal/manage/panel                                            | 原生 ES 模块 SPA，共享表单/列表/草稿，静态嵌入二进制                                    |
@@ -47,7 +50,9 @@
 
 初始化先校验并散列管理员凭据，构建配置通过后，在同一 SQLite 事务中写入初始配置与首位管理员。`.initializing-platform` 标记跨数据库/文件投影的恢复边界：数据库提交后投影失败，重复 `panel init` 使用已提交配置完成发布，不重新生成凭据。只有发布成功才移除标记。无标记的已有安装拒绝再次初始化。
 
-HTTP/CLI → Validate → 校验资源引用/核心配置 → revision CAS 保存 desired+任务 → 发布日志 → 主机应用 → 新核心心跳 → applied。只有成功改变 applied revision。失败重建旧投影、恢复原 active/enabled，任务记录回滚结果。重启面板恢复已应用投影并重放幂等 apply；非幂等中断任务标失败供核对。
+HTTP/CLI → Validate → 校验资源引用/核心配置 → revision CAS 保存 desired+任务 → 发布日志 → 主机应用 → 新核心心跳 → applied。只有成功改变 applied revision。失败重建旧投影、恢复原 active/enabled，任务记录回滚结果。重启面板恢复已应用投影并重放幂等 apply；非幂等中断任务标失败供核对。程序升级的 `awaiting-panel-health` 阶段由独立重启助手结束，不重放升级；助手以 0600 原子写入 `program-upgrade.json`，保存任务 ID、目标/实际版本、健康或回滚结果，CLI/启动可幂等消费。
+
+升级等待期间控制通道不执行后续任务，后台探测仍独立。`wait-panel` 经本机 `/healthz` 校验 HTTP/TLS 监听及 worker 启动完成，不依赖公网 DNS、反代或管理员登录。该接口仅允许本机来源并校验 Host。等待超过 20 分钟仍无确认结果时任务失败，要求检查系统状态；不将超时视为升级成功。
 
 一个进程级 worker 文件锁防双管理器；控制通道串行执行配置、刷新和分发，独立后台通道串行执行只读出站/订阅探测，慢探测不占用控制通道。排队最多 32，任务展示/保留 200 条，结果最多 256 KiB；控制任务期限 5 分钟，64 节点探测按统一预算为 8 分 24 秒。调度在任务之间及空闲时执行，相同自动任务去重。提交后的任务不依赖浏览器连接。新的运行实例心跳与配置 revision 分开，未重启的无关实例可继续持旧启动 revision。
 
@@ -113,12 +118,13 @@ VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IP
 
 `domain.Account` 保存管理员的配置，`accounting.Usage` 另外提供只读的 `effective_expires_at` 和 `archived`。计量缓存、预留和授权都使用实际截止时间。归档在同一 SQLite 写事务中校验 revision、标记权益、写入凭据撤销记录、移除绑定、更新凭据发布版本并撤销专属下载授权。事务保留原权益、账期和租约，已预留的流量仍可结算。其他进程通过已有授权刷新周期看到撤销。
 
-| 接口 | 契约 |
-| --- | --- |
-| `GET /api/accounts` | 默认分页查询当前权益。`archived=true` 只查归档记录。`expires_at` 是配置值，`effective_expires_at` 是计算结果。 |
-| `POST /api/accounts/archive` | 管理员提交 `id`、`revision`。成功释放名额，过期 revision 或重复归档返回 409。 |
-| `GET /api/grant-options` | 管理员读取已应用的输出 ID、名称、监听启用状态 `listener_enabled`、版本差异 `pending` 及地址问题 `unavailable`。创建授权时服务端重新校验。 |
-| `GET /u/{token}/usage` | 返回 `effective_expires_at` 和 `download_denial`。空字符串表示可下载，`quota_exhausted` 和 `download_limit` 分别表示流量额度和下载次数耗尽。两者都可继续查用量。 |
+| 接口                         | 契约                                                                                                                                                                                                                         |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/accounts`          | 默认分页查询当前权益。`archived=true` 只查归档记录。`expires_at` 是配置值，`effective_expires_at` 是计算结果。                                                                                                               |
+| `GET /api/accounts` 分享字段 | `download_scopes` 是有启用入口与对应凭据的实例列表；`download_denial` 是权益或入口禁止原因，不返回凭据秘密。                                                                                                                 |
+| `POST /api/accounts/archive` | 管理员提交 `id`、`revision`。成功释放名额，过期 revision 或重复归档返回 409。                                                                                                                                                |
+| `GET /api/grant-options`     | 管理员读取已应用的输出 ID、名称、监听启用状态 `listener_enabled`、版本差异 `pending` 及地址问题 `unavailable`。创建授权时服务端重新校验。                                                                                    |
+| `GET /u/{token}/usage`       | 返回 `effective_expires_at` 和 `download_denial`。空字符串表示入口就绪；`no_bound_inbound`、`quota_exhausted`、`download_limit` 分别表示无可用绑定、流量耗尽和下载次数耗尽，仍可查看用量。客户端格式兼容性在导出时再次校验。 |
 
 `accounting/reservations.go` 按需启动每 Store 的预留写入器；队列和批次各有 64 个请求上限，只合并已经等待的请求，不增加聚合定时器。每个池仍受原有额度与代次检查，批次内用保存点隔离业务失败，整个事务 FULL 提交后才返回可转发字节。关闭 Store 前排空已接收请求。无预留的面板查询不会创建该写入器。
 

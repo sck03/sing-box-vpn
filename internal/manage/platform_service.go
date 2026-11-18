@@ -39,6 +39,7 @@ type PlatformService struct {
 	backupBusy          atomic.Bool
 	panelMu             sync.RWMutex
 	activePanel         *PanelOptions
+	workerReady         atomic.Bool
 }
 type PlatformAction struct {
 	Operation    string                          `json:"operation"`
@@ -258,6 +259,12 @@ func (s *PlatformService) Run(ctx context.Context) error {
 	if err = lockFile(workerLock); err != nil {
 		return errors.New("another platform worker is already running")
 	}
+	if err := s.reconcileProgramUpgrade(ctx); err != nil {
+		_ = s.Auth.Audit(ctx, "scheduler", "upgrade-receipt", "", "failed")
+	}
+	if err := s.Store.ExpireExternal(ctx, time.Now().Add(-upgradeWaitBudget)); err != nil {
+		return err
+	}
 	if err := s.Store.Recover(ctx); err != nil {
 		return err
 	}
@@ -285,6 +292,8 @@ func (s *PlatformService) Run(ctx context.Context) error {
 	}); err != nil {
 		return err
 	}
+	s.workerReady.Store(true)
+	defer s.workerReady.Store(false)
 	return s.runWorkers(ctx)
 }
 
@@ -431,7 +440,7 @@ func (s *PlatformService) execute(ctx context.Context, id int64, a PlatformActio
 	case "bbr":
 		return s.setBBR(ctx, a.Value)
 	case "program-upgrade":
-		return s.upgradeProgram(ctx, a.Value)
+		return s.upgradeProgram(ctx, id, a.Value)
 	case "runtime-rollback":
 		return s.rollbackRuntime(ctx)
 	case "outbound-probe":

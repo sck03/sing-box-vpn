@@ -69,16 +69,15 @@ document
 await tick();
 assert.equal(page.signal.aborted, true);
 assert.match(document.querySelector("dialog").textContent, /权益已创建/);
-const share = [...document.querySelectorAll("dialog button")].find(
-  (b) => b.textContent === "创建分享",
+assert.equal(
+  [...document.querySelectorAll("dialog button")].some(
+    (b) => b.textContent === "创建分享",
+  ),
+  false,
 );
 click("绑定入站");
 await tick();
 assert.match(document.querySelector("dialog h2").textContent, /绑定入站/);
-share.click();
-await tick();
-assert.match(document.querySelector("dialog h2").textContent, /创建账户分享/);
-assert(calls.includes("/api/clients"));
 assert.equal(
   calls.filter((p) => p.startsWith("/api/inbound-options")).length,
   2,
@@ -86,5 +85,5 @@ assert.equal(
 clearTimeout(notice.timer);
 dom.window.close();
 console.log(
-  "Panel workflow checks passed: post-create binding and sharing survive page cancellation.",
+  "Panel workflow checks passed: post-create binding survives page cancellation; unbound shares are unavailable.",
 );

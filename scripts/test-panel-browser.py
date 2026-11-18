@@ -2,6 +2,7 @@
 
 import os
 import uuid
+import time
 from urllib.parse import urlparse
 
 from playwright.sync_api import expect, sync_playwright
@@ -11,6 +12,8 @@ def check(browser, base):
     account = "browser-" + uuid.uuid4().hex[:12]
     context = browser.new_context(viewport={"width": 1280, "height": 900})
     page = context.new_page()
+    browser_errors = []
+    page.on("pageerror", lambda error: browser_errors.append(str(error)))
     page.goto(base + "/")
     page.locator('[name="username"]').fill(os.getenv("PANEL_TEST_USERNAME", "reviewadmin"))
     page.locator('[name="password"]').fill(os.environ["PANEL_TEST_PASSWORD"])
@@ -21,7 +24,7 @@ def check(browser, base):
     services = api.get(base + "/api/overview").json()["services"]
     assert services and all(s.get("state") == "unavailable" for s in services)
     result = api.post(base + "/api/accounts", headers=headers, data={"account": {
-        "id": account, "name": account, "duration_seconds": 86400, "quota_bytes": 0,
+        "id": account, "name": account, "duration_seconds": 86400, "quota_bytes": None,
     }})
     assert result.ok, result.text()
     page.goto(base + "/#accounts")
@@ -47,12 +50,33 @@ def check(browser, base):
     record = api.get(base + "/api/accounts?q=" + account).json()["items"][0]
     assert record["name"].endswith("-renamed")
     assert record["expires_at"] is None and record["effective_expires_at"]
+    assert record["download_denial"] == "no_bound_inbound"
+    assert api.post(base + "/api/grants", headers=headers, data={
+        "id": account + "-unbound", "account_id": account, "clients": ["uri"],
+    }).status == 400
+    inbound = next(n for n in api.get(base + "/api/inbound-options?scope=normal").json() if "vmess" in n["id"])
+    task = api.post(base + "/api/tasks", headers=headers, data={"operation": "account", "account": {
+        "operation": "bind", "id": account, "scope": "normal", "inbound_ids": [inbound["id"]],
+    }}).json()["task_id"]
+    deadline = time.monotonic() + 90
+    while True:
+        state = api.get(base + "/api/tasks/detail?id=" + str(task)).json()["state"]
+        if state not in {"queued", "running"}:
+            assert state == "succeeded", state
+            break
+        assert time.monotonic() < deadline
+        time.sleep(0.3)
     # The live API suite configures a shareable public origin. Open its token
     # on this loopback listener, keeping the whole test on the disposable host.
     grant = api.post(base + "/api/grants", headers=headers, data={
         "id": account + "-share", "account_id": account, "clients": ["uri"],
     })
     assert grant.ok, grant.text()
+    record = api.get(base + "/api/accounts?q=" + account).json()["items"][0]
+    assert api.post(base + "/api/accounts", headers=headers, data={"account": {
+        "id": account, "name": record["name"], "duration_seconds": 86400,
+        "quota_bytes": 0, "revision": record["revision"],
+    }}).ok
     page.goto(base + "/user#" + grant.json()["token"])
     expect(page.get_by_text("本期流量额度已耗尽", exact=False)).to_be_visible()
     expect(page.locator(".download-link")).to_have_count(0)
@@ -65,10 +89,16 @@ def check(browser, base):
     assert phone.locator(".workflow").is_hidden()
     assert phone.evaluate("document.documentElement.scrollWidth <= innerWidth")
     assert phone.locator(".remote-table tbody tr").first.bounding_box()["y"] < 844
+    screenshots = os.getenv("PANEL_TEST_SCREENSHOT_DIR")
+    if screenshots:
+        os.makedirs(screenshots, exist_ok=True)
+        phone.screenshot(path=os.path.join(screenshots, "mobile.png"), full_page=True)
+        page.screenshot(path=os.path.join(screenshots, "user.png"), full_page=True)
     records.locator("summary").tap()
     records.get_by_role("button", name="编辑", exact=True).tap()
     expect(phone.locator("#dialog")).to_be_visible()
     mobile.close()
+    assert not browser_errors, browser_errors
     context.close()
 
 

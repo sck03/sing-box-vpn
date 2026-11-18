@@ -13,6 +13,7 @@ import (
 type certificateMaterial struct {
 	certificate []byte
 	key         []byte
+	pair        *tls.Certificate
 	leaf        *x509.Certificate
 }
 
@@ -32,7 +33,7 @@ func parseCertificateMaterial(cert, key []byte, domain string) (certificateMater
 	if err = leaf.VerifyHostname(domain); err != nil {
 		return certificateMaterial{}, err
 	}
-	return certificateMaterial{certificate: cert, key: key, leaf: leaf}, nil
+	return certificateMaterial{certificate: cert, key: key, leaf: leaf, pair: &pair}, nil
 }
 
 func readCertificateMaterial(asset CertificateAsset) (certificateMaterial, error) {

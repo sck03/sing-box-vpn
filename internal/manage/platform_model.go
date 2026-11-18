@@ -90,7 +90,10 @@ func (c PlatformConfig) Validate() error {
 	if c.Listener.Enabled && (c.Listener.Port < 1 || c.Listener.Port > 65535 || ports[c.Listener.Port] || net.ParseIP(c.Listener.Listen) == nil) {
 		return errors.New("invalid or conflicting download listener")
 	}
-	if c.Listener.PublicBaseURL != "" {
+	if c.Listener.Enabled || c.Listener.PublicBaseURL != "" {
+		if err := shareableURL(c.Listener.PublicBaseURL); err != nil {
+			return err
+		}
 		if err := sub.HTTPURL(c.Listener.PublicBaseURL); err != nil {
 			return err
 		}

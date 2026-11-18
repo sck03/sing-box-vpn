@@ -21,6 +21,7 @@ const phases = {
   executing: "执行中",
   publishing: "发布配置",
   "applying-services": "应用服务",
+  "awaiting-panel-health": "等待新面板健康检查",
   "publishing-credentials": "发布凭据",
   "rolled-back": "已恢复原配置",
   "rollback-failed": "恢复失败",
@@ -136,6 +137,12 @@ export function tasksCard(tasks, ctx) {
 function resultDetails(result) {
   if (!result || result.pruned) return [];
   const sections = [];
+  if (result.target_version)
+    sections.push(
+      help(
+        `目标版本 ${result.target_version} · 实际版本 ${result.actual_version || "等待确认"}`,
+      ),
+    );
   if (result.passed !== undefined)
     sections.push(
       help(

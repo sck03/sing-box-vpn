@@ -83,12 +83,42 @@ const menuDocuments = new WeakSet();
 function dismissOutsideMenus(doc) {
   if (menuDocuments.has(doc)) return;
   menuDocuments.add(doc);
+  let pointerActive = false;
   const dismiss = (event) => {
     for (const menu of doc.querySelectorAll("details.action-menu[open]"))
       if (!menu.contains(event.target)) menu.open = false;
   };
-  doc.addEventListener("pointerdown", dismiss, true);
-  doc.addEventListener("focusin", dismiss, true);
+  // Closing an inline menu on pointerdown moves the target before pointerup,
+  // so a neighbouring button can lose its click. Dismiss after that click.
+  doc.addEventListener(
+    "pointerdown",
+    () => {
+      pointerActive = true;
+    },
+    true,
+  );
+  doc.addEventListener(
+    "pointerup",
+    () => {
+      pointerActive = false;
+    },
+    true,
+  );
+  doc.addEventListener(
+    "pointercancel",
+    () => {
+      pointerActive = false;
+    },
+    true,
+  );
+  doc.addEventListener("click", dismiss);
+  doc.addEventListener(
+    "focusin",
+    (event) => {
+      if (!pointerActive) dismiss(event);
+    },
+    true,
+  );
 }
 
 export function actionGroup(items, limit = 2) {

@@ -108,6 +108,14 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 			http.Error(w, "unexpected Host", 400)
 			return
 		}
+		if r.URL.Path == "/healthz" && r.Method == "GET" && localPanelPeer(r, peer) {
+			if !s.workerReady.Load() {
+				http.Error(w, "worker is starting", http.StatusServiceUnavailable)
+			} else {
+				jsonResponse(w, Object{"ready": true})
+			}
+			return
+		}
 		if len(proxy) > 0 {
 			ip, err := netip.ParseAddr(peer)
 			if err != nil || !slices.ContainsFunc(proxy, func(p netip.Prefix) bool { return p.Contains(ip) }) || r.Header.Get("X-Forwarded-Proto") != "https" {
@@ -267,24 +275,11 @@ func (s *PlatformService) Serve(ctx context.Context, options PanelOptions, out i
 	if err := s.validatePanelListener(ctx, options); err != nil {
 		return err
 	}
-	if options.PublicURL == "" {
-		options.PublicURL = "http://" + listener.Addr().String()
-		if options.Certificate != "" {
-			options.PublicURL = "https://" + listener.Addr().String()
-		}
-	}
-	base, err := url.Parse(options.PublicURL)
-	if err != nil || base.Host == "" || base.Path != "" || base.RawQuery != "" || base.Fragment != "" || base.User != nil || !slices.Contains([]string{"http", "https"}, base.Scheme) {
-		return errors.New("public URL must be an HTTP(S) origin without a path")
-	}
-	if (len(options.TrustedProxy) > 0 || options.Certificate != "") && base.Scheme != "https" {
-		return errors.New("TLS panel public URL must use https")
-	}
+	options.PublicURL = options.origin()
 	if options.Certificate != "" {
-		listener = tls.NewListener(listener, &tls.Config{MinVersion: tls.VersionTLS12, GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
-			pair, err := tls.LoadX509KeyPair(options.Certificate, options.Key)
-			return &pair, err
-		}})
+		base, _ := url.Parse(options.PublicURL)
+		cache := &panelCertificateCache{asset: CertificateAsset{Domain: base.Hostname(), Certificate: options.Certificate, Key: options.Key}}
+		listener = tls.NewListener(listener, &tls.Config{MinVersion: tls.VersionTLS12, GetCertificate: cache.get})
 	}
 	child, cancel := context.WithCancel(ctx)
 	defer cancel()

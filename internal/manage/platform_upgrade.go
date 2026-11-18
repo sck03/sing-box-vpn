@@ -17,7 +17,7 @@ import (
 
 var programVersion = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
 
-func (s *PlatformService) upgradeProgram(ctx context.Context, version string) error {
+func (s *PlatformService) upgradeProgram(ctx context.Context, id int64, version string) error {
 	if s.NoSystem {
 		return errors.New("program deployment requires Linux systemd")
 	}
@@ -61,8 +61,14 @@ func (s *PlatformService) upgradeProgram(ctx context.Context, version string) er
 	}
 	// The separate unit survives restarting this panel. The updater finishes all
 	// core checks first and defers only the panel restart until its caller exits.
-	_, err = command.Output(ctx, nil, "systemd-run", "--unit=sb-program-update", "--wait", "--collect", "--property=Type=exec", "--setenv=SB_ROOT="+s.Root, "--setenv=SB_DEFER_PANEL_RESTART=1", "/bin/bash", filepath.Join(stage, "sing-box-vpn", "sb.sh"), "upgrade")
-	return err
+	if err = s.awaitProgramUpgrade(ctx, id, release.Tag); err != nil {
+		return err
+	}
+	_, err = command.Output(ctx, nil, "systemd-run", "--unit=sb-program-update", "--wait", "--collect", "--property=Type=exec", "--setenv=SB_ROOT="+s.Root, "--setenv=SB_DEFER_PANEL_RESTART=1", fmt.Sprintf("--setenv=SB_UPGRADE_TASK_ID=%d", id), "--setenv=SB_UPGRADE_TARGET_VERSION="+release.Tag, "/bin/bash", filepath.Join(stage, "sing-box-vpn", "sb.sh"), "upgrade")
+	if err != nil {
+		return err
+	}
+	return errTaskDeferred
 }
 
 func extractProgramArchive(path, root string) error {

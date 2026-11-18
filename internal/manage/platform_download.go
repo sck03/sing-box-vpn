@@ -41,7 +41,12 @@ func (service AccountService) ServeDownload(w http.ResponseWriter, r *http.Reque
 	}
 	denial := usage.DownloadDenial(grant)
 	if resource == "usage" {
-		jsonResponse(w, Object{"name": usage.Name, "state": usage.State, "quota_bytes": usage.QuotaBytes, "charged_bytes": usage.Charged, "upload_bytes": usage.Upload, "download_bytes": usage.Download, "effective_expires_at": usage.EffectiveExpiresAt, "started_at": usage.StartedAt, "next_reset": usage.NextReset, "download_expires_at": grant.ExpiresAt, "downloads": grant.Downloads, "max_downloads": grant.MaxDownloads, "clients": grant.Clients, "download_denial": denial})
+		denial, err = service.grantDenial(r.Context(), store, usage, grant)
+		if err != nil {
+			http.Error(w, "account service unavailable", 503)
+			return
+		}
+		jsonResponse(w, Object{"name": usage.Name, "state": usage.State, "quota_bytes": usage.QuotaBytes, "charged_bytes": usage.Charged, "upload_bytes": usage.Upload, "download_bytes": usage.Download, "effective_expires_at": usage.EffectiveExpiresAt, "started_at": usage.StartedAt, "start_mode": usage.StartMode, "next_reset": usage.NextReset, "download_expires_at": grant.ExpiresAt, "downloads": grant.Downloads, "max_downloads": grant.MaxDownloads, "clients": grant.Clients, "download_denial": denial})
 		return
 	}
 	if !slices.Contains(grant.Clients, resource) {
@@ -54,6 +59,10 @@ func (service AccountService) ServeDownload(w http.ResponseWriter, r *http.Reque
 	}
 	service.Store = store
 	artifact, err := service.Export(r.Context(), application.AccountCommand{ID: grant.AccountID, Scope: grant.Scope, Client: resource})
+	if errors.Is(err, errNoBoundInbound) {
+		http.Error(w, "no_bound_inbound", http.StatusForbidden)
+		return
+	}
 	if errors.Is(err, accounting.ErrDenied) {
 		http.Error(w, "account unavailable", http.StatusForbidden)
 		return

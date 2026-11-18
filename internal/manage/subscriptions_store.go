@@ -20,22 +20,27 @@ const subscriptionsLocal = "subscriptions/local.json"
 const subscriptionsSnapshot = "subscriptions/published.json"
 
 func loadSubscriptions(root string) (sub.Config, sub.Runtime, map[string][]sub.Node, error) {
-	var c sub.Config
-	if found, err := ReadJSON(filepath.Join(root, subscriptionsConfig), &c); err != nil {
-		return c, sub.Runtime{}, nil, err
-	} else if !found {
-		c = sub.DefaultConfig()
-	}
-	if err := c.Validate(); err != nil {
-		return c, sub.Runtime{}, nil, err
-	}
-	r, err := loadSubscriptionRuntime(root)
+	c, r, err := loadSubscriptionState(root)
 	if err != nil {
 		return c, r, nil, err
 	}
 	local := map[string][]sub.Node{}
 	_, err = ReadJSON(filepath.Join(root, subscriptionsLocal), &local)
 	return c, r, local, err
+}
+
+func loadSubscriptionState(root string) (sub.Config, sub.Runtime, error) {
+	var c sub.Config
+	if found, err := ReadJSON(filepath.Join(root, subscriptionsConfig), &c); err != nil {
+		return c, sub.Runtime{}, err
+	} else if !found {
+		c = sub.DefaultConfig()
+	}
+	if err := c.Validate(); err != nil {
+		return c, sub.Runtime{}, err
+	}
+	r, err := loadSubscriptionRuntime(root)
+	return c, r, err
 }
 
 func loadSubscriptionRuntime(root string) (sub.Runtime, error) {

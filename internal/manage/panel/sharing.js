@@ -4,6 +4,9 @@ import { $, el, button, row, help, formDialog, notice } from "./ui.js";
 
 // Ordinary account shares inherit time and quota from the entitlement.
 export async function createAccountShare(accounts, ctx) {
+  accounts = accounts.filter(
+    (a) => !a.download_denial && a.download_scopes?.length,
+  );
   if (!accounts.length) throw new Error("请先创建权益并绑定入站。");
   const request = ctx.workflowRequest || api;
   const catalog = await clientCatalog(request);
@@ -21,11 +24,18 @@ export async function createAccountShare(accounts, ctx) {
         key: "scope",
         label: "运行实例",
         type: "select",
-        options: [
-          ["", "普通 + VPNGate"],
-          ["normal", "普通"],
-          ["vpngate", "VPNGate"],
-        ],
+        options: (v) =>
+          [
+            ["", "所有已绑定实例"],
+            ["normal", "普通"],
+            ["vpngate", "VPNGate"],
+          ].filter(
+            ([scope]) =>
+              !scope ||
+              accounts
+                .find((a) => a.id === v.account_id)
+                ?.download_scopes.includes(scope),
+          ),
       },
       {
         key: "clients",

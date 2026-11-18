@@ -176,7 +176,7 @@ func (s *Store) ClaimLane(ctx context.Context, lane string) (v Task, err error) 
 	}
 	// Idle workers must not contend with durable data-plane reservations.
 	var queued int
-	if err = s.db.QueryRowContext(ctx, `SELECT 1 FROM control_tasks WHERE state='queued' AND lane=? LIMIT 1`, lane).Scan(&queued); err != nil {
+	if err = s.db.QueryRowContext(ctx, `SELECT 1 FROM control_tasks WHERE state='queued' AND lane=? AND NOT EXISTS (SELECT 1 FROM control_tasks WHERE state='running' AND lane=?) LIMIT 1`, lane, lane).Scan(&queued); err != nil {
 		return v, err
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -246,7 +246,7 @@ func (s *Store) Applied(ctx context.Context, revision int64) error {
 // Only an interrupted configuration application is replayed automatically.
 // Non-idempotent operations require an explicit new request after interruption.
 func (s *Store) Recover(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE control_tasks SET state=CASE WHEN kind='apply' THEN 'queued' ELSE 'failed' END,input=CASE WHEN kind='apply' THEN input ELSE CAST('{}' AS BLOB) END,phase='interrupted',error='process interrupted; inspect state before retrying',updated=? WHERE state='running'`, time.Now().Unix())
+	_, err := s.db.ExecContext(ctx, `UPDATE control_tasks SET state=CASE WHEN kind='apply' THEN 'queued' ELSE 'failed' END,input=CASE WHEN kind='apply' THEN input ELSE CAST('{}' AS BLOB) END,phase='interrupted',error='process interrupted; inspect state before retrying',updated=? WHERE state='running' AND NOT (kind='program-upgrade' AND phase='awaiting-panel-health')`, time.Now().Unix())
 	return err
 }
 func (s *Store) Cancel(ctx context.Context, id int64) error {

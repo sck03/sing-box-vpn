@@ -32,16 +32,14 @@ func (s *PlatformService) pruneCertificates(ctx context.Context, now time.Time) 
 			return errors.New("certificate material root must be a real directory")
 		}
 		keep := map[string]bool{}
-		panel, _, err := s.panelSettings()
+		panels, err := s.panelCertificateRefs()
 		if err != nil {
 			return err
 		}
-		paths := []string{panel.Certificate, panel.Key}
-		s.panelMu.RLock()
-		if s.activePanel != nil {
-			paths = append(paths, s.activePanel.Certificate, s.activePanel.Key)
+		var paths []string
+		for _, panel := range panels {
+			paths = append(paths, panel.Certificate, panel.Key)
 		}
-		s.panelMu.RUnlock()
 		for _, name := range paths {
 			rel, e := filepath.Rel(base, name)
 			if e == nil && filepath.IsLocal(rel) {
@@ -85,4 +83,18 @@ func (s *PlatformService) pruneCertificates(ctx context.Context, now time.Time) 
 		}
 		return nil
 	})
+}
+
+func (s *PlatformService) panelCertificateRefs() (map[string]PanelOptions, error) {
+	saved, _, err := s.panelSettings()
+	if err != nil {
+		return nil, err
+	}
+	refs := map[string]PanelOptions{"面板（已保存）": saved}
+	s.panelMu.RLock()
+	defer s.panelMu.RUnlock()
+	if s.activePanel != nil {
+		refs["面板（运行中）"] = *s.activePanel
+	}
+	return refs, nil
 }

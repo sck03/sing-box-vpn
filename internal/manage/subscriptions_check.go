@@ -201,7 +201,7 @@ func checkSubscriptionOutput(ctx context.Context, root, core, id, endpoint strin
 		var recordErr error
 		if ctx.Err() == nil {
 			recordErr = withLock(root, func() error {
-				_, state, _, err := loadSubscriptions(root)
+				_, state, err := loadSubscriptionState(root)
 				if err != nil {
 					return err
 				}

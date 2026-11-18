@@ -21,6 +21,21 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
 )
 
+func defaultPanelOptions() PanelOptions { return PanelOptions{Listen: "127.0.0.1:2096"} }
+
+func (o PanelOptions) port() int {
+	_, port, _ := net.SplitHostPort(o.Listen)
+	n, _ := strconv.Atoi(port)
+	return n
+}
+
+func (o PanelOptions) origin() string {
+	if o.PublicURL != "" {
+		return o.PublicURL
+	}
+	return "http://" + o.Listen
+}
+
 // Validate saved settings; ephemeral ports are reserved for development Serve calls.
 func (o PanelOptions) Validate() error {
 	return o.validate(false)
@@ -50,7 +65,7 @@ func (o PanelOptions) validate(development bool) error {
 	if o.Certificate == "" && len(o.TrustedProxy) == 0 && !ip.IsLoopback() {
 		return errors.New("public panel requires TLS or an explicitly trusted TLS reverse proxy")
 	}
-	if o.PublicURL == "" && !ip.IsLoopback() {
+	if o.PublicURL == "" && (!ip.IsLoopback() || len(o.TrustedProxy) > 0 || o.Certificate != "") {
 		return errors.New("请填写面板公网 URL，监听 IP 不能用作分享地址")
 	}
 	if o.PublicURL != "" {
@@ -98,14 +113,14 @@ func loopbackHost(host string) bool {
 
 func shareableURL(value string) error {
 	u, err := url.Parse(value)
-	if err != nil || u.Hostname() == "" || !slices.Contains([]string{"http", "https"}, u.Scheme) || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || loopbackHost(u.Hostname()) {
+	if err != nil || u.Hostname() == "" || u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || loopbackHost(u.Hostname()) {
 		return errors.New("请先在「公网访问」配置域名或可访问的 IP 与 HTTPS，或启用独立下载监听并填写公网 URL；127.0.0.1/localhost 不能分享给其他人")
 	}
 	return nil
 }
 
 func (s *PlatformService) panelSettings() (PanelOptions, string, error) {
-	o := PanelOptions{Listen: "127.0.0.1:2096"}
+	o := defaultPanelOptions()
 	_, err := ReadJSON(filepath.Join(s.Root, "panel.json"), &o)
 	data, _ := json.Marshal(o)
 	sum := sha256.Sum256(data)
@@ -113,8 +128,7 @@ func (s *PlatformService) panelSettings() (PanelOptions, string, error) {
 }
 
 func (s *PlatformService) validatePanelListener(ctx context.Context, options PanelOptions) error {
-	_, port, _ := net.SplitHostPort(options.Listen)
-	n, _ := strconv.Atoi(port)
+	n := options.port()
 	state, err := s.Store.State(ctx)
 	if err != nil {
 		return err
@@ -148,12 +162,8 @@ func (s *PlatformService) validateConfiguredPanelPort(c PlatformConfig) error {
 }
 
 func samePanelOptions(saved, active PanelOptions) bool {
-	if saved.PublicURL == "" {
-		saved.PublicURL = "http://" + saved.Listen
-		if saved.Certificate != "" {
-			saved.PublicURL = "https://" + saved.Listen
-		}
-	}
+	saved.PublicURL = saved.origin()
+	active.PublicURL = active.origin()
 	if len(saved.TrustedProxy) == 0 {
 		saved.TrustedProxy = nil
 	}

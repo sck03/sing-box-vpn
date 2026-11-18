@@ -3,7 +3,6 @@ package manage
 import (
 	"encoding/base64"
 	"net/http"
-	"time"
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
@@ -129,7 +128,7 @@ func (s *PlatformService) serveAccounts(w http.ResponseWriter, r *http.Request, 
 				platformError(w, e)
 				return true
 			}
-			v, e := s.Accounts.AccountPage(ctx, q, time.Now(), r.URL.Query().Get("archived") == "true")
+			v, e := s.shareAccountPage(ctx, q, r.URL.Query().Get("archived") == "true")
 			if e != nil {
 				platformError(w, e)
 			} else {

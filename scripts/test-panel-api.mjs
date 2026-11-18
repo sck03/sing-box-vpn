@@ -115,12 +115,27 @@ async function finished(id) {
   throw new Error("Test task did not finish");
 }
 await finished(queued.task_id);
-assert.equal((await call("/api/grants", {
-  id: "local-" + suffix, account_id: account, clients: ["uri"],
-})).status, 400, "loopback shares must be rejected");
+assert.equal(
+  (
+    await call("/api/grants", {
+      id: "local-" + suffix,
+      account_id: account,
+      clients: ["uri"],
+    })
+  ).status,
+  400,
+  "loopback shares must be rejected",
+);
 // This synthetic origin is used only in the disposable no-system installation.
-config.listener = { enabled: true, listen: "127.0.0.1", port: 2097, public_base_url: "https://subscriptions.example.test" };
-await finished(ok(await call("/api/config", { revision: state.revision, config })).task_id);
+config.listener = {
+  enabled: true,
+  listen: "127.0.0.1",
+  port: 2097,
+  public_base_url: "https://subscriptions.example.test",
+};
+await finished(
+  ok(await call("/api/config", { revision: state.revision, config })).task_id,
+);
 state = ok(await call("/api/config"));
 assert(
   ok(
@@ -196,24 +211,108 @@ assert.equal(saved.revision, saved.applied_revision);
 const options = ok(await call("/api/grant-options"));
 assert.equal(options.pending, false);
 assert(options.outputs.some((o) => o.id === "output"));
-assert.equal(ok(await call("/u/" + grant.token + "/usage")).download_denial, "download_limit");
-const limited = { id: "limited-" + suffix, name: "限额权益", quota_bytes: 0, duration_seconds: 86400 };
+assert.equal(
+  ok(await call("/u/" + grant.token + "/usage")).download_denial,
+  "download_limit",
+);
+const limited = {
+  id: "limited-" + suffix,
+  name: "限额权益",
+  quota_bytes: null,
+  duration_seconds: 86400,
+};
 ok(await call("/api/accounts", { account: limited }));
-const findAccount = async (archived = false) => ok(await call(`/api/accounts?q=${limited.id}&archived=${archived}`)).items[0];
+const findAccount = async (archived = false) =>
+  ok(await call(`/api/accounts?q=${limited.id}&archived=${archived}`)).items[0];
 let entitlement = await findAccount();
 assert.equal(entitlement.expires_at, null);
 assert(entitlement.effective_expires_at);
-ok(await call("/api/accounts", { account: { ...limited, name: "改名", revision: entitlement.revision } }));
-assert.equal((await findAccount()).expires_at, null);
-const denied = ok(await call("/api/grants", { id: "limited-share-" + suffix, account_id: limited.id, clients: ["uri"] }));
-assert.equal(ok(await call(`/u/${denied.token}/usage`)).download_denial, "quota_exhausted");
+assert.equal(entitlement.download_denial, "no_bound_inbound");
+assert.equal(
+  (
+    await call("/api/grants", {
+      id: "unbound-" + suffix,
+      account_id: limited.id,
+      clients: ["uri"],
+    })
+  ).status,
+  400,
+);
+await finished(
+  ok(
+    await call("/api/tasks", {
+      operation: "account",
+      account: {
+        operation: "bind",
+        id: limited.id,
+        scope: "normal",
+        inbound_ids: [inbound.id],
+      },
+    }),
+  ).task_id,
+);
+const denied = ok(
+  await call("/api/grants", {
+    id: "limited-share-" + suffix,
+    account_id: limited.id,
+    clients: ["uri"],
+  }),
+);
+const credentials = ok(
+  await call(`/api/credentials?id=${limited.id}&scope=normal`),
+);
+await finished(
+  ok(
+    await call("/api/tasks", {
+      operation: "account",
+      account: {
+        operation: "unbind",
+        id: credentials[0].id,
+        generation: credentials[0].generation,
+        scope: "normal",
+      },
+    }),
+  ).task_id,
+);
+assert.equal(
+  ok(await call(`/u/${denied.token}/usage`)).download_denial,
+  "no_bound_inbound",
+);
 assert.equal((await call(`/u/${denied.token}/uri`)).status, 403);
-assert.equal((await call("/api/accounts/archive", { id: limited.id, revision: entitlement.revision })).status, 409);
+limited.quota_bytes = 0;
 entitlement = await findAccount();
-ok(await call("/api/accounts/archive", { id: limited.id, revision: entitlement.revision }));
+ok(
+  await call("/api/accounts", {
+    account: { ...limited, name: "改名", revision: entitlement.revision },
+  }),
+);
+assert.equal((await findAccount()).expires_at, null);
+assert.equal(
+  ok(await call(`/u/${denied.token}/usage`)).download_denial,
+  "quota_exhausted",
+);
+assert.equal((await call(`/u/${denied.token}/uri`)).status, 403);
+assert.equal(
+  (
+    await call("/api/accounts/archive", {
+      id: limited.id,
+      revision: entitlement.revision,
+    })
+  ).status,
+  409,
+);
+entitlement = await findAccount();
+ok(
+  await call("/api/accounts/archive", {
+    id: limited.id,
+    revision: entitlement.revision,
+  }),
+);
 assert.equal(await findAccount(), undefined);
 assert.equal((await findAccount(true)).state, "archived");
-assert(!ok(await call("/api/account-options")).some((o) => o.id === limited.id));
+assert(
+  !ok(await call("/api/account-options")).some((o) => o.id === limited.id),
+);
 assert.equal((await call(`/u/${denied.token}/usage`)).status, 404);
 
 console.log(

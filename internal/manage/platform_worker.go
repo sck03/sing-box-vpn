@@ -59,6 +59,12 @@ func (s *PlatformService) runLane(ctx context.Context, lane string) error {
 			}
 			if time.Now().After(nextSubscriptions) {
 				nextSubscriptions = time.Now().Add(time.Minute)
+				if err := s.reconcileProgramUpgrade(ctx); err != nil {
+					_ = s.Auth.Audit(ctx, "scheduler", "upgrade-receipt", "", "failed")
+				}
+				if err := s.Store.ExpireExternal(ctx, time.Now().Add(-upgradeWaitBudget)); err != nil {
+					return err
+				}
 				if err := s.scheduleSubscriptions(ctx); err != nil {
 					_ = s.Auth.Audit(ctx, "scheduler", "subscription-schedule", "", "failed")
 				}
@@ -123,6 +129,9 @@ func (s *PlatformService) runTask(ctx context.Context, task controlstore.Task) e
 		}
 	}
 	cancel()
+	if errors.Is(err, errTaskDeferred) {
+		return nil
+	}
 	finish, stop := context.WithTimeout(context.Background(), 10*time.Second)
 	defer stop()
 	result := "success"

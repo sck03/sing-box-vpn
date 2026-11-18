@@ -159,8 +159,15 @@ export function outboundFields(protocols, tags, resolvers) {
       options: [
         ["", "TCP"],
         ["ws", "WebSocket"],
+        ["grpc", "gRPC"],
       ],
       visible: (v) => ["vless", "vmess"].includes(v.type),
+    },
+    {
+      key: "transport.service_name",
+      label: "gRPC 服务名",
+      visible: (v) =>
+        ["vless", "vmess"].includes(v.type) && v.transport?.type === "grpc",
     },
     {
       key: "transport.path",
@@ -200,7 +207,26 @@ export function outboundFields(protocols, tags, resolvers) {
   ];
 }
 
-export function normalizeOutbound(v) {
+export function normalizeOutbound(v, previous) {
+  if (
+    previous &&
+    previous.transport?.type !== v.transport?.type &&
+    v.transport
+  ) {
+    const { type, path, headers, service_name } = v.transport;
+    v.transport =
+      type === "ws" ? { type, path, headers } : { type, service_name };
+  }
+  if (
+    previous &&
+    previous.type === v.type &&
+    previous.flow === v.flow &&
+    previous.tls?.enabled === v.tls?.enabled &&
+    previous.tls?.reality?.enabled === v.tls?.reality?.enabled &&
+    previous.tls?.utls?.enabled === v.tls?.utls?.enabled &&
+    previous.transport?.type === v.transport?.type
+  )
+    return v;
   if (!isRemote(v)) {
     delete v.server;
     delete v.server_port;
@@ -234,7 +260,7 @@ export function normalizeOutbound(v) {
   }
   if (!["vless", "vmess"].includes(v.type) || !v.transport?.type)
     delete v.transport;
-  if (v.flow && (!v.tls?.enabled || v.transport?.type === "ws"))
+  if (v.flow && (!v.tls?.enabled || v.transport?.type))
     throw new Error("Vision 需要 TLS + TCP，请调整传输或关闭 Flow。");
   for (const key of ["detour", "domain_resolver"]) if (!v[key]) delete v[key];
   return v;

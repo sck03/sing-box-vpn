@@ -41,6 +41,8 @@ func (s AccountService) Credentials(ctx context.Context, id, scope string) ([]Cr
 	return result, nil
 }
 
+var errNoBoundInbound = errors.New("所选实例没有可用入站")
+
 func (s AccountService) Export(ctx context.Context, c application.AccountCommand) (sub.Artifact, error) {
 	profile, supported := clientprofile.Lookup(c.Client)
 	if !supported {
@@ -60,6 +62,9 @@ func (s AccountService) Export(ctx context.Context, c application.AccountCommand
 	})
 	if err != nil {
 		return sub.Artifact{}, err
+	}
+	if len(nodes) == 0 {
+		return sub.Artifact{}, errNoBoundInbound
 	}
 	artifact, _, err := sub.Render(nodes, sub.Template{ID: "account", Version: 1, Client: c.Client, Mode: profile.AccountMode, Preset: "proxy"}, false)
 	return artifact, err

@@ -1,0 +1,69 @@
+{
+  "date": "2026-11-19",
+  "base_commit": "ccb909346de4885f5aacff5df55fce75d200614a",
+  "scope": "Outbound preservation, panel access validation, entitlement share readiness, certificate caching/references, upgrade completion across restart, scheduler projections and obsolete workflow cleanup",
+  "data_formats": {
+    "database": 12,
+    "platform": 4,
+    "nodes": 2,
+    "subscriptions": 2,
+    "backup": 7
+  },
+  "environment": {
+    "host": "Windows amd64, Intel i5-9400F, Go 1.27.3, Node 24.18.0",
+    "cores": "sing-box 1.14.4, Mihomo 1.19.33",
+    "linux": "Dedicated Ubuntu amd64 VM, QEMU TCG, 2 vCPU / 2 GiB",
+    "browser": "Real Chrome, desktop 1280x900 and mobile viewport 390x844"
+  },
+  "checks": {
+    "windows_go_test_all": "passed: go test ./..., short TEMP/TMP/GOTMPDIR avoids Unix socket path length failures",
+    "windows_final_manage_controlstore_test": "passed",
+    "windows_go_vet_all": "passed",
+    "npm_test_six_suites_after_formatting": "passed",
+    "outbound_grpc_and_unknown_http_transport_preservation": "passed: changing only tag preserves all other fields; copying uses the same preservation rules",
+    "panel_initialization_before_write_validation": "passed: invalid port and reverse-proxy origin are rejected without committed configuration",
+    "share_readiness_after_unbind": "passed: unbound creation rejected, existing usage reports no_bound_inbound, configuration download returns 403",
+    "panel_certificate_rotation_and_expiry": "passed: incomplete rotation preserves valid cached pair; complete rotation refreshes; expired pair is rejected",
+    "upgrade_receipt_recovery": "passed: success, rollback and rollback failure, wrong target rejected, duplicate consumption preserves final state and releases control lane",
+    "upgrade_wait_timeout": "passed: cutoff boundary, explicit failed result, late success cannot overwrite timeout, control lane becomes available",
+    "panel_health": "passed: ready worker required, Host and local socket peer checked; includes specific non-loopback local interface",
+    "subscription_schedule_projection": "passed: deadlines decoded without reading local node file or constructing unrelated node/body objects",
+    "linux_amd64_new_go_regressions": "passed using cross-compiled manage test executable in dedicated VM",
+    "linux_program_upgrade_script": "passed: stopped, active, early rollback, deferred panel success, rollback and rollback failure receipts",
+    "linux_installer_and_ownership_scripts": "passed",
+    "shellcheck": "passed at CI warning severity: shellcheck --severity=warning sb.sh install.sh lib/*.sh scripts/*.sh",
+    "real_isolated_panel_api": "passed: bind-before-share workflow, entitlement rename, expiration fields, quota/count denial and archive revision conflicts",
+    "real_browser": "passed: mouse, keyboard, touch, adjacent-button click with open menu, entitlement editing, quota rejection, no horizontal overflow; desktop/mobile screenshots inspected",
+    "git_diff_check": "passed"
+  },
+  "subscription_schedule_benchmark": {
+    "command": "go test ./internal/manage -run '^$' -bench '^BenchmarkSubscriptionScheduleRead$' -benchmem -benchtime=500ms -count=3",
+    "fixture": "4096 cached source nodes plus 4096 local nodes, same files and environment for both paths",
+    "full_projections": {
+      "ns_per_op": [16495712, 16767067, 16952056],
+      "bytes_per_op": [15880638, 15881249, 15881807]
+    },
+    "schedule": {
+      "ns_per_op": [4301307, 3798794, 3536798],
+      "bytes_per_op": [1128276, 1128294, 1128551]
+    },
+    "median_reduction": {
+      "elapsed_percent_approx": 77,
+      "allocated_bytes_percent_approx": 93
+    },
+    "limit": "Metadata read only. Runtime JSON is still scanned. These values do not measure proxy throughput, production latency, process RSS or sustained load."
+  },
+  "cleanup": {
+    "status": "Temporary panel and dedicated VM stopped. VM continuation checkout removed. Windows recursive deletion was rejected by automatic approval review (blocked by policy); temporary panel data/binaries/logs, node_modules and short test TEMP were moved to .cleanup-manual/consistency-optimization-20261119 for manual deletion. Previous obsolete caches remain under .cleanup-manual. No cleanup material is tracked by Git.",
+    "retained": "In-use toolchains, QEMU, validation qcow2 and its Ubuntu backing disk, VM SSH/seed assets, valid source fixtures and third-party licenses"
+  },
+  "remote_ci": "Local verification record; check the CI run attached to the pushed main commit separately. Earlier successful commits are not evidence for this change.",
+  "limits": [
+    "No production deployment or Release publication",
+    "No public ACME issuance or volunteer VPNGate path validation in this round",
+    "Mobile viewport and touch emulation do not replace a physical phone",
+    "No long-running saturated workload, physical power-loss test or end-to-end VPS throughput/RSS comparison",
+    "Upgrade shell scenarios and real Linux Go regressions do not constitute a complete actual systemd Release replacement acceptance",
+    "Windows race was not run; the new main CI covers Linux race and system acceptance"
+  ]
+}

@@ -216,9 +216,6 @@ func certificatePaths(c PlatformConfig) []string {
 	}
 	return paths
 }
-func decodePlatformBackup(data, password []byte) (platformBackup, error) {
-	return backuparchive.Read(data, password)
-}
 func inspectBackupDatabase(ctx context.Context, path string, data []byte) (PlatformConfig, Object, error) {
 	if err := AtomicBytes(path, data, 0600); err != nil {
 		return PlatformConfig{}, nil, err
