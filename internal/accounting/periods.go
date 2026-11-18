@@ -9,6 +9,7 @@ import (
 )
 
 func (u *Usage) describe(now time.Time) {
+	u.EffectiveExpiresAt = u.ExpiresAt
 	u.State = "active"
 	if u.StartedAt == nil || now.Before(*u.StartedAt) {
 		u.State = "not_started"
@@ -18,14 +19,14 @@ func (u *Usage) describe(now time.Time) {
 		if u.DurationSeconds > 0 {
 			end := u.StartedAt.Add(time.Duration(u.DurationSeconds) * time.Second)
 			if u.ExpiresAt == nil || end.Before(*u.ExpiresAt) {
-				u.ExpiresAt = &end
+				u.EffectiveExpiresAt = &end
 			}
 		}
 	}
 	if u.QuotaBytes != nil && u.Charged >= *u.QuotaBytes {
 		u.State = "exhausted"
 	}
-	if u.ExpiresAt != nil && !now.Before(*u.ExpiresAt) {
+	if u.EffectiveExpiresAt != nil && !now.Before(*u.EffectiveExpiresAt) {
 		u.State = "expired"
 	}
 	if u.Disabled {
@@ -33,6 +34,10 @@ func (u *Usage) describe(now time.Time) {
 	}
 	if u.SubscriberDisabled {
 		u.State = "subscriber_disabled"
+	}
+	if u.Archived {
+		u.State = "archived"
+		u.NextReset = nil
 	}
 }
 
@@ -46,34 +51,11 @@ func (s *Store) Advance(ctx context.Context, id string, now time.Time, activate 
 	return s.advanceUsage(ctx, u, now, activate)
 }
 
-// CurrentAccounts only touches rows whose billing period needs advancing.
-// The common listing path uses the already loaded snapshot without N+1 reads.
-func (s *Store) CurrentAccounts(ctx context.Context, now time.Time) ([]Usage, error) {
-	accounts, err := s.Accounts(ctx)
-	if err != nil {
-		return nil, err
-	}
-	people, err := s.Subscribers(ctx)
-	if err != nil {
-		return nil, err
-	}
-	disabled := make(map[string]bool, len(people))
-	for _, person := range people {
-		disabled[person.ID] = person.Disabled
-	}
-	for i, u := range accounts {
-		accounts[i], err = s.advanceUsage(ctx, u, now, false)
-		if err != nil {
-			return nil, err
-		}
-		accounts[i].SubscriberDisabled = disabled[u.SubscriberID]
-		accounts[i].describe(now)
-	}
-	return accounts, nil
-}
-
 func (s *Store) advanceUsage(ctx context.Context, u Usage, now time.Time, activate bool) (Usage, error) {
 	id := u.ID
+	if u.Archived {
+		return u, nil
+	}
 	needs := u.StartedAt == nil && activate
 	if u.StartedAt != nil {
 		start, _ := u.Period.Bounds(*u.StartedAt, now)
@@ -94,6 +76,9 @@ func (s *Store) advanceUsage(ctx context.Context, u Usage, now time.Time, activa
 	u, err = readAccount(tx.QueryRowContext(ctx, `SELECT `+accountColumns+` FROM accounts WHERE id=?`, id))
 	if err != nil {
 		return u, err
+	}
+	if u.Archived {
+		return u, nil
 	}
 	if u.StartedAt == nil && activate {
 		if u.Disabled || (u.ExpiresAt != nil && !now.Before(*u.ExpiresAt)) {

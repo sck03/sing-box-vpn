@@ -4,23 +4,11 @@ import (
 	"context"
 	"errors"
 	"slices"
-	"time"
 
-	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/clientprofile"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
-
-// Query methods return values; HTTP and CLI own their response encoding.
-func (s AccountService) List(ctx context.Context) ([]accounting.Usage, error) {
-	store, closeStore, err := s.openStore()
-	if err != nil {
-		return nil, err
-	}
-	defer closeStore()
-	return store.CurrentAccounts(ctx, time.Now())
-}
 
 type CredentialSummary struct {
 	ID         string `json:"id"`

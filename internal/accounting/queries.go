@@ -11,7 +11,7 @@ import (
 )
 
 func (s *Store) AccountOptions(ctx context.Context) ([]application.Option, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,name FROM accounts ORDER BY name,id LIMIT 1000`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,name FROM accounts WHERE archived=0 ORDER BY name,id LIMIT 1000`)
 	if err != nil {
 		return nil, err
 	}
@@ -27,7 +27,7 @@ func (s *Store) AccountOptions(ctx context.Context) ([]application.Option, error
 	return result, rows.Err()
 }
 
-func (s *Store) AccountPage(ctx context.Context, q application.PageQuery, now time.Time) (application.Page[Usage], error) {
+func (s *Store) AccountPage(ctx context.Context, q application.PageQuery, now time.Time, archived bool) (application.Page[Usage], error) {
 	result := application.Page[Usage]{Items: []Usage{}, Offset: q.Offset, Limit: q.Limit}
 	if err := q.Validate(); err != nil {
 		return result, err
@@ -39,16 +39,16 @@ func (s *Store) AccountPage(ctx context.Context, q application.PageQuery, now ti
 	if q.Descending {
 		order = strings.ReplaceAll(order, ",", " DESC,") + " DESC"
 	}
-	filter := `(?='' OR instr(lower(id||' '||name||' '||subscriber),lower(?))>0)`
+	filter := `archived=? AND (?='' OR instr(lower(id||' '||name||' '||subscriber),lower(?))>0)`
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return result, err
 	}
 	defer tx.Rollback()
-	if err = tx.QueryRowContext(ctx, `SELECT count(*) FROM accounts WHERE `+filter, q.Search, q.Search).Scan(&result.Total); err != nil {
+	if err = tx.QueryRowContext(ctx, `SELECT count(*) FROM accounts WHERE `+filter, archived, q.Search, q.Search).Scan(&result.Total); err != nil {
 		return result, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT `+accountColumns+`,EXISTS(SELECT 1 FROM subscribers s WHERE s.id=accounts.subscriber AND s.disabled=1) FROM accounts WHERE `+filter+` ORDER BY `+order+` LIMIT ? OFFSET ?`, q.Search, q.Search, q.Limit, q.Offset)
+	rows, err := tx.QueryContext(ctx, `SELECT `+accountColumns+`,EXISTS(SELECT 1 FROM subscribers s WHERE s.id=accounts.subscriber AND s.disabled=1) FROM accounts WHERE `+filter+` ORDER BY `+order+` LIMIT ? OFFSET ?`, archived, q.Search, q.Search, q.Limit, q.Offset)
 	if err != nil {
 		return result, err
 	}

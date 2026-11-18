@@ -167,11 +167,7 @@ func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revi
 	active := []string{}
 	enabled := []string{}
 	if !s.NoSystem {
-		active, err = s.activeServices(ctx)
-		if err != nil {
-			return 0, err
-		}
-		enabled, err = s.enabledServices(ctx)
+		active, enabled, err = serviceSnapshot(ctx, true)
 		if err != nil {
 			return 0, err
 		}

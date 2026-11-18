@@ -1,6 +1,6 @@
 # 开发与发布
 
-当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载六组。数据库使用 schema 11，所有旧数据库及其备份明确拒绝。
+当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载六组。数据库使用 schema 12，所有旧数据库及其备份明确拒绝。
 
 `scripts/test-panel-navigation.mjs` 覆盖角色过滤、搜索定位、空/非法路由、同页标签的前进/返回与表单复用、延迟读取合并与取消、错误重试、权益初始读取预算、稀疏订阅草稿和 SSE 启动。`TestPanelEphemeralDevelopmentListener` 实际启动回环随机端口、请求健康接口并关闭服务，同时拒绝公网随机端口；设置校验仍拒绝保存端口 0。CI 的真实面板步骤检查子进程存活和健康就绪，失败或超时打印日志。
 
@@ -65,9 +65,9 @@ Linux root 专项通过 `RUN_NETNS_TESTS=1`、`RUN_FIREWALL_TESTS=1`、`RUN_SERV
 
 可对该独立面板运行真实 HTTP 工作流：设置 `PANEL_TEST_URL`、`PANEL_TEST_USERNAME`（默认 reviewadmin）和 `PANEL_TEST_PASSWORD`，执行 `node scripts/test-panel-api.mjs`。脚本只接受回环 URL，并在创建数据前确认服务均处于 no-system 状态。验证绑定/导出、下载次数、跨站分享、完整候选预览和任务应用；不能指向真实安装。
 
-配置预览统一为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回 `valid`、普通服务端脱敏配置、输出列表与诊断。旧 `/api/subscriptions/preview` 已删除。公开 `/api/capabilities` 提供协议、网关范围与密码字节范围。节点文档 schema=2、订阅 schema=2、平台 schema=4；备份容器格式仍为 7，但只接受 schema 11 数据库。
+配置预览统一为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回 `valid`、普通服务端脱敏配置、输出列表与诊断。旧 `/api/subscriptions/preview` 已删除。公开 `/api/capabilities` 提供协议、网关范围与密码字节范围。节点文档 schema=2、订阅 schema=2、平台 schema=4；备份容器格式仍为 7，但只接受 schema 12 数据库。
 
-当前数据库 schema 11、备份格式 7。不复用早期开发目录或旧数据库；应用配置 schema 与数据库版本分别维护。对外 CLI 保留 panel、核心 prepare/check、firewall、下载监听和网关运行模式，旧 config/accounts/subscriptions/asset/remote 命令不再暴露。
+当前数据库 schema 12、备份格式 7。不复用早期开发目录或旧数据库；应用配置 schema 与数据库版本分别维护。对外 CLI 保留 panel、核心 prepare/check、firewall、下载监听和网关运行模式，旧 config/accounts/subscriptions/asset/remote 命令不再暴露。
 
 账户策略存储为独立字段，备份结构校验随 schema 更新；所有旧 schema 数据库及其备份明确拒绝。新增回归覆盖配置快照、纯账户订阅自动恢复、模板省略字段、Argo 日志滚动、BBR 部分失败重试、任务详情权限、分页边界、日期精度及分享结果窗口。`Task.details` 是服务端生成的详情访问描述，前端不再维护任务类型白名单。
 
@@ -114,6 +114,8 @@ CI 的独立下载验证和全新安装步骤均显式传递该只读令牌；�
 验收证据写入 [实施记录](unified-management-status.md)，区分单元测试、真实网络测试、系统测试和未测范围。历史性能数据不能充当新版本提升结论。格式化 Go 使用 gofmt，前端使用 Prettier；发布不依赖前端构建工具。
 
 ## 本地清理与 main 交付
+
+真实 HTTP 测试会校验权益改名、实际到期字段、额度与次数拒绝、归档 revision 冲突以及归档筛选。完成 `node scripts/test-panel-api.mjs` 后，在同一临时面板上运行 `python scripts/test-panel-browser.py`。沿用 `PANEL_TEST_URL` 和测试管理员环境变量，需要 Python Playwright 和 Chromium。通过 `CHROME_BINARY` 可指定已有 Chrome 可执行文件。该脚本使用真实鼠标、键盘和触屏事件，并验证 390 × 844 视口中首条权益的位置。
 
 停止测试进程和专用 VM 后，可删除 `.test/` 中的日志、临时数据库、测试二进制及 Go 缓存，`.build/release/.bin/` 中的打包中间文件，以及 `scripts/__pycache__/`。下一次加载 `scripts/dev-env.ps1` 会重建缓存目录；Go 会重新下载和编译所需模块。
 

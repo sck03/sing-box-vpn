@@ -29,21 +29,8 @@ func scopeService(scope string) string {
 	return "sing-box"
 }
 func (s *PlatformService) activeServices(ctx context.Context) ([]string, error) {
-	result := []string{}
-	for _, name := range platformServices {
-		out, err := command.Output(ctx, nil, "systemctl", "show", name, "--property=ActiveState", "--value")
-		if err != nil {
-			return nil, fmt.Errorf("query %s: %w", name, err)
-		}
-		switch strings.TrimSpace(string(out)) {
-		case "active":
-			result = append(result, name)
-		case "inactive", "failed":
-		default:
-			return nil, fmt.Errorf("%s is transitioning; retry after it settles", name)
-		}
-	}
-	return result, nil
+	active, _, err := serviceSnapshot(ctx, false)
+	return active, err
 }
 func (s *PlatformService) service(ctx context.Context, name, action string) error {
 	if !slices.Contains(platformServices, name) || !slices.Contains([]string{"start", "stop", "restart", "try-restart", "enable", "disable"}, action) {
@@ -64,22 +51,27 @@ func (s *PlatformService) service(ctx context.Context, name, action string) erro
 	}
 	return err
 }
-func (s *PlatformService) ServiceStatus(ctx context.Context) ([]Object, error) {
+func readUnitStates(ctx context.Context) (map[string]Object, error) {
 	states := map[string]Object{}
+	args := append([]string{"show", "--all", "--property=Id,ActiveState,SubState,UnitFileState,LoadState,MainPID"}, platformServices...)
+	data, queryErr := command.Output(ctx, nil, "systemctl", args...)
+	for _, block := range strings.Split(strings.TrimSpace(string(data)), "\n\n") {
+		v := Object{}
+		for _, line := range strings.Split(block, "\n") {
+			if k, value, ok := strings.Cut(line, "="); ok {
+				v[k] = value
+			}
+		}
+		states[strings.TrimSuffix(text(v["Id"]), ".service")] = v
+	}
+	return states, queryErr
+}
+
+func (s *PlatformService) ServiceStatus(ctx context.Context) ([]Object, error) {
+	var states map[string]Object
 	var queryErr error
 	if !s.NoSystem {
-		args := append([]string{"show", "--property=Id,ActiveState,SubState,UnitFileState,LoadState,MainPID"}, platformServices...)
-		var data []byte
-		data, queryErr = command.Output(ctx, nil, "systemctl", args...)
-		for _, block := range strings.Split(strings.TrimSpace(string(data)), "\n\n") {
-			v := Object{}
-			for _, line := range strings.Split(block, "\n") {
-				if k, value, ok := strings.Cut(line, "="); ok {
-					v[k] = value
-				}
-			}
-			states[strings.TrimSuffix(text(v["Id"]), ".service")] = v
-		}
+		states, queryErr = readUnitStates(ctx)
 	}
 	result := []Object{}
 	for _, name := range platformServices {
@@ -116,22 +108,43 @@ func (s *PlatformService) Logs(ctx context.Context, name string) (string, error)
 
 type serviceChange struct{ Name, Action string }
 
-func (s *PlatformService) enabledServices(ctx context.Context) ([]string, error) {
-	result := []string{}
+func serviceSnapshot(ctx context.Context, withEnabled bool) ([]string, []string, error) {
+	states, err := readUnitStates(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return deploymentStates(states, withEnabled)
+}
+
+func deploymentStates(states map[string]Object, withEnabled bool) ([]string, []string, error) {
+	var active, enabled []string
 	for _, name := range platformServices {
-		out, err := command.Output(ctx, nil, "systemctl", "show", name, "--property=UnitFileState", "--value")
-		if err != nil {
-			return nil, err
+		unit := states[name]
+		if name == "argo" && unit["LoadState"] == "not-found" && unit["ActiveState"] == "inactive" {
+			continue
 		}
-		switch strings.TrimSpace(string(out)) {
+		if unit["LoadState"] != "loaded" {
+			return nil, nil, fmt.Errorf("%s is missing or unavailable", name)
+		}
+		switch unit["ActiveState"] {
+		case "active":
+			active = append(active, name)
+		case "inactive", "failed":
+		default:
+			return nil, nil, fmt.Errorf("%s is transitioning; retry after it settles", name)
+		}
+		if !withEnabled {
+			continue
+		}
+		switch unit["UnitFileState"] {
 		case "enabled":
-			result = append(result, name)
+			enabled = append(enabled, name)
 		case "disabled", "", "static":
 		default:
-			return nil, fmt.Errorf("%s has an unmanaged enable state", name)
+			return nil, nil, fmt.Errorf("%s has an unmanaged enable state", name)
 		}
 	}
-	return result, nil
+	return active, enabled, nil
 }
 func (s *PlatformService) restoreEnabled(ctx context.Context, enabled []string) error {
 	var result error

@@ -44,8 +44,8 @@ export async function subscriptions(ctx) {
     ctx.changed();
     ctx.render();
   };
-  const content = [
-    () =>
+  const views = {
+    introduction: () =>
       card(
         "订阅编译与分发",
         help(
@@ -114,7 +114,7 @@ export async function subscriptions(ctx) {
           el("a", { href: "#access" }, "设置公网访问与订阅地址 →"),
         ),
       ),
-    async () =>
+    sources: async () =>
       resourceEditor({
         title: "订阅来源",
         items: s.sources,
@@ -186,7 +186,7 @@ export async function subscriptions(ctx) {
         ],
         change,
       }),
-    () =>
+    collections: () =>
       resourceEditor({
         title: "节点集合",
         items: s.collections,
@@ -208,7 +208,7 @@ export async function subscriptions(ctx) {
         defaults: { id: "", name: "", sources: [], processor: {} },
         change,
       }),
-    async () => {
+    templates: async () => {
       const catalog = await getClients();
       return resourceEditor({
         title: "客户端模板",
@@ -231,7 +231,7 @@ export async function subscriptions(ctx) {
         change,
       });
     },
-    () =>
+    rules: () =>
       resourceEditor({
         title: "规则资源",
         items: s.rule_sets,
@@ -247,7 +247,7 @@ export async function subscriptions(ctx) {
         ],
         change,
       }),
-    () =>
+    outputs: () =>
       resourceEditor({
         title: "订阅输出",
         items: s.outputs,
@@ -284,7 +284,7 @@ export async function subscriptions(ctx) {
         ],
         change,
       }),
-    () =>
+    deliveries: () =>
       resourceEditor({
         title: "分发目的地",
         items: s.deliveries,
@@ -329,13 +329,16 @@ export async function subscriptions(ctx) {
         ],
         change,
       }),
-    () =>
-      card(
+    sharing: async () => {
+      const applied = await request("/api/grant-options");
+      const reason = !applied.listener_enabled ? "请在公网访问中启用下载监听并应用配置。" : applied.unavailable || (!applied.outputs.length && "请先创建并应用一个订阅输出。");
+      return card(
         "输出下载授权",
         help(
           "允许下载已应用的输出。留空表示不限，0 禁止下载。创建和撤销立即生效；授权与计数保存在数据库。",
         ),
-        button("创建输出分享", () =>
+        (applied.pending || ctx.dirty) ? help("配置有待应用的更改。当前只能分享已生效的输出。") : null,
+        reason ? help(reason) : button("创建输出分享", () =>
           formDialog(
             "输出授权",
             [
@@ -344,7 +347,8 @@ export async function subscriptions(ctx) {
                 key: "outputs",
                 label: "选择输出",
                 type: "multiselect",
-                options: s.outputs.map((v) => [v.id, v.name || v.id]),
+                options: applied.outputs.map((v) => [v.id, v.name || v.id]),
+                required: true,
               },
               { key: "expires_at", label: "下载到期", type: "date" },
               {
@@ -357,11 +361,7 @@ export async function subscriptions(ctx) {
             ],
             { id: "", outputs: [], max_downloads: null },
             async (v) => {
-              if (
-                !v.outputs.length ||
-                v.outputs.some((id) => !s.outputs.some((o) => o.id === id))
-              )
-                throw new Error("请选择存在的输出");
+              if (!v.outputs.length) throw new Error("请选择已生效的输出");
               const result = await api("/api/grants", v);
               showResult("请保存分享链接", result.urls.join("\n"));
               ctx.render();
@@ -369,8 +369,9 @@ export async function subscriptions(ctx) {
           ),
         ),
         el("p", {}, el("a", { href: "#grants" }, "查看与撤销分享链接 →")),
-      ),
-    () =>
+      );
+    },
+    diagnostics: () =>
       card(
         "诊断与立即分发",
         row(
@@ -418,17 +419,17 @@ export async function subscriptions(ctx) {
           ),
         ),
       ),
-  ];
+  };
   return [
-    content[0](),
+    views.introduction(),
     workspace(
       "subscriptions",
       {
-        sources: content[1],
-        collections: content[2],
-        templates: async () => [await content[3](), content[4]()],
-        outputs: () => [content[5](), content[7]()],
-        deliveries: () => [content[6](), content[8]()],
+        sources: views.sources,
+        collections: views.collections,
+        templates: async () => [await views.templates(), views.rules()],
+        outputs: async () => [views.outputs(), await views.sharing()],
+        deliveries: () => [views.deliveries(), views.diagnostics()],
         status: () => subscriptionStatus(ctx),
       },
       ctx,

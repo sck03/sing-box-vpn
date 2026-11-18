@@ -9,16 +9,15 @@ import (
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
-	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 func (s *PlatformService) executeAccount(ctx context.Context, id int64, command application.AccountCommand) error {
 	if command.Operation != "bind" && command.Scope != "" {
-		credentials, err := s.Accounts.Credentials(ctx, command.Scope)
+		found, err := s.Accounts.HasCredential(ctx, command.Scope, command.ID)
 		if err != nil {
 			return err
 		}
-		if !slices.ContainsFunc(credentials, func(c domain.Credential) bool { return c.ID == command.ID }) {
+		if !found {
 			return errors.New("credential belongs to a different runtime or is missing")
 		}
 	}

@@ -72,7 +72,7 @@ func TestDownloadOriginAndIdleScheduler(t *testing.T) {
 	if err = s.Store.Finish(t.Context(), id, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := s.downloadOrigin(t.Context(), "https://admin.example"); err != nil || got != "https://download.example/sub" {
+	if got, err := s.grantOptions(t.Context(), "https://admin.example"); err != nil || got.origin != "https://download.example/sub" {
 		t.Fatal(got, err)
 	}
 	if err = AtomicJSON(filepath.Join(root, subscriptionsConfig), c.Subscriptions); err != nil {

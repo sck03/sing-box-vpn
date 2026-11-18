@@ -101,6 +101,27 @@ func (s *PlatformService) serveAccounts(w http.ResponseWriter, r *http.Request, 
 		}
 		return true
 	}
+	if path == "/api/accounts/archive" && r.Method == "POST" {
+		if !require(admin) {
+			return true
+		}
+		var v struct {
+			ID       string `json:"id"`
+			Revision int64  `json:"revision"`
+		}
+		if err = decodeRequest(w, r, &v, 1024); err == nil {
+			if !audit("account-archive", v.ID) {
+				return true
+			}
+			err = s.Accounts.ArchiveAccount(ctx, v.ID, v.Revision)
+		}
+		if err != nil {
+			platformError(w, err)
+		} else {
+			jsonResponse(w, Object{"ok": true})
+		}
+		return true
+	}
 	if path == "/api/accounts" {
 		if r.Method == "GET" {
 			q, e := pageQuery(r)
@@ -108,7 +129,7 @@ func (s *PlatformService) serveAccounts(w http.ResponseWriter, r *http.Request, 
 				platformError(w, e)
 				return true
 			}
-			v, e := s.Accounts.AccountPage(ctx, q, time.Now())
+			v, e := s.Accounts.AccountPage(ctx, q, time.Now(), r.URL.Query().Get("archived") == "true")
 			if e != nil {
 				platformError(w, e)
 			} else {

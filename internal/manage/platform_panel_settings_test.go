@@ -186,8 +186,8 @@ func TestShareRejectsLoopbackBeforeCreatingGrant(t *testing.T) {
 	if err != nil || page.Total != 0 {
 		t.Fatal("invalid share persisted", page, err)
 	}
-	origin, err := s.downloadOrigin(t.Context(), "https://panel.example.com")
-	if err != nil || origin != "https://panel.example.com" {
+	origin, err := s.grantOptions(t.Context(), "https://panel.example.com")
+	if err != nil || origin.origin != "https://panel.example.com" {
 		t.Fatal(origin, err)
 	}
 }

@@ -34,7 +34,7 @@ export async function admins(ctx) {
         { key: "disabled", label: "禁用", type: "bool" },
         {
           key: "password",
-          label: a.revision ? "新密码（留空保持）" : "密码（12–72 字节）",
+          label: a.revision ? "新密码（留空保持）" : `密码（${policy.min}–${policy.max} 个 UTF-8 字节）`,
           type: "password",
           required: !a.revision,
           minBytes: policy.min,

@@ -97,6 +97,15 @@ func (s *Store) CreateGrant(ctx context.Context, g Grant) (string, error) {
 	if err = pruneGrants(ctx, tx, time.Now()); err != nil {
 		return "", err
 	}
+	if g.AccountID != "" {
+		var exists bool
+		if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM accounts WHERE id=? AND archived=0)`, g.AccountID).Scan(&exists); err != nil {
+			return "", err
+		}
+		if !exists {
+			return "", ErrDenied
+		}
+	}
 	r, err := tx.ExecContext(ctx, `INSERT INTO download_grants(id,account,scope,clients,outputs,expires,max_downloads,hash) SELECT ?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM download_grants WHERE revoked=0 AND (expires IS NULL OR expires>?) AND (account IS NOT NULL OR max_downloads IS NULL OR downloads<max_downloads))<10000`, g.ID, account, g.Scope, string(clients), string(outputs), timestamp(g.ExpiresAt), g.MaxDownloads, grantHash(token), time.Now().Unix())
 	if err != nil {
 		return "", err
@@ -140,22 +149,6 @@ func readGrant(row scanner) (g Grant, err error) {
 
 const grantColumns = `id,account,scope,clients,outputs,expires,max_downloads,downloads,revoked`
 
-func (s *Store) Grants(ctx context.Context) ([]Grant, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+grantColumns+` FROM download_grants ORDER BY created DESC,id LIMIT 11000`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []Grant{}
-	for rows.Next() {
-		v, e := readGrant(rows)
-		if e != nil {
-			return nil, e
-		}
-		out = append(out, v)
-	}
-	return out, rows.Err()
-}
 func (s *Store) RevokeGrant(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE download_grants SET revoked=1,updated=? WHERE id=? AND revoked=0`, time.Now().Unix(), id)
 	return err

@@ -193,6 +193,29 @@ assert.equal(result.result.outputs, 1);
 const saved = ok(await call("/api/config"));
 assert.equal(saved.revision, saved.applied_revision);
 
+const options = ok(await call("/api/grant-options"));
+assert.equal(options.pending, false);
+assert(options.outputs.some((o) => o.id === "output"));
+assert.equal(ok(await call("/u/" + grant.token + "/usage")).download_denial, "download_limit");
+const limited = { id: "limited-" + suffix, name: "限额权益", quota_bytes: 0, duration_seconds: 86400 };
+ok(await call("/api/accounts", { account: limited }));
+const findAccount = async (archived = false) => ok(await call(`/api/accounts?q=${limited.id}&archived=${archived}`)).items[0];
+let entitlement = await findAccount();
+assert.equal(entitlement.expires_at, null);
+assert(entitlement.effective_expires_at);
+ok(await call("/api/accounts", { account: { ...limited, name: "改名", revision: entitlement.revision } }));
+assert.equal((await findAccount()).expires_at, null);
+const denied = ok(await call("/api/grants", { id: "limited-share-" + suffix, account_id: limited.id, clients: ["uri"] }));
+assert.equal(ok(await call(`/u/${denied.token}/usage`)).download_denial, "quota_exhausted");
+assert.equal((await call(`/u/${denied.token}/uri`)).status, 403);
+assert.equal((await call("/api/accounts/archive", { id: limited.id, revision: entitlement.revision })).status, 409);
+entitlement = await findAccount();
+ok(await call("/api/accounts/archive", { id: limited.id, revision: entitlement.revision }));
+assert.equal(await findAccount(), undefined);
+assert.equal((await findAccount(true)).state, "archived");
+assert(!ok(await call("/api/account-options")).some((o) => o.id === limited.id));
+assert.equal((await call(`/u/${denied.token}/usage`)).status, 404);
+
 console.log(
   "Live panel API passed: shared constraints, current schemas, account binding/export, cross-site sharing, download limits, candidate preview and durable apply.",
 );

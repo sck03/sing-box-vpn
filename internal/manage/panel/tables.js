@@ -318,6 +318,7 @@ export async function remoteTable(columns, load, actions, options = {}) {
     );
     controls.append(sort, direction);
   }
+  if (options.filter) controls.prepend(options.filter);
   const wrapper = el(
     "div",
     { class: "remote-table" },
@@ -367,6 +368,7 @@ export async function remoteTable(columns, load, actions, options = {}) {
       }
       errors.replaceChildren();
       view.updateItems(page.items);
+      wrapper.classList.toggle("show-onboarding", page.total === 0 && !search.value && (!options.filter || options.filter.value === "current"));
       setDisabled(previous, offset === 0);
       setDisabled(next, offset + 20 >= page.total);
       count.textContent = `${Math.floor(offset / 20) + 1} / ${Math.max(1, Math.ceil(page.total / 20))} · ${page.total} 项`;
@@ -393,7 +395,7 @@ export async function remoteTable(columns, load, actions, options = {}) {
       void refresh(true);
     }, 180);
   });
-  for (const field of [sort, direction])
+  for (const field of [sort, direction, options.filter].filter(Boolean))
     field.addEventListener("change", () => {
       offset = 0;
       void refresh(true);

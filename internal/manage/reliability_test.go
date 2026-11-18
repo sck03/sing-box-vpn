@@ -218,10 +218,11 @@ func TestAccountDownloadsUseSharedClientCatalog(t *testing.T) {
 	}
 	defer store.Close()
 	service := AccountService{Root: root, Store: store}
-	for _, command := range []application.AccountCommand{{Operation: "save", Account: domain.Account{ID: "all", Name: "All"}}, {Operation: "bind", ID: "all", Scope: "normal", InboundIDs: []string{inboundID}}} {
-		if err := service.Execute(t.Context(), command, new(bytes.Buffer)); err != nil {
-			t.Fatal(err)
-		}
+	if err := store.SaveAccount(t.Context(), domain.Account{ID: "all", Name: "All"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: "all", Scope: "normal", InboundIDs: []string{inboundID}}, new(bytes.Buffer)); err != nil {
+		t.Fatal(err)
 	}
 	var clients []string
 	for id := range clientprofile.All() {

@@ -469,6 +469,7 @@ footer {
 .workspace [role="tabpanel"] > .card:last-child {
   margin-bottom: 0;
 }
+.card:has(.remote-table:not(.show-onboarding)) > .workflow { display: none; }
 .workflow {
   list-style: none;
   display: grid;

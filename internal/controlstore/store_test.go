@@ -56,7 +56,7 @@ func TestTaskRecoveryAndConfigurationRevisions(t *testing.T) {
 	if _, e = s.Queue(ctx, "apply", "admin", []byte(`{}`), 2, []byte(`{}`)); e == nil {
 		t.Fatal("overlapping apply accepted")
 	}
-	if _, e = s.Claim(ctx); e != nil {
+	if _, e = s.ClaimLane(ctx, "control"); e != nil {
 		t.Fatal(e)
 	}
 	s.Close()
@@ -68,7 +68,7 @@ func TestTaskRecoveryAndConfigurationRevisions(t *testing.T) {
 	if e = s.Recover(ctx); e != nil {
 		t.Fatal(e)
 	}
-	task, e := s.Claim(ctx)
+	task, e := s.ClaimLane(ctx, "control")
 	if e != nil || task.ID != id {
 		t.Fatal(task, e)
 	}
@@ -89,7 +89,7 @@ func TestTaskRecoveryAndConfigurationRevisions(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if _, e = s.Claim(ctx); e != nil {
+	if _, e = s.ClaimLane(ctx, "control"); e != nil {
 		t.Fatal(e)
 	}
 	if e = s.Recover(ctx); e != nil {

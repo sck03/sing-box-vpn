@@ -53,6 +53,7 @@ func TestControlResponseBoundaries(t *testing.T) {
 					size := len(test.body)
 					if test.truncated {
 						size++
+						w.Header().Set("Connection", "close")
 					}
 					w.Header().Set("Content-Length", fmt.Sprint(size))
 				}
@@ -61,6 +62,22 @@ func TestControlResponseBoundaries(t *testing.T) {
 					w.(http.Flusher).Flush()
 				}
 				_, _ = w.Write([]byte(test.body))
+				if test.truncated {
+					// Signal end of stream explicitly for Windows AF_UNIX clients.
+					conn, buf, err := http.NewResponseController(w).Hijack()
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					defer conn.Close()
+					if err := buf.Flush(); err != nil {
+						t.Error(err)
+						return
+					}
+					if err := conn.(*net.UnixConn).CloseWrite(); err != nil {
+						t.Error(err)
+					}
+				}
 			})}
 			defer server.Close()
 			go server.Serve(listener)

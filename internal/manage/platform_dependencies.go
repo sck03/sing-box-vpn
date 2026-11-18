@@ -13,16 +13,11 @@ func (s *PlatformService) InboundImpact(ctx context.Context, scope, id string) (
 	if !slices.Contains([]string{"normal", "vpngate"}, scope) || !domain.ResourceID.MatchString(id) {
 		return nil, errors.New("invalid inbound identity")
 	}
-	credentials, err := s.Accounts.Credentials(ctx, scope)
+	accounts, grants, err := s.Accounts.InboundReferences(ctx, scope, id)
 	if err != nil {
 		return nil, err
 	}
-	accounts, sources, collections, outputs, grants := []string{}, []string{}, []string{}, []string{}, []string{}
-	for _, credential := range credentials {
-		if credential.InboundID == id && !slices.Contains(accounts, credential.AccountID) {
-			accounts = append(accounts, credential.AccountID)
-		}
-	}
+	sources, collections, outputs := []string{}, []string{}, []string{}
 	state, err := s.Store.State(ctx)
 	if err != nil {
 		return nil, err
@@ -44,15 +39,6 @@ func (s *PlatformService) InboundImpact(ctx context.Context, scope, id string) (
 	for _, output := range c.Subscriptions.Outputs {
 		if slices.Contains(collections, output.Collection) {
 			outputs = append(outputs, output.ID)
-		}
-	}
-	all, err := s.Accounts.Grants(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, grant := range all {
-		if !grant.Revoked && (grant.Scope == scope || grant.Scope == "") && slices.Contains(accounts, grant.AccountID) {
-			grants = append(grants, grant.ID)
 		}
 	}
 	return Object{"inbound": id, "scope": scope, "accounts": accounts, "sources": sources, "outputs": outputs, "download_grants": grants}, nil

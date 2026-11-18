@@ -20,6 +20,7 @@ import {
   notice,
 } from "./ui.js";
 const states = {
+  archived: "已归档",
   active: "正常",
   not_started: "未开始",
   exhausted: "额度耗尽",
@@ -288,14 +289,12 @@ export async function accounts(ctx) {
     );
     dialog.showModal();
   };
+  const lifecycle = el("select", { "aria-label": "权益范围" },
+    el("option", { value: "current" }, "当前权益"),
+    el("option", { value: "archived" }, "归档记录"));
   const content = [
     card(
-      "独立权益与用量",
-      help(
-        admin
-          ? "为用户创建额度与有效期，绑定节点后即可分享。普通节点与 VPNGate 可以共享同一份额度。用量包含尚未结算的预留流量。"
-          : "用量包含尚未结算的预留流量。",
-      ),
+      "权益记录",
       admin
         ? el(
             "ol",
@@ -386,17 +385,23 @@ export async function accounts(ctx) {
             label: "用量 / 额度",
             value: (a) => `${bytes(a.charged_bytes)} / ${bytes(a.quota_bytes)}`,
           },
-          { label: "代理到期", value: (a) => date(a.expires_at) },
+          { label: "代理到期", value: (a) => date(a.effective_expires_at) },
           { label: "下次重置", value: (a) => date(a.next_reset) },
         ],
-        (params) => request("/api/accounts?" + new URLSearchParams(params)),
+        (params) => request("/api/accounts?" + new URLSearchParams({ ...params, archived: lifecycle.value === "archived" })),
         (item) => [
-          ...(admin
+          ...(admin && !item.archived
             ? [
                 button("绑定", () => bind(item)),
                 button("分享", () => createAccountShare([item], ctx)),
                 button("编辑", () => edit(item)),
                 button("凭据", () => credentials(item)),
+                button("归档", async () => {
+                  if (!confirm(`永久归档「${item.name}」？凭据与下载链接将撤销，账本和历史可在归档记录中查看。`)) return;
+                  await api("/api/accounts/archive", { id: item.id, revision: item.revision });
+                  await list.refresh(true);
+                  notice("权益已归档");
+                }, "danger"),
                 button("导出 / 二维码", async () =>
                   formDialog(
                     "账户专属导出",
@@ -450,6 +455,7 @@ export async function accounts(ctx) {
           signal: ctx.signal,
           actionVersion: (a) => [a.id, a.revision],
           label: "搜索权益",
+          filter: lifecycle,
           placeholder: "搜索 ID、名称或用户分组…",
           sortOptions: [
             ["created", "创建时间"],

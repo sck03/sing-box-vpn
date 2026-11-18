@@ -79,6 +79,18 @@ export const row = (...children) => el("div", { class: "row" }, ...children);
 export const badge = (text, kind = "") =>
   el("span", { class: "tag " + kind }, text);
 
+const menuDocuments = new WeakSet();
+function dismissOutsideMenus(doc) {
+  if (menuDocuments.has(doc)) return;
+  menuDocuments.add(doc);
+  const dismiss = (event) => {
+    for (const menu of doc.querySelectorAll("details.action-menu[open]"))
+      if (!menu.contains(event.target)) menu.open = false;
+  };
+  doc.addEventListener("pointerdown", dismiss, true);
+  doc.addEventListener("focusin", dismiss, true);
+}
+
 export function actionGroup(items, limit = 2) {
   const controls = items.filter(Boolean);
   const group = el("div", { class: "actions" }, controls.slice(0, limit));
@@ -96,11 +108,7 @@ export function actionGroup(items, limit = 2) {
       toggle.focus();
     }
   });
-  more.addEventListener("focusout", () =>
-    queueMicrotask(() => {
-      if (!more.contains(document.activeElement)) more.open = false;
-    }),
-  );
+  dismissOutsideMenus(more.ownerDocument);
   more.addEventListener("click", (event) => {
     if (event.target.closest("button")) more.open = false;
   });

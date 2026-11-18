@@ -3,6 +3,14 @@ import { capabilities } from "./capabilities.js";
 import { tasksCard } from "./tasks.js";
 import { canView, pageFor, groupFor, routeFor } from "./page-catalog.js";
 import { el, card, help, table, badge, button } from "./ui.js";
+
+function configurationStatus(snapshot) {
+  if (snapshot.revision === snapshot.applied_revision)
+    return `已应用 v${snapshot.applied_revision}`;
+  const task = snapshot.tasks.find((entry) => entry.kind === "apply");
+  const stage = { queued: "排队中", running: "应用中", failed: "应用失败" }[task?.state] || "待应用";
+  return `v${snapshot.revision} ${stage} · 生效 v${snapshot.applied_revision}`;
+}
 export async function overview(ctx) {
   const metadata = await capabilities();
   const data = ctx.overview || (await (ctx.request || api)("/api/overview"));
@@ -59,7 +67,7 @@ export async function overview(ctx) {
     { class: "stats" },
     ...[
       [
-        data.applied_revision === data.revision ? "已同步" : "待应用",
+        configurationStatus(data),
         "配置状态",
       ],
       [data.runtimes.filter((v) => v.recent).length, "近期在线实例"],
@@ -198,7 +206,7 @@ export async function overview(ctx) {
     updateHealth(next);
     ctx.observeRevision(next.revision);
     const values = [
-      next.applied_revision === next.revision ? "已同步" : "待应用",
+      configurationStatus(next),
       next.runtimes.filter((v) => v.recent).length,
       next.tasks.filter((v) => v.state === "failed").length,
       next.tasks.filter((t) => ["queued", "running"].includes(t.state)).length,

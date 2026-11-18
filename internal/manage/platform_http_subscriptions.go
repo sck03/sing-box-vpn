@@ -27,6 +27,18 @@ func (s *PlatformService) serveGrants(w http.ResponseWriter, r *http.Request, ac
 		jsonResponse(w, sub.Capabilities())
 		return true
 	}
+	if path == "/api/grant-options" && r.Method == "GET" {
+		if !require(admin) {
+			return true
+		}
+		v, e := s.grantOptions(ctx, access.publicURL)
+		if e != nil {
+			platformError(w, e)
+		} else {
+			jsonResponse(w, v)
+		}
+		return true
+	}
 	if path == "/api/grants" {
 		if !require(admin) {
 			return true
@@ -52,15 +64,16 @@ func (s *PlatformService) serveGrants(w http.ResponseWriter, r *http.Request, ac
 					return true
 				}
 				var token string
-				var origin string
-				origin, err = s.downloadOrigin(ctx, access.publicURL)
-				if err == nil && len(g.Outputs) > 0 {
-					err = s.validateOutputGrant(ctx, g.Outputs)
+				var options grantOptions
+				options, err = s.grantOptions(ctx, access.publicURL)
+				if err == nil {
+					err = options.validate(g.Outputs)
 				}
 				if err == nil {
 					token, err = s.Accounts.CreateGrant(ctx, g)
 				}
 				if err == nil {
+					origin := options.origin
 					urls := []string{}
 					for _, id := range g.Outputs {
 						urls = append(urls, origin+"/s/"+token+"/"+id)

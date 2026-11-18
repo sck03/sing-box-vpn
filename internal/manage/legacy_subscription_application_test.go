@@ -52,11 +52,11 @@ func (s SubscriptionService) legacyExecute(ctx context.Context, command fixtureS
 				return store.RevokeGrant(ctx, id)
 			}
 			if operation == "logs" {
-				grants, err := store.Grants(ctx)
+				grants, err := store.GrantPage(ctx, "", 0, 100)
 				if err != nil {
 					return err
 				}
-				return write(Object{"runtime": r, "downloads": grants})
+				return write(Object{"runtime": r, "downloads": grants.Items})
 			}
 			for _, id := range command.Outputs {
 				if !slices.ContainsFunc(c.Outputs, func(o sub.Output) bool { return o.ID == id }) {

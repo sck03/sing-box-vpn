@@ -170,21 +170,13 @@ func (s *Store) queue(ctx context.Context, lane, kind, actor string, input []byt
 	}
 	return id, tx.Commit()
 }
-func (s *Store) Claim(ctx context.Context) (v Task, err error) {
-	return s.claim(ctx, "")
-}
-
-func (s *Store) ClaimLane(ctx context.Context, lane string) (Task, error) {
+func (s *Store) ClaimLane(ctx context.Context, lane string) (v Task, err error) {
 	if lane != "control" && lane != "background" {
 		return Task{}, errors.New("unknown task lane")
 	}
-	return s.claim(ctx, lane)
-}
-
-func (s *Store) claim(ctx context.Context, lane string) (v Task, err error) {
 	// Idle workers must not contend with durable data-plane reservations.
 	var queued int
-	if err = s.db.QueryRowContext(ctx, `SELECT 1 FROM control_tasks WHERE state='queued' AND (?='' OR lane=?) LIMIT 1`, lane, lane).Scan(&queued); err != nil {
+	if err = s.db.QueryRowContext(ctx, `SELECT 1 FROM control_tasks WHERE state='queued' AND lane=? LIMIT 1`, lane).Scan(&queued); err != nil {
 		return v, err
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -192,10 +184,10 @@ func (s *Store) claim(ctx context.Context, lane string) (v Task, err error) {
 		return v, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `UPDATE control_tasks SET updated=updated WHERE state='queued'`); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE control_tasks SET updated=updated WHERE id=-1`); err != nil {
 		return v, err
 	}
-	err = tx.QueryRowContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,input FROM control_tasks WHERE state='queued' AND (?='' OR lane=?) ORDER BY id LIMIT 1`, lane, lane).Scan(&v.ID, &v.Kind, &v.Actor, &v.State, &v.Phase, &v.Error, &v.Created, &v.Updated, &v.Input)
+	err = tx.QueryRowContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,input FROM control_tasks WHERE state='queued' AND lane=? ORDER BY id LIMIT 1`, lane).Scan(&v.ID, &v.Kind, &v.Actor, &v.State, &v.Phase, &v.Error, &v.Created, &v.Updated, &v.Input)
 	if err != nil {
 		return v, err
 	}

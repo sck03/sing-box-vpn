@@ -112,7 +112,7 @@ func (a *authorization) check(ctx context.Context, store *Store, force bool) (Us
 
 func (a *authorization) setDeadline(now time.Time, epoch uint64) {
 	a.epoch, a.checkedAt, a.until = epoch, now, now.Add(AuthorizationInterval)
-	for _, deadline := range []*time.Time{a.usage.ExpiresAt, a.usage.NextReset} {
+	for _, deadline := range []*time.Time{a.usage.EffectiveExpiresAt, a.usage.NextReset} {
 		if deadline != nil && deadline.Before(a.until) {
 			a.until = *deadline
 		}

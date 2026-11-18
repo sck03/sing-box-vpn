@@ -58,7 +58,7 @@ async function load(token, signal, current) {
   const details = element("dl", "");
   details.className = "detail-grid";
   for (const [label, value] of [
-    ["代理到期", when(u.expires_at)],
+    ["代理到期", when(u.effective_expires_at)],
     ["额度重置", when(u.next_reset)],
     ["下载到期", when(u.download_expires_at)],
     ["已下载次数", u.downloads + " / " + (u.max_downloads ?? "不限")],
@@ -68,18 +68,20 @@ async function load(token, signal, current) {
     heading,
     usage,
     details,
-    element("h2", "添加到客户端"),
-    element("p", "选择对应客户端，复制订阅链接导入，或直接下载配置。"),
   );
-  if (u.max_downloads !== null && u.downloads >= u.max_downloads) {
+  if (u.download_denial) {
     target.append(
       element(
         "p",
-        "下载次数已用完。用量仍可查询；已导入的配置按权益额度和有效期继续使用。",
+        u.download_denial === "download_limit"
+          ? "下载次数已用完。仍可查询用量，已导入的配置按权益额度和有效期继续使用。"
+          : "本期流量额度已耗尽。仍可查询用量，额度恢复后可再次下载。",
       ),
     );
     return;
   }
+  target.append(element("h2", "添加到客户端"),
+    element("p", "选择对应客户端，复制订阅链接导入，或直接下载配置。"));
   for (const client of u.clients) {
     const wrap = document.createElement("div");
     wrap.className = "client-download";

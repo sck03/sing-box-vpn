@@ -1,6 +1,8 @@
 package manage
 
 import (
+	"errors"
+	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/clientprofile"
 	"net/http"
@@ -37,20 +39,25 @@ func (service AccountService) ServeDownload(w http.ResponseWriter, r *http.Reque
 		http.NotFound(w, r)
 		return
 	}
+	denial := usage.DownloadDenial(grant)
 	if resource == "usage" {
-		jsonResponse(w, Object{"name": usage.Name, "state": usage.State, "quota_bytes": usage.QuotaBytes, "charged_bytes": usage.Charged, "upload_bytes": usage.Upload, "download_bytes": usage.Download, "expires_at": usage.ExpiresAt, "started_at": usage.StartedAt, "next_reset": usage.NextReset, "download_expires_at": grant.ExpiresAt, "downloads": grant.Downloads, "max_downloads": grant.MaxDownloads, "clients": grant.Clients})
+		jsonResponse(w, Object{"name": usage.Name, "state": usage.State, "quota_bytes": usage.QuotaBytes, "charged_bytes": usage.Charged, "upload_bytes": usage.Upload, "download_bytes": usage.Download, "effective_expires_at": usage.EffectiveExpiresAt, "started_at": usage.StartedAt, "next_reset": usage.NextReset, "download_expires_at": grant.ExpiresAt, "downloads": grant.Downloads, "max_downloads": grant.MaxDownloads, "clients": grant.Clients, "download_denial": denial})
 		return
 	}
 	if !slices.Contains(grant.Clients, resource) {
 		http.NotFound(w, r)
 		return
 	}
-	if grant.MaxDownloads != nil && grant.Downloads >= *grant.MaxDownloads {
-		http.Error(w, "download allowance exhausted", 403)
+	if denial != "" {
+		http.Error(w, denial, http.StatusForbidden)
 		return
 	}
 	service.Store = store
 	artifact, err := service.Export(r.Context(), application.AccountCommand{ID: grant.AccountID, Scope: grant.Scope, Client: resource})
+	if errors.Is(err, accounting.ErrDenied) {
+		http.Error(w, "account unavailable", http.StatusForbidden)
+		return
+	}
 	if err != nil {
 		http.Error(w, "account output unavailable", 503)
 		return

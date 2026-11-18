@@ -12,7 +12,7 @@ func (s *Store) VisibleAccount(ctx context.Context, id string, now time.Time) (U
 	if err != nil {
 		return u, err
 	}
-	if u.State == "disabled" || u.State == "expired" {
+	if u.Archived || u.State == "disabled" || u.State == "expired" {
 		return u, ErrDenied
 	}
 	if u.SubscriberID != "" {
@@ -27,9 +27,20 @@ func (s *Store) VisibleAccount(ctx context.Context, id string, now time.Time) (U
 	return u, nil
 }
 
+// DownloadDenial applies to a visible entitlement and its optional grant.
+func (u Usage) DownloadDenial(g Grant) string {
+	if u.State == "exhausted" {
+		return "quota_exhausted"
+	}
+	if g.MaxDownloads != nil && g.Downloads >= *g.MaxDownloads {
+		return "download_limit"
+	}
+	return ""
+}
+
 func (s *Store) DownloadAccount(ctx context.Context, id string, now time.Time) (Usage, error) {
 	u, err := s.VisibleAccount(ctx, id, now)
-	if err == nil && u.State == "exhausted" {
+	if err == nil && u.DownloadDenial(Grant{}) != "" {
 		err = ErrDenied
 	}
 	return u, err
@@ -46,8 +57,8 @@ type authorizationKey struct {
 
 func permitted(u Usage, now time.Time) bool {
 	// Existing durable reservations remain usable when charged equals quota.
-	return !u.Disabled && u.StartedAt != nil && !now.Before(*u.StartedAt) &&
-		(u.ExpiresAt == nil || now.Before(*u.ExpiresAt)) && (u.QuotaBytes == nil || u.Charged <= *u.QuotaBytes)
+	return !u.Archived && !u.Disabled && u.StartedAt != nil && !now.Before(*u.StartedAt) &&
+		(u.EffectiveExpiresAt == nil || now.Before(*u.EffectiveExpiresAt)) && (u.QuotaBytes == nil || u.Charged <= *u.QuotaBytes)
 }
 
 // One bounded read replaces a query per active credential on each meter tick.
@@ -61,7 +72,7 @@ func (s *Store) authorizationSnapshot(ctx context.Context, runtime string, now t
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT c.id,c.generation,a.id,a.name,a.disabled,a.expires,a.quota,a.revision,a.created,a.charged,a.upload,a.download,a.subscriber,a.start_mode,a.starts,a.duration,a.period_kind,a.period_days,a.period_day,a.timezone,a.started,a.period
+	rows, err := s.db.QueryContext(ctx, `SELECT c.id,c.generation,a.id,a.name,a.disabled,a.expires,a.quota,a.revision,a.created,a.charged,a.upload,a.download,a.subscriber,a.start_mode,a.starts,a.duration,a.period_kind,a.period_days,a.period_day,a.timezone,a.started,a.period,a.archived
  FROM credentials c JOIN accounts a ON a.id=c.account
  WHERE c.runtime=? AND c.id IN (SELECT value FROM json_each(?)) AND NOT EXISTS (SELECT 1 FROM subscribers s WHERE s.id=a.subscriber AND s.disabled=1) LIMIT 10001`, runtime, string(selected))
 	if err != nil {

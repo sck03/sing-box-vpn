@@ -137,7 +137,7 @@ func TestAccountSourceUsesCandidatePublishingAddress(t *testing.T) {
 	s, c, _ := platformFixture(t, root, core)
 	ctx := t.Context()
 	service := AccountService{Root: root}
-	if e := service.Execute(ctx, application.AccountCommand{Operation: "save", Account: domain.Account{ID: "a", Name: "A"}}, new(bytes.Buffer)); e != nil {
+	if e := s.Accounts.SaveAccount(ctx, domain.Account{ID: "a", Name: "A"}); e != nil {
 		t.Fatal(e)
 	}
 	if e := service.Execute(ctx, application.AccountCommand{Operation: "bind", ID: "a", Scope: "normal"}, new(bytes.Buffer)); e != nil {
@@ -154,7 +154,6 @@ func TestAccountSourceUsesCandidatePublishingAddress(t *testing.T) {
 			t.Fatal("compiled stale address", node.Server)
 		}
 	}
-	_ = s
 }
 
 func TestEffectiveServerRejectsCrossResourceCycleAndReferences(t *testing.T) {

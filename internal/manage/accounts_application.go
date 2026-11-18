@@ -60,14 +60,6 @@ func (s AccountService) Execute(ctx context.Context, c application.AccountComman
 	defer closeStore()
 	s.Store = store
 	switch c.Operation {
-	case "list":
-		accounts, err := s.List(ctx)
-		if err != nil {
-			return err
-		}
-		return jsonEncoder(out).Encode(accounts)
-	case "save":
-		return store.SaveAccount(ctx, c.Account)
 	case "bind":
 		return withStartupLock(ctx, s.Root, func() error {
 			entries, err := s.accountEntries(ctx, c.Scope)
@@ -84,12 +76,6 @@ func (s AccountService) Execute(ctx context.Context, c application.AccountComman
 			}
 			return jsonEncoder(out).Encode(result)
 		})
-	case "credentials":
-		result, err := s.Credentials(ctx, c.ID, c.Scope)
-		if err != nil {
-			return err
-		}
-		return jsonEncoder(out).Encode(result)
 	case "rotate":
 		if c.UUID == "" {
 			c.UUID = randomUUID()
@@ -100,13 +86,6 @@ func (s AccountService) Execute(ctx context.Context, c application.AccountComman
 		return store.Rotate(ctx, c.ID, c.UUID, c.Password, c.Generation)
 	case "unbind":
 		return store.Unbind(ctx, c.ID, c.Generation)
-	case "export":
-		artifact, err := s.Export(ctx, c)
-		if err != nil {
-			return err
-		}
-		_, err = out.Write(artifact.Data)
-		return err
 	default:
 		return fmt.Errorf("unknown account command %q", c.Operation)
 	}

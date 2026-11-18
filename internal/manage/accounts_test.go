@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
@@ -14,22 +15,28 @@ import (
 
 func TestAccountCommandsAndExportsKeepIndependentCredentials(t *testing.T) {
 	root, _, _ := appFixture(t)
-	service := AccountService{Root: root}
+	store, err := accounting.Open(filepath.Join(root, "control.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	service := AccountService{Root: root, Store: store}
 	outputs := map[string]string{}
 	for _, id := range []string{"alice", "bob"} {
-		for _, c := range []application.AccountCommand{{Operation: "save", Account: domain.Account{ID: id, Name: id}}, {Operation: "bind", ID: id, Scope: "normal"}} {
-			if err := service.Execute(t.Context(), c, new(bytes.Buffer)); err != nil {
-				t.Fatal(err)
-			}
+		if err := store.SaveAccount(t.Context(), domain.Account{ID: id, Name: id}); err != nil {
+			t.Fatal(err)
 		}
-		var output bytes.Buffer
-		if err := service.Execute(t.Context(), application.AccountCommand{Operation: "export", ID: id, Scope: "normal", Client: "sing-box"}, &output); err != nil {
+		if err := service.Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: id, Scope: "normal"}, new(bytes.Buffer)); err != nil {
+			t.Fatal(err)
+		}
+		output, err := service.Export(t.Context(), application.AccountCommand{ID: id, Scope: "normal", Client: "sing-box"})
+		if err != nil {
 			t.Fatal(err)
 		}
 		var config struct {
 			Outbounds []Object `json:"outbounds"`
 		}
-		if err := json.Unmarshal(output.Bytes(), &config); err != nil {
+		if err := json.Unmarshal(output.Data, &config); err != nil {
 			t.Fatal(err)
 		}
 		for _, node := range config.Outbounds {
@@ -41,20 +48,29 @@ func TestAccountCommandsAndExportsKeepIndependentCredentials(t *testing.T) {
 	if outputs["alice"] == "" || outputs["alice"] == outputs["bob"] {
 		t.Fatal("accounts share a credential")
 	}
-	var listing bytes.Buffer
-	if err := service.Execute(t.Context(), application.AccountCommand{Operation: "list"}, &listing); err != nil {
+	page, err := store.AccountPage(t.Context(), application.PageQuery{Limit: 20}, time.Now(), false)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(listing.String(), outputs["alice"]) || strings.Contains(listing.String(), "password") {
+	listing, err := json.Marshal(page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(listing), outputs["alice"]) || strings.Contains(string(listing), "password") {
 		t.Fatal("default account listing leaks a credential")
 	}
 }
 
 func TestAccountBatchBindingIsIndependentAndAtomic(t *testing.T) {
 	root, _, _ := appFixture(t)
-	svc := AccountService{Root: root}
+	store, err := accounting.Open(filepath.Join(root, "control.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	svc := AccountService{Root: root, Store: store}
 	for _, id := range []string{"alice", "bob"} {
-		if err := svc.Execute(t.Context(), application.AccountCommand{Operation: "save", Account: domain.Account{ID: id, Name: id}}, new(bytes.Buffer)); err != nil {
+		if err := store.SaveAccount(t.Context(), domain.Account{ID: id, Name: id}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -66,11 +82,6 @@ func TestAccountBatchBindingIsIndependentAndAtomic(t *testing.T) {
 	if err = svc.Execute(t.Context(), command, new(bytes.Buffer)); err == nil {
 		t.Fatal("unknown inbound accepted")
 	}
-	store, err := accounting.Open(filepath.Join(root, "control.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
 	credentials, err := store.Credentials(t.Context(), "normal")
 	if err != nil || len(credentials) != 0 {
 		t.Fatal("partial binding", err)

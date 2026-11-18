@@ -1,6 +1,6 @@
 # 架构与维护
 
-`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 11；平台配置 schema=4、节点文档 schema=2、订阅配置 schema=2 是各自独立的格式版本。面向空目录，不提供旧数据库、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责，不允许旧 CLI 修改配置投影。
+`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 12；平台配置 schema=4、节点文档 schema=2、订阅配置 schema=2 是各自独立的格式版本。面向空目录，不提供旧数据库、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责，不允许旧 CLI 修改配置投影。
 
 ## 模块边界
 
@@ -108,6 +108,17 @@ HTTP 统一完成 Host/Origin、会话与 CSRF 检查后分发给 `platform_http
 VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IPv4 拨号在隧道 worker 内执行；出口验证失败或身份改变立即撤销准入。防火墙/网卡/namespace 仅处理完整所有权匹配资源，不清空用户系统规则。OpenVPN 输出流有 2 MiB 日志预算和持续消费，cloudflared 使用 journald。
 
 ## 扩展方式
+
+### 权益读写与生命周期
+
+`domain.Account` 保存管理员的配置，`accounting.Usage` 另外提供只读的 `effective_expires_at` 和 `archived`。计量缓存、预留和授权都使用实际截止时间。归档在同一 SQLite 写事务中校验 revision、标记权益、写入凭据撤销记录、移除绑定、更新凭据发布版本并撤销专属下载授权。事务保留原权益、账期和租约，已预留的流量仍可结算。其他进程通过已有授权刷新周期看到撤销。
+
+| 接口 | 契约 |
+| --- | --- |
+| `GET /api/accounts` | 默认分页查询当前权益。`archived=true` 只查归档记录。`expires_at` 是配置值，`effective_expires_at` 是计算结果。 |
+| `POST /api/accounts/archive` | 管理员提交 `id`、`revision`。成功释放名额，过期 revision 或重复归档返回 409。 |
+| `GET /api/grant-options` | 管理员读取已应用的输出 ID、名称、监听启用状态 `listener_enabled`、版本差异 `pending` 及地址问题 `unavailable`。创建授权时服务端重新校验。 |
+| `GET /u/{token}/usage` | 返回 `effective_expires_at` 和 `download_denial`。空字符串表示可下载，`quota_exhausted` 和 `download_limit` 分别表示流量额度和下载次数耗尽。两者都可继续查用量。 |
 
 `accounting/reservations.go` 按需启动每 Store 的预留写入器；队列和批次各有 64 个请求上限，只合并已经等待的请求，不增加聚合定时器。每个池仍受原有额度与代次检查，批次内用保存点隔离业务失败，整个事务 FULL 提交后才返回可转发字节。关闭 Store 前排空已接收请求。无预留的面板查询不会创建该写入器。
 
