@@ -8,16 +8,27 @@
 
 ## 安装
 
-支持 Debian/Ubuntu、systemd、Linux amd64/arm64。需要 root；安装器自动安装 Python 3、OpenVPN、Certbot 等免费系统包。VPS 无需 Go 或 Node.js。VPNGate 需要 IPv4、TUN 与 network namespace。
-
-**当前 v4 使用数据库 schema 11、备份格式 7，要求全新空目录，不迁移旧数据或兼容旧管理接口。** 分支提交不等于正式发行；安装器默认获取 GitHub 最新正式 Release。部署当前分支应先构建完整包：
+支持 Debian/Ubuntu、systemd、Linux amd64/arm64。在 VPS 上用 root 执行：
 
 ```bash
-go run ./cmd/release
-tar -xzf .build/release/sing-box-vpn-v4.0.0.tar.gz
-cd sing-box-vpn
-sudo bash install.sh --local
+bash <(wget -qO- https://raw.githubusercontent.com/sck03/sing-box-vpn/main/install.sh)
 ```
+
+也可使用 `bash <(curl -fsSL https://raw.githubusercontent.com/sck03/sing-box-vpn/main/install.sh)`。菜单提供安装、升级、状态、诊断、管理员重置和卸载；命令末尾加 `install` 可直接安装。安装器自动下载完整正式发行包、校验 SHA256、安装所需系统包，并设置服务。按提示填写发布地址和管理员账号密码即可，VPS 无需编译，也无需安装 Go、Node.js、Python 或 Certbot。
+
+证书申请与续期内置 **lego Go 库**，当前使用 HTTP-01 验证；自签证书与 PEM 导入也由 Go 完成。OpenVPN 仍是 VPNGate 建立隧道所需的系统程序，Go 管理器不能代替它。VPNGate 需要 IPv4、TUN 与 network namespace。
+
+**当前 v4 使用数据库 schema 11、备份格式 7，首次安装要求空目录，不迁移旧数据或兼容旧管理接口。** 一键入口需要 GitHub 上已发布完整的 v4 正式 Release；仅推送分支还不够，旧版 Release 会被明确拒绝。开发者构建和本地发行包安装见[开发与发布](docs/development.md)。
+
+安装后可随时使用：
+
+```bash
+sb             # 打开维护菜单
+sb upgrade     # 下载并升级到最新 v4 正式版
+sb uninstall   # 确认后删除程序和数据
+```
+
+也可直接运行 `bash <(wget -qO- https://raw.githubusercontent.com/sck03/sing-box-vpn/main/install.sh) uninstall`。卸载调用本机脚本，无需下载发行包；仅删除本项目标记的默认目录和服务，保留系统共享软件包。自动化卸载可显式加 `--yes`。
 
 安装后面板默认 `127.0.0.1:2096`，使用安装时设置的管理员账号：
 
@@ -42,7 +53,7 @@ ssh -L 2096:127.0.0.1:2096 root@VPS
 - 独立恢复定时器重试 failed 服务，手动停止保持停止；运行概览分别展示配置、凭据发布/加载版本和进程心跳。权益与授权支持服务端分页，订阅失败使用缓存时明确显示降级。
 - 第三方订阅只能管理下载；客户端直连第三方时，本项目无法执行其流量额度。
 
-依赖优先采用免费开源的最新稳定版；核心适配依赖按经过验证的版本组合固定。当前 sing-box 1.14.4，SQLite 1.62.0，YAML 3.0.6，x/crypto 0.59.0。版本及许可证见 [go.mod](go.mod)、[NOTICE.md](NOTICE.md)、[第三方声明](third_party/modules/README.md)。
+依赖优先采用免费开源的最新稳定版；核心适配依赖按经过验证的版本组合固定。当前 sing-box 1.14.4、lego 5.6.0、SQLite 1.62.0、YAML 3.0.6、x/crypto 0.59.0。版本及许可证见 [go.mod](go.mod)、[NOTICE.md](NOTICE.md)、[第三方声明](third_party/modules/README.md)。
 
 ## 文档
 

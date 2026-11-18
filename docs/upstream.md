@@ -17,7 +17,13 @@
 
 这些是结构和交互参考；本轮没有复制上述项目源码，也没有引入其前端框架或整套 VPN 后端。开源许可证和来源记录见 [NOTICE](../NOTICE.md)。性能、故障测试及尚未覆盖的条件见 [实施记录](unified-management-status.md)。
 
-## sing-box
+## 证书实现选择（2026-11-18）
+
+平台内置 [lego v5.6.0](https://github.com/go-acme/lego/releases/tag/v5.6.0)（MIT），使用 Go 库完成 ACME 注册、HTTP-01 验证、签发和续期。项目已有任务调度、材料发布与失败回滚，因此这些职责继续由平台管理。当前接入范围为 HTTP-01，未开放 lego 的全部 DNS 提供器。
+
+[CertMagic v0.25.6](https://github.com/caddyserver/certmagic/releases/tag/v0.25.6) 是本轮评估的另一种方案，未引入平台证书流程。本项目已去掉它的显式依赖，发布器按实际依赖图检查管理器和受管核心不链接 CertMagic/acmez。sing-box 上游模块保留的可选依赖声明不表示这些库进入本项目的发行二进制。
+
+## sing-box（2026-11-10 核对基线）
 
 最新稳定版仍为 [1.14.4](https://github.com/SagerNet/sing-box/releases/tag/v1.14.4)，
 最新预发布为 [1.15.0-alpha.13](https://github.com/SagerNet/sing-box/releases/tag/v1.15.0-alpha.13)。

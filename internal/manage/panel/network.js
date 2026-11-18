@@ -256,7 +256,7 @@ export async function certificates(ctx) {
     card(
       "证书资产",
       help(
-        "导入前验证域名、有效期和私钥匹配。Certbot 统一负责申请与续期，端口 80 需要从公网可达。",
+        "导入前验证域名、有效期和私钥匹配。内置 ACME 自动申请与续期，无需额外安装程序；域名须指向本机，端口 80 需要空闲且从公网可达。",
       ),
       row(
         button(
@@ -288,7 +288,7 @@ export async function certificates(ctx) {
         ),
         button("新增 ACME 资产", () =>
           formDialog(
-            "Certbot 资产",
+            "ACME 资产",
             [
               { key: "id", label: "资产 ID", required: true },
               { key: "domain", label: "域名", required: true },
@@ -306,7 +306,7 @@ export async function certificates(ctx) {
               const root = ctx.root;
               c.certificates.push({
                 ...v,
-                provider: "certbot",
+                provider: "acme",
                 certificate: root + "/certificates/" + v.id + "/cert.pem",
                 key: root + "/certificates/" + v.id + "/key.pem",
               });
@@ -322,7 +322,10 @@ export async function certificates(ctx) {
         [
           { key: "id", label: "资产" },
           { key: "domain", label: "域名" },
-          { key: "provider", label: "续期归属" },
+          {
+            label: "续期归属",
+            value: (a) => a.provider === "import" ? "手动导入" : "内置 ACME",
+          },
           {
             label: "自动续期",
             value: (a) =>
@@ -347,7 +350,7 @@ export async function certificates(ctx) {
         ],
         c.certificates,
         (a) => [
-          ...(a.provider === "certbot"
+          ...(["acme", "certbot"].includes(a.provider)
             ? [
                 button("申请 / 续期", () =>
                   ctx.task({ operation: "certificate-renew", id: a.id }),

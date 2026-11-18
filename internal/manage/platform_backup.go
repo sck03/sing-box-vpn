@@ -186,7 +186,7 @@ func pendingCertificatePath(c PlatformConfig, path string) bool {
 		}
 	}
 	for _, a := range c.Certificates {
-		if a.Provider == "certbot" && (a.Certificate == path || a.Key == path) {
+		if automaticCertificate(a) && (a.Certificate == path || a.Key == path) {
 			return true
 		}
 	}

@@ -19,6 +19,7 @@
 | internal/controlstore | desired/applied revision、持久任务、运行心跳、观测状态 |
 | internal/manage/platform_* | 应用编排、配置图校验、备份、证书、主机服务、HTTP/CLI |
 | internal/manage/platform_compile | 候选准备、运行恢复编译、完整草稿预览及输出诊断 |
+| internal/manage/platform_acme | 内置 lego 客户端、HTTP-01 验证、账户与签发结果持久化；复用平台任务调度与证书发布 |
 | internal/manage/platform_task_output | 有界结果落盘、秘密隐藏以及取消后的部分结果保留 |
 | internal/manage/subscriptions_status、subscriptions_notification | 只读运行状态投影、独立通知活动记录；状态查询跳过缓存中的节点和模板正文 |
 | internal/manage/panel | 原生 ES 模块 SPA，共享表单/列表/草稿，静态嵌入二进制 |
@@ -57,7 +58,11 @@ HTTP/CLI → Validate → 校验资源引用/核心配置 → revision CAS 保�
 
 备份在发布锁内使用 VACUUM INTO 取得数据库快照、复制引用证书并检查证书/私钥匹配；锁外将暂存文件以 tar + age 流式认证加密写入下载暂存文件，不再经过 JSON/Base64。数据库上限 80 MiB，完整加密文件上限 96 MiB。恢复读完 age 的认证尾部后才接受内容，校验数据库结构等于本发行 schema，拒绝额外 trigger/view、重复文件、链接和路径逃逸。同机恢复保留安全和账本；灾难恢复临时目录完成后发布，禁用所有权益并撤销 token。
 
-恢复保留 Certbot 提供方、域名及邮箱，恢复目录内的材料可原地续期。ACME 账户/登记文件不进入备份：本机登记仍在时继续续期；新主机显示 registration_pending，由调度重新登记，需要公网端口 80。服务 start/restart 共用运行时心跳确认，证书更新失败走同一就绪检查和回滚路径。
+恢复保留 ACME 资产、域名及邮箱，恢复目录内的材料可原地续期。历史 `provider: certbot` 只作为已有 v4 数据的标记读取，申请和续期统一使用 lego，不执行外部 Certbot。ACME 账户与签发缓存不进入备份：本机登记及缓存仍匹配已发布材料时继续续期；新主机显示 registration_pending，由调度重新登记，需要公网端口 80。服务 start/restart 共用运行时心跳确认，证书更新失败走同一就绪检查和回滚路径。
+
+lego 的账户私钥、登记与签发结果保存于 `acme/lego/`，以 0600 原子写入。每 12 小时检查续期，证书不足 30 天时申请；已签发但发布失败的结果会被复用。目录请求也受任务取消控制，HTTP-01 临时监听随验证结束释放。当前使用 Let's Encrypt、ECDSA P-256 和 HTTP-01，未接入 DNS-01 或泛域名表单。
+
+安装器读取正式 v4 发行包并校验 SHA256，基础系统包保留 VPNGate 所需 OpenVPN，不安装 Python 或 Certbot。管理员凭据通过 stdin 交给 Go；开发验收脚本使用的 Python 不属于 VPS 运行依赖。受管核心不注册上游 ACME/Origin CA 提供器，发行构建检查拒绝链接 CertMagic/acmez。
 
 每轮变化的池检查点通过同一数据库事务提交；采集计数后释放池锁再写数据库，Tick 与 Close 串行维护。额度预留仍先落盘，未扩大 64 KiB 边界。账户列表复用已读快照，只推进到期账期；导出按账户/实例索引读取凭据，并复用单次证书解析缓存。
 
@@ -85,7 +90,7 @@ HTTP 统一完成 Host/Origin、会话与 CSRF 检查后分发给 `platform_http
 
 `sb-recovery.timer` 在开机 5 分钟后、此后每 5 分钟加 0–30 秒抖动触发独立 oneshot。只重试项目服务名单中已安装且 failed 的单元，reset-failed 后异步启动，inactive 保持停止；数据库损坏不阻止此控制器运行。配置应用、服务操作、升级回滚共用 `.service-recovery.lock`，避免恢复与人工变更交错。永久错误仍需修正，定时重试不能修复无效配置或损坏存储。
 
-每小时清理直属 `certificates/` 下带 `.managed-material` 标记、超过 7 天且未被 desired/applied 引用的目录；保护未保存草稿的宽限期，保留外部证书、Certbot 登记和无标记目录。导入与清理共用发布锁。启动或显式恢复遇到可解析读取但内容损坏的订阅运行缓存时，将原文件隔离到 `subscriptions/runtime.corrupt.json`，记录 cache-recovery 并重新获取来源；I/O 错误仍失败。该诊断文件只保留最近一次。
+每小时清理直属 `certificates/` 下带 `.managed-material` 标记、超过 7 天且未被 desired/applied 引用的目录；保护未保存草稿的宽限期，保留外部证书、ACME 账户/签发缓存和无标记目录。导入与清理共用发布锁。启动或显式恢复遇到可解析读取但内容损坏的订阅运行缓存时，将原文件隔离到 `subscriptions/runtime.corrupt.json`，记录 cache-recovery 并重新获取来源；I/O 错误仍失败。该诊断文件只保留最近一次。
 
 下载授权统一保存在 download_grants，权益授权选择客户端格式，输出授权选择 output ID，两者互斥。账号与输出下载共用撤销、有效期及原子次数检查。下载监听复用数据库连接，不按请求打开 SQLite。远程模板/规则正文与 ETag 同存有界运行缓存，编译时覆盖配置中的回退值，不写回期望配置；删除资源或修改 URL 同时移除旧缓存。后台仅为到期的刷新和自动分发排队。
 

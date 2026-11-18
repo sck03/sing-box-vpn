@@ -19,6 +19,9 @@ The separate managed-core executable links SagerNet/sing-box v1.14.4
 guard. Upstream source: https://github.com/SagerNet/sing-box/tree/v1.14.4.
 The account ledger links modernc.org/sqlite v1.62.0 and its Go dependencies.
 Exact module versions and checksums are recorded in go.mod and go.sum.
+ACME certificate issuance and renewal link go-acme/lego v5.6.0 (MIT).
+The platform owns scheduling and publication; release binaries exclude the
+optional CertMagic/acmez providers declared by the upstream sing-box module.
 License notices for the full linked module graph on Linux and Windows, including
 QR generation and WireGuard, are preserved in third_party/modules/.
 These are free/open-source

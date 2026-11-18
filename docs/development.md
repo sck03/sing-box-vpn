@@ -19,6 +19,22 @@ go build -tags with_quic,with_utls,with_wireguard -o .build/managed-core ./cmd/m
 go run ./cmd/release
 ```
 
+上述构建只在开发机或 CI 执行，VPS 安装直接使用 README 中的一键入口。需要部署尚未发布的分支时，将构建产物复制到 VPS 后执行：
+
+```bash
+tar -xzf sing-box-vpn-v4.0.0.tar.gz
+cd sing-box-vpn
+sudo bash install.sh --local
+```
+
+已有 v4 安装会自动切换为升级，也可指定 `--local --upgrade`。正式发行需包含完整压缩包及 `SHA256SUMS`；安装器拒绝 v2/v3、缺失或重复的校验值、不安全的归档路径和链接。无参数打开菜单，`install`/`upgrade` 可直接执行，`uninstall --yes` 用于显式无交互卸载。`SB_ADDRESS` 和 `SB_ADMIN_JSON_FILE` 保留自动化安装支持；JSON 文件须由管理员以 0600 权限保护并在使用后删除。
+
+交互管理员输入通过 `panel --admin-stdin init/reset-admin` 读取两个 NUL 分隔字段，账号密码不经命令参数、环境变量或 Python 转义。默认 CLI 仍接受原来的 stdin JSON。
+
+证书只由平台内置的 lego v5.6.0 负责申请和续期，使用 HTTP-01、Let's Encrypt、ECDSA P-256。平台保留每 12 小时检查和不足 30 天续期策略；已申请结果缓存于 `acme/lego/`，服务发布失败后复用结果重试。账户私钥、登记和缓存证书以 0600 原子保存；备份恢复缺少登记时自动补登记。历史 `provider: certbot` 按 ACME 资产读取，执行仍统一走 lego。
+
+受管核心不启用上游 `with_acme` 或 Cloudflare Origin CA 提供器。发布器按 Linux amd64/arm64 的实际构建依赖检查，拒绝链接 CertMagic/acmez；sing-box 上游模块元数据中的可选依赖不等于进入发行二进制。
+
 Windows 开发先 `. ./scripts/dev-env.ps1`。真实链路设置 `SING_BOX_BINARY`、`MIHOMO_BINARY`、`MANAGED_CORE_BINARY`；然后：
 
 ```bash
@@ -26,6 +42,7 @@ RUN_UDP_IDLE_TESTS=1 go test -race -timeout=25m -count=1 ./...
 MANAGED_CORE_BINARY="$PWD/.build/managed-core" go test -race -count=1 -run '^(TestManagedAccountIsolation|TestRealFiveProtocolsTCPUDP)$' ./addons/vpngate/gateway
 MANAGED_CORE_BINARY="$PWD/.build/managed-core" go test -race -count=1 -run '^TestCredentialPublicationRetryDoesNotRepeatRotation$' ./internal/manage
 bash scripts/test-program-upgrade.sh
+bash scripts/test-installer.sh
 shellcheck --severity=warning sb.sh install.sh lib/*.sh scripts/*.sh
 ```
 
@@ -71,7 +88,7 @@ sudo env RUN_STORAGE_TESTS=1 go test ./internal/accounting -run '^TestLinux(Disk
 
 依赖升级先 `go list -m -u all`，优先正式稳定 tag；sing-box 的 fork/pseudo-version 配套依赖需随核心兼容验证。当前更新了 SQLite、加密、YAML、网络等稳定库；不以任意 master 代替协议适配组合。新增依赖更新 `third_party/modules/`、NOTICE 和兼容性记录。
 
-依赖更新后运行 `python scripts/update-notices.py` 重建许可清单。Linux 安装验收使用 `SB_TEST_PASSWORD=... python3 scripts/test-platform-linux.py`，仅在可丢弃安装执行：脚本会创建权益、暂停服务和制造端口冲突。
+依赖更新后运行 `python scripts/update-notices.py` 重建许可清单。Linux 安装验收使用 `SB_TEST_PASSWORD=... python3 scripts/test-platform-linux.py`，仅在可丢弃安装执行：脚本会创建权益、暂停服务和制造端口冲突。这里的 Python 只供开发和验收使用，生产安装器不安装它。
 
 CI 执行全量 race、真实客户端矩阵、ShellCheck、升级状态测试、Linux 隔离与防火墙、双架构构建。push 分支只验证和上传构建产物；仅 tag 或显式 workflow_dispatch publish 才发布 Release。不要把分支推送描述为已部署。
 
@@ -82,3 +99,13 @@ CI 另执行 `scripts/test-install-ownership.sh` 和真实面板 API 工作流�
 CI 的独立下载验证和全新安装步骤均显式传递该只读令牌；通过 sudo 启动安装器时使用 `--preserve-env=SBVPN_GITHUB_TOKEN`，避免安装阶段退回匿名元数据请求。
 
 验收证据写入 [实施记录](unified-management-status.md)，区分单元测试、真实网络测试、系统测试和未测范围。历史性能数据不能充当新版本提升结论。格式化 Go 使用 gofmt，前端使用 Prettier；发布不依赖前端构建工具。
+
+## 本地清理与 main 交付
+
+停止测试进程和专用 VM 后，可删除 `.test/` 中的日志、临时数据库、测试二进制及 Go 缓存，`.build/release/.bin/` 中的打包中间文件，以及 `scripts/__pycache__/`。下一次加载 `scripts/dev-env.ps1` 会重建缓存目录；Go 会重新下载和编译所需模块。
+
+保留当前 `.build/release/*.tar.gz` 与 `SHA256SUMS`、在用工具链、回归测试和第三方许可证。Linux VM 的 `.tools/linux-validation.qcow2` 依赖 `.tools/ubuntu-noble-amd64.img`，两者均须保留；已经展开或复制到 VM 的重复下载归档可以清理。
+
+无法自动删除的条目集中移动到 `.cleanup-manual/` 后手动删除；仅有残留时创建此目录。它已被 Git 忽略，不能提交到 main 或打入发行包。Windows 删除/移动使用原生 PowerShell，并先确认实际绝对路径位于项目目录内。
+
+交付前核对本地分支和远端 heads，将有效改动提交到 main；仅在确认其他分支提交已合入后删除那些分支。`git fetch --all --prune` 清除失效的远端跟踪引用。保留正式版本标签，分支清理不删除 Release。main 推送触发 CI 验证；用户可安装的 v4 版本仍需通过既有发布流程上传完整归档和 SHA256SUMS。

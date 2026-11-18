@@ -22,6 +22,8 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/manage"
 )
 
+const releaseTags = "with_quic,with_utls,with_wireguard"
+
 func main() {
 	if err := build(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -49,20 +51,18 @@ func build() error {
 	}
 	destination := filepath.Join(root, ".build", "release")
 	for _, arch := range []string{"amd64", "arm64"} {
+		if err = checkCertificateDependencies(goBinary, root, arch); err != nil {
+			return err
+		}
 		for _, target := range []struct{ name, pkg string }{{"yg-vpngate", "./addons/vpngate/gateway"}, {"managed-core", "./cmd/managed-core"}} {
 			binary := filepath.Join(destination, ".bin", "linux-"+arch, target.name)
 			if err := os.MkdirAll(filepath.Dir(binary), 0755); err != nil {
 				return err
 			}
-			cmd := exec.Command(goBinary, "build", "-tags", "with_quic,with_utls,with_wireguard", "-trimpath", "-ldflags", "-s -w -X main.version="+strings.TrimPrefix(project.Versions.Release, "v"), "-o", binary, target.pkg)
+			cmd := exec.Command(goBinary, "build", "-tags", releaseTags, "-trimpath", "-ldflags", "-s -w -X main.version="+strings.TrimPrefix(project.Versions.Release, "v"), "-o", binary, target.pkg)
 			cmd.Dir = root
 			cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-			for _, value := range os.Environ() {
-				if !strings.HasPrefix(value, "GOOS=") && !strings.HasPrefix(value, "GOARCH=") && !strings.HasPrefix(value, "CGO_ENABLED=") {
-					cmd.Env = append(cmd.Env, value)
-				}
-			}
-			cmd.Env = append(cmd.Env, "GOOS=linux", "GOARCH="+arch, "CGO_ENABLED=0")
+			cmd.Env = releaseEnvironment(arch)
 			if err = cmd.Run(); err != nil {
 				return err
 			}
@@ -201,5 +201,33 @@ func build() error {
 		return err
 	}
 	fmt.Println(filepath.Base(archive) + " " + hash)
+	return nil
+}
+
+func releaseEnvironment(arch string) []string {
+	var env []string
+	for _, value := range os.Environ() {
+		if !strings.HasPrefix(value, "GOOS=") && !strings.HasPrefix(value, "GOARCH=") && !strings.HasPrefix(value, "CGO_ENABLED=") {
+			env = append(env, value)
+		}
+	}
+	return append(env, "GOOS=linux", "GOARCH="+arch, "CGO_ENABLED=0")
+}
+
+// sing-box declares optional ACME dependencies in its module metadata. Release
+// binaries must leave those providers disabled: the platform owns ACME via lego.
+func checkCertificateDependencies(goBinary, root, arch string) error {
+	cmd := exec.Command(goBinary, "list", "-deps", "-tags", releaseTags, "./addons/vpngate/gateway", "./cmd/managed-core")
+	cmd.Dir, cmd.Env = root, releaseEnvironment(arch)
+	cmd.Stderr = os.Stderr
+	output, err := cmd.Output()
+	if err != nil {
+		return err
+	}
+	for _, pkg := range strings.Fields(string(output)) {
+		if strings.HasPrefix(pkg, "github.com/caddyserver/certmagic") || strings.HasPrefix(pkg, "github.com/mholt/acmez/") {
+			return fmt.Errorf("release must use lego exclusively for ACME, but linux-%s links %s", arch, pkg)
+		}
+	}
 	return nil
 }

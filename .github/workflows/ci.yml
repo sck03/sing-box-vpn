@@ -95,6 +95,7 @@ jobs:
           shellcheck --severity=warning sb.sh install.sh lib/*.sh scripts/*.sh
           bash scripts/test-program-upgrade.sh
           bash scripts/test-install-ownership.sh
+          bash scripts/test-installer.sh
       - name: Build Linux management and gateway binary
         run: CGO_ENABLED=0 go build -trimpath -o "$GITHUB_WORKSPACE/.build/yg-vpngate" ./addons/vpngate/gateway
       - name: Online validator download and current platform CLI

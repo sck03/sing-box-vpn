@@ -160,8 +160,8 @@ func (c PlatformConfig) Validate() error {
 		if err = validateDomain(asset.Domain); err != nil {
 			return err
 		}
-		if asset.Provider != "import" && asset.Provider != "certbot" {
-			return errors.New("certificate provider must be import or certbot")
+		if asset.Provider != "import" && !automaticCertificate(asset) {
+			return errors.New("certificate provider must be import or acme")
 		}
 	}
 	gateway := Object{}

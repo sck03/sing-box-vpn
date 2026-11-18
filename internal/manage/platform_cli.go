@@ -28,6 +28,7 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 	key := f.String("tls-key", "", "panel TLS key")
 	proxy := f.String("trusted-proxy", "", "comma-separated trusted TLS proxy CIDRs")
 	noSystem := f.Bool("no-system", false, "local development without systemd operations")
+	adminStdin := f.Bool("admin-stdin", false, "read NUL-delimited username and password from stdin (init/reset-admin)")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
@@ -41,6 +42,9 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 		*runtime = filepath.Join(*root, "managed-core")
 	}
 	op := f.Args()[0]
+	if *adminStdin && op != "init" && op != "reset-admin" {
+		return errors.New("--admin-stdin only supports init and reset-admin")
+	}
 	if op == "recover-services" {
 		if *noSystem {
 			return errors.New("system operations are disabled")
@@ -79,11 +83,8 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 	defer s.Close()
 	switch op {
 	case "init":
-		var v struct {
-			Username string `json:"username"`
-			Password string `json:"password"`
-		}
-		if err = decode(&v); err != nil {
+		v, err := readAdministrator(input, *adminStdin)
+		if err != nil {
 			return err
 		}
 		if len(v.Password) < 12 || len(v.Password) > 72 {
@@ -105,11 +106,8 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 		}
 		return AtomicJSON(filepath.Join(*root, "panel.json"), options)
 	case "reset-admin":
-		var v struct {
-			Username string `json:"username"`
-			Password string `json:"password"`
-		}
-		if err = decode(&v); err != nil {
+		v, err := readAdministrator(input, *adminStdin)
+		if err != nil {
 			return err
 		}
 		return s.Auth.Bootstrap(ctx, v.Username, v.Password, true)
@@ -226,6 +224,33 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 	default:
 		return errors.New("unknown panel command")
 	}
+}
+
+type administratorCredentials struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+func readAdministrator(input io.Reader, nulDelimited bool) (administratorCredentials, error) {
+	var credentials administratorCredentials
+	const limit = 4096
+	data, err := io.ReadAll(io.LimitReader(input, limit+1))
+	if err != nil {
+		return credentials, err
+	}
+	if len(data) > limit {
+		return credentials, errors.New("administrator input exceeds size limit")
+	}
+	if !nulDelimited {
+		err = strict.JSON(data, &credentials, limit)
+		return credentials, err
+	}
+	fields := strings.Split(string(data), "\x00")
+	if len(fields) != 3 || fields[2] != "" {
+		return credentials, errors.New("administrator input requires two NUL-delimited fields")
+	}
+	credentials.Username, credentials.Password = fields[0], fields[1]
+	return credentials, nil
 }
 
 func platformOwned(root string) bool {

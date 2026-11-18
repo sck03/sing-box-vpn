@@ -1,0 +1,62 @@
+{
+  "date": "2026-11-18",
+  "timezone": "Asia/Shanghai",
+  "scope": "one-command installer and native lego ACME",
+  "source_base": "8e1f8f8ccd4f3131ce01ddc58ad6e05d5e2a048d",
+  "environment": {
+    "windows": "amd64, Go 1.27.3",
+    "linux": "dedicated Ubuntu amd64 VM, QEMU TCG, 2 vCPU / 2 GiB"
+  },
+  "checks": [
+    {
+      "command": "go test -mod=readonly ./... -count=1 -timeout=15m",
+      "result": "passed",
+      "scope": "Windows tests; optional environment-gated integration tests are not claimed by this entry"
+    },
+    {
+      "command": "go vet -mod=readonly ./...",
+      "result": "passed"
+    },
+    {
+      "command": "npm test",
+      "result": "passed",
+      "scope": "all five panel test groups"
+    },
+    {
+      "command": "bash -n and shellcheck --severity=warning on sb.sh, install.sh, lib/*.sh and scripts/*.sh",
+      "result": "passed"
+    },
+    {
+      "command": "bash scripts/test-installer.sh; bash scripts/test-install-ownership.sh; bash scripts/test-program-upgrade.sh",
+      "result": "passed",
+      "scope": "Linux fixtures for streamed entry, local package dispatch, upgrade, offline uninstall, checksums, unsafe archives, ownership and rollback"
+    },
+    {
+      "command": "Go tests TestLego*, TestACMERegistrationTracksPublishedPair and TestAdministratorInputPreservesSecrets",
+      "result": "passed",
+      "scope": "Windows and Linux; local test CA, real HTTP-01 listener and requests, issuance, renewal, cache reuse, rejection, cancellation and published-pair state"
+    },
+    {
+      "command": "Go test TestAdministratorStdinInitAndReset",
+      "result": "passed",
+      "scope": "Windows; initialize/reset and authentication with UTF-8, quotes and whitespace"
+    },
+    {
+      "command": "go run -mod=readonly ./cmd/release",
+      "result": "passed",
+      "scope": "Linux amd64 and arm64 static manager/runtime builds"
+    },
+    {
+      "command": "go version -m on both manager/runtime architectures; sha256sum -c SHA256SUMS",
+      "result": "passed",
+      "scope": "manager links lego v5.6.0; all four binaries exclude CertMagic/acmez"
+    }
+  ],
+  "limits": [
+    "No public CA issuance for a real domain",
+    "No physical arm64 runtime validation",
+    "No new Windows race run",
+    "This local record does not assert GitHub CI success for the new commit",
+    "A main push is not a published v4 Release"
+  ]
+}

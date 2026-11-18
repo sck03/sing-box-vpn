@@ -21,10 +21,12 @@ arch_name() { case $(uname -m) in x86_64) echo amd64;; aarch64|arm64) echo arm64
 panel() { "$MANAGER" panel --root "$SB_ROOT" --core "$CORE" --runtime "$RUNTIME" "$@"; }
 administrator_input() {
     local username password
-    read -r -p '管理员用户名 [admin]: ' username </dev/tty
-    read -r -s -p '管理员密码（12–72 字节）: ' password </dev/tty
+    IFS= read -r -p '管理员用户名 [admin]: ' username </dev/tty
+    IFS= read -r -s -p '管理员密码（12–72 字节）: ' password </dev/tty
     printf '\n' >/dev/tty
-    printf '%s\n%s' "${username:-admin}" "$password" | python3 -c 'import json,sys; u,p=sys.stdin.read().split("\n",1); print(json.dumps({"username":u,"password":p}))'
+    # Go reads two NUL-delimited fields; secrets stay out of argv and retain
+    # quotes, backslashes, whitespace and UTF-8 without a JSON helper.
+    printf '%s\0%s\0' "${username:-admin}" "$password"
     unset password
 }
 install_main() (
@@ -42,7 +44,7 @@ install_main() (
     if [[ -z "$address" ]]; then read -r -p '发布地址（VPS IP 或域名）: ' address </dev/tty; fi
     [[ -n "$address" ]] || return 1
     apt-get update -qq
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl iproute2 iptables procps tar python3 openvpn certbot
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ca-certificates curl iproute2 iptables procps tar util-linux openvpn
     local created=0 units=0 failure_stamp
     failure_stamp=$(date +%s)
     install_failed() {
@@ -71,7 +73,7 @@ install_main() (
     if [[ -n "${SB_ADMIN_JSON_FILE:-}" ]]; then
         panel --address "$address" init < "$SB_ADMIN_JSON_FILE"
     else
-        administrator_input | panel --address "$address" init
+        administrator_input | panel --address "$address" --admin-stdin init
     fi
     panel recover
     panel validate
@@ -83,13 +85,23 @@ install_main() (
     echo 'v4 已安装。面板默认仅监听 127.0.0.1:2096。'
     echo '本机执行 SSH 端口转发：ssh -L 2096:127.0.0.1:2096 root@VPS，然后打开 http://127.0.0.1:2096'
     echo '在面板创建权益并绑定入站后才允许代理认证。公开访问需在 panel.json 配置 TLS 或可信 HTTPS 反向代理。'
+    echo '以后输入 sb 打开维护菜单；sb upgrade 升级；sb uninstall 卸载。'
     trap - EXIT
 )
 uninstall_main() {
     require_system
-    [[ "$APP_HOME" == /opt/sing-box-vpn && -f "$APP_HOME/.managed" && "$SB_ROOT" == /etc/s-box && -f "$SB_ROOT/.platform-v4" ]] || {
+    [[ "$APP_HOME" == /opt/sing-box-vpn && ! -L "$APP_HOME" && -f "$APP_HOME/.managed" &&
+       "$SB_ROOT" == /etc/s-box && ! -L "$SB_ROOT" && -f "$SB_ROOT/.platform-v4" ]] || {
         echo '卸载只接受带 v4 标记的默认目录；自定义目录请手动清理' >&2; return 1;
     }
+    if [[ "${1:-}" != --yes ]]; then
+        local answer
+        echo '将删除本项目的程序、配置、账户、证书和用量记录。'
+        if ! read -r -p '输入 yes 确认卸载: ' answer </dev/tty; then
+            echo '无交互终端；无交互卸载需明确指定 sb uninstall --yes' >&2; return 1
+        fi
+        [[ "$answer" == yes ]] || { echo '已取消卸载。'; return 0; }
+    fi
     stop_owned_units sb-recovery.timer sb-recovery.service sb-panel.service sb-subscription.service sb-argo.service sing-box-vpngate.service yg-vpngate.service sing-box.service
     "$MANAGER" cleanup --config "$SB_ROOT/vpngate/gateway.json" 2>/dev/null || true
     "$MANAGER" firewall --root "$SB_ROOT" --remove
@@ -101,6 +113,7 @@ uninstall_main() {
     rm -f -- /usr/bin/sb "$MANAGER" /etc/sysctl.d/90-sing-box-vpn.conf
     rm -rf -- "$SB_ROOT" "$APP_HOME"
     systemctl daemon-reload
+    echo 'sing-box-vpn 已卸载。系统共享的软件包已保留。'
 }
 diagnose() {
     panel status
@@ -108,15 +121,24 @@ diagnose() {
     journalctl -u sb-panel -u sing-box -u sing-box-vpngate -n 100 --no-pager
 }
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; fi
-case "${1:-panel}" in
+if (($# > 2)) || { (($# == 2)) && [[ "$1" != uninstall || "$2" != --yes ]]; }; then
+    echo '无效参数；请运行 sb help' >&2; exit 1
+fi
+case "${1:-menu}" in
+    menu) exec bash "$SCRIPT_ROOT/install.sh" menu;;
     install) install_main;;
-    upgrade) upgrade_program;;
+    upgrade)
+        if [[ "$SCRIPT_ROOT" == "$APP_HOME" ]]; then
+            exec bash "$SCRIPT_ROOT/install.sh" upgrade
+        fi
+        upgrade_program
+        ;;
     panel) echo '面板：http://127.0.0.1:2096；远程访问使用 SSH 转发或配置 HTTPS。';;
-    reset-admin) require_system; administrator_input | panel reset-admin;;
+    reset-admin) require_system; administrator_input | panel --admin-stdin reset-admin;;
     recover) require_system; panel recover; panel validate; panel install-services;;
     status) panel status;;
     diagnose) diagnose;;
-    uninstall) uninstall_main;;
-    help|--help) echo 'sb [panel|install|status|diagnose|reset-admin|recover|upgrade|uninstall]';;
+    uninstall) uninstall_main "${2:-}";;
+    help|--help) echo 'sb [menu|panel|install|status|diagnose|reset-admin|recover|upgrade|uninstall [--yes]]';;
     *) echo '未知维护命令；日常配置请使用面板' >&2; exit 1;;
 esac

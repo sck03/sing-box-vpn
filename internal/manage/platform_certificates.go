@@ -7,7 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"errors"
-	"github.com/sck03/sing-box-vpn/internal/command"
+	"fmt"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	"net/mail"
 	"os"
@@ -29,7 +29,7 @@ func (s *PlatformService) scheduleCertificates(ctx context.Context) error {
 		return err
 	}
 	for _, asset := range c.Certificates {
-		if asset.Provider != "certbot" {
+		if !automaticCertificate(asset) {
 			continue
 		}
 		last, err := s.Store.Observation(ctx, "certificate-attempt/"+asset.ID)
@@ -42,9 +42,8 @@ func (s *PlatformService) scheduleCertificates(ctx context.Context) error {
 		}
 		cert, e1 := os.ReadFile(asset.Certificate)
 		key, e2 := os.ReadFile(asset.Key)
-		_, lineageErr := os.Stat(filepath.Join(s.Root, "acme", "config", "renewal", asset.ID+".conf"))
-		if e1 == nil && e2 == nil && lineageErr == nil {
-			if leaf, e := validatePEM(cert, key, asset.Domain); e == nil && time.Until(leaf.NotAfter) > 30*24*time.Hour {
+		if e1 == nil && e2 == nil && acmeRegistrationReady(s.Root, asset) {
+			if leaf, e := validatePEM(cert, key, asset.Domain); e == nil && time.Until(leaf.NotAfter) > acmeRenewBefore {
 				continue
 			}
 		}
@@ -118,9 +117,9 @@ func (s *PlatformService) CertificateStatus(ctx context.Context) ([]Object, erro
 	for _, asset := range c.Certificates {
 		v := Object{"id": asset.ID, "domain": asset.Domain, "provider": asset.Provider, "used_by": []string{}}
 		v["renewal_state"] = "manual"
-		if asset.Provider == "certbot" {
+		if automaticCertificate(asset) {
 			v["renewal_state"] = "automatic"
-			if _, err := os.Stat(filepath.Join(s.Root, "acme", "config", "renewal", asset.ID+".conf")); err != nil {
+			if !acmeRegistrationReady(s.Root, asset) {
 				v["renewal_state"] = "registration_pending"
 			}
 		}
@@ -174,26 +173,18 @@ func (s *PlatformService) renewCertificate(ctx context.Context, id string) error
 			asset = v
 		}
 	}
-	if asset.Provider != "certbot" || !domain.ResourceID.MatchString(asset.ID) {
-		return errors.New("certificate is not owned by certbot")
+	if !automaticCertificate(asset) || !domain.ResourceID.MatchString(asset.ID) {
+		return errors.New("certificate is not managed by ACME")
 	}
 	address, err := mail.ParseAddress(asset.Email)
 	if err != nil || address.Address != asset.Email {
 		return errors.New("ACME requires a valid contact email")
 	}
-	base := filepath.Join(s.Root, "acme")
-	_, err = command.Output(ctx, nil, "certbot", "certonly", "--standalone", "--non-interactive", "--agree-tos", "--keep-until-expiring", "--cert-name", asset.ID, "--email", asset.Email, "-d", asset.Domain, "--config-dir", filepath.Join(base, "config"), "--work-dir", filepath.Join(base, "work"), "--logs-dir", filepath.Join(base, "logs"))
+	resource, err := obtainACMECertificate(ctx, s.Root, asset, acmeIssuerOptions{})
 	if err != nil {
-		return errors.New("ACME issuance failed; check port 80 reachability and the ACME log")
+		return fmt.Errorf("ACME issuance failed; check domain resolution and port 80 reachability: %w", err)
 	}
-	cert, err := os.ReadFile(filepath.Join(base, "config", "live", asset.ID, "fullchain.pem"))
-	if err != nil {
-		return err
-	}
-	key, err := os.ReadFile(filepath.Join(base, "config", "live", asset.ID, "privkey.pem"))
-	if err != nil {
-		return err
-	}
+	cert, key := resource.Certificate, resource.PrivateKey
 	if _, err = validatePEM(cert, key, asset.Domain); err != nil {
 		return err
 	}

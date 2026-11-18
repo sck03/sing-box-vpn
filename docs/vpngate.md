@@ -120,6 +120,6 @@ worker IPC 帧本身超过 65,507 字节或被截断时仍关闭连接，避免�
 生产要求 Ubuntu/Debian + systemd、root、IPv4、TUN/netns。稳定版下载须校验。
 配置不兼容时保留旧核心，服务启动失败时自动回滚。
 仓库不包含运行密码、私钥、节点缓存、临时工具链和研究源码副本。
-VPS 不再需要项目 Python 运行时；可选 Certbot 仍由系统包管理器安装其自身依赖。
+VPS 不需要 Python 或 Certbot；证书申请与续期使用内置 lego Go 库，OpenVPN 仍由系统包管理器安装并用于 VPNGate 隧道。
 来源见 [NOTICE.md](../NOTICE.md)，使用见 [README.md](../README.md)。
 2026-11-10 的 sing-box 内置 OpenVPN、Snell、OpenClash 与 VPNGate 上游核对见 [技术说明](upstream.md)。
