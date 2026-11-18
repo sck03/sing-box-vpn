@@ -177,6 +177,34 @@ compiler[1].querySelectorAll('[role="tab"]')[5].click();
 await tick();
 assert(requests.includes("/api/subscriptions/status"));
 
+const { maintenance } = await import("../internal/manage/panel/maintenance.js");
+const maintenancePage = await maintenance({ ...context, overview: snapshot });
+document.querySelector("#content").replaceChildren(...maintenancePage);
+assert(
+  !document.querySelector('[type="file"]'),
+  "backup content should wait for selection",
+);
+assert(
+  !document
+    .querySelector("#maintenance-pane-2")
+    .textContent.includes("程序与受管运行时"),
+);
+document.querySelector("#maintenance-tab-1").click();
+await tick();
+assert(
+  document.querySelector('[type="file"]'),
+  "selecting backup should create its controls",
+);
+const backupFile = document.querySelector('[type="file"]');
+document.querySelector("#maintenance-tab-0").click();
+document.querySelector("#maintenance-tab-1").click();
+await tick();
+assert.equal(
+  document.querySelector('[type="file"]'),
+  backupFile,
+  "tab changes should preserve backup selections",
+);
+
 const streams = [];
 globalThis.EventSource = class {
   constructor() {

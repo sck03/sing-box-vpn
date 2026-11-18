@@ -13,6 +13,7 @@
     "windows_go_test_all": "passed using short project TEMP/TMP for Unix socket tests",
     "windows_go_vet_all": "passed",
     "npm_test_six_suites": "passed",
+    "maintenance_deferred_controls_and_selection_reuse": "passed",
     "development_ephemeral_listener_health_shutdown_and_bounds": "passed",
     "real_isolated_panel_api": "passed: bind, export, share, download counts, preview and task apply"
   },
