@@ -336,7 +336,13 @@ func refreshSubscriptionsResult(ctx context.Context, root, core string, force bo
 		if buildErr != nil {
 			// A rejected resource update must be fetched again; do not retain its ETag.
 			for id := range resources {
-				state.Resources[id] = runtime.Resources[id]
+				previous := runtime.Resources[id]
+				previous.URL = resources[id].URL
+				previous.Checked = now
+				previous.Error = "resource update rejected by output validation"
+				previous.Failures = min(previous.Failures+1, 10)
+				previous.Next = now.Add(time.Duration(min(60*(1<<(previous.Failures-1)), 21600)) * time.Second)
+				state.Resources[id] = previous
 			}
 			state.Record("publish", "", buildErr.Error(), now)
 			if err := AtomicJSON(filepath.Join(root, subscriptionsRuntime), state); err != nil {
@@ -355,21 +361,4 @@ func refreshSubscriptionsResult(ctx context.Context, root, core string, force bo
 
 func strictSubscriptionJSON(data []byte, target any) error {
 	return strict.JSON(data, target, sub.MaxBody)
-}
-
-func notifySubscriptionEvent(ctx context.Context, client *http.Client, root string, c sub.Config, event sub.Run) {
-	var failures []error
-	if c.Webhook != "" {
-		failures = append(failures, remoteRequest(ctx, client, c.Webhook, "POST", event, nil, nil))
-	}
-	if err := errors.Join(failures...); err != nil {
-		_ = withLock(root, func() error {
-			_, state, _, loadErr := loadSubscriptions(root)
-			if loadErr != nil {
-				return loadErr
-			}
-			state.Record("notification", event.ObjectID, "notification delivery failed", time.Now())
-			return AtomicJSON(filepath.Join(root, subscriptionsRuntime), state)
-		})
-	}
 }

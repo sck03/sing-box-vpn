@@ -137,6 +137,32 @@ const panel = document.createElement("div");
 panel.append(...operator);
 assert(panel.textContent.includes("换 IP"));
 assert(!panel.textContent.includes("选择 / 新增国家"));
+const { subscriptionStatus } =
+  await import("../internal/manage/panel/subscription-status.js");
+const activity = await subscriptionStatus({
+  request: async () => ({
+    resources: [
+      {
+        id: "template",
+        name: "远程模板",
+        kind: "template",
+        state: "failed",
+        checked: "2026-11-18T00:00:00Z",
+        error: "HTTP 503",
+      },
+    ],
+    sources: [],
+    notification: {
+      configured: true,
+      activity: { state: "failed", failures: 2, error: "notification failed" },
+      event: "refresh",
+    },
+  }),
+});
+assert(activity.textContent.includes("HTTP 503"));
+assert(activity.textContent.includes("Webhook 通知"));
+assert(activity.textContent.includes("notification failed"));
+assert(activity.textContent.includes("最后成功"));
 console.log(
   "Panel contract checks passed: UTF-8 passwords, shared gateway limits, protocol fields, workspace state, mobile sorting, usage focus, operator controls.",
 );

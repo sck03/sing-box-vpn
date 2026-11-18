@@ -111,7 +111,7 @@ func redactPlatform(v any) {
 	switch x := v.(type) {
 	case map[string]any:
 		for k, value := range x {
-			if slices.Contains([]string{"uuid", "password", "passwords", "private_key", "reality_private", "private", "token", "token_hash", "key", "secret", "authorization", "headers", "vpn_secrets", "proxy_pass", "socks_pass", "url", "content", "client_secret", "pre_shared_key"}, k) {
+			if slices.Contains([]string{"uuid", "password", "passwords", "private_key", "reality_private", "private", "token", "token_hash", "key", "secret", "authorization", "headers", "vpn_secrets", "proxy_pass", "socks_pass", "url", "webhook", "content", "client_secret", "pre_shared_key"}, k) {
 				x[k] = "[redacted]"
 			} else {
 				redactPlatform(value)

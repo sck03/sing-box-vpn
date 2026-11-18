@@ -28,6 +28,8 @@ type SourceCache struct {
 }
 
 type ResourceCache struct {
+	Checked  time.Time       `json:"checked,omitzero"`
+	Success  time.Time       `json:"success,omitzero"`
 	Body     json.RawMessage `json:"body,omitempty"`
 	URL      string          `json:"url"`
 	ETag     string          `json:"etag,omitempty"`
@@ -49,6 +51,16 @@ type Runtime struct {
 	Resources  map[string]ResourceCache      `json:"resources,omitempty"`
 	Deliveries map[string]DeliveryState      `json:"deliveries,omitempty"`
 	Accounts   map[string]AccountSourceState `json:"accounts,omitempty"`
+}
+
+type NotificationState struct {
+	EndpointHash string    `json:"endpoint_hash,omitempty"`
+	Checked      time.Time `json:"checked,omitzero"`
+	Success      time.Time `json:"success,omitzero"`
+	Failures     int       `json:"failures,omitempty"`
+	Error        string    `json:"error,omitempty"`
+	Event        string    `json:"event,omitempty"`
+	ObjectID     string    `json:"object_id,omitempty"`
 }
 
 // AccountSourceState identifies rendering inputs, excluding rapidly changing

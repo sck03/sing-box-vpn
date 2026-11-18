@@ -11,6 +11,18 @@ func (s *PlatformService) serveGrants(w http.ResponseWriter, r *http.Request, ac
 	ctx, path := r.Context(), r.URL.Path
 	admin, require, audit := access.admin, access.require, access.audit
 	var err error
+	if path == "/api/subscriptions/status" && r.Method == "GET" {
+		if !require(admin) {
+			return true
+		}
+		v, e := s.SubscriptionStatus(ctx)
+		if e != nil {
+			platformError(w, e)
+		} else {
+			jsonResponse(w, v)
+		}
+		return true
+	}
 	if path == "/api/clients" && r.Method == "GET" {
 		jsonResponse(w, sub.Capabilities())
 		return true

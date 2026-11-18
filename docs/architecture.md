@@ -20,6 +20,7 @@
 | internal/manage/platform_* | 应用编排、配置图校验、备份、证书、主机服务、HTTP/CLI |
 | internal/manage/platform_compile | 候选准备、运行恢复编译、完整草稿预览及输出诊断 |
 | internal/manage/platform_task_output | 有界结果落盘、秘密隐藏以及取消后的部分结果保留 |
+| internal/manage/subscriptions_status、subscriptions_notification | 只读运行状态投影、独立通知活动记录；状态查询跳过缓存中的节点和模板正文 |
 | internal/manage/panel | 原生 ES 模块 SPA，共享表单/列表/草稿，静态嵌入二进制 |
 | internal/subscription | 纯配置处理、解析、集合预算、节点选择与客户端渲染 |
 | internal/runtime | 受管 sing-box 注册、认证后计量守卫 |
@@ -98,7 +99,7 @@ VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IP
 
 前端 `lifecycle.js` 区分页面读取与用户工作流。页面重绘取消页面读取，弹窗绑定/分享只随会话结束取消；异步响应另有会话代次保护。网络页面按入站、路由、出站、VPNGate 拆分，字段规则位于 `network-fields.js`。国家准备接口接收完整当前草稿，返回候选配置；返回前草稿变更或重载会拒绝覆盖。表格索引缓存搜索/排序标量，实时更新焦点行数据，延迟重排和操作闭包刷新，期间阻止执行过时操作。
 
-页面模块按需加载；概览、维护、安全分别由独立模块负责。`capabilities.js` 缓存公开约束，`outbound-fields.js` 维护协议字段规则，`workspace.js` 管理可键盘操作的工作区切换。订阅表单、分享和直接导出使用同一客户端目录。账户操作按策略 revision 判断是否过时，单纯流量变化不会禁用按钮。SSE 内容不变时只发送小型 tick；账户页利用 tick 刷新用量，概览不重复重绘。
+页面模块按需加载；概览、维护、安全分别由独立模块负责。`capabilities.js` 缓存公开约束，`outbound-fields.js` 维护协议字段规则，`workspace.js` 管理可键盘操作的工作区切换。`subscription-status.js` 显示远端同步和通知状态，读取失败不阻止编辑其他订阅配置。订阅表单、分享和直接导出使用同一客户端目录。账户操作按策略 revision 判断是否过时，单纯流量变化不会禁用按钮。SSE 内容不变时只发送小型 tick；账户页利用 tick 刷新用量，概览不重复重绘。
 
 服务单元先全量检查归属再写入，符号链接和非项目单元拒绝覆盖。安装失败和卸载只停用、删除确认为本项目所有的单元。旧配置/凭据/端口写入辅助函数及旧预览适配器只存在于测试夹具，协议实测通过现行账户导出 API 取得材料。
 

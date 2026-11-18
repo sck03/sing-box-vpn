@@ -1,6 +1,7 @@
 import { api } from "./api.js";
 import { workspace } from "./workspace.js";
 import { showConfiguration } from "./config-preview.js";
+import { subscriptionStatus } from "./subscription-status.js";
 import { clientCatalog, templateFields, normalizeTemplate } from "./clients.js";
 import {
   el,
@@ -408,6 +409,7 @@ export async function subscriptions(ctx) {
       ["模板与规则", [content[3], content[4]]],
       ["输出与授权", [content[5], content[7]]],
       ["分发与检测", [content[6], content[8]]],
+      ["运行状态", [await subscriptionStatus(ctx)]],
     ]),
   ];
 }

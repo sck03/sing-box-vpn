@@ -37,6 +37,7 @@ func refreshSubscriptionResources(ctx context.Context, client *http.Client, conf
 			return
 		}
 		priorError := cache.Error
+		cache.Checked = now
 		data, headers, unchanged, err := fetchSubscription(ctx, client, endpoint, cache.ETag)
 		if err == nil && unchanged && (cache.ETag == "" || len(cache.Body) == 0) {
 			err = errors.New("resource returned 304 without cache")
@@ -54,6 +55,7 @@ func refreshSubscriptionResources(ctx context.Context, client *http.Client, conf
 			cache.Next = now.Add(time.Duration(min(60*(1<<(cache.Failures-1)), 21600)) * time.Second)
 		} else {
 			cache.Failures, cache.Error = 0, ""
+			cache.Success = now
 			cache.Next = now.Add(time.Hour)
 			if !unchanged {
 				changed = changed || !bytes.Equal(cache.Body, data)
