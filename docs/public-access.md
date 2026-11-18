@@ -5,10 +5,10 @@
 ## 面板与普通订阅共用 HTTPS
 
 1. 域名 A/AAAA 记录指向 VPS 的实际公网 IP。在云安全组放行所需 HTTPS 端口；申请 HTTP-01 证书时还需临时允许端口 80。
-2. 通过 SSH 转发登录默认本机面板，在「证书资产」申请 ACME 证书或导入已有 PEM。
-3. 在「公网访问 → 配置面板访问」选择「直接 HTTPS」，填写 `https://panel.example.com:2096`、监听 `0.0.0.0:2096`，选择该域名证书。IPv6 监听用 `[::]:2096`。
+2. 通过 SSH 转发登录默认本机面板，在「节点管理 → 证书管理」申请 ACME 证书或导入已有 PEM。
+3. 在「系统设置 → 公网访问 → 配置面板访问」选择「直接 HTTPS」，填写 `https://panel.example.com:2096`、监听 `0.0.0.0:2096`，选择该域名证书。IPv6 监听用 `[::]:2096`。
 4. 查看校验后的完整配置并保存，在 VPS 执行 `systemctl restart sb-panel`，访问新地址登录。
-5. 在「权益与用量」创建权益、绑定入站、点击分享。地址为 `https://panel.example.com:2096/user#<随机令牌>`；期限和用量只在权益上管理。
+5. 在「用户与分享 → 权益与用量」创建权益、绑定入站、点击分享。地址为 `https://panel.example.com:2096/user#<随机令牌>`；期限和用量只在权益上管理。
 
 保存配置不会立即切断当前会话。重启才更换监听与管理源站；页面区分已保存和当前生效配置。直接 TLS 会验证证书域名、期限与私钥，并校验节点、代理和下载端口冲突。续期更新 PEM 后，新 TLS 连接读取新证书。面板引用的证书材料受清理保护。
 
@@ -40,20 +40,20 @@ server {
 }
 ```
 
-Nginx 负责证书安装与续期；面板只信任指定代理地址。URL 必须是协议、域名/IP、端口构成的源站，不包含路径。WebSocket 用于实时概览，代理必须保留 Host 和升级请求头。
+Nginx 负责证书安装与续期；面板只信任指定代理地址。URL 必须是协议、域名/IP、端口构成的源站，不包含路径。实时概览使用 SSE，代理须允许长连接；可在该 location 设置 `proxy_buffering off` 使事件及时送达。VMess 的 WebSocket 入口需在对应站点另行保留升级请求头。
 
 救援时也可将同样的 `PanelOptions` JSON 经 stdin 传给 `yg-vpngate panel --root /etc/s-box configure`，程序校验后原子保存 `panel.json`；然后重启 `sb-panel`。这是当前配置接口，没有旧服务名称或数据迁移入口。
 
 ## 独立订阅服务与菜单对应
 
-| systemd 服务 | 职责 | 面板设置入口 |
-| --- | --- | --- |
-| sing-box | 普通节点用户连接、认证、计量 | 入站与发布；权益与用量 |
-| vpngate-core | VPNGate 用户入口、认证、计量 | VPNGate；权益与用量 |
-| vpngate | OpenVPN 隧道、出口选择与可达性检查 | VPNGate |
-| subscription | 独立用户页和配置下载 | 公网访问 → 独立下载监听；高级订阅在订阅与分发 |
-| argo | Cloudflare VMess WebSocket 隧道 | 出站与隧道 → Argo |
-| sb-panel | 管理 API、页面和任务调度 | 公网访问；管理员安全；维护与任务 |
+| systemd 服务 | 职责                               | 面板设置入口                                            |
+| ------------ | ---------------------------------- | ------------------------------------------------------- |
+| sing-box     | 普通节点用户连接、认证、计量       | 节点管理 → 入站与发布；用户与分享 → 权益与用量          |
+| vpngate-core | VPNGate 用户入口、认证、计量       | 高级功能 → VPNGate；用户与分享 → 权益与用量             |
+| vpngate      | OpenVPN 隧道、出口选择与可达性检查 | 高级功能 → VPNGate                                      |
+| subscription | 独立用户页和配置下载               | 系统设置 → 公网访问 → 独立下载监听；高级功能 → 订阅编排 |
+| argo         | Cloudflare VMess WebSocket 隧道    | 高级功能 → 出站与隧道 → Argo 隧道                       |
+| sb-panel     | 管理 API、页面和任务调度           | 系统设置 → 公网访问 / 管理员安全 / 维护与任务           |
 
 `vpngate-core` 与 `vpngate` 分进程运行：用户认证/计量和隧道生命周期不同，前者通过认证 SOCKS 转给后者。核心单元 `Requires=vpngate.service`，网关失效时转发会阻断。`user` 无法区分普通节点和 VPNGate 核心，因此采用明确的 `vpngate-core`。
 

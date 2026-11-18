@@ -3,57 +3,14 @@ import { overviewStream } from "./live.js";
 import { pageContext } from "./lifecycle.js";
 import { capabilities, validatePassword } from "./capabilities.js";
 import { showConfiguration } from "./config-preview.js";
-import { navigation, markNavigation } from "./navigation.js";
+import {
+  navigation,
+  markNavigation,
+  pageTabs,
+  featureSearch,
+} from "./navigation.js";
+import { pageFor, groupFor, routeFor } from "./page-catalog.js";
 import { $, el, card, help, notice, action, button, showResult } from "./ui.js";
-const lazy = (module, name) => async (context) =>
-  (await import(module))[name](context);
-const inbounds = lazy("./network.js", "inbounds");
-const certificates = lazy("./network.js", "certificates");
-const routing = lazy("./routing.js", "routing");
-const outbounds = lazy("./outbounds.js", "outbounds");
-const vpngate = lazy("./vpngate.js", "vpngate");
-const accounts = lazy("./accounts.js", "accounts");
-const access = lazy("./access.js", "access");
-const subscriptions = lazy("./subscriptions.js", "subscriptions");
-const overview = lazy("./overview.js", "overview");
-const maintenance = lazy("./maintenance.js", "maintenance");
-const admins = lazy("./admins.js", "admins");
-const pages = [
-  ["overview", "运行概览", overview],
-  ["inbounds", "入站与发布", inbounds],
-  ["accounts", "权益与用量", accounts],
-  ["access", "公网访问", access],
-  ["subscriptions", "订阅与分发", subscriptions],
-  ["routing", "路由与 DNS", routing],
-  ["outbounds", "出站与隧道", outbounds],
-  ["vpngate", "VPNGate", vpngate],
-  ["certificates", "证书资产", certificates],
-  ["maintenance", "维护与任务", maintenance],
-  ["admins", "管理员安全", admins],
-];
-const navigationGroups = [
-  ["工作台", ["overview"]],
-  ["用户与订阅", ["accounts", "subscriptions"]],
-  ["网络与节点", ["inbounds", "routing", "outbounds", "vpngate"]],
-  ["系统管理", ["access", "certificates", "maintenance", "admins"]],
-];
-const descriptions = {
-  overview: "查看服务健康、配置同步与最近任务。",
-  inbounds: "配置用户连接的入口和对外发布地址。",
-  accounts: "管理额度、有效期与节点授权。",
-  access: "配置 HTTPS 面板入口与对外订阅地址。",
-  subscriptions: "组合节点来源，生成客户端配置并自动分发。",
-  routing: "设置流量去向与域名解析规则。",
-  outbounds: "管理外部代理、网络检测与隧道。",
-  vpngate: "选择出口地区，查看网关连接状态。",
-  certificates: "统一管理节点证书与续期。",
-  maintenance: "查看操作结果、运行日志与恢复工具。",
-  admins: "管理控制台访问权限与账户安全。",
-};
-const canView = (id, role) =>
-  role === "admin" ||
-  ["overview", "accounts"].includes(id) ||
-  (role === "operator" && ["maintenance", "vpngate"].includes(id));
 const setMenu = (open) => {
   $("#shell").classList.toggle("nav-open", open);
   $("#menu-toggle").setAttribute("aria-expanded", String(open));
@@ -63,6 +20,7 @@ $("#menu-toggle").addEventListener("click", () =>
   setMenu(!$("#shell").classList.contains("nav-open")),
 );
 let page = "overview",
+  section = "",
   navigationPage = "",
   draft = null,
   original = null,
@@ -70,7 +28,8 @@ let page = "overview",
   draftGeneration = 0,
   configLoad = null,
   loading = 0,
-  pageRequest;
+  pageRequest,
+  clearSearch;
 const ctx = {
   session: null,
   root: "",
@@ -113,7 +72,7 @@ const ctx = {
   changed() {
     ctx.dirty = true;
     $("#draft").hidden = false;
-    $("#draft-message").textContent = "配置有未保存的更改 · 草稿保留在本页";
+    $("#draft-message").textContent = "配置有未保存的更改 · 切换页面会保留草稿";
   },
   observeRevision(value) {
     if (draft && value > revision) {
@@ -134,6 +93,7 @@ const ctx = {
     resetDraft();
     ctx.overview = null;
     ctx.updateOverview = null;
+    clearSearch?.();
     $("#task-status").hidden = true;
     setCSRF("");
     stream.stop();
@@ -160,17 +120,28 @@ async function renderPage() {
   const signal = pageRequest.signal;
   const generation = ++loading;
   ctx.updateOverview = null;
-  const definition = pages.find((v) => v[0] === page) || pages[0];
-  $("#page-title").textContent = definition[1];
-  $("#page-description").textContent = descriptions[definition[0]];
-  document.title = definition[1] + " · sing-box-vpn";
+  const definition = pageFor(page, ctx.session.role);
+  const group = groupFor(page);
+  $("#page-title").textContent = group.label;
+  $("#page-group").textContent = definition.title;
+  $("#page-description").textContent = definition.description;
+  document.title = definition.title + " · sing-box-vpn";
+  pageTabs($("#page-tabs"), page, ctx.session.role, navigate);
+  if ($("#page-tabs").hidden) {
+    $("#content").removeAttribute("role");
+    $("#content").removeAttribute("aria-labelledby");
+  } else {
+    $("#content").setAttribute("role", "tabpanel");
+    $("#content").setAttribute("aria-labelledby", "page-tab-" + page);
+  }
   markNavigation($("#navigation"), page, navigationPage !== page);
   navigationPage = page;
   try {
     $("#content").setAttribute("aria-busy", "true");
     // Each render owns its callback; a late render cannot replace the live one.
     const view = pageContext(ctx, signal);
-    const content = await definition[2](view);
+    view.section = section;
+    const content = await definition.load(view);
     if (generation === loading) ctx.updateOverview = view.updateOverview;
     if (generation !== loading) return;
     $("#content").replaceChildren(...content);
@@ -224,7 +195,18 @@ const stream = overviewStream({
   },
 });
 function schedule() {
-  stream.setActive(!!ctx.session && !document.hidden);
+  if (typeof EventSource !== "undefined")
+    stream.setActive(!!ctx.session && !document.hidden);
+}
+function navigate(id) {
+  if (!ctx.session) return;
+  const next = routeFor(id, ctx.session.role);
+  setMenu(false);
+  if (page === next.page && section === next.section) return;
+  page = next.page;
+  section = next.section;
+  location.hash = next.hash;
+  return renderPage();
 }
 async function connected(session) {
   ctx.session = session;
@@ -232,17 +214,21 @@ async function connected(session) {
   $("#login").hidden = true;
   $("#shell").hidden = false;
   $("#identity").textContent = session.id + " · " + session.role;
-  page = location.hash.slice(1) || "overview";
-  if (!pages.some((p) => p[0] === page) || !canView(page, session.role))
-    page = "overview";
-  $("#navigation").replaceChildren(...navigation(
-    navigationGroups, pages, canView, session.role, (id) => {
-      page = id;
-      location.hash = id;
-      setMenu(false);
-      renderPage();
-    }, page,
-  ));
+  const route = routeFor(location.hash.slice(1), session.role);
+  page = route.page;
+  section = route.section;
+  if (location.hash && location.hash !== "#" + route.hash)
+    window.history.replaceState(null, "", "#" + route.hash);
+  navigationPage = "";
+  delete $("#page-tabs").dataset.group;
+  $("#navigation").replaceChildren(...navigation(session.role, navigate, page));
+  clearSearch = featureSearch(
+    $("#feature-search"),
+    $("#feature-results"),
+    session.role,
+    navigate,
+  );
+  schedule();
   await renderPage();
 }
 $("#login-form").addEventListener(
@@ -345,14 +331,13 @@ document.addEventListener("visibilitychange", () => {
   schedule();
 });
 window.addEventListener("hashchange", () => {
-  let next = location.hash.slice(1);
-  if (next && next !== page) {
-    page =
-      ctx.session &&
-      pages.some((p) => p[0] === next) &&
-      canView(next, ctx.session.role)
-        ? next
-        : "overview";
+  if (!ctx.session) return;
+  const next = routeFor(location.hash.slice(1), ctx.session.role);
+  if (location.hash && location.hash !== "#" + next.hash)
+    window.history.replaceState(null, "", "#" + next.hash);
+  if (next.page !== page || next.section !== section) {
+    page = next.page;
+    section = next.section;
     setMenu(false);
     renderPage();
   }

@@ -125,12 +125,22 @@ jobs:
           panel_pid=$!
           trap 'kill "$panel_pid" 2>/dev/null || true; wait "$panel_pid" 2>/dev/null || true' EXIT
           panel_url=""
+          panel_ready=false
           for attempt in $(seq 1 100); do
+            if ! kill -0 "$panel_pid" 2>/dev/null; then
+              echo 'Development panel exited before becoming ready' >&2
+              cat .test/panel-api.log >&2
+              exit 1
+            fi
             panel_url="$(grep -o 'http://127.0.0.1:[0-9]*' .test/panel-api.log | head -n 1 || true)"
-            if [[ -n "$panel_url" ]] && curl -fsS "$panel_url/api/capabilities" >/dev/null; then break; fi
+            if [[ -n "$panel_url" ]] && curl -fsS "$panel_url/api/capabilities" >/dev/null; then panel_ready=true; break; fi
             sleep 0.2
           done
-          test -n "$panel_url"
+          if [[ "$panel_ready" != true ]]; then
+            echo 'Development panel did not become ready within 20 seconds' >&2
+            cat .test/panel-api.log >&2
+            exit 1
+          fi
           PANEL_TEST_URL="$panel_url" PANEL_TEST_PASSWORD="$test_password" node scripts/test-panel-api.mjs
       - name: OpenVPN, tunnel DNS and fail-closed namespace acceptance
         run: sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_NETNS_TESTS=1 "$(command -v go)" test -run '^TestLinuxNamespaceIsolation$' -count=1 -v -timeout=6m ./addons/vpngate/gateway
@@ -142,7 +152,7 @@ jobs:
         run: sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_SERVICE_TESTS=1 "$(command -v go)" test -run '^TestLinuxServiceStartupRecovery$' -count=1 -v -timeout=2m ./internal/manage
       - name: Build both release architectures
         run: go run ./cmd/release
-      - name: Fresh v4 installation and panel deployment rollback
+      - name: Fresh installation and panel deployment rollback
         env:
           SBVPN_GITHUB_TOKEN: ${{ github.token }}
         run: |

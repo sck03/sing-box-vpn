@@ -44,9 +44,11 @@ export function formDialog(title, fields, value, save) {
     form = el("form"),
     area = el("div", { class: "fields" });
   const inputs = [];
+  const advanced = el("div", { class: "fields" });
   for (const field of fields) {
+    const target = field.advanced ? advanced : area;
     if (field.section)
-      area.append(el("h3", { class: "field-section wide" }, field.section));
+      target.append(el("h3", { class: "field-section wide" }, field.section));
     const raw = getPath(value, field.key);
     const current = field.scale && raw != null ? raw / field.scale : raw;
     let input;
@@ -109,7 +111,7 @@ export function formDialog(title, fields, value, save) {
       input,
     );
     if (field.help) label.append(el("small", {}, field.help));
-    area.append(label);
+    target.append(label);
     inputs.push([field, input, input.value]);
   }
   const formValue = () => {
@@ -165,7 +167,28 @@ export function formDialog(title, fields, value, save) {
     }
   };
   form.addEventListener("change", refreshFields);
+  form.addEventListener(
+    "invalid",
+    (event) => {
+      for (
+        let parent = event.target.parentElement;
+        parent && parent !== form;
+        parent = parent.parentElement
+      )
+        if (parent.tagName === "DETAILS") parent.open = true;
+    },
+    true,
+  );
   refreshFields();
+  if (advanced.childElementCount)
+    area.append(
+      el(
+        "details",
+        { class: "advanced wide" },
+        el("summary", {}, "高级设置（可选）"),
+        advanced,
+      ),
+    );
   form.append(
     area,
     el("p", { class: "form-error", role: "alert", hidden: true }),

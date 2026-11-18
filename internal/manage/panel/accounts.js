@@ -3,8 +3,7 @@ import { createAccountShare } from "./sharing.js";
 import { clientCatalog, clientOptions } from "./clients.js";
 import { showExport } from "./export-results.js";
 import { showRecords } from "./details.js";
-import { grants } from "./grants.js";
-import { subscribers } from "./subscribers.js";
+import { disclosure } from "./sections.js";
 import {
   el,
   card,
@@ -30,18 +29,27 @@ const states = {
 };
 export async function accounts(ctx) {
   const request = ctx.request || api;
-  const people = await request("/api/subscribers");
   const admin = ctx.session.role === "admin";
-  const catalog = admin ? await clientCatalog(request) : {};
-  const fields = (existing) => [
-    { key: "id", label: "权益 ID", required: true, readonly: existing },
+  const fields = (existing, people) => [
+    {
+      key: "id",
+      label: "权益 ID",
+      required: true,
+      readonly: existing,
+      advanced: true,
+    },
     { key: "name", label: "名称", required: true },
-    ...(people.length ? [{
-      key: "subscriber_id",
-      label: "用户分组（可选）",
-      type: "select",
-      options: [["", "独立权益"], ...people.map((p) => [p.id, p.name])],
-    }] : []),
+    ...(people.length
+      ? [
+          {
+            key: "subscriber_id",
+            label: "用户分组（可选）",
+            advanced: true,
+            type: "select",
+            options: [["", "独立权益"], ...people.map((p) => [p.id, p.name])],
+          },
+        ]
+      : []),
     {
       key: "quota_bytes",
       label: "每周期额度（GiB）",
@@ -56,6 +64,7 @@ export async function accounts(ctx) {
     {
       key: "start_mode",
       label: "开始策略",
+      advanced: true,
       type: "select",
       readonly: existing,
       options: [
@@ -67,6 +76,7 @@ export async function accounts(ctx) {
     {
       key: "starts_at",
       label: "指定开始时间",
+      advanced: true,
       type: "date",
       readonly: existing,
       visible: (v) => v.start_mode === "scheduled",
@@ -74,6 +84,7 @@ export async function accounts(ctx) {
     {
       key: "duration_seconds",
       label: "有效时长（天，0 不限）",
+      advanced: true,
       type: "number",
       scale: 86400,
       readonly: existing,
@@ -82,6 +93,7 @@ export async function accounts(ctx) {
     {
       key: "period.kind",
       label: "额度重置",
+      advanced: true,
       type: "select",
       readonly: existing,
       options: [
@@ -93,6 +105,7 @@ export async function accounts(ctx) {
     {
       key: "period.days",
       label: "间隔日数",
+      advanced: true,
       type: "number",
       readonly: existing,
       min: 1,
@@ -102,6 +115,7 @@ export async function accounts(ctx) {
     {
       key: "period.day",
       label: "每月几号（短月取月末）",
+      advanced: true,
       type: "number",
       readonly: existing,
       min: 1,
@@ -111,15 +125,19 @@ export async function accounts(ctx) {
     {
       key: "period.timezone",
       label: "IANA 时区",
+      advanced: true,
       readonly: existing,
       help: "例如 Asia/Shanghai、America/New_York",
       visible: (v) => ["days", "monthly"].includes(v.period?.kind),
     },
   ];
-  const edit = (item) =>
+  const edit = async (item) =>
     formDialog(
       item.revision ? "编辑权益" : "新建权益",
-      fields(!!item.revision),
+      fields(
+        !!item.revision,
+        await (ctx.workflowRequest || api)("/api/subscribers"),
+      ),
       item,
       async (v) => {
         const account = {};
@@ -192,11 +210,12 @@ export async function accounts(ctx) {
       "绑定入站",
       [
         ...(await bindingFields()),
-        { key: "uuid", label: "自定义 UUID（留空随机）" },
+        { key: "uuid", label: "自定义 UUID（留空随机）", advanced: true },
         {
           key: "password",
           label: "自定义密码（16–128 字节，留空随机）",
           type: "password",
+          advanced: true,
         },
       ],
       { scope: "normal", inbound_ids: [] },
@@ -293,7 +312,7 @@ export async function accounts(ctx) {
             "新建权益",
             () =>
               edit({
-                id: "",
+                id: "user-" + crypto.randomUUID().replaceAll("-", ""),
                 name: "",
                 subscriber_id: "",
                 quota_bytes: null,
@@ -322,9 +341,9 @@ export async function accounts(ctx) {
                   key: "account_ids",
                   label: "权益（可多选，最多 100 个）",
                   type: "multiselect",
-                  options: (await request("/api/account-options")).map(
-                    (item) => [item.id, item.name],
-                  ),
+                  options: (
+                    await (ctx.workflowRequest || api)("/api/account-options")
+                  ).map((item) => [item.id, item.name]),
                   required: true,
                   wide: true,
                 },
@@ -376,7 +395,7 @@ export async function accounts(ctx) {
                 button("分享", () => createAccountShare([item], ctx)),
                 button("绑定", () => bind(item)),
                 button("凭据", () => credentials(item)),
-                button("导出 / 二维码", () =>
+                button("导出 / 二维码", async () =>
                   formDialog(
                     "账户专属导出",
                     [
@@ -390,7 +409,9 @@ export async function accounts(ctx) {
                         key: "client",
                         label: "格式",
                         type: "select",
-                        options: clientOptions(catalog),
+                        options: clientOptions(
+                          await clientCatalog(ctx.workflowRequest || api),
+                        ),
                       },
                       {
                         key: "tuic_port",
@@ -438,15 +459,23 @@ export async function accounts(ctx) {
     ),
   ];
   const list = content[0].querySelector(".remote-table");
+  let lastRefresh = performance.now();
   ctx.updateOverview = () => {
+    if (performance.now() - lastRefresh < 5000) return;
+    lastRefresh = performance.now();
     void list.refresh();
   };
   if (admin) {
-    content.push(...await grants(ctx));
-    content.push(el("details", { class: "advanced" },
-      el("summary", {}, "高级：用户分组（同一用户有多份权益时使用）"),
-      ...await subscribers(ctx),
-    ));
+    content.push(
+      el("p", {}, el("a", { href: "#grants" }, "查看与撤销分享链接 →")),
+    );
+    content.push(
+      disclosure(
+        "高级：用户分组（同一用户有多份权益时使用）",
+        async () => (await import("./subscribers.js")).subscribers(ctx),
+        ctx.signal,
+      ),
+    );
   }
   return content;
 }

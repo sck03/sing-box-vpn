@@ -1,12 +1,19 @@
 package manage
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/sck03/sing-box-vpn/internal/domain"
 )
@@ -23,6 +30,7 @@ func TestPanelAccessSettingsValidation(t *testing.T) {
 		valid   bool
 	}{
 		{"local", PanelOptions{Listen: "127.0.0.1:2096"}, true},
+		{"ephemeral saved settings", PanelOptions{Listen: "127.0.0.1:0"}, false},
 		{"TLS", PanelOptions{Listen: "0.0.0.0:2096", PublicURL: "https://panel.example.com:2096", Certificate: cert, Key: key}, true},
 		{"reverse proxy", PanelOptions{Listen: "127.0.0.1:2096", PublicURL: "https://panel.example.com", TrustedProxy: []string{"127.0.0.1/32"}}, true},
 		{"cleartext", PanelOptions{Listen: "0.0.0.0:2096", PublicURL: "http://panel.example.com"}, false},
@@ -40,6 +48,65 @@ func TestPanelAccessSettingsValidation(t *testing.T) {
 				t.Fatalf("valid=%v, error=%v", tc.valid, err)
 			}
 		})
+	}
+}
+
+func TestPanelEphemeralDevelopmentListener(t *testing.T) {
+	for _, address := range []string{"0.0.0.0:0", "[::]:0", "127.0.0.1:-1", "127.0.0.1:65536"} {
+		if err := (PanelOptions{Listen: address}).validate(true); err == nil {
+			t.Fatalf("development accepted invalid/public ephemeral listener %s", address)
+		}
+	}
+	if err := (PanelOptions{Listen: "[::1]:0"}).validate(true); err != nil {
+		t.Fatal(err)
+	}
+	root, core, _ := appFixture(t)
+	s, _, _ := platformFixture(t, root, core)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	done := make(chan error, 1)
+	go func() {
+		err := s.Serve(ctx, PanelOptions{Listen: "127.0.0.1:0"}, writer)
+		writer.CloseWithError(err)
+		done <- err
+	}()
+	line := make(chan string, 1)
+	go func() {
+		scanner := bufio.NewScanner(reader)
+		if scanner.Scan() {
+			line <- scanner.Text()
+		} else {
+			line <- ""
+		}
+	}()
+	select {
+	case message := <-line:
+		address := strings.TrimPrefix(message, "管理面板：")
+		parsed, err := url.Parse(address)
+		if err != nil || parsed.Hostname() != "127.0.0.1" || parsed.Port() == "" || parsed.Port() == "0" {
+			t.Fatalf("invalid actual listener %q: %v", message, err)
+		}
+		response, err := (&http.Client{Timeout: 5 * time.Second}).Get(address + "/api/capabilities")
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != 200 {
+			t.Fatal(response.Status)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("development listener did not start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("development listener did not stop")
 	}
 }
 

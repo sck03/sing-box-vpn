@@ -21,15 +21,19 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
 )
 
-// Validate the saved settings and the actual server with the same rules.
+// Validate saved settings; ephemeral ports are reserved for development Serve calls.
 func (o PanelOptions) Validate() error {
+	return o.validate(false)
+}
+
+func (o PanelOptions) validate(development bool) error {
 	host, port, err := net.SplitHostPort(o.Listen)
 	if err != nil {
 		return errors.New("监听地址需要 IP:端口，例如 0.0.0.0:2096")
 	}
 	ip := net.ParseIP(host)
 	n, err := strconv.Atoi(port)
-	if ip == nil || err != nil || n < 1 || n > 65535 {
+	if ip == nil || err != nil || n < 0 || n > 65535 || (n == 0 && (!development || !ip.IsLoopback())) {
 		return errors.New("面板监听 IP 或端口无效")
 	}
 	if (o.Certificate == "") != (o.Key == "") {

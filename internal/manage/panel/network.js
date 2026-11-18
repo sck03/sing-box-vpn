@@ -241,7 +241,12 @@ export async function inbounds(ctx) {
       row(add, el("span", { class: "muted" }, `${items.length} 个入站`)),
       list,
     ),
-    ports,
+    el(
+      "details",
+      { class: "advanced" },
+      el("summary", {}, "高级：UDP 跳跃与多端口"),
+      ports,
+    ),
   ];
 }
 
@@ -324,7 +329,7 @@ export async function certificates(ctx) {
           { key: "domain", label: "域名" },
           {
             label: "续期归属",
-            value: (a) => a.provider === "import" ? "手动导入" : "内置 ACME",
+            value: (a) => (a.provider === "import" ? "手动导入" : "内置 ACME"),
           },
           {
             label: "自动续期",

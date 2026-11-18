@@ -1,6 +1,7 @@
 import { api, download, restoreForm } from "./api.js";
 import { tasksCard } from "./tasks.js";
 import { capabilities } from "./capabilities.js";
+import { workspace } from "./workspace.js";
 import {
   el,
   card,
@@ -12,7 +13,7 @@ import {
   notice,
 } from "./ui.js";
 export async function maintenance(ctx) {
-  const data = await (ctx.request || api)("/api/overview");
+  const data = ctx.overview || (await (ctx.request || api)("/api/overview"));
   const metadata = await capabilities(ctx.request || api);
   const tasks = tasksCard(data.tasks, ctx);
   ctx.updateOverview = (next) =>
@@ -20,7 +21,10 @@ export async function maintenance(ctx) {
   const logs = card(
     "运行日志",
     row(
-      ...[...(metadata.services || []).map((service) => service.name), "sb-panel"].map((service) =>
+      ...[
+        ...(metadata.services || []).map((service) => service.name),
+        "sb-panel",
+      ].map((service) =>
         button(service, async () =>
           showResult(service, (await api("/api/logs?service=" + service)).log),
         ),
@@ -98,7 +102,7 @@ export async function maintenance(ctx) {
       ),
     ),
   );
-  return [
+  const content = [
     card(
       "程序与受管运行时",
       help(
@@ -143,5 +147,17 @@ export async function maintenance(ctx) {
       ),
     ),
     tasks,
+  ];
+  return [
+    workspace(
+      "maintenance",
+      [
+        ["任务与日志", [tasks, logs], "logs"],
+        ["备份与恢复", [backup], "backup"],
+        ["程序更新", [content[0]], "upgrade"],
+        ["网络调优", [content[3]], "network"],
+      ],
+      { signal: ctx.signal, active: ctx.section },
+    ),
   ];
 }

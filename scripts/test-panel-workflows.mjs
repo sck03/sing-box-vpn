@@ -60,6 +60,7 @@ const click = (label, root = document) => {
 };
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 click("新建权益");
+await tick();
 document.querySelector('input[aria-label="权益 ID"]').value = "audit-account";
 document.querySelector('input[aria-label="名称"]').value = "测试权益";
 document

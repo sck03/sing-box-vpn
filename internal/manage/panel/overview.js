@@ -1,6 +1,7 @@
 import { api } from "./api.js";
 import { capabilities } from "./capabilities.js";
 import { tasksCard } from "./tasks.js";
+import { canView, pageFor, groupFor, routeFor } from "./page-catalog.js";
 import { el, card, help, table, badge, button } from "./ui.js";
 export async function overview(ctx) {
   const metadata = await capabilities();
@@ -105,17 +106,42 @@ export async function overview(ctx) {
     ),
     card(
       "系统服务",
-      help("服务启动只运行已保存的配置。点击服务对应的设置入口配置功能；VPNGate 节点核心与隧道网关分工运行，共用同一 VPNGate 页面。"),
+      help(
+        "服务启动只运行已保存的配置。点击服务对应的设置入口配置功能；VPNGate 节点核心与隧道网关分工运行，共用同一 VPNGate 页面。",
+      ),
       table(
         [
           { key: "name", label: "服务" },
-          { label: "职责", value: (v) => v.description || v.label || "",
-            render: (v) => el("div", {}, el("strong", {}, v.label || v.name), help(v.description || "")) },
-          { label: "功能设置", value: (v) => v.page || "",
+          {
+            label: "职责",
+            value: (v) => v.description || v.label || "",
+            render: (v) =>
+              el(
+                "div",
+                {},
+                el("strong", {}, v.label || v.name),
+                help(v.description || ""),
+              ),
+          },
+          {
+            label: "功能设置",
+            value: (v) => v.page || "",
             render: (v) => {
-              const allowed = ctx.session.role === "admin" || (ctx.session.role === "operator" && v.page === "vpngate");
-              return v.page && allowed ? el("a", { href: "#" + v.page }, ({ inbounds: "入站与发布", vpngate: "VPNGate", access: "公网访问 / 下载监听", outbounds: "出站与隧道 / Argo" })[v.page] || "功能设置") : el("span", {}, "请联系管理员配置");
-            } },
+              const target = routeFor(
+                v.page + (v.section ? "/" + v.section : ""),
+                ctx.session.role,
+              );
+              return canView(v.page, ctx.session.role)
+                ? el(
+                    "a",
+                    { href: "#" + target.hash },
+                    groupFor(v.page).label +
+                      " / " +
+                      pageFor(v.page, ctx.session.role).title,
+                  )
+                : el("span", {}, "请联系管理员配置");
+            },
+          },
           { label: "安装", value: (v) => v.LoadState || "本地开发" },
           {
             label: "运行",
@@ -184,5 +210,44 @@ export async function overview(ctx) {
       (items, i) => tables[i].updateItems(items),
     );
   };
-  return content;
+  const shortcuts = [
+    ["inbounds", "配置节点", "选择协议，设置端口与发布地址"],
+    ["accounts", "添加用户并分享", "创建权益、绑定入口、发送分享链接"],
+    ["access", "设置公网访问", "配置 HTTPS 与可分享的订阅地址"],
+    [
+      "maintenance",
+      "查看任务与日志",
+      ctx.session.role === "operator"
+        ? "检查操作结果和运行日志"
+        : "检查操作结果、备份和程序更新",
+    ],
+  ].filter(([id]) => canView(id, ctx.session.role));
+  return [
+    health,
+    stats,
+    card(
+      "常用操作",
+      el(
+        "div",
+        { class: "shortcut-grid" },
+        ...shortcuts.map(([id, title, description]) =>
+          el(
+            "a",
+            { href: "#" + id, class: "shortcut" },
+            el("strong", {}, title),
+            el("small", {}, description),
+          ),
+        ),
+      ),
+    ),
+    content[3],
+    content[4],
+    el(
+      "details",
+      { class: "advanced" },
+      el("summary", {}, "运行详情：核心版本与凭据发布"),
+      content[2],
+      content[5],
+    ),
+  ];
 }

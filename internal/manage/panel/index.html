@@ -47,6 +47,17 @@
         >
           打开导航
         </button>
+        <div class="feature-finder">
+          <input
+            id="feature-search"
+            type="search"
+            autocomplete="off"
+            placeholder="查找功能：分享、证书、日志…"
+            aria-label="查找功能"
+            aria-controls="feature-results"
+          />
+          <div id="feature-results" class="feature-results" hidden></div>
+        </div>
         <nav id="navigation" aria-label="主导航"></nav>
         <div class="identity">
           <span id="identity"></span><button id="logout">退出登录</button>
@@ -55,7 +66,7 @@
       <main>
         <header>
           <div>
-            <span class="eyebrow">网络控制台</span>
+            <span id="page-group" class="eyebrow">运行概览</span>
             <h1 id="page-title">运行概览</h1>
             <p id="page-description" class="page-description"></p>
           </div>
@@ -73,6 +84,7 @@
           </div>
         </section>
         <a id="task-status" class="task-status" href="#maintenance" hidden></a>
+        <div id="page-tabs" class="workspace-tabs" role="tablist" hidden></div>
         <div id="content"></div>
         <footer>sing-box-vpn · 节点、用户与网络，一个工作台</footer>
       </main>

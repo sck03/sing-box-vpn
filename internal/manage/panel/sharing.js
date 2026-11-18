@@ -51,7 +51,7 @@ export async function createAccountShare(accounts, ctx) {
       dialog.replaceChildren(
         el("h2", {}, "分享已创建"),
         help(
-          "请保存这个地址，之后无法再次查看完整链接。有效期和流量由权益统一控制；链接可以在本页撤销。",
+          "请保存这个地址，之后无法再次查看完整链接。有效期和流量由权益统一控制；可在「用户与分享 → 分享链接」撤销。",
         ),
         address,
         row(
@@ -70,6 +70,11 @@ export async function createAccountShare(accounts, ctx) {
             "primary",
           ),
           button("完成", () => dialog.close()),
+          el(
+            "a",
+            { href: "#grants", onclick: () => dialog.close() },
+            "管理分享链接 →",
+          ),
         ),
       );
       dialog.showModal();

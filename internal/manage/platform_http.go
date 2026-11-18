@@ -252,7 +252,7 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 }
 
 func (s *PlatformService) Serve(ctx context.Context, options PanelOptions, out io.Writer) error {
-	if err := options.Validate(); err != nil {
+	if err := options.validate(s.NoSystem); err != nil {
 		return err
 	}
 	listener, err := net.Listen("tcp", options.Listen)
@@ -260,6 +260,13 @@ func (s *PlatformService) Serve(ctx context.Context, options PanelOptions, out i
 		return err
 	}
 	defer listener.Close()
+	_, requestedPort, _ := net.SplitHostPort(options.Listen)
+	if requestedPort == "0" {
+		options.Listen = listener.Addr().String()
+	}
+	if err := s.validatePanelListener(ctx, options); err != nil {
+		return err
+	}
 	if options.PublicURL == "" {
 		options.PublicURL = "http://" + listener.Addr().String()
 		if options.Certificate != "" {

@@ -7,6 +7,7 @@ type serviceDefinition struct {
 	Label       string `json:"label"`
 	Description string `json:"description"`
 	Page        string `json:"page"`
+	Section     string `json:"section,omitempty"`
 	Runtime     string `json:"runtime,omitempty"`
 }
 
@@ -15,7 +16,7 @@ var serviceDefinitions = []serviceDefinition{
 	{Name: "vpngate-core", Label: "VPNGate 节点核心", Description: "用户连接、认证与流量计量；经 VPNGate 网关转发", Page: "vpngate", Runtime: "vpngate"},
 	{Name: "vpngate", Label: "VPNGate 隧道网关", Description: "建立 OpenVPN 隧道、选择出口并检查出口可达性", Page: "vpngate"},
 	{Name: "subscription", Label: "订阅下载服务", Description: "提供用户页及配置下载；启用后使用独立下载监听", Page: "access"},
-	{Name: "argo", Label: "Argo 隧道", Description: "将 VMess WebSocket 入口发布到 Cloudflare 隧道", Page: "outbounds"},
+	{Name: "argo", Label: "Argo 隧道", Description: "将 VMess WebSocket 入口发布到 Cloudflare 隧道", Page: "outbounds", Section: "argo"},
 }
 
 var platformServices = func() []string {

@@ -4,40 +4,42 @@
 
 ## 模块边界
 
-| 模块 | 职责 |
-| --- | --- |
-| internal/domain | 稳定身份、权益/周期规则，不依赖 HTTP 或 SQLite |
-| internal/application | 类型化命令、账户批量绑定用例、任务详情访问规则与仓储边界；不解析 HTTP 或操作 systemd |
-| internal/backuparchive | 有界 tar 格式与 age 认证加密；不依赖配置、SQL schema 或证书提供方 |
-| internal/clientprofile | 无存储/HTTP 依赖的客户端、模式与特性目录，统一表单、授权和渲染能力 |
-| internal/manage/accounts_queries | 返回结构化账户查询、凭据摘要和渲染产物；传输层负责编码 |
-| internal/encoding | 按调用场景限制大小的严格 JSON 解码 |
-| internal/database | 连接策略、schema 版本与文件权限 |
-| internal/gatewayconfig | 网关类型、默认值、数值边界、URL/DNS/路径校验；供管理器和独立网关共同使用 |
-| internal/adminauth | bcrypt、Cookie 会话、CSRF、角色、限速、TOTP、审计 |
-| internal/accounting | 权益激活、日历账期、凭据代次、预留/检查点、下载计数 |
-| internal/controlstore | desired/applied revision、持久任务、运行心跳、观测状态 |
-| internal/manage/platform_* | 应用编排、配置图校验、备份、证书、主机服务、HTTP/CLI |
-| internal/manage/platform_services | 统一服务登记：systemd 名称、职责、对应工作区、受管核心实例；供状态、能力目录和恢复共用 |
-| internal/manage/platform_panel_settings | 启动访问配置的验证、预览、并发版本核对和原子保存；不参与权益计量 |
-| internal/manage/platform_compile | 候选准备、运行恢复编译、完整草稿预览及输出诊断 |
-| internal/manage/platform_acme | 内置 lego 客户端、HTTP-01 验证、账户与签发结果持久化；复用平台任务调度与证书发布 |
-| internal/manage/certificate_material | 独立的 PEM 匹配、域名验证与有效期检查；已解析材料供状态、续期和导入复用，无共享过期缓存 |
-| internal/manage/platform_task_output | 有界结果落盘、秘密隐藏以及取消后的部分结果保留 |
-| internal/manage/subscriptions_status、subscriptions_notification | 只读运行状态投影、独立通知活动记录；状态查询跳过缓存中的节点和模板正文 |
-| internal/manage/panel | 原生 ES 模块 SPA，共享表单/列表/草稿，静态嵌入二进制 |
-| internal/subscription | 纯配置处理、解析、集合预算、节点选择与客户端渲染 |
-| internal/runtime | 受管 sing-box 注册、认证后计量守卫 |
-| addons/vpngate/gateway | 独立 VPNGate 后端、netns/OpenVPN、出口验证和 SOCKS 转发 |
-| internal/command | 子进程期限、取消、有界输出 |
-| internal/hostservice | 不依赖数据库的失败服务恢复、Argo 运行观察、可重试网络设置恢复，通过命令适配器访问主机 |
-| internal/httpserver | HTTP 生命周期、连接上限、独立请求并发准入，不依赖业务或数据库 |
+| 模块                                                             | 职责                                                                                    |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| internal/domain                                                  | 稳定身份、权益/周期规则，不依赖 HTTP 或 SQLite                                          |
+| internal/application                                             | 类型化命令、账户批量绑定用例、任务详情访问规则与仓储边界；不解析 HTTP 或操作 systemd    |
+| internal/backuparchive                                           | 有界 tar 格式与 age 认证加密；不依赖配置、SQL schema 或证书提供方                       |
+| internal/clientprofile                                           | 无存储/HTTP 依赖的客户端、模式与特性目录，统一表单、授权和渲染能力                      |
+| internal/manage/accounts_queries                                 | 返回结构化账户查询、凭据摘要和渲染产物；传输层负责编码                                  |
+| internal/encoding                                                | 按调用场景限制大小的严格 JSON 解码                                                      |
+| internal/database                                                | 连接策略、schema 版本与文件权限                                                         |
+| internal/gatewayconfig                                           | 网关类型、默认值、数值边界、URL/DNS/路径校验；供管理器和独立网关共同使用                |
+| internal/adminauth                                               | bcrypt、Cookie 会话、CSRF、角色、限速、TOTP、审计                                       |
+| internal/accounting                                              | 权益激活、日历账期、凭据代次、预留/检查点、下载计数                                     |
+| internal/controlstore                                            | desired/applied revision、持久任务、运行心跳、观测状态                                  |
+| internal/manage/platform\_\*                                     | 应用编排、配置图校验、备份、证书、主机服务、HTTP/CLI                                    |
+| internal/manage/platform_services                                | 统一服务登记：systemd 名称、职责、对应工作区、受管核心实例；供状态、能力目录和恢复共用  |
+| internal/manage/platform_panel_settings                          | 启动访问配置的验证、预览、并发版本核对和原子保存；不参与权益计量                        |
+| internal/manage/platform_compile                                 | 候选准备、运行恢复编译、完整草稿预览及输出诊断                                          |
+| internal/manage/platform_acme                                    | 内置 lego 客户端、HTTP-01 验证、账户与签发结果持久化；复用平台任务调度与证书发布        |
+| internal/manage/certificate_material                             | 独立的 PEM 匹配、域名验证与有效期检查；已解析材料供状态、续期和导入复用，无共享过期缓存 |
+| internal/manage/platform_task_output                             | 有界结果落盘、秘密隐藏以及取消后的部分结果保留                                          |
+| internal/manage/subscriptions_status、subscriptions_notification | 只读运行状态投影、独立通知活动记录；状态查询跳过缓存中的节点和模板正文                  |
+| internal/manage/panel                                            | 原生 ES 模块 SPA，共享表单/列表/草稿，静态嵌入二进制                                    |
+| internal/subscription                                            | 纯配置处理、解析、集合预算、节点选择与客户端渲染                                        |
+| internal/runtime                                                 | 受管 sing-box 注册、认证后计量守卫                                                      |
+| addons/vpngate/gateway                                           | 独立 VPNGate 后端、netns/OpenVPN、出口验证和 SOCKS 转发                                 |
+| internal/command                                                 | 子进程期限、取消、有界输出                                                              |
+| internal/hostservice                                             | 不依赖数据库的失败服务恢复、Argo 运行观察、可重试网络设置恢复，通过命令适配器访问主机   |
+| internal/httpserver                                              | HTTP 生命周期、连接上限、独立请求并发准入，不依赖业务或数据库                           |
 
 面板、普通核心、VPNGate 核心、VPNGate 网关和可选下载/Argo 服务分进程运行。一个权益不创建一个进程或端口。普通与 VPNGate 同库共享额度池，网关后端不重复计费。
 
 服务名为 `sing-box`（普通核心）、`vpngate-core`（VPNGate 用户核心）、`vpngate`（隧道网关）、`subscription`（下载）、`argo`（Cloudflare 隧道）；不注册旧名称别名。`vpngate-core` 依赖 `vpngate.service`，受管核心实例 ID 仍为业务范围 `normal` / `vpngate`，实例身份与系统服务名分离。前端日志入口消费能力目录，概览消费服务 DTO 的职责和工作区，不另维护一份服务名称清单。
 
 `panel.json` 是面板监听、TLS 和可信代理的启动配置，独立于数据库中的节点/权益配置。管理员通过 `/api/panel/settings/preview` 校验，通过 `/api/panel/settings` 的版本核对保存；变更需明确重启面板才生效。节点配置与面板设置相互核查端口，证书引用纳入材料回收保护。分享地址只读取已应用下载配置与当前生效面板源站；不可分享的回环地址在创建下载令牌前拒绝。
+
+保存的监听端口始终为 1–65535。明确 `--no-system` 的开发进程可在回环地址使用端口 0，由操作系统分配端口；绑定后记录实际地址并检查节点端口冲突。该例外不适用于公网监听或设置保存，CI 使用独立空目录完成真实 HTTP 契约验证。
 
 数据库连接级 PRAGMA 通过 SQLite DSN 设置，每条新连接均启用外键、WAL/FULL、5 秒 busy timeout 和 trusted_schema=OFF。取消导致驱动淘汰物理连接后仍保持同一策略。节点文档移除 `app.warp`，WireGuard 只从 `advanced.endpoints` 读取；旧节点和订阅文档格式直接拒绝。
 
@@ -113,7 +115,9 @@ VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IP
 
 前端 `lifecycle.js` 区分页面读取与用户工作流。页面重绘取消页面读取，弹窗绑定/分享只随会话结束取消；异步响应另有会话代次保护。网络页面按入站、路由、出站、VPNGate 拆分，字段规则位于 `network-fields.js`。国家准备接口接收完整当前草稿，返回候选配置；返回前草稿变更或重载会拒绝覆盖。表格索引缓存搜索/排序标量，实时更新焦点行数据，延迟重排和操作闭包刷新，期间阻止执行过时操作。
 
-页面模块按需加载；概览、维护、安全分别由独立模块负责。`capabilities.js` 缓存公开约束，`outbound-fields.js` 维护协议字段规则，`workspace.js` 管理可键盘操作的工作区切换。`subscription-status.js` 显示远端同步和通知状态，读取失败不阻止编辑其他订阅配置。订阅表单、分享和直接导出使用同一客户端目录。账户操作按策略 revision 判断是否过时，单纯流量变化不会禁用按钮。SSE 内容不变时只发送小型 tick；账户页利用 tick 刷新用量，概览不重复重绘。
+`page-catalog.js` 统一页面权限、分组、标题、搜索关键词、动态模块加载和页内定位；`navigation.js` 只负责侧栏、搜索及同组标签，`app.js` 负责会话、路由和完整草稿。新增页面登记后即可进入路由和搜索；服务设置链接消费同一目录。非法或越权地址归一化，空 hash 回到概览。
+
+`sections.js` 统一可选内容的延迟创建、并发合并、页面内复用、取消和失败重试，`workspace.js` 管理可键盘操作的标签。权益页只先读取分页权益，用户分组展开时读取，客户端目录在导出时读取；出站、维护、订阅按标签创建内容。查看省略可选字段的订阅配置不会改写草稿。`capabilities.js` 缓存公开约束，`outbound-fields.js` 维护协议字段规则。订阅表单、分享和直接导出使用同一客户端目录。账户操作按策略 revision 判断是否过时，单纯流量变化不会禁用按钮。SSE 在会话建立后启动，内容不变时只发送小型 tick；权益页至少间隔 5 秒刷新用量并合并并发刷新，概览不重复重绘。
 
 服务单元先全量检查归属再写入，符号链接和非项目单元拒绝覆盖。安装失败和卸载只停用、删除确认为本项目所有的单元。旧配置/凭据/端口写入辅助函数及旧预览适配器只存在于测试夹具，协议实测通过现行账户导出 API 取得材料。
 
