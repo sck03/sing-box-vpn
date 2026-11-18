@@ -1,16 +1,15 @@
 package manage
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	strict "github.com/sck03/sing-box-vpn/internal/encoding"
+	"github.com/sck03/sing-box-vpn/internal/gatewayconfig"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 	"net"
 	"net/url"
-	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -132,6 +131,24 @@ func (c PlatformConfig) Validate() error {
 		}
 		if text(c.Gateway["country"]) != c.VPN.ActiveCountry || text(c.Gateway["proxy_user"]) != secret.SocksUser || text(c.Gateway["proxy_pass"]) != secret.SocksPass || text(c.Gateway["listen"]) != fmt.Sprintf("127.0.0.1:%d", c.VPN.ProxyPort) {
 			return errors.New("VPNGate identity fields are owned by country selection")
+		}
+	}
+	if len(c.Gateway) > 0 || c.VPN.ActiveCountry != "" {
+		raw, err := json.Marshal(c.Gateway)
+		if err != nil {
+			return err
+		}
+		gateway, err := gatewayconfig.Decode(raw)
+		if err != nil {
+			return err
+		}
+		if c.VPN.ActiveCountry != "" {
+			err = gateway.Validate()
+		} else {
+			err = gateway.ValidatePolicy()
+		}
+		if err != nil {
+			return fmt.Errorf("VPNGate: %w", err)
 		}
 	}
 	seen := map[string]bool{}
@@ -264,7 +281,11 @@ func serverForApp(app App) (Object, error) {
 			active = append(active, in)
 		}
 	}
-	server, err := ServerConfig(active, app.Routing, app.Warp, app.SocksPort)
+	routing := app.Routing
+	if app.Advanced.Route != nil {
+		routing = nil
+	}
+	server, err := ServerConfig(active, routing, app.Advanced.Endpoints, app.SocksPort)
 	if err != nil {
 		return nil, err
 	}
@@ -284,60 +305,6 @@ func serverForApp(app App) (Object, error) {
 		server["services"] = c.Services
 	}
 	return server, nil
-}
-
-func (s *PlatformService) build(ctx context.Context, c PlatformConfig) (fileBundle, error) {
-	if err := c.Validate(); err != nil {
-		return nil, err
-	}
-	for _, path := range certificatePaths(c) {
-		rel, err := filepath.Rel(s.Root, path)
-		if err != nil || !filepath.IsLocal(rel) {
-			return nil, errors.New("certificate files must be inside the managed root")
-		}
-	}
-	c, err := observedConfig(ctx, s.Store, c)
-	if err != nil {
-		return nil, err
-	}
-	server, err := serverForApp(c.App)
-	if err != nil {
-		return nil, err
-	}
-	if err = validateEffectiveServer(server); err != nil {
-		return nil, err
-	}
-	if err = CheckJSON(ctx, s.Core, s.Root, server); err != nil {
-		return nil, err
-	}
-	// v4 publishes only explicitly authorized account sources and imported nodes.
-	local := map[string][]sub.Node{}
-	r, err := loadSubscriptionRuntime(s.Root)
-	if err != nil {
-		return nil, err
-	}
-	files, _, _, err := compileSubscriptions(ctx, s.Root, s.Core, c.Subscriptions, r, local, true, AccountService{Root: s.Root, Store: s.Accounts, Control: s.Store, Config: &c})
-	if err != nil {
-		return nil, err
-	}
-	for name, value := range map[string]any{"app.json": c.App, "sb.json": server, "vpngate/settings.json": c.VPN, "vpngate/secrets.json": c.VPNSecrets, "vpngate/gateway.json": c.Gateway, "subscription.json": c.Listener} {
-		if err = files.json(name, value); err != nil {
-			return nil, err
-		}
-	}
-	if c.VPN.ActiveCountry != "" {
-		gateway, e := vpnServer(c.VPN, c.VPNSecrets)
-		if e != nil {
-			return nil, e
-		}
-		if e = CheckJSON(ctx, s.Core, filepath.Join(s.Root, "vpngate"), gateway); e != nil {
-			return nil, e
-		}
-		if e = files.json("vpngate/server.json", gateway); e != nil {
-			return nil, e
-		}
-	}
-	return files, nil
 }
 
 func decodePlatform(data []byte) (PlatformConfig, error) {

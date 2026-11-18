@@ -1,16 +1,23 @@
 import { api, setCSRF } from "./api.js";
 import { overviewStream } from "./live.js";
 import { pageContext } from "./lifecycle.js";
+import { capabilities, validatePassword } from "./capabilities.js";
+import { showConfiguration } from "./config-preview.js";
 import { $, el, card, help, notice, action, button, showResult } from "./ui.js";
-import { inbounds, certificates } from "./network.js";
-import { routing } from "./routing.js";
-import { outbounds } from "./outbounds.js";
-import { vpngate } from "./vpngate.js";
-import { accounts } from "./accounts.js";
-import { subscribers } from "./subscribers.js";
-import { grants } from "./grants.js";
-import { subscriptions } from "./subscriptions.js";
-import { overview, maintenance, admins } from "./maintenance.js";
+const lazy = (module, name) => async (context) =>
+  (await import(module))[name](context);
+const inbounds = lazy("./network.js", "inbounds");
+const certificates = lazy("./network.js", "certificates");
+const routing = lazy("./routing.js", "routing");
+const outbounds = lazy("./outbounds.js", "outbounds");
+const vpngate = lazy("./vpngate.js", "vpngate");
+const accounts = lazy("./accounts.js", "accounts");
+const subscribers = lazy("./subscribers.js", "subscribers");
+const grants = lazy("./grants.js", "grants");
+const subscriptions = lazy("./subscriptions.js", "subscriptions");
+const overview = lazy("./overview.js", "overview");
+const maintenance = lazy("./maintenance.js", "maintenance");
+const admins = lazy("./admins.js", "admins");
 const pages = [
   ["overview", "运行概览", overview],
   ["inbounds", "入站与发布", inbounds],
@@ -48,7 +55,7 @@ const descriptions = {
 const canView = (id, role) =>
   role === "admin" ||
   ["overview", "accounts", "subscribers"].includes(id) ||
-  (role === "operator" && id === "maintenance");
+  (role === "operator" && ["maintenance", "vpngate"].includes(id));
 const setMenu = (open) => {
   $("#shell").classList.toggle("nav-open", open);
   $("#menu-toggle").setAttribute("aria-expanded", String(open));
@@ -57,21 +64,6 @@ const setMenu = (open) => {
 $("#menu-toggle").addEventListener("click", () =>
   setMenu(!$("#shell").classList.contains("nav-open")),
 );
-$("#theme-toggle").addEventListener("click", () => {
-  const theme =
-    document.documentElement.dataset.theme === "light" ? "dark" : "light";
-  document.documentElement.dataset.theme = theme;
-  try {
-    window.localStorage.setItem("panel-theme", theme);
-  } catch {}
-});
-try {
-  document.documentElement.dataset.theme =
-    window.localStorage.getItem("panel-theme") ||
-    (window.matchMedia?.("(prefers-color-scheme: light)").matches
-      ? "light"
-      : "dark");
-} catch {}
 let page = "overview",
   draft = null,
   original = null,
@@ -206,6 +198,9 @@ async function renderPage() {
 }
 const stream = overviewStream({
   request: api,
+  heartbeat: () => {
+    if (page === "accounts") ctx.updateOverview?.(ctx.overview);
+  },
   unauthorized: () => ctx.logoutLocal(),
   disconnected: () => {
     $("#task-status").hidden = false;
@@ -278,6 +273,7 @@ $("#login-form").addEventListener(
     $("#login-error").textContent = "";
     const values = Object.fromEntries(new FormData(event.target));
     try {
+      validatePassword(values.password, (await capabilities()).password_bytes);
       await connected(await api("/api/auth/login", values));
       event.target.reset();
     } catch (error) {
@@ -324,7 +320,7 @@ $("#preview").addEventListener(
       } else changed.push(path);
     }
     diff(baseline, submitted);
-    showResult("配置校验与变更字段", { changed, ...result });
+    showConfiguration(result, changed);
   }),
 );
 $("#discard").addEventListener(

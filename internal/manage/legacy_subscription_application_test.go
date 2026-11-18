@@ -14,7 +14,7 @@ import (
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
-func (s SubscriptionService) legacyExecute(ctx context.Context, command application.SubscriptionCommand, output io.Writer) error {
+func (s SubscriptionService) legacyExecute(ctx context.Context, command fixtureSubscriptionCommand, output io.Writer) error {
 	root, core := s.Root, s.Core
 	id, operation := command.ID, command.Operation
 	switch operation {

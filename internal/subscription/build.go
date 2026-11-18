@@ -79,10 +79,8 @@ type Snapshot struct {
 func SourceHash(source Source) string { data, _ := json.Marshal(source); return Digest(data) }
 
 func DefaultConfig() Config {
-	c := Config{Version: SchemaVersion, Revision: 1, RuleSets: []RuleSet{}}
+	c := Config{Version: SchemaVersion, Revision: 1, RuleSets: []RuleSet{}, Sources: []Source{}, Collections: []Collection{}, Outputs: []Output{}}
 	for _, scope := range []string{"normal", "vpngate"} {
-		c.Sources = append(c.Sources, Source{ID: scope, Name: scope, Kind: "local", Scope: scope, Required: scope == "normal"})
-		c.Collections = append(c.Collections, Collection{ID: scope, Name: scope, Sources: []string{scope}, Processor: Processor{Deduplicate: true}})
 		for _, target := range []struct{ client, mode, suffix string }{{"sing-box", "config", "sing-box"}, {"mihomo", "config", "mihomo"}, {"openclash", "provider", "provider"}, {"base64", "nodes", "base64"}, {"uri", "nodes", "uri"}} {
 			id := scope + "-" + target.suffix
 			preset := "proxy"
@@ -90,7 +88,6 @@ func DefaultConfig() Config {
 				preset = "split"
 			}
 			c.Templates = append(c.Templates, Template{ID: id, Version: 1, Client: target.client, Mode: target.mode, Preset: preset, TUN: target.client == "sing-box"})
-			c.Outputs = append(c.Outputs, Output{ID: id, Name: id, Collection: scope, Template: id})
 		}
 	}
 	return c
@@ -99,17 +96,32 @@ func DefaultConfig() Config {
 // Build uses already fetched data. Network activity is never part of publishing
 // or a download request. A required stale/missing source aborts the whole build.
 func Build(c Config, runtime Runtime, local map[string][]Node, now time.Time) (Snapshot, map[string]Preview, error) {
-	return build(c, runtime, local, now, false)
+	return build(c, runtime, local, now, Strict)
 }
 
 // BuildAvailable removes outputs whose required runtime dependencies are unavailable.
 // Local maintenance and background refresh can publish unrelated valid outputs;
 // explicit configuration edits still use Build to reject an incomplete plan.
 func BuildAvailable(c Config, runtime Runtime, local map[string][]Node, now time.Time) (Snapshot, map[string]Preview, error) {
-	return build(c, runtime, local, now, true)
+	return build(c, runtime, local, now, Available)
 }
 
-func build(c Config, runtime Runtime, local map[string][]Node, now time.Time, available bool) (Snapshot, map[string]Preview, error) {
+type BuildMode uint8
+
+const (
+	Strict BuildMode = iota
+	Available
+	Candidate
+)
+
+// Candidate tolerates unavailable runtime data, but never invalid output options.
+// Runtime recovery alone may isolate an incompatible output to restore others.
+func Compile(c Config, runtime Runtime, local map[string][]Node, now time.Time, mode BuildMode) (Snapshot, map[string]Preview, error) {
+	return build(c, runtime, local, now, mode)
+}
+
+func build(c Config, runtime Runtime, local map[string][]Node, now time.Time, mode BuildMode) (Snapshot, map[string]Preview, error) {
+	available := mode != Strict
 	var err error
 	c, err = ResolveResources(c, runtime.Resources)
 	if err != nil {
@@ -127,8 +139,6 @@ func build(c Config, runtime Runtime, local map[string][]Node, now time.Time, av
 		var nodes []Node
 		var err error
 		switch source.Kind {
-		case "local":
-			nodes = local[source.Scope]
 		case "account":
 			nodes = local["account:"+source.ID]
 		case "inline":
@@ -150,7 +160,7 @@ func build(c Config, runtime Runtime, local map[string][]Node, now time.Time, av
 			err = errors.New("required source is empty")
 		}
 		if err != nil {
-			if source.Required && (!available || (source.Kind != "remote" && source.Kind != "account" && source.Kind != "local")) {
+			if source.Required && (!available || (source.Kind != "remote" && source.Kind != "account")) {
 				return result, previews, fmt.Errorf("source %s: %w", source.ID, err)
 			}
 			unavailable[source.ID] = source.Required
@@ -215,7 +225,7 @@ func build(c Config, runtime Runtime, local map[string][]Node, now time.Time, av
 		artifact, diagnostics, err := Render(preview.Nodes, templates[output.Template], output.SkipUnsupported)
 		result.Diagnostics[output.ID] = append(append([]Diagnostic(nil), preview.Diagnostics...), diagnostics...)
 		if err != nil {
-			if available {
+			if mode == Available {
 				result.Diagnostics[output.ID] = append(result.Diagnostics[output.ID], Diagnostic{Stage: "render", Message: err.Error()})
 				continue
 			}

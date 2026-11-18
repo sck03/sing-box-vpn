@@ -224,7 +224,7 @@ func TestParsingRejectsLossyAndMaliciousInputs(t *testing.T) {
 }
 
 func TestBuildRejectsStaleAndRemovedSourceCache(t *testing.T) {
-	c := DefaultConfig()
+	c := fixtureConfig()
 	c.Sources[0] = Source{ID: "normal", Kind: "remote", URL: "https://example.com/sub", Format: "uri", Required: true, MaxStaleSeconds: 60}
 	now := time.Now()
 	r := Runtime{Sources: map[string]SourceCache{"normal": {SourceHash: SourceHash(c.Sources[0]), Nodes: testNodes(), Success: now}}}

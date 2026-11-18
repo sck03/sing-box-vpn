@@ -18,7 +18,7 @@ import (
 
 func subscriptionFixture(t *testing.T, root, token, body string) sub.Config {
 	t.Helper()
-	c := sub.DefaultConfig()
+	c := fixtureSubscriptionConfig()
 	seedOutputGrant(t, root, token, []string{"normal-sing-box", "vpngate-sing-box"}, nil)
 	if err := AtomicJSON(filepath.Join(root, subscriptionsConfig), c); err != nil {
 		t.Fatal(err)

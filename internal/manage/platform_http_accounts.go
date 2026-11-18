@@ -86,7 +86,7 @@ func (s *PlatformService) serveAccounts(w http.ResponseWriter, r *http.Request, 
 			platformError(w, e)
 			return true
 		}
-		jsonResponse(w, Object{"content": string(artifact.Data)})
+		jsonResponse(w, Object{"content": string(artifact.Data), "mime": artifact.MIME})
 		return true
 	}
 	if path == "/api/account-options" && r.Method == "GET" {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { capabilitiesFixture } from "./panel-fixtures.mjs";
 import { JSDOM } from "jsdom";
 import { readFile } from "node:fs/promises";
 
@@ -28,8 +29,9 @@ const { subscribers } = await import("../internal/manage/panel/subscribers.js");
 const { grants } = await import("../internal/manage/panel/grants.js");
 const { subscriptions } =
   await import("../internal/manage/panel/subscriptions.js");
-const { overview, maintenance, admins } =
-  await import("../internal/manage/panel/maintenance.js");
+const { overview } = await import("../internal/manage/panel/overview.js");
+const { admins } = await import("../internal/manage/panel/admins.js");
+const { maintenance } = await import("../internal/manage/panel/maintenance.js");
 const { resourceEditor, table, notice } =
   await import("../internal/manage/panel/ui.js");
 const config = {
@@ -68,20 +70,22 @@ const effective = {
 globalThis.fetch = async (path) => ({
   ok: true,
   json: async () =>
-    path === "/api/server"
-      ? structuredClone(effective)
-      : path === "/api/overview"
-        ? {
-            revision: 1,
-            applied_revision: 1,
-            services: [],
-            runtimes: [],
-            tasks: [],
-          }
-        : String(path).startsWith("/api/grants") ||
-            String(path).startsWith("/api/accounts?")
-          ? { items: [], total: 0, offset: 0, limit: 20 }
-          : [],
+    path === "/api/capabilities"
+      ? capabilitiesFixture
+      : path === "/api/server"
+        ? structuredClone(effective)
+        : path === "/api/overview"
+          ? {
+              revision: 1,
+              applied_revision: 1,
+              services: [],
+              runtimes: [],
+              tasks: [],
+            }
+          : String(path).startsWith("/api/grants") ||
+              String(path).startsWith("/api/accounts?")
+            ? { items: [], total: 0, offset: 0, limit: 20 }
+            : [],
 });
 const ctx = {
   session: { role: "admin" },
@@ -261,9 +265,9 @@ document.querySelector("#preview").click();
 await editPublish("IP / 域名", "changed.example.com");
 previews[0].resolve({ valid: true });
 await tick();
-assert.deepEqual(
-  JSON.parse(document.querySelector("#dialog pre").textContent).changed,
-  [],
+assert.equal(
+  document.querySelector("#dialog .changed-fields"),
+  null,
   "preview diff must describe the validated snapshot",
 );
 document.querySelector("#save").click();

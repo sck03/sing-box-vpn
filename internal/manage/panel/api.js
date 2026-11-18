@@ -7,15 +7,21 @@ export function setCSRF(value) {
   sessionGeneration++;
   csrf = value || "";
 }
-export async function api(path, body, { blob = false, signal } = {}) {
+export async function api(
+  path,
+  body,
+  { blob = false, signal, timeout = body === undefined ? 15000 : 120000 } = {},
+) {
   const generation = sessionGeneration;
   const multipart = body instanceof FormData;
   const response = await fetch(path, {
     method: body === undefined ? "GET" : "POST",
     credentials: "same-origin",
-    signal: signal
-      ? AbortSignal.any([signal, sessionRequests.signal])
-      : sessionRequests.signal,
+    signal: AbortSignal.any([
+      sessionRequests.signal,
+      AbortSignal.timeout(timeout),
+      ...(signal ? [signal] : []),
+    ]),
     headers:
       body === undefined
         ? {}

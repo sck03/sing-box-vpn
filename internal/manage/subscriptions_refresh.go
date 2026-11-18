@@ -327,7 +327,11 @@ func refreshSubscriptionsResult(ctx context.Context, root, core string, force bo
 				events = append(events, sub.Run{Time: now, Operation: "refresh", ObjectID: id, Message: message})
 			}
 		}
-		files, snapshot, _, buildErr := compileSubscriptions(ctx, root, core, current, state, local, !resourceChanged)
+		mode := sub.Available
+		if resourceChanged {
+			mode = sub.Strict
+		}
+		files, snapshot, _, buildErr := compileSubscriptions(ctx, root, core, current, state, local, mode)
 		report.Outputs, report.ExpectedOutputs = len(snapshot.Artifacts), len(current.Outputs)
 		if buildErr != nil {
 			// A rejected resource update must be fetched again; do not retain its ETag.

@@ -8,6 +8,7 @@ CORE="$SB_ROOT/sing-box"
 RUNTIME="$SB_ROOT/managed-core"
 MANAGER="${SB_MANAGER:-/usr/local/bin/yg-vpngate}"
 source "$SCRIPT_ROOT/lib/update.sh"
+source "$SCRIPT_ROOT/lib/ownership.sh"
 require_root() { [[ $(id -u) == 0 ]] || { echo '需要 root 权限' >&2; return 1; }; }
 require_system() {
     require_root
@@ -48,7 +49,7 @@ install_main() (
         local code=$?
         trap - EXIT
         if ((code != 0 && created)); then
-            if ((units)); then systemctl disable --now sb-recovery.timer sing-box sb-panel 2>/dev/null || true; fi
+            if ((units)); then stop_owned_units sb-recovery.timer sing-box.service sb-panel.service; fi
             [[ ! -d "$APP_HOME" ]] || mv -- "$APP_HOME" "${APP_HOME}.install-failed.$failure_stamp"
             [[ ! -d "$SB_ROOT" ]] || mv -- "$SB_ROOT" "${SB_ROOT}.install-failed.$failure_stamp"
             echo "安装失败，诊断材料保留在 .install-failed.$failure_stamp 目录；可重新运行安装。" >&2
@@ -89,16 +90,14 @@ uninstall_main() {
     [[ "$APP_HOME" == /opt/sing-box-vpn && -f "$APP_HOME/.managed" && "$SB_ROOT" == /etc/s-box && -f "$SB_ROOT/.platform-v4" ]] || {
         echo '卸载只接受带 v4 标记的默认目录；自定义目录请手动清理' >&2; return 1;
     }
-    systemctl disable --now sb-recovery.timer 2>/dev/null || true
-    systemctl stop sb-recovery.service 2>/dev/null || true
-    systemctl disable --now sb-panel sb-subscription sb-argo sing-box-vpngate yg-vpngate sing-box 2>/dev/null || true
+    stop_owned_units sb-recovery.timer sb-recovery.service sb-panel.service sb-subscription.service sb-argo.service sing-box-vpngate.service yg-vpngate.service sing-box.service
     "$MANAGER" cleanup --config "$SB_ROOT/vpngate/gateway.json" 2>/dev/null || true
     "$MANAGER" firewall --root "$SB_ROOT" --remove
     local service
     for service in sb-panel sb-subscription sb-argo sing-box-vpngate yg-vpngate sing-box; do
-        rm -f -- "/etc/systemd/system/$service.service"
+        remove_owned_units "$service.service"
     done
-    rm -f -- /etc/systemd/system/sb-recovery.service /etc/systemd/system/sb-recovery.timer
+    remove_owned_units sb-recovery.service sb-recovery.timer
     rm -f -- /usr/bin/sb "$MANAGER" /etc/sysctl.d/90-sing-box-vpn.conf
     rm -rf -- "$SB_ROOT" "$APP_HOME"
     systemctl daemon-reload

@@ -278,9 +278,7 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := manage.CommitApp(ctx, root, binary, &app); err != nil {
-		t.Fatal("custom protocol credentials", err)
-	}
+	publishProtocolFixture(t, root, binary, &app)
 	subscriptionPort, err := manage.AvailablePort(used)
 	if err != nil {
 		t.Fatal(err)
@@ -370,9 +368,10 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 		if len(exported.Outbounds) < len(group.entries) || len(mihomo.Proxies) != len(group.entries) {
 			t.Fatal("subscription is missing protocol nodes")
 		}
-		for index, inbound := range group.entries {
+		for _, inbound := range group.entries {
 			kind := inbound["type"].(string)
-			if exported.Outbounds[index]["type"] != kind || mihomo.Proxies[index]["type"] != kind || exported.Outbounds[index]["tag"] != mihomo.Proxies[index]["name"] {
+			node, mihomoNode := protocolEntry(exported.Outbounds, kind), protocolEntry(mihomo.Proxies, kind)
+			if node == nil || mihomoNode == nil || node["tag"] != mihomoNode["name"] {
 				t.Fatal("subscription protocol or name mismatch", kind)
 			}
 			for _, format := range []string{"sing-box", "mihomo", "provider", "uri"} {
@@ -386,7 +385,6 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 					if format == "uri" && (kind == "vmess" || kind == "tuic") {
 						t.Skip("Mihomo URI importer cannot represent self-signed TLS for this protocol; native subscription is tested")
 					}
-					node := exported.Outbounds[index]
 					port, err := manage.AvailablePort(used)
 					if err != nil {
 						t.Fatal(err)
@@ -396,7 +394,7 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 						client := manage.Object{"inbounds": []manage.Object{{"type": "mixed", "listen": "127.0.0.1", "listen_port": port}}, "outbounds": []manage.Object{node}, "route": manage.Object{"final": node["tag"]}}
 						protocolCore(t, root, name, binary, client, port)
 					} else {
-						client := manage.Object{"mixed-port": port, "bind-address": "127.0.0.1", "mode": "rule", "log-level": "debug", "rules": []string{"MATCH," + node["tag"].(string)}, "proxies": []manage.Object{mihomo.Proxies[index]}}
+						client := manage.Object{"mixed-port": port, "bind-address": "127.0.0.1", "mode": "rule", "log-level": "debug", "rules": []string{"MATCH," + node["tag"].(string)}, "proxies": []manage.Object{mihomoNode}}
 						if format == "uri" || format == "provider" {
 							delete(client, "proxies")
 							provider := manage.Object{"type": "file", "path": filepath.ToSlash(filepath.Join(directory, "jhsub-base64.txt"))}

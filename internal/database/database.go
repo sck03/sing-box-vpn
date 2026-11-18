@@ -5,16 +5,22 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
 
 const Filename = "control.db"
-const SchemaVersion = 10
+const SchemaVersion = 11
 
 func Open(path string) (*sql.DB, error) {
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return nil, err
 	}
@@ -28,20 +34,26 @@ func Open(path string) (*sql.DB, error) {
 	if err = os.Chmod(path, 0600); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", path)
+	// Driver DSN pragmas run for every physical connection, including replacements
+	// after cancellation. A one-off db.Exec silently loses connection-local policy.
+	query := url.Values{"_pragma": {"busy_timeout(5000)", "trusted_schema(OFF)", "journal_mode(WAL)", "synchronous(FULL)", "foreign_keys(ON)"}}
+	uriPath := filepath.ToSlash(path)
+	if !strings.HasPrefix(uriPath, "/") {
+		uriPath = "/" + uriPath
+	}
+	uri := url.URL{Scheme: "file", Path: uriPath, RawQuery: query.Encode()}
+	db, err := sql.Open("sqlite", uri.String())
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	if _, err = db.Exec(`PRAGMA trusted_schema=OFF; PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;`); err == nil {
-		var version int
-		err = db.QueryRow(`PRAGMA user_version`).Scan(&version)
-		if err == nil && version != 0 && version != SchemaVersion {
-			err = fmt.Errorf("unsupported database; this release requires a new installation directory (schema %d)", SchemaVersion)
-		}
-		if err == nil && version == 0 {
-			_, err = db.Exec(fmt.Sprintf("PRAGMA user_version=%d;", SchemaVersion))
-		}
+	var version int
+	err = db.QueryRow(`PRAGMA user_version`).Scan(&version)
+	if err == nil && version != 0 && version != SchemaVersion {
+		err = fmt.Errorf("unsupported database; this release requires a new installation directory (schema %d)", SchemaVersion)
+	}
+	if err == nil && version == 0 {
+		_, err = db.Exec(fmt.Sprintf("PRAGMA user_version=%d;", SchemaVersion))
 	}
 	if err != nil {
 		db.Close()

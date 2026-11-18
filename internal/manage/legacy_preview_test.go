@@ -60,9 +60,13 @@ func (s SubscriptionService) Preview(ctx context.Context, data []byte) (Object, 
 	for id, cache := range prepared {
 		r.Sources[id] = cache
 	}
-	_, snapshot, previews, err := compilePreparedSubscriptions(ctx, s.Root, s.Core, c, r, local, false)
+	_, snapshot, previews, err := compilePreparedSubscriptions(ctx, s.Root, s.Core, c, r, local, sub.Candidate)
 	if err != nil {
 		return nil, err
 	}
 	return subscriptionPreviewSummary(snapshot, previews), nil
+}
+
+func buildSubscriptions(ctx context.Context, root, core string, c sub.Config, r sub.Runtime, local map[string][]sub.Node) (fileBundle, sub.Snapshot, map[string]sub.Preview, error) {
+	return compileSubscriptions(ctx, root, core, c, r, local, sub.Strict)
 }

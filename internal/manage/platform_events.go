@@ -1,6 +1,7 @@
 package manage
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -64,6 +65,11 @@ func (s *PlatformService) collectOverview(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The overview exposes liveness, not a changing counter. Keep exact heartbeats
+	// in controlstore for readiness checks; idle streams can reuse their snapshot.
+	for _, runtime := range runtimes {
+		delete(runtime, "heartbeat")
+	}
 	tasks, err := s.Store.TaskSummaries(ctx)
 	if err != nil {
 		return nil, err
@@ -88,6 +94,7 @@ func (s *PlatformService) streamOverview(w http.ResponseWriter, r *http.Request,
 	w.Header().Set("X-Accel-Buffering", "no")
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
+	var previous []byte
 	for {
 		if _, err := s.Auth.Authenticate(r.Context(), token, "", false); err != nil {
 			return
@@ -101,12 +108,18 @@ func (s *PlatformService) streamOverview(w http.ResponseWriter, r *http.Request,
 		if err = controller.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
 			return
 		}
-		if _, err = fmt.Fprintf(w, "event: overview\ndata: %s\n\n", data); err != nil {
+		if bytes.Equal(previous, data) {
+			_, err = fmt.Fprint(w, "event: tick\ndata: {}\n\n")
+		} else {
+			_, err = fmt.Fprintf(w, "event: overview\ndata: %s\n\n", data)
+		}
+		if err != nil {
 			return
 		}
 		if err = controller.Flush(); err != nil {
 			return
 		}
+		previous = data
 		select {
 		case <-r.Context().Done():
 			return

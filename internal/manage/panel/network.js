@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { capabilities } from "./capabilities.js";
 import {
   el,
   card,
@@ -12,8 +13,7 @@ import {
   badge,
   notice,
 } from "./ui.js";
-const protocols = ["vless", "vmess", "hysteria2", "tuic", "anytls"];
-const nodeFields = [
+const nodeFields = (protocols) => [
   { key: "id", label: "入站 ID", required: true },
   {
     key: "protocol",
@@ -52,6 +52,7 @@ const nodeFields = [
 ];
 export async function inbounds(ctx) {
   const c = await ctx.config();
+  const { protocols } = await capabilities();
   const change = () => {
     ctx.changed();
     ctx.render();
@@ -111,6 +112,7 @@ export async function inbounds(ctx) {
       { key: "port", label: "端口" },
       {
         label: "状态",
+        value: (n) => (n.disabled ? "已停用" : "已启用"),
         render: (n) =>
           badge(n.disabled ? "已停用" : "已启用", n.disabled ? "warn" : "good"),
       },
@@ -127,7 +129,7 @@ export async function inbounds(ctx) {
         ),
       ),
       button("编辑", () =>
-        formDialog("编辑入站", nodeFields, n, (v) => {
+        formDialog("编辑入站", nodeFields(protocols), n, (v) => {
           items[items.indexOf(n)] = v;
           change();
         }),
@@ -166,7 +168,7 @@ export async function inbounds(ctx) {
       button("复制", () =>
         formDialog(
           "复制入站",
-          nodeFields,
+          nodeFields(protocols),
           { ...structuredClone(n), id: n.id + "-copy", port: n.port + 1 },
           (v) => {
             items.push(v);

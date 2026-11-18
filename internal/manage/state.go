@@ -64,7 +64,6 @@ type App struct {
 	Profile    Profile             `json:"profile"`
 	Inbounds   []Object            `json:"inbounds"`
 	Routing    map[string][]string `json:"routing"`
-	Warp       Object              `json:"warp"`
 	SocksPort  int                 `json:"socks_port"`
 	CDNAddress string              `json:"cdn_address,omitempty"`
 	Argo       Object              `json:"argo,omitempty"`

@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/sck03/sing-box-vpn/internal/gatewayconfig"
 )
 
 const maxProfile = 1 << 20
@@ -20,11 +22,7 @@ func publicIPv4(s string) bool {
 }
 
 func publicIPv4Addr(ip netip.Addr) bool {
-	if !ip.Is4() || !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
-		return false
-	}
-	v := ip.As4()
-	return !(v[0] == 100 && v[1] >= 64 && v[1] <= 127)
+	return gatewayconfig.PublicIPv4(ip)
 }
 
 func volunteer(n Node) bool {

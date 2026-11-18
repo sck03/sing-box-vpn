@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sck03/sing-box-vpn/internal/application"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
@@ -22,6 +23,7 @@ type subscriptionCheck struct {
 	Success      bool   `json:"success"`
 	Milliseconds int64  `json:"milliseconds"`
 	Error        string `json:"error,omitempty"`
+	State        string `json:"state"`
 }
 
 // A probe starts an isolated core for one node and makes a real HTTP request
@@ -35,7 +37,7 @@ func probeSubscriptionNode(ctx context.Context, root, core, endpoint string, nod
 }
 
 func probeCoreConfig(ctx context.Context, root, core, endpoint string, config Object) error {
-	child, cancel := context.WithTimeout(ctx, 12*time.Second)
+	child, cancel := context.WithTimeout(ctx, application.ProbeTimeout)
 	defer cancel()
 	stage, err := os.MkdirTemp(root, ".probe-")
 	if err != nil {
@@ -118,7 +120,7 @@ func checkSubscriptionOutput(ctx context.Context, root, core, id, endpoint strin
 		return err
 	}
 	if err := func() error {
-		_, snapshot, previews, err := compilePreparedSubscriptions(ctx, root, core, c, r, local, true)
+		_, snapshot, previews, err := compilePreparedSubscriptions(ctx, root, core, c, r, local, sub.Available)
 		if err != nil {
 			return err
 		}
@@ -148,7 +150,7 @@ func checkSubscriptionOutput(ctx context.Context, root, core, id, endpoint strin
 				}
 			}
 		}
-		if len(nodes) == 0 || len(nodes) > 64 {
+		if len(nodes) == 0 || len(nodes) > application.MaxProbeNodes {
 			return errors.New("probe output must select 1-64 nodes; use a smaller collection")
 		}
 		return nil
@@ -158,47 +160,54 @@ func checkSubscriptionOutput(ctx context.Context, root, core, id, endpoint strin
 	// Prevent several CLI/browser sessions from spawning unbounded probe cores.
 	return withNamedFileLock(filepath.Join(root, "subscriptions"), ".check.lock", func() error {
 		results := make([]subscriptionCheck, len(nodes))
+		for i, node := range nodes {
+			results[i] = subscriptionCheck{NodeID: node.ID, Name: node.Name, State: "not_run", Error: "not started before cancellation"}
+		}
 		jobs := make(chan int)
 		var workers sync.WaitGroup
-		for range 2 {
+		for range application.ProbeConcurrency {
 			workers.Go(func() {
 				for i := range jobs {
 					start := time.Now()
 					err := probeSubscriptionNode(ctx, root, core, endpoint, nodes[i])
-					result := subscriptionCheck{NodeID: nodes[i].ID, Name: nodes[i].Name, Success: err == nil, Milliseconds: time.Since(start).Milliseconds()}
+					result := subscriptionCheck{NodeID: nodes[i].ID, Name: nodes[i].Name, Success: err == nil, State: "passed", Milliseconds: time.Since(start).Milliseconds()}
 					if err != nil {
 						result.Error = err.Error()
+						result.State = "failed"
+						if ctx.Err() != nil {
+							result.State = "cancelled"
+						}
 					}
 					results[i] = result
 				}
 			})
 		}
+	submit:
 		for i := range nodes {
 			select {
 			case jobs <- i:
 			case <-ctx.Done():
+				break submit
 			}
 		}
 		close(jobs)
 		workers.Wait()
-		if err := ctx.Err(); err != nil {
-			return err
-		}
 		passed := 0
 		for _, result := range results {
 			if result.Success {
 				passed++
 			}
 		}
-		if err := withLock(root, func() error {
-			_, state, _, err := loadSubscriptions(root)
-			if err != nil {
-				return err
-			}
-			state.Record("check", id, fmt.Sprintf("%d/%d protocol HTTP probes succeeded", passed, len(results)), time.Now())
-			return AtomicJSON(filepath.Join(root, subscriptionsRuntime), state)
-		}); err != nil {
-			return err
+		var recordErr error
+		if ctx.Err() == nil {
+			recordErr = withLock(root, func() error {
+				_, state, _, err := loadSubscriptions(root)
+				if err != nil {
+					return err
+				}
+				state.Record("check", id, fmt.Sprintf("%d/%d protocol HTTP probes succeeded", passed, len(results)), time.Now())
+				return AtomicJSON(filepath.Join(root, subscriptionsRuntime), state)
+			})
 		}
 		outcome := "passed"
 		if passed == 0 {
@@ -206,6 +215,9 @@ func checkSubscriptionOutput(ctx context.Context, root, core, id, endpoint strin
 		} else if passed < len(results) {
 			outcome = "partial"
 		}
-		return jsonEncoder(output).Encode(Object{"outcome": outcome, "endpoint": endpoint, "client": target, "artifact_validation": verification, "connectivity_engine": "sing-box", "diagnostics": diagnostics, "passed": passed, "total": len(results), "nodes": results})
+		if err := jsonEncoder(output).Encode(Object{"outcome": outcome, "interrupted": ctx.Err() != nil, "endpoint": endpoint, "client": target, "artifact_validation": verification, "connectivity_engine": "sing-box", "diagnostics": diagnostics, "passed": passed, "total": len(results), "nodes": results}); err != nil {
+			return err
+		}
+		return errors.Join(ctx.Err(), recordErr)
 	})
 }

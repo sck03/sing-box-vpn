@@ -15,7 +15,7 @@ import (
 type Source struct {
 	ID              string `json:"id"`
 	Name            string `json:"name"`
-	Kind            string `json:"kind"` // local, inline, remote
+	Kind            string `json:"kind"` // account, inline, remote
 	Format          string `json:"format,omitempty"`
 	URL             string `json:"url,omitempty"`
 	Content         string `json:"content,omitempty"`
@@ -205,10 +205,6 @@ func (c Config) Validate() error {
 			return err
 		}
 		switch s.Kind {
-		case "local":
-			if s.Scope != "normal" && s.Scope != "vpngate" {
-				return errors.New("unknown local scope")
-			}
 		case "account":
 			if !ValidID(s.AccountID) || (s.Scope != "normal" && s.Scope != "vpngate" && s.Scope != "") {
 				return errors.New("account source requires an account ID and valid scope")

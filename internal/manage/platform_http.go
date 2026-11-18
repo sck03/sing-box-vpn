@@ -113,15 +113,20 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 			}
 			peer = forwardedPeer(r.Header.Get("X-Forwarded-For"), peer, proxy)
 		}
-		if origin := r.Header.Get("Origin"); origin != "" && origin != options.PublicURL {
+		path := r.URL.Path
+		publicRead := (r.Method == "GET" || r.Method == "HEAD") && (path == "/" || path == "/user" || path == "/api/capabilities" || strings.HasPrefix(path, "/panel/") || strings.HasPrefix(path, "/u/"))
+		if origin := r.Header.Get("Origin"); !publicRead && origin != "" && origin != options.PublicURL {
 			http.Error(w, "cross-origin request rejected", 403)
 			return
 		}
-		if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+		if !publicRead && r.Header.Get("Sec-Fetch-Site") == "cross-site" {
 			http.Error(w, "cross-site request rejected", 403)
 			return
 		}
-		path := r.URL.Path
+		if path == "/api/capabilities" && r.Method == "GET" {
+			jsonResponse(w, panelCapabilities())
+			return
+		}
 		if (path == "/" || path == "/user" || strings.HasPrefix(path, "/panel/")) && r.Method == "GET" {
 			name := "panel/index.html"
 			if path == "/user" {

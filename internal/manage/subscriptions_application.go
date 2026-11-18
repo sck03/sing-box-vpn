@@ -22,12 +22,6 @@ func (s SubscriptionService) Execute(ctx context.Context, command application.Su
 			return err
 		}
 		return jsonEncoder(output).Encode(result)
-	case "preview":
-		result, err := s.Preview(ctx, command.Config)
-		if err != nil {
-			return err
-		}
-		return jsonEncoder(output).Encode(result)
 	default:
 		return errors.New("unsupported subscription operation")
 	}

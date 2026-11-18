@@ -1,9 +1,6 @@
 package manage
 
-import (
-	"encoding/json"
-	"net/http"
-)
+import "net/http"
 
 func (s *PlatformService) serveConfiguration(w http.ResponseWriter, r *http.Request, access panelAccess) bool {
 	ctx, path := r.Context(), r.URL.Path
@@ -39,15 +36,11 @@ func (s *PlatformService) serveConfiguration(w http.ResponseWriter, r *http.Requ
 		}
 		var c PlatformConfig
 		if err = decodeRequest(w, r, &c, 16<<20); err == nil {
-			var files fileBundle
-			files, err = s.build(ctx, c)
+			var preview Object
+			preview, err = s.PreviewConfiguration(ctx, c)
 			if err == nil {
-				var preview any
-				if err = json.Unmarshal(files["sb.json"], &preview); err == nil {
-					redactPlatform(preview)
-					jsonResponse(w, Object{"valid": true, "ordinary_server": preview})
-					return true
-				}
+				jsonResponse(w, preview)
+				return true
 			}
 		}
 		platformError(w, err)

@@ -40,6 +40,29 @@ export function table(columns, items, actions, options = {}) {
   }
   const controls = el("div", { class: "table-tools" }, search);
   if (options.controls !== false) {
+    const mobileSort = el(
+      "select",
+      { class: "mobile-sort", "aria-label": "列表排序" },
+      el("option", { value: -1 }, "默认顺序"),
+      columns.map((c, i) => el("option", { value: i }, c.label)),
+    );
+    mobileSort.value = preference.sort;
+    mobileSort.addEventListener("change", () => {
+      preference.sort = Number(mobileSort.value);
+      page = 0;
+      savePreference();
+      render();
+    });
+    const mobileDirection = button(
+      "升序 / 降序",
+      () => {
+        preference.descending = !preference.descending;
+        savePreference();
+        render();
+      },
+      "mobile-sort",
+    );
+    controls.append(mobileSort, mobileDirection);
     controls.append(
       button("切换密度", () => {
         preference.compact = !preference.compact;
@@ -222,8 +245,11 @@ export function table(columns, items, actions, options = {}) {
       const byKey = new Map(next.map((item) => [rowKey(item), item]));
       for (const tr of body.querySelectorAll("tbody tr")) {
         const item = tr.rowKey === undefined ? null : byKey.get(tr.rowKey);
+        const actionVersion = options.actionVersion || ((v) => v);
         const changed =
-          !item || JSON.stringify(item) !== JSON.stringify(tr.rowItem);
+          !item ||
+          JSON.stringify(actionVersion(item)) !==
+            JSON.stringify(actionVersion(tr.rowItem));
         tr.stale ||= changed;
         if (changed)
           tr.querySelectorAll("button").forEach((control) => {
@@ -300,7 +326,10 @@ export async function remoteTable(columns, load, actions, options = {}) {
     body,
     pager,
   );
-  const view = table(columns, [], actions, { controls: false });
+  const view = table(columns, [], actions, {
+    controls: false,
+    actionVersion: options.actionVersion,
+  });
   view.querySelector(".table-tools").remove();
   view.querySelector(".pager").remove();
   body.append(view);

@@ -35,6 +35,7 @@ export async function subscribers(ctx) {
           { key: "name", label: "名称" },
           {
             label: "状态",
+            value: (v) => (v.disabled ? "禁用" : "正常"),
             render: (v) =>
               badge(v.disabled ? "禁用" : "正常", v.disabled ? "bad" : "good"),
           },

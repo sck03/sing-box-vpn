@@ -49,9 +49,6 @@ func (s *PlatformService) Initialize(ctx context.Context, address, name, admin, 
 				return err
 			}
 			subscriptions := sub.DefaultConfig()
-			subscriptions.Sources = []sub.Source{}
-			subscriptions.Collections = []sub.Collection{}
-			subscriptions.Outputs = []sub.Output{}
 			config = PlatformConfig{Schema: 4, App: app, VPN: VPNSettings{ProxyPort: 7928, Profiles: map[string]Profile{}}, VPNSecrets: map[string]Secrets{}, Gateway: Object{}, Subscriptions: subscriptions, Certificates: []CertificateAsset{}, Argo: TunnelSettings{Mode: "off"}, Listener: subscriptionSettings{Listen: "127.0.0.1", Port: 2097}}
 			// Validate/build before committing intent. No app.json is published yet.
 			if _, err = s.build(ctx, config); err != nil {

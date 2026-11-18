@@ -1,7 +1,6 @@
 package manage
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
@@ -86,22 +85,6 @@ func (s *PlatformService) serveGrants(w http.ResponseWriter, r *http.Request, ac
 		}
 		return true
 	}
-	if path == "/api/subscriptions/preview" && r.Method == "POST" {
-		if !require(admin) {
-			return true
-		}
-		var v sub.Config
-		if err = decodeRequest(w, r, &v, 8<<20); err == nil {
-			data, _ := json.Marshal(v)
-			var result Object
-			result, err = (SubscriptionService{Root: s.Root, Core: s.Core}).Preview(ctx, data)
-			if err == nil {
-				jsonResponse(w, result)
-				return true
-			}
-		}
-		platformError(w, err)
-		return true
-	}
+
 	return false
 }

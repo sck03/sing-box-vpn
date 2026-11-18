@@ -25,6 +25,13 @@ export function templateFields(catalog) {
   return [
     { key: "id", label: "ID", required: true },
     {
+      key: "url",
+      label: "远程模板 URL（可留空）",
+      type: "url",
+      wide: true,
+      help: "使用声明式 JSON 模板；刷新来源时同步。下面的字段作为本地初始值。",
+    },
+    {
       key: "client",
       label: "客户端",
       type: "select",

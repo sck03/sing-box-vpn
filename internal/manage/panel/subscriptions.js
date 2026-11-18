@@ -1,4 +1,6 @@
 import { api } from "./api.js";
+import { workspace } from "./workspace.js";
+import { showConfiguration } from "./config-preview.js";
 import { clientCatalog, templateFields, normalizeTemplate } from "./clients.js";
 import {
   el,
@@ -21,12 +23,13 @@ export async function subscriptions(ctx) {
     s = c.subscriptions;
   const request = ctx.request || api;
   const catalog = await clientCatalog(request);
+  const accountOptions = await request("/api/account-options");
   s.rule_sets ??= [];
   const change = () => {
     ctx.changed();
     ctx.render();
   };
-  return [
+  const content = [
     card(
       "订阅编译与分发",
       help(
@@ -57,14 +60,13 @@ export async function subscriptions(ctx) {
       row(
         button(
           "预览",
-          async () =>
-            showResult("编译预览", await api("/api/subscriptions/preview", s)),
+          async () => showConfiguration(await api("/api/config/preview", c)),
           "primary",
         ),
         button("刷新来源", () =>
           ctx.task({
             operation: "subscription",
-            subscription: { Operation: "refresh" },
+            subscription: { operation: "refresh" },
           }),
         ),
         button("高级配置", () =>
@@ -72,6 +74,25 @@ export async function subscriptions(ctx) {
             c.subscriptions = v;
             change();
           }),
+        ),
+        button("通知设置", () =>
+          formDialog(
+            "订阅事件通知",
+            [
+              {
+                key: "webhook",
+                label: "Webhook URL",
+                type: "url",
+                wide: true,
+                help: "来源异常、到期和分发状态变化时发送通知。留空停用。",
+              },
+            ],
+            s,
+            (v) => {
+              s.webhook = v.webhook;
+              change();
+            },
+          ),
         ),
         button("下载监听", () =>
           formDialog(
@@ -111,6 +132,9 @@ export async function subscriptions(ctx) {
         {
           key: "account_id",
           label: "权益 ID（账户来源）",
+          type: "select",
+          options: accountOptions.map((a) => [a.id, a.name]),
+          required: true,
           visible: (v) => v.kind === "account",
         },
         {
@@ -268,7 +292,7 @@ export async function subscriptions(ctx) {
           options: s.outputs.map((v) => v.id),
         },
         { key: "url", label: "目的地 URL" },
-        { key: "username", label: "用户名 / Telegram chat ID" },
+        { key: "username", label: "用户名 / Telegram chat ID / GitLab 分支" },
         { key: "password", label: "密码", type: "password" },
         { key: "token", label: "访问令牌", type: "password" },
         { key: "filename", label: "文件名" },
@@ -336,21 +360,21 @@ export async function subscriptions(ctx) {
             "检测",
             [
               {
-                key: "ID",
+                key: "id",
                 label: "输出 ID",
                 type: "select",
                 options: s.outputs.map((v) => v.id),
               },
-              { key: "ProbeURL", label: "探测 URL" },
+              { key: "probe_url", label: "探测 URL" },
             ],
             {
-              ID: s.outputs[0]?.id,
-              ProbeURL: "https://www.gstatic.com/generate_204",
+              id: s.outputs[0]?.id,
+              probe_url: "https://www.gstatic.com/generate_204",
             },
             (v) =>
               ctx.task({
                 operation: "subscription",
-                subscription: { Operation: "check", ...v },
+                subscription: { operation: "check", ...v },
               }),
           ),
         ),
@@ -359,7 +383,7 @@ export async function subscriptions(ctx) {
             "立即分发",
             [
               {
-                key: "ID",
+                key: "id",
                 label: "目的地",
                 type: "select",
                 options: (s.deliveries || []).map((v) => v.id),
@@ -369,11 +393,21 @@ export async function subscriptions(ctx) {
             (v) =>
               ctx.task({
                 operation: "subscription",
-                subscription: { Operation: "deliver", ...v },
+                subscription: { operation: "deliver", ...v },
               }),
           ),
         ),
       ),
     ),
+  ];
+  return [
+    content[0],
+    workspace("subscriptions", [
+      ["来源", [content[1]]],
+      ["集合", [content[2]]],
+      ["模板与规则", [content[3], content[4]]],
+      ["输出与授权", [content[5], content[7]]],
+      ["分发与检测", [content[6], content[8]]],
+    ]),
   ];
 }

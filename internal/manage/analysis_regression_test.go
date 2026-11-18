@@ -14,7 +14,7 @@ import (
 )
 
 func TestDefaultGrantRejectsPrefixImpersonation(t *testing.T) {
-	c := sub.DefaultConfig()
+	c := fixtureSubscriptionConfig()
 	c.Outputs = append(c.Outputs, sub.Output{ID: "normal-private", Collection: "normal", Template: "normal-sing-box"})
 	root, token := t.TempDir(), strings.Repeat("a", 64)
 	subscriptionFixture(t, root, token, "body")
@@ -120,7 +120,7 @@ func TestScheduledRefreshPrunesExpiredOptionalWithoutFetch(t *testing.T) {
 
 func TestCoreUpgradeChecksCustomPublishedOutput(t *testing.T) {
 	root := t.TempDir()
-	c := sub.DefaultConfig()
+	c := fixtureSubscriptionConfig()
 	c.Outputs = []sub.Output{{ID: "custom", Collection: "normal", Template: "normal-sing-box"}}
 	data := []byte(`{"new_only":true}`)
 	snapshot := sub.Snapshot{Artifacts: map[string]sub.Artifact{"custom": {Data: data, ETag: `"` + sub.Digest(data) + `"`}}}

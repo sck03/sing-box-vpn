@@ -1,5 +1,8 @@
 import { api } from "./api.js";
 import { createAccountShare } from "./sharing.js";
+import { clientCatalog, clientOptions } from "./clients.js";
+import { showExport } from "./export-results.js";
+import { showRecords } from "./details.js";
 import {
   el,
   card,
@@ -27,6 +30,7 @@ export async function accounts(ctx) {
   const request = ctx.request || api;
   const people = await request("/api/subscribers");
   const admin = ctx.session.role === "admin";
+  const catalog = admin ? await clientCatalog(request) : {};
   const fields = (existing) => [
     { key: "id", label: "权益 ID", required: true, readonly: existing },
     { key: "name", label: "名称", required: true },
@@ -344,6 +348,7 @@ export async function accounts(ctx) {
           { key: "id", label: "权益 ID" },
           {
             label: "状态",
+            value: (a) => states[a.state] || a.state,
             render: (a) =>
               badge(
                 states[a.state] || a.state,
@@ -383,7 +388,7 @@ export async function accounts(ctx) {
                         key: "client",
                         label: "格式",
                         type: "select",
-                        options: ["uri", "sing-box", "mihomo"],
+                        options: clientOptions(catalog),
                       },
                       {
                         key: "tuic_port",
@@ -397,35 +402,28 @@ export async function accounts(ctx) {
                         id: item.id,
                         ...v,
                       });
-                      showResult("账户配置", result.content);
-                      if (v.client === "uri") {
-                        const dialog = document.querySelector("#dialog");
-                        for (const link of result.content.trim().split("\n")) {
-                          const image = await api("/api/qr", { content: link });
-                          dialog.append(
-                            el("img", {
-                              src: image.image,
-                              alt: "账户节点二维码",
-                              width: 240,
-                              height: 240,
-                            }),
-                          );
-                        }
-                      }
+                      showExport(result, v.client);
                     },
                   ),
                 ),
               ]
             : []),
           button("历史", async () =>
-            showResult(
+            showRecords(
               "历史账期",
+              [
+                { label: "周期开始", value: (p) => date(p.period_id) },
+                { label: "计费流量", value: (p) => bytes(p.charged_bytes) },
+                { label: "上传", value: (p) => bytes(p.upload_bytes) },
+                { label: "下载", value: (p) => bytes(p.download_bytes) },
+              ],
               await api("/api/history?id=" + encodeURIComponent(item.id)),
             ),
           ),
         ],
         {
           signal: ctx.signal,
+          actionVersion: (a) => [a.id, a.revision],
           label: "搜索权益",
           placeholder: "搜索 ID、名称或订阅者…",
           sortOptions: [

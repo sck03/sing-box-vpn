@@ -106,7 +106,7 @@ func TestSubscriptionResourceScheduleAndRejection(t *testing.T) {
 		_, _ = io.WriteString(w, `[{"type":"domain","value":"example.com","target":"PROXY"}]`)
 	}))
 	defer server.Close()
-	c := sub.DefaultConfig()
+	c := fixtureSubscriptionConfig()
 	c.RuleSets = []sub.RuleSet{{ID: "rules", URL: server.URL}}
 	now := time.Now()
 	changed, state, _ := refreshSubscriptionResources(context.Background(), server.Client(), &c, nil, now, false)

@@ -65,17 +65,13 @@ func recoverSubscriptionRuntime(root string) error {
 	return AtomicJSON(path, state)
 }
 
-func buildSubscriptions(ctx context.Context, root, core string, c sub.Config, r sub.Runtime, local map[string][]sub.Node) (fileBundle, sub.Snapshot, map[string]sub.Preview, error) {
-	return compileSubscriptions(ctx, root, core, c, r, local, false)
-}
-
-func compileSubscriptions(ctx context.Context, root, core string, c sub.Config, r sub.Runtime, local map[string][]sub.Node, available bool, services ...AccountService) (fileBundle, sub.Snapshot, map[string]sub.Preview, error) {
+func compileSubscriptions(ctx context.Context, root, core string, c sub.Config, r sub.Runtime, local map[string][]sub.Node, mode sub.BuildMode, services ...AccountService) (fileBundle, sub.Snapshot, map[string]sub.Preview, error) {
 	c, local, accounts, err := captureSubscriptionSources(ctx, root, c, local, services...)
 	if err != nil {
 		return nil, sub.Snapshot{}, nil, err
 	}
 	r.Accounts = accounts
-	return compilePreparedSubscriptions(ctx, root, core, c, r, local, available)
+	return compilePreparedSubscriptions(ctx, root, core, c, r, local, mode)
 }
 
 // Capture account material while the caller owns the publication lock. Core
@@ -96,15 +92,6 @@ func captureSubscriptionSources(ctx context.Context, root string, c sub.Config, 
 	}()
 	if local == nil {
 		local = map[string][]sub.Node{}
-	}
-	if platformOwned(root) {
-		local[normalScope], local[vpngateScope] = nil, nil
-		c.Sources = append([]sub.Source(nil), c.Sources...)
-		for i := range c.Sources {
-			if c.Sources[i].Kind == "local" {
-				c.Sources[i].Required = false
-			}
-		}
 	}
 	for _, source := range c.Sources {
 		if source.Kind == "account" {
@@ -155,13 +142,9 @@ func accountSourceState(ctx context.Context, store *accounting.Store, id string,
 	return u, state, err
 }
 
-func compilePreparedSubscriptions(ctx context.Context, root, core string, c sub.Config, r sub.Runtime, local map[string][]sub.Node, available bool) (fileBundle, sub.Snapshot, map[string]sub.Preview, error) {
+func compilePreparedSubscriptions(ctx context.Context, root, core string, c sub.Config, r sub.Runtime, local map[string][]sub.Node, mode sub.BuildMode) (fileBundle, sub.Snapshot, map[string]sub.Preview, error) {
 	r = sub.PruneRuntime(c, r)
-	build := sub.Build
-	if available {
-		build = sub.BuildAvailable
-	}
-	snapshot, previews, err := build(c, r, local, time.Now())
+	snapshot, previews, err := sub.Compile(c, r, local, time.Now(), mode)
 	if err != nil {
 		return nil, snapshot, previews, err
 	}
@@ -194,7 +177,7 @@ func compilePreparedSubscriptions(ctx context.Context, root, core string, c sub.
 		}
 		verification, err := validateSubscriptionArtifact(ctx, root, core, templates[output.Template], artifact)
 		if err != nil {
-			if available {
+			if mode == sub.Available {
 				delete(snapshot.Artifacts, output.ID)
 				snapshot.Diagnostics[output.ID] = append(snapshot.Diagnostics[output.ID], sub.Diagnostic{Stage: "validation", Message: err.Error()})
 				continue

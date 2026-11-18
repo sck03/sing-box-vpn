@@ -24,7 +24,7 @@ import (
 
 func TestSubscriptionAdminAuthenticationAndPreview(t *testing.T) {
 	root, core, _ := appFixture(t)
-	s, _, session := platformFixture(t, root, core)
+	s, configuration, session := platformFixture(t, root, core)
 	handler := s.Handler(PanelOptions{PublicURL: "http://example.com"})
 	for _, tc := range []struct {
 		path, token, origin string
@@ -44,10 +44,9 @@ func TestSubscriptionAdminAuthenticationAndPreview(t *testing.T) {
 			t.Fatalf("%s: status %d", tc.path, w.Code)
 		}
 	}
-	c, _, _, _ := loadSubscriptions(root)
 	before := readBytes(t, filepath.Join(root, subscriptionsSnapshot))
-	data, _ := json.Marshal(c)
-	r := panelRequest("POST", "/api/subscriptions/preview", data, session)
+	data, _ := json.Marshal(configuration)
+	r := panelRequest("POST", "/api/config/preview", data, session)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)
 	if w.Code != 200 || !bytes.Equal(before, readBytes(t, filepath.Join(root, subscriptionsSnapshot))) {
@@ -147,7 +146,7 @@ func TestSubscriptionWebDAVAndSecretGistDelivery(t *testing.T) {
 }
 
 func TestSubscriptionCustomOutputsAndRevokedUsageCleanup(t *testing.T) {
-	c := sub.DefaultConfig()
+	c := fixtureSubscriptionConfig()
 	c.Outputs = c.Outputs[:1]
 	c.Outputs[0].ID = "custom"
 	root, token := t.TempDir(), strings.Repeat("b", 64)

@@ -4,11 +4,13 @@
 
 普通节点与 VPNGate 使用独立受管核心进程。面板停止不停止代理计量；账户停用、到期、额度与凭据代次在认证后的转发边界执行。权威状态为 `control.db`，生成的 JSON 文件不再作为第二套配置入口。
 
+当前重构统一了网关与页面字段约束、WireGuard 端点和配置预览。页面提供完整协议表单、订阅工作区、服务开机启动控制和操作员网关控制；客户端导出与分享使用同一能力目录。
+
 ## 安装
 
 支持 Debian/Ubuntu、systemd、Linux amd64/arm64。需要 root；安装器自动安装 Python 3、OpenVPN、Certbot 等免费系统包。VPS 无需 Go 或 Node.js。VPNGate 需要 IPv4、TUN 与 network namespace。
 
-**当前 v4 使用数据库 schema 10、备份格式 7，要求全新空目录，不迁移旧数据或兼容旧管理接口。** 分支提交不等于正式发行；安装器默认获取 GitHub 最新正式 Release。部署当前分支应先构建完整包：
+**当前 v4 使用数据库 schema 11、备份格式 7，要求全新空目录，不迁移旧数据或兼容旧管理接口。** 分支提交不等于正式发行；安装器默认获取 GitHub 最新正式 Release。部署当前分支应先构建完整包：
 
 ```bash
 go run ./cmd/release

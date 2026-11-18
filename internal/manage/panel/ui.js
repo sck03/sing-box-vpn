@@ -45,6 +45,8 @@ export function formDialog(title, fields, value, save) {
     area = el("div", { class: "fields" });
   const inputs = [];
   for (const field of fields) {
+    if (field.section)
+      area.append(el("h3", { class: "field-section wide" }, field.section));
     const raw = getPath(value, field.key);
     const current = field.scale && raw != null ? raw / field.scale : raw;
     let input;
@@ -154,6 +156,10 @@ export function formDialog(title, fields, value, save) {
         );
       }
       const visible = !field.visible || field.visible(current);
+      input.required =
+        typeof field.required === "function"
+          ? field.required(current)
+          : !!field.required;
       input.closest("label").hidden = !visible;
       input.disabled = !!field.readonly || !visible;
     }
@@ -180,6 +186,17 @@ export function formDialog(title, fields, value, save) {
           if (field.readonly || input.disabled) continue;
           if (field.type === "date" && input.value === initial) continue;
           let v = input.value;
+          if (field.minBytes !== undefined || field.maxBytes !== undefined) {
+            const length = new TextEncoder().encode(v).length;
+            if (
+              (v || field.required) &&
+              (length < (field.minBytes || 0) ||
+                length > (field.maxBytes ?? Infinity))
+            )
+              throw new Error(
+                `${field.label}需要 ${field.minBytes || 0}–${field.maxBytes} 个 UTF-8 字节，当前为 ${length}。`,
+              );
+          }
           switch (field.type) {
             case "multiselect":
               v = [...input.selectedOptions].map((o) => o.value);

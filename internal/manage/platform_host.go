@@ -315,6 +315,16 @@ func (s *PlatformService) WriteUnits(ctx context.Context) error {
 		"sb-subscription":  fmt.Sprintf("ExecStart=%s subscription --root %s\n", manager, root),
 		"sb-panel":         fmt.Sprintf("ExecStart=%s panel --root %s --core %s --runtime %s serve\n", manager, root, core, binary),
 	}
+	paths := []string{"/etc/systemd/system/sb-argo.service"}
+	for name := range units {
+		paths = append(paths, filepath.Join("/etc/systemd/system", name+".service"))
+	}
+	for name := range recoveryUnits(root) {
+		paths = append(paths, filepath.Join("/etc/systemd/system", name))
+	}
+	if err := hostservice.CheckUnitOwnership(paths, hostservice.ReadUnit); err != nil {
+		return err
+	}
 	for name, body := range units {
 		extra := ""
 		if name == "sing-box-vpngate" {
@@ -327,18 +337,12 @@ func (s *PlatformService) WriteUnits(ctx context.Context) error {
 		// WorkingDirectory is a single path, unlike the quoted ExecStart argv.
 		data := "# Managed by sing-box-vpn v4\n[Unit]\nDescription=sing-box-vpn " + name + "\nAfter=network-online.target\nWants=network-online.target\nStartLimitIntervalSec=300\nStartLimitBurst=10\n" + extra + "[Service]\nUMask=0077\nRestart=always\nRestartSec=15\nTimeoutStopSec=30\nLimitNOFILE=65536\n" + pre + body + "WorkingDirectory=" + s.Root + "\n[Install]\nWantedBy=multi-user.target\n"
 		path := filepath.Join("/etc/systemd/system", name+".service")
-		if old, e := os.ReadFile(path); e == nil && !bytes.Contains(old, []byte("sing-box-vpn")) && !bytes.Contains(old, []byte("VPNGate")) {
-			return fmt.Errorf("refusing to overwrite unrelated unit %s", name)
-		}
 		if err = AtomicBytes(path, []byte(data), 0644); err != nil {
 			return err
 		}
 	}
 	for name, data := range recoveryUnits(root) {
 		path := filepath.Join("/etc/systemd/system", name)
-		if old, e := os.ReadFile(path); e == nil && !bytes.Contains(old, []byte("sing-box-vpn")) {
-			return fmt.Errorf("refusing to overwrite unrelated unit %s", name)
-		}
 		if err = AtomicBytes(path, []byte(data), 0644); err != nil {
 			return err
 		}

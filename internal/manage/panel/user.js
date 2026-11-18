@@ -1,4 +1,3 @@
-const token = location.hash.slice(1);
 // Keep the fragment for reloads; it is never sent in HTTP requests or referrers.
 const base = new URL("./", location.href);
 const target = document.querySelector("#user-content");
@@ -10,20 +9,30 @@ function element(tag, text) {
   node.textContent = text;
   return node;
 }
-async function load() {
+async function load(token, signal, current) {
   if (!/^[a-f0-9]{64}$/.test(token))
     throw new Error("请使用包含完整授权令牌的分享地址。");
   const response = await fetch(new URL("u/" + token + "/usage", base), {
     credentials: "omit",
     cache: "no-store",
+    signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
   });
-  if (!response.ok) throw new Error("授权已过期、撤销或账户不可用。");
+  if (!response.ok) {
+    const error = new Error(
+      response.status === 404 || response.status === 403
+        ? "授权已过期、撤销或权益不可用。"
+        : "服务暂时不可用，请稍后刷新。",
+    );
+    error.status = response.status;
+    throw error;
+  }
   const u = await response.json();
+  if (!current()) return;
   const status = element(
     "span",
     {
       active: "正常",
-      not_started: "待首次使用",
+      not_started: "尚未开始",
       exhausted: "额度耗尽",
       expired: "已到期",
       disabled: "已停用",
@@ -99,4 +108,46 @@ async function load() {
     target.append(wrap);
   }
 }
-load().catch((error) => target.replaceChildren(element("p", error.message)));
+let loading = false,
+  generation = 0,
+  request;
+const refresh = document.querySelector("#user-refresh"),
+  updated = document.querySelector("#user-updated");
+async function reloadUsage(force = false) {
+  if (loading && !force) return;
+  const current = ++generation;
+  request?.abort();
+  request = new AbortController();
+  loading = true;
+  if (refresh) refresh.disabled = true;
+  try {
+    await load(
+      location.hash.slice(1),
+      request.signal,
+      () => current === generation,
+    );
+    if (current !== generation) return;
+    if (updated)
+      updated.textContent = "更新于 " + new Date().toLocaleTimeString();
+  } catch (error) {
+    if (current !== generation || error.name === "AbortError") return;
+    if ([401, 403, 404].includes(error.status))
+      target.replaceChildren(element("p", error.message));
+    if (updated) updated.textContent = error.message;
+    else target.replaceChildren(element("p", error.message));
+  } finally {
+    if (current === generation) {
+      loading = false;
+      if (refresh) refresh.disabled = false;
+    }
+  }
+}
+refresh?.addEventListener("click", () => reloadUsage());
+window.addEventListener("hashchange", () => {
+  target.replaceChildren(element("p", "正在读取…"));
+  void reloadUsage(true);
+});
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) void reloadUsage();
+});
+void reloadUsage();

@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	SchemaVersion = 1
+	SchemaVersion = 2
 	MaxNodes      = 4096
 	MaxBody       = 8 << 20
 	MaxObjects    = 128

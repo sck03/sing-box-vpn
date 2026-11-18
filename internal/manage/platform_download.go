@@ -76,7 +76,7 @@ func unifiedDownloadHandler(service AccountService) http.Handler {
 			service.ServeDownload(w, r)
 			return
 		}
-		if r.URL.Path == "/user" || r.URL.Path == "/panel/user.js" || r.URL.Path == "/panel/style.css" {
+		if r.URL.Path == "/user" || r.URL.Path == "/panel/user.js" || r.URL.Path == "/panel/style.css" || r.URL.Path == "/panel/theme.js" {
 			name := strings.TrimPrefix(r.URL.Path, "/")
 			if name == "user" {
 				name = "panel/user.html"

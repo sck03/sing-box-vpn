@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -69,7 +70,7 @@ func MakeInbounds(p Profile, prefix string) []Object {
 	}
 }
 
-func ServerConfig(inbounds []Object, routing map[string][]string, warp Object, socksPort int) (Object, error) {
+func ServerConfig(inbounds []Object, routing map[string][]string, endpoints []Object, socksPort int) (Object, error) {
 	if socksPort == 0 {
 		socksPort = 40000
 	}
@@ -89,7 +90,7 @@ func ServerConfig(inbounds []Object, routing map[string][]string, warp Object, s
 			}
 			rules = append(rules, Object{"domain_suffix": domains, "action": "resolve", "strategy": strategy})
 		}
-		if name == "warp" && len(warp) == 0 {
+		if name == "warp" && !slices.ContainsFunc(endpoints, func(endpoint Object) bool { return endpoint["type"] == "wireguard" && endpoint["tag"] == "warp-out" }) {
 			return nil, errors.New("请先配置 WARP endpoint")
 		}
 		target := "direct"
@@ -102,8 +103,10 @@ func ServerConfig(inbounds []Object, routing map[string][]string, warp Object, s
 		rules = append(rules, Object{"domain_suffix": domains, "action": "route", "outbound": target})
 	}
 	result := Object{"log": Object{"level": "info", "timestamp": true}, "inbounds": inbounds, "outbounds": []Object{{"type": "direct", "tag": "direct"}, {"type": "socks", "tag": "socks-out", "server": "127.0.0.1", "server_port": socksPort, "version": "5"}}, "route": Object{"rules": rules, "final": "direct"}}
-	if len(warp) > 0 {
-		result["endpoints"] = []Object{merge(clone(warp).(Object), Object{"type": "wireguard", "tag": "warp-out"})}
+	result["dns"] = Object{"servers": []Object{{"type": "local", "tag": "dns-local"}}}
+	object(result["route"])["default_domain_resolver"] = "dns-local"
+	if len(endpoints) > 0 {
+		result["endpoints"] = endpoints
 	}
 	return result, nil
 }

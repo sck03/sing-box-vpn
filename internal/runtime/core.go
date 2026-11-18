@@ -33,7 +33,7 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
-const Version = "1.14.4+sbvpn.2"
+const Version = "1.14.4+sbvpn.3"
 
 func guarded[T any](meter *accounting.Meter, constructor inbound.ConstructorFunc[T]) inbound.ConstructorFunc[T] {
 	return func(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options T) (adapter.Inbound, error) {

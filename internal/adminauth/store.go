@@ -27,6 +27,9 @@ import (
 var ErrUnauthorized = errors.New("invalid credentials or expired session")
 var ErrLimited = errors.New("too many login attempts; retry after 15 minutes")
 
+const MinPasswordBytes = 12
+const MaxPasswordBytes = 72
+
 type Store struct{ db *sql.DB }
 type Admin struct {
 	ID       string `json:"id"`
@@ -64,7 +67,7 @@ func (s *Store) Close() error { return s.db.Close() }
 func Secret() string          { var b [32]byte; _, _ = rand.Read(b[:]); return hex.EncodeToString(b[:]) }
 func hash(v string) string    { b := sha256.Sum256([]byte(v)); return hex.EncodeToString(b[:]) }
 func passwordHash(password string) ([]byte, error) {
-	if len(password) < 12 || len(password) > 72 {
+	if len(password) < MinPasswordBytes || len(password) > MaxPasswordBytes {
 		return nil, errors.New("password must contain 12–72 bytes")
 	}
 	return bcrypt.GenerateFromPassword([]byte(password), 12)
@@ -191,7 +194,7 @@ var dummyHash = []byte("$2a$12$R9h/cIPz0gi.URNNX3kh2OPST9/PgBkqquzi.Ss7KIUgO2t0j
 
 func (s *Store) Login(ctx context.Context, id, password, code, peer string) (Session, error) {
 	now := time.Now()
-	if len(id) > 64 || len(password) > 72 || len(code) > 6 {
+	if len(id) > 64 || len(password) > MaxPasswordBytes || len(code) > 6 {
 		return Session{}, ErrUnauthorized
 	}
 	if err := s.guard(ctx, id, peer, now.Unix()); err != nil {

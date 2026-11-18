@@ -4,12 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>我的订阅 · sing-box-vpn</title>
+    <script src="./panel/theme.js"></script>
     <link rel="stylesheet" href="./panel/style.css" />
   </head>
   <body>
     <main class="user-page">
       <div class="brand">◈ <span>sing-box-vpn</span></div>
       <h1>我的订阅</h1>
+      <div class="row">
+        <button id="user-refresh" type="button">刷新用量</button
+        ><button id="theme-toggle" type="button">切换主题</button
+        ><span id="user-updated" role="status"></span>
+      </div>
       <p>查看当前权益、用量与可用的客户端配置。</p>
       <section id="user-content" class="card">正在读取…</section>
       <p class="help">

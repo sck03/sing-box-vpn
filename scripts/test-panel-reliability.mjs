@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { capabilitiesFixture } from "./panel-fixtures.mjs";
 import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
 
@@ -131,6 +132,8 @@ globalThis.EventSource = class {
 };
 globalThis.confirm = () => true;
 globalThis.fetch = async (path) => {
+  if (path === "/api/capabilities")
+    return { ok: true, json: async () => capabilitiesFixture };
   if (path === "/api/auth/session" && authError) {
     if (authError === "network") throw new TypeError("network unavailable");
     return { ok: false, status: 401, text: async () => "expired" };
@@ -177,12 +180,17 @@ globalThis.setTimeout = realTimeout;
 dom.window.close();
 
 const token = "a".repeat(64);
-const user = new JSDOM('<section id="user-content"></section>', {
-  url: `https://example.test/sub/user#${token}`,
-});
+const user = new JSDOM(
+  '<button id="user-refresh">刷新</button><span id="user-updated"></span><section id="user-content"></section>',
+  {
+    url: `https://example.test/sub/user#${token}`,
+  },
+);
 globals(user.window);
-let requested;
+let requested, userFailure;
 globalThis.fetch = async (url) => {
+  if (userFailure === "network") throw new TypeError("network unavailable");
+  if (userFailure === "revoked") return { ok: false, status: 404 };
   requested = String(url);
   return {
     ok: true,
@@ -204,6 +212,21 @@ assert.equal(
   `https://example.test/sub/u/${token}/mihomo`,
 );
 assert.equal(location.hash, `#${token}`);
+userFailure = "network";
+document.querySelector("#user-refresh").click();
+await tick();
+assert(
+  document.querySelector("a"),
+  "transient errors discarded the last snapshot",
+);
+userFailure = "revoked";
+document.querySelector("#user-refresh").click();
+await tick();
+assert.equal(
+  document.querySelector("a"),
+  null,
+  "revoked authorization kept stale download actions",
+);
 user.window.close();
 console.log(
   "Panel reliability checks passed: duplicate submission, client modes, reconnect drafts, subpath downloads.",

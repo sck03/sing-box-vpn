@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
 )
 
@@ -95,7 +96,14 @@ func (s *PlatformService) runLane(ctx context.Context, lane string) error {
 
 func (s *PlatformService) runTask(ctx context.Context, task controlstore.Task) error {
 	s.invalidateOverview()
-	child, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	budget := application.ControlTaskTimeout
+	if task.Kind == "subscription" {
+		var action PlatformAction
+		if json.Unmarshal(task.Input, &action) == nil && action.Subscription.Operation == "check" {
+			budget = application.ProbeTaskTimeout
+		}
+	}
+	child, cancel := context.WithTimeout(ctx, budget)
 	var err error
 	if task.Kind == "apply" {
 		var input applyInput

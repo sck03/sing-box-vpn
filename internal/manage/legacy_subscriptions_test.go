@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-
-	"github.com/sck03/sing-box-vpn/internal/application"
 )
 
 func RunSubscriptions(ctx context.Context, args []string, input io.Reader, output io.Writer) error {
@@ -49,7 +47,7 @@ func RunSubscriptions(ctx context.Context, args []string, input io.Reader, outpu
 	if platformOwned(*root) && !slices.Contains([]string{"show", "clients", "preview", "export", "logs", "check", "refresh", "deliver"}, operation) {
 		return errors.New("subscription configuration is owned by control.db; use the unified panel")
 	}
-	command := application.SubscriptionCommand{Operation: operation, ID: *id, Kind: *kind, Outputs: strings.Split(*outputs, ","), Expires: *expires, Apply: *apply, ProbeURL: *probeURL}
+	command := fixtureSubscriptionCommand{Operation: operation, ID: *id, Kind: *kind, Outputs: strings.Split(*outputs, ","), Expires: *expires, Apply: *apply, ProbeURL: *probeURL}
 	opts.Visit(func(f *flag.Flag) {
 		if f.Name == "max-downloads" {
 			command.MaxDownloads = maxDownloads

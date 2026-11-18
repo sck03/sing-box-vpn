@@ -94,6 +94,7 @@ jobs:
           done
           shellcheck --severity=warning sb.sh install.sh lib/*.sh scripts/*.sh
           bash scripts/test-program-upgrade.sh
+          bash scripts/test-install-ownership.sh
       - name: Build Linux management and gateway binary
         run: CGO_ENABLED=0 go build -trimpath -o "$GITHUB_WORKSPACE/.build/yg-vpngate" ./addons/vpngate/gateway
       - name: Online validator download and current platform CLI
@@ -109,6 +110,27 @@ jobs:
           sudo .build/yg-vpngate panel --root "$PWD/.test/core-updater" \
             --core "$PWD/.test/core-updater/sing-box.candidate" --runtime "$PWD/.build/managed-core" --no-system validate
           .build/yg-vpngate core --root "$PWD/.test/core-updater" check
+      - name: Real panel API contracts in isolated development mode
+        run: |
+          set -euo pipefail
+          panel_root="$PWD/.test/panel-api"
+          test_password="$(openssl rand -hex 24)"
+          echo "::add-mask::$test_password"
+          printf '{"username":"reviewadmin","password":"%s"}' "$test_password" | .build/yg-vpngate panel \
+            --root "$panel_root" --core "$SING_BOX_BINARY" --runtime "$PWD/.build/managed-core" \
+            --address 127.0.0.1 --listen 127.0.0.1:0 --no-system init
+          .build/yg-vpngate panel --root "$panel_root" --core "$SING_BOX_BINARY" \
+            --runtime "$PWD/.build/managed-core" --no-system serve > .test/panel-api.log 2>&1 &
+          panel_pid=$!
+          trap 'kill "$panel_pid" 2>/dev/null || true; wait "$panel_pid" 2>/dev/null || true' EXIT
+          panel_url=""
+          for attempt in $(seq 1 100); do
+            panel_url="$(grep -o 'http://127.0.0.1:[0-9]*' .test/panel-api.log | head -n 1 || true)"
+            if [[ -n "$panel_url" ]] && curl -fsS "$panel_url/api/capabilities" >/dev/null; then break; fi
+            sleep 0.2
+          done
+          test -n "$panel_url"
+          PANEL_TEST_URL="$panel_url" PANEL_TEST_PASSWORD="$test_password" node scripts/test-panel-api.mjs
       - name: OpenVPN, tunnel DNS and fail-closed namespace acceptance
         run: sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_NETNS_TESTS=1 "$(command -v go)" test -run '^TestLinuxNamespaceIsolation$' -count=1 -v -timeout=6m ./addons/vpngate/gateway
       - name: IPv4 and IPv6 multiport forwarding and owned firewall cleanup

@@ -45,7 +45,6 @@ type appDocument struct {
 	Hopping    []string            `json:"hopping,omitempty"`
 	TUICPorts  []string            `json:"tuic_ports,omitempty"`
 	Routing    map[string][]string `json:"routing"`
-	Warp       Object              `json:"warp"`
 	SocksPort  int                 `json:"socks_port"`
 	CDNAddress string              `json:"cdn_address,omitempty"`
 	Argo       Object              `json:"argo,omitempty"`
@@ -180,7 +179,7 @@ func (a App) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(appDocument{Schema: 1, Version: a.Version, Name: a.Name, Address: a.Address, Nodes: nodes, Country: a.Profile.Country, Hopping: a.Profile.Hopping, TUICPorts: a.Profile.TUICPorts, Routing: a.Routing, Warp: a.Warp, SocksPort: a.SocksPort, CDNAddress: a.CDNAddress, Argo: a.Argo, Advanced: a.Advanced})
+	return json.Marshal(appDocument{Schema: 2, Version: a.Version, Name: a.Name, Address: a.Address, Nodes: nodes, Country: a.Profile.Country, Hopping: a.Profile.Hopping, TUICPorts: a.Profile.TUICPorts, Routing: a.Routing, SocksPort: a.SocksPort, CDNAddress: a.CDNAddress, Argo: a.Argo, Advanced: a.Advanced})
 }
 
 func (a *App) UnmarshalJSON(data []byte) error {
@@ -188,10 +187,10 @@ func (a *App) UnmarshalJSON(data []byte) error {
 	if err := strictSubscriptionJSON(data, &d); err != nil {
 		return err
 	}
-	if d.Schema != 1 {
+	if d.Schema != 2 {
 		return errors.New("unsupported app schema; install into a new configuration directory")
 	}
-	app := App{Version: d.Version, Name: d.Name, Address: d.Address, Routing: d.Routing, Warp: d.Warp, SocksPort: d.SocksPort, CDNAddress: d.CDNAddress, Argo: d.Argo, Advanced: d.Advanced}
+	app := App{Version: d.Version, Name: d.Name, Address: d.Address, Routing: d.Routing, SocksPort: d.SocksPort, CDNAddress: d.CDNAddress, Argo: d.Argo, Advanced: d.Advanced}
 	p := Profile{Ports: map[string]int{}, Secrets: Secrets{UUID: map[string]string{}, Passwords: map[string]string{}}, Country: d.Country, Hopping: d.Hopping, TUICPorts: d.TUICPorts}
 	seen := map[string]bool{}
 	if len(d.Nodes) > 256 {

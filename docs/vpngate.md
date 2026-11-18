@@ -59,6 +59,7 @@ profile 指令最多三个参数，使用固定字段缓冲并提前拒绝多余
 | internal/manage/ | Go 配置、原生证书/密钥、核心更新、订阅、防火墙及推送 |
 | cmd/release/ | Go 交叉编译与可复现归档、流式 SHA256 |
 | internal/manage/platform_* | 面板/API 的国家配置、持久任务、服务启停与恢复编排 |
+| internal/gatewayconfig | 管理面板与网关共同使用的类型、默认值和边界校验 |
 | addons/vpngate/gateway/ | 节点/profile、国家/ISP、代理、worker、namespace |
 | addons/vpngate/gateway/{control,socks,udp,transport}.go | 控制 HTTP、SOCKS 握手、UDP 会话、共享 IPC 帧与 TCP 中继 |
 | addons/vpngate/gateway/{server,http}.go | 共用连接退出/准入、HTTP 请求边界与节点源流式读取 |
@@ -71,7 +72,7 @@ profile 指令最多三个参数，使用固定字段缓冲并提前拒绝多余
 | sing-box.service | 普通五协议 |
 | yg-vpngate.service | 出口管理器与认证 SOCKS5 |
 | sing-box-vpngate.service | 独立五协议 VPNGate 入口 |
-| /etc/s-box/control.db | 权威配置、权益、凭据、用量与任务，当前 schema 10 |
+| /etc/s-box/control.db | 权威配置、权益、凭据、用量与任务，当前 schema 11 |
 | /etc/s-box/vpngate/ | 网关、服务端等运行投影，不作为配置真源 |
 | /var/lib/yg-vpngate/ | 缓存、profile、状态、限量日志 |
 | /run/yg-vpngate/control.sock | 仅 root 的控制接口 |
@@ -80,6 +81,8 @@ profile 指令最多三个参数，使用固定字段缓冲并提前拒绝多余
 账户下载使用 `/u/<令牌>/<格式>`；自定义输出使用 `/s/<令牌>/<输出ID>` 读取已验证快照。
 VPNGate 客户端手动选择当前国家节点，不提供普通节点或 DIRECT 回退；混合集合使用独立 VPNGate 策略组。
 国家和端口配置在 VPNGate 页面保存并应用，代理凭据通过权益绑定/轮换管理，普通入口保持独立。
+
+页面支持绑定证书资产、设置 Reality 握手参数、Hy2 跳跃/TUIC 转发端口，以及 Geo URL、出口探测 URL、隧道 DNS 与 ASN 筛选。连接超时 5–180 秒、健康检查 1–300 秒、连接和待拨号容量 1–1024；保存前与网关启动使用同一校验。操作员可查询与控制运行，配置权限仍归管理员。
 OpenClash 使用账户来源的 Mihomo provider 输出，沿用路由器自己的 DNS 与策略。
 详细设置见 [订阅与 OpenClash](subscriptions.md#openclash-与证书)。
 

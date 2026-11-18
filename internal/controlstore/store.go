@@ -233,7 +233,7 @@ func (s *Store) Finish(ctx context.Context, id int64, result error) error {
 			detail = detail[:2048]
 		}
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE control_tasks SET state=?,phase=CASE WHEN ?='failed' THEN phase ELSE ? END,error=?,updated=?,input='{}' WHERE id=?`, state, state, state, detail, time.Now().Unix(), id)
+	_, err := s.db.ExecContext(ctx, `UPDATE control_tasks SET state=?,phase=CASE WHEN ?='failed' THEN phase ELSE ? END,error=?,updated=?,input='{}',outcome=CASE WHEN ?='failed' AND kind='apply' THEN 'failed' ELSE outcome END,result=CASE WHEN ?='failed' AND kind='apply' THEN json_set(result,'$.outcome','failed') ELSE result END WHERE id=?`, state, state, state, detail, time.Now().Unix(), state, state, id)
 	if err != nil {
 		return err
 	}

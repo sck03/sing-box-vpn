@@ -1,4 +1,6 @@
 import { api } from "./api.js";
+import { capabilities } from "./capabilities.js";
+import { outboundFields, normalizeOutbound } from "./outbound-fields.js";
 import {
   el,
   card,
@@ -9,11 +11,11 @@ import {
   jsonDialog,
   resourceEditor,
 } from "./ui.js";
-const protocols = ["vless", "vmess", "hysteria2", "tuic", "anytls"];
 export async function outbounds(ctx) {
   const c = await ctx.config(),
     a = structuredClone(c.app.advanced || {});
   const effective = await (ctx.request || api)("/api/server", c.app);
+  const { protocols } = await capabilities();
   a.outbounds ??= effective.outbounds || [];
   a.endpoints ??= effective.endpoints || [];
   a.services ??= [];
@@ -41,7 +43,14 @@ export async function outbounds(ctx) {
                   .filter((v) => v.type === "selector")
                   .map((v) => v.tag),
               },
-              { key: "member", label: "成员 tag", required: true },
+              {
+                key: "member",
+                label: "组成员",
+                type: "select",
+                options: (v) =>
+                  a.outbounds.find((g) => g.tag === v.tag)?.outbounds || [],
+                required: true,
+              },
             ],
             {},
             (v) => {
@@ -76,36 +85,19 @@ export async function outbounds(ctx) {
     ),
     resourceEditor({
       title: "出站与出站组",
-      normalize: (v) => {
-        for (const k of ["server", "server_port", "outbounds", "detour"]) {
-          if (!v[k] || (Array.isArray(v[k]) && !v[k].length)) delete v[k];
-        }
-        if (["direct", "selector", "urltest"].includes(v.type)) {
-          delete v.server;
-          delete v.server_port;
-        }
-        if (!["selector", "urltest"].includes(v.type)) delete v.outbounds;
-        return v;
-      },
+      normalize: normalizeOutbound,
       items: a.outbounds,
-      fields: [
-        { key: "tag", label: "Tag", required: true },
-        {
-          key: "type",
-          label: "类型",
-          type: "select",
-          options: ["direct", "socks", "selector", "urltest", ...protocols],
-        },
-        { key: "server", label: "服务器" },
-        { key: "server_port", label: "端口", type: "number" },
-        { key: "outbounds", label: "组成员 tag，逗号分隔", type: "csv" },
-        { key: "detour", label: "链式上游 tag" },
-      ],
+      fields: outboundFields(
+        protocols,
+        [...a.outbounds, ...a.endpoints].map((v) => v.tag),
+        (effective.dns?.servers || []).map((v) => v.tag),
+      ),
       defaults: {
         type: "socks",
         tag: "new-out",
         server: "127.0.0.1",
         server_port: 1080,
+        tls: { enabled: true },
       },
       columns: [
         { key: "tag", label: "Tag" },

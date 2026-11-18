@@ -23,7 +23,7 @@ func TestPlanRejectsConcurrentMutationAfterUnlockedCompile(t *testing.T) {
 	}
 	before := readBytes(t, filepath.Join(root, subscriptionsSnapshot))
 	service := SubscriptionService{Root: root, Core: core}
-	command := application.SubscriptionCommand{Operation: "apply", Config: mustJSON(t, c)}
+	command := fixtureSubscriptionCommand{Operation: "apply", Config: mustJSON(t, c)}
 	err = service.plan(context.Background(), command, io.Discard, func(ctx context.Context, root, core string, c sub.Config, r sub.Runtime, local map[string][]sub.Node) (fileBundle, sub.Snapshot, map[string]sub.Preview, error) {
 		child, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()

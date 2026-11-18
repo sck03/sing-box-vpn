@@ -20,6 +20,7 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	"github.com/sck03/sing-box-vpn/internal/database"
 	"github.com/sck03/sing-box-vpn/internal/domain"
+	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
 type PlatformService struct {
@@ -49,9 +50,10 @@ type PlatformAction struct {
 	Automatic    bool                            `json:"automatic,omitempty"`
 }
 type applyInput struct {
-	Revision int64    `json:"revision"`
-	Active   []string `json:"active"`
-	Enabled  []string `json:"enabled"`
+	Revision int64                      `json:"revision"`
+	Active   []string                   `json:"active"`
+	Enabled  []string                   `json:"enabled"`
+	Sources  map[string]sub.SourceCache `json:"sources,omitempty"`
 }
 
 func OpenPlatform(root, core, runtime string, noSystem bool) (*PlatformService, error) {
@@ -139,8 +141,10 @@ func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revi
 	if state.Revision != revision {
 		return 0, controlstore.ErrConflict
 	}
+	c.Subscriptions.Revision = uint64(revision + 1)
 	// Validate before persisting intent. No service or public artifact changes.
-	if _, err = s.build(ctx, c); err != nil {
+	_, prepared, err := s.prepareBuild(ctx, c)
+	if err != nil {
 		return 0, err
 	}
 	// Expensive core validation does not hold the configuration mutation mutex.
@@ -171,7 +175,7 @@ func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revi
 	if err != nil {
 		return 0, err
 	}
-	input, _ := json.Marshal(applyInput{Revision: revision + 1, Active: active, Enabled: enabled})
+	input, _ := json.Marshal(applyInput{Revision: revision + 1, Active: active, Enabled: enabled, Sources: prepared})
 	id, err := s.Store.Queue(ctx, "apply", actor, input, revision, data)
 	if err == nil {
 		s.signal()
@@ -291,7 +295,7 @@ func (s *PlatformService) apply(ctx context.Context, id int64, input applyInput)
 	if err != nil {
 		return err
 	}
-	files, err := s.build(ctx, c)
+	files, err := s.buildConfig(ctx, c, sub.Candidate, input.Sources)
 	if err != nil {
 		return err
 	}
@@ -300,6 +304,11 @@ func (s *PlatformService) apply(ctx context.Context, id int64, input applyInput)
 	}
 	if err = files.json("runtime-revision.json", state.Revision); err != nil {
 		return err
+	}
+	if summary, e := configurationOutcome(files); e != nil {
+		return e
+	} else if e = s.Store.Result(ctx, id, summary); e != nil {
+		return e
 	}
 	if err = s.Store.Phase(ctx, id, "publishing"); err != nil {
 		return err
@@ -396,19 +405,8 @@ func (s *PlatformService) execute(ctx context.Context, id int64, a PlatformActio
 			return deliverSubscriptions(ctx, s.Root, "", true, new(bytes.Buffer))
 		}
 		var out bytes.Buffer
-		if err := (SubscriptionService{Root: s.Root, Core: s.Core}).Execute(ctx, a.Subscription, &out); err != nil {
-			return err
-		}
-		var result any
-		if err := json.Unmarshal(out.Bytes(), &result); err != nil {
-			result = Object{"completed": true}
-		}
-		redactPlatform(result)
-		data, err := json.Marshal(result)
-		if err != nil {
-			return err
-		}
-		return s.Store.Result(ctx, id, data)
+		operationErr := (SubscriptionService{Root: s.Root, Core: s.Core}).Execute(ctx, a.Subscription, &out)
+		return s.storeTaskOutput(ctx, id, out.Bytes(), operationErr)
 	case "service":
 		if s.NoSystem {
 			return errors.New("system operations are disabled")

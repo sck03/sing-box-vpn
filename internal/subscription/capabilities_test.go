@@ -8,12 +8,12 @@ import (
 
 func TestUnavailableRequiredAccountIsIsolated(t *testing.T) {
 	c := Config{Version: SchemaVersion,
-		Sources:     []Source{{ID: "expired", Kind: "account", AccountID: "a", Required: true}, {ID: "healthy", Kind: "local", Scope: "normal", Required: true}},
+		Sources:     []Source{{ID: "expired", Kind: "account", AccountID: "a", Required: true}, {ID: "healthy", Kind: "account", AccountID: "b", Scope: "normal", Required: true}},
 		Collections: []Collection{{ID: "expired", Sources: []string{"expired"}}, {ID: "healthy", Sources: []string{"healthy"}}},
 		Templates:   []Template{{ID: "native", Client: "sing-box", Version: 1, Mode: "nodes"}},
 		Outputs:     []Output{{ID: "expired", Collection: "expired", Template: "native"}, {ID: "healthy", Collection: "healthy", Template: "native"}},
 	}
-	local := map[string][]Node{"normal": testNodes()}
+	local := map[string][]Node{"account:healthy": testNodes()}
 	if _, _, err := Build(c, Runtime{}, local, time.Now()); err == nil {
 		t.Fatal("strict build accepted a missing required source")
 	}

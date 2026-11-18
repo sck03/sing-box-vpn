@@ -9,7 +9,7 @@ import (
 
 func TestCollectionRejectsDuplicateAndOversizedReferences(t *testing.T) {
 	for _, count := range []int{2, MaxObjects + 1} {
-		c := DefaultConfig()
+		c := fixtureConfig()
 		c.Collections[0].Sources = make([]string, count)
 		for i := range c.Collections[0].Sources {
 			c.Collections[0].Sources[i] = "normal"
@@ -21,7 +21,7 @@ func TestCollectionRejectsDuplicateAndOversizedReferences(t *testing.T) {
 }
 
 func TestCombinedIntermediateBudget(t *testing.T) {
-	c := DefaultConfig()
+	c := fixtureConfig()
 	c.Collections = nil
 	c.Outputs = nil
 	for i := 0; i < 5; i++ {
@@ -31,7 +31,7 @@ func TestCombinedIntermediateBudget(t *testing.T) {
 	for i := range nodes {
 		nodes[i] = Node{Name: "node", Protocol: "vmess", Server: "example.com", Port: 443, UUID: "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"}
 	}
-	_, _, err := Build(c, Runtime{}, map[string][]Node{"normal": nodes}, time.Now())
+	_, _, err := Build(c, Runtime{}, map[string][]Node{"account:normal": nodes}, time.Now())
 	if err == nil || !strings.Contains(err.Error(), "budget") {
 		t.Fatal("combined intermediate budget not enforced", err)
 	}

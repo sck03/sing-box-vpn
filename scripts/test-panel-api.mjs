@@ -1,0 +1,190 @@
+import assert from "node:assert/strict";
+
+const base = process.env.PANEL_TEST_URL;
+if (
+  !base ||
+  !["127.0.0.1", "localhost", "[::1]"].includes(new URL(base).hostname)
+)
+  throw new Error("PANEL_TEST_URL must point at a disposable loopback panel");
+const password = process.env.PANEL_TEST_PASSWORD;
+if (!password) throw new Error("PANEL_TEST_PASSWORD is required");
+let cookie, csrf;
+async function call(path, body, extra = {}) {
+  const response = await fetch(base + path, {
+    method: body === undefined ? "GET" : "POST",
+    headers: {
+      ...(cookie ? { Cookie: cookie, "X-CSRF-Token": csrf } : {}),
+      "Content-Type": "application/json",
+      ...extra,
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(120000),
+  });
+  const text = await response.text();
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    value = text;
+  }
+  return { status: response.status, value, headers: response.headers };
+}
+function ok(result) {
+  assert.equal(
+    result.status,
+    200,
+    typeof result.value === "string"
+      ? result.value
+      : JSON.stringify(result.value),
+  );
+  return result.value;
+}
+const login = await call("/api/auth/login", {
+  username: process.env.PANEL_TEST_USERNAME || "reviewadmin",
+  password,
+});
+csrf = ok(login).csrf;
+cookie = login.headers.get("set-cookie").split(";")[0];
+const overview = ok(await call("/api/overview"));
+assert(
+  overview.services.every((s) => s.state === "unavailable"),
+  "Only --no-system test installations are supported",
+);
+assert.equal(
+  ok(await call("/api/capabilities")).gateway.limits.max_connections.max,
+  1024,
+);
+const state = ok(await call("/api/config")),
+  config = state.config;
+assert.equal(config.app.schema, 2);
+assert.equal(config.subscriptions.version, 2);
+const invalid = structuredClone(config);
+invalid.gateway = { connect_timeout: 240 };
+assert.equal((await call("/api/config/preview", invalid)).status, 400);
+const old = structuredClone(config);
+old.app.warp = {};
+assert.equal((await call("/api/config/preview", old)).status, 400);
+
+const suffix = Date.now().toString(36),
+  person = "demo-" + suffix,
+  account = "monthly-" + suffix;
+ok(
+  await call("/api/subscribers", {
+    id: person,
+    name: "演示订阅者",
+    disabled: false,
+    revision: 0,
+  }),
+);
+ok(
+  await call("/api/accounts", {
+    account: {
+      id: account,
+      name: "月度权益",
+      subscriber_id: person,
+      start_mode: "created",
+      period: { kind: "monthly", day: 1, timezone: "Asia/Shanghai" },
+      quota_bytes: 100 * 1073741824,
+      revision: 0,
+    },
+  }),
+);
+const nodes = ok(await call("/api/inbound-options?scope=normal"));
+const inbound = nodes.find((n) => n.id.includes("vmess")) || nodes[0];
+const queued = ok(
+  await call("/api/tasks", {
+    operation: "account",
+    account: {
+      operation: "bind",
+      id: account,
+      scope: "normal",
+      inbound_ids: [inbound.id],
+    },
+  }),
+);
+async function finished(id) {
+  const deadline = Date.now() + 90000;
+  while (Date.now() < deadline) {
+    const task = ok(await call("/api/tasks/detail?id=" + id));
+    if (!["queued", "running"].includes(task.state)) {
+      assert.equal(task.state, "succeeded", JSON.stringify(task));
+      return task;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw new Error("Test task did not finish");
+}
+await finished(queued.task_id);
+assert(
+  ok(
+    await call("/api/accounts/export", {
+      id: account,
+      scope: "normal",
+      client: "uri",
+    }),
+  ).content.includes("://"),
+);
+const grant = ok(
+  await call("/api/grants", {
+    id: "share-" + suffix,
+    account_id: account,
+    scope: "normal",
+    clients: ["uri"],
+    max_downloads: 1,
+  }),
+);
+ok(
+  await call("/user", undefined, {
+    "Sec-Fetch-Site": "cross-site",
+    Origin: "https://external.example",
+  }),
+);
+ok(await call("/u/" + grant.token + "/usage"));
+ok(await call("/u/" + grant.token + "/uri"));
+assert.equal((await call("/u/" + grant.token + "/uri")).status, 403);
+assert.equal(ok(await call("/u/" + grant.token + "/usage")).downloads, 1);
+assert.equal(
+  (await call("/api/state", undefined, { "Sec-Fetch-Site": "cross-site" }))
+    .status,
+  403,
+);
+
+config.subscriptions.sources = [
+  {
+    id: "account-source",
+    kind: "account",
+    account_id: account,
+    scope: "normal",
+    required: true,
+  },
+];
+config.subscriptions.collections = [
+  { id: "collection", sources: ["account-source"], processor: {} },
+];
+config.subscriptions.templates = [
+  { id: "template", client: "uri", version: 1, mode: "nodes" },
+];
+config.subscriptions.outputs = [
+  {
+    id: "output",
+    name: "账户订阅",
+    collection: "collection",
+    template: "template",
+  },
+];
+assert.equal(
+  ok(await call("/api/config/preview", config)).outputs[0].available,
+  true,
+);
+const apply = ok(
+  await call("/api/config", { revision: state.revision, config }),
+);
+const result = await finished(apply.task_id);
+assert.equal(result.result.outcome, "passed");
+assert.equal(result.result.outputs, 1);
+const saved = ok(await call("/api/config"));
+assert.equal(saved.revision, saved.applied_revision);
+
+console.log(
+  "Live panel API passed: shared constraints, current schemas, account binding/export, cross-site sharing, download limits, candidate preview and durable apply.",
+);

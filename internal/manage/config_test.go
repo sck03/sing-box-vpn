@@ -7,6 +7,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	sub "github.com/sck03/sing-box-vpn/internal/subscription"
+	"go.yaml.in/yaml/v3"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -242,7 +244,22 @@ func TestHoppingAndMihomoManualGroup(t *testing.T) {
 	if _, err := PrepareVPN(context.Background(), root, core, app, "JP"); err != nil {
 		t.Fatal(err)
 	}
-	mihomo := readObject(t, filepath.Join(root, "vpngate", "clmi.yaml"))
+	settings, secrets, err := loadVPN(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes, err := collectLocalSubscriptionNodes(app, settings, secrets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, _, err := sub.Render(nodes[vpngateScope], sub.Template{ID: "gateway", Client: "mihomo", Version: 1, Mode: "config"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mihomo Object
+	if err = yaml.Unmarshal(artifact.Data, &mihomo); err != nil {
+		t.Fatal(err)
+	}
 	found := false
 	for _, group := range objects(mihomo["proxy-groups"]) {
 		if group["name"] == "VPNGate" {

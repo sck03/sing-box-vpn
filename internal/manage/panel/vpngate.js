@@ -1,9 +1,7 @@
 import { api } from "./api.js";
-import {
-  vpnProfileFields,
-  gatewayFields,
-  gatewayDefaults,
-} from "./network-fields.js";
+import { capabilities } from "./capabilities.js";
+import { showFacts, showRecords } from "./details.js";
+import { vpnProfileFields, gatewayFields } from "./network-fields.js";
 import {
   el,
   card,
@@ -17,17 +15,46 @@ import {
   badge,
 } from "./ui.js";
 export async function vpngate(ctx) {
-  const c = await ctx.config();
-  const active = c.vpn.active_country || "尚未选择";
+  const admin = ctx.session.role === "admin";
+  const c = admin ? await ctx.config() : null;
+  const metadata = await capabilities();
+  const active = c?.vpn.active_country || (admin ? "尚未选择" : "运行控制");
   const status = card(
     "VPNGate 运行状态",
     row(
       badge(active),
-      button("查询出口验证", async () =>
-        showResult("出口验证", await api("/api/gateway?resource=status")),
-      ),
+      button("查询出口验证", async () => {
+        const status = await api("/api/gateway?resource=status");
+        showFacts(
+          "出口验证",
+          [
+            ["状态", status.state],
+            ["国家", status.country],
+            ["节点", status.node],
+            ["出口 IP", status.exit?.ip],
+            ["ISP", status.exit?.isp],
+            ["ASN", status.exit?.asn],
+            ["最近更新", status.updated],
+          ],
+          status.reason,
+        );
+      }),
       button("候选节点", async () =>
-        showResult("候选节点", await api("/api/gateway?resource=nodes")),
+        showRecords(
+          "候选节点",
+          [
+            { key: "host", label: "节点" },
+            { key: "ip", label: "IP" },
+            { key: "country", label: "国家" },
+            { key: "network", label: "传输" },
+            { label: "延迟", value: (n) => n.ping + " ms" },
+            {
+              label: "报告带宽",
+              value: (n) => (n.speed / 1000000).toFixed(1) + " Mbps",
+            },
+          ],
+          await api("/api/gateway?resource=nodes"),
+        ),
       ),
     ),
     help(
@@ -44,6 +71,16 @@ export async function vpngate(ctx) {
       ),
     ),
   );
+  if (!admin)
+    return [
+      status,
+      card(
+        "配置权限",
+        help(
+          "操作员可以控制网关和查询出口；国家、入口和筛选策略由管理员配置。",
+        ),
+      ),
+    ];
   const controls = card(
     "国家与独立入口",
     button(
@@ -56,19 +93,10 @@ export async function vpngate(ctx) {
               key: "country",
               label: "国家代码",
               type: "select",
-              options: [
-                "JP",
-                "KR",
-                "US",
-                "TW",
-                "HK",
-                "SG",
-                "TH",
-                "VN",
-                "DE",
-                "GB",
-                "CA",
-              ],
+              options: Object.entries(metadata.countries).map(([id, name]) => [
+                id,
+                `${name} · ${id}`,
+              ]),
             },
           ],
           { country: active },
@@ -85,11 +113,45 @@ export async function vpngate(ctx) {
       ],
       Object.entries(c.vpn.profiles).map(([country, p]) => ({ ...p, country })),
       (p) => [
+        button("绑定证书", () =>
+          formDialog(
+            "VPNGate 证书",
+            [
+              {
+                key: "id",
+                label: "证书资产",
+                type: "select",
+                required: true,
+                options: c.certificates.map((a) => [
+                  a.id,
+                  `${a.domain} · ${a.id}`,
+                ]),
+              },
+            ],
+            {},
+            (v) => {
+              const asset = c.certificates.find((a) => a.id === v.id);
+              if (!asset) throw new Error("请先导入或申请证书。");
+              Object.assign(c.vpn.profiles[p.country], {
+                certificate: asset.certificate,
+                key: asset.key,
+                tls_sni: asset.domain,
+                vmess_tls: true,
+                self_signed: false,
+              });
+              ctx.changed();
+              ctx.render();
+            },
+          ),
+        ),
         button("编辑端口 / TLS", () =>
           formDialog(
             "VPNGate " + p.country,
-            vpnProfileFields,
-            c.vpn.profiles[p.country],
+            vpnProfileFields(metadata.protocols),
+            {
+              ...c.vpn.profiles[p.country],
+              handshake_port: c.vpn.profiles[p.country].handshake_port || 443,
+            },
             (v) => {
               c.vpn.profiles[p.country] = v;
               ctx.changed();
@@ -108,8 +170,8 @@ export async function vpngate(ctx) {
       button("编辑来源与筛选", () =>
         formDialog(
           "VPNGate 来源与策略",
-          gatewayFields,
-          { ...gatewayDefaults, ...c.gateway },
+          gatewayFields(metadata.gateway.limits),
+          { ...metadata.gateway.defaults, ...c.gateway },
           (v) => {
             c.gateway = v;
             ctx.changed();

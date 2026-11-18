@@ -37,7 +37,7 @@ func Recover(ctx context.Context, run Command, readFile func(string) ([]byte, er
 			result = errors.Join(result, err)
 			continue
 		}
-		if !bytes.HasPrefix(unit, []byte("# Managed by sing-box-vpn v4\n")) {
+		if !bytes.HasPrefix(unit, []byte(UnitOwner)) {
 			continue
 		}
 		if _, err = run(ctx, "systemctl", "reset-failed", name); err == nil {

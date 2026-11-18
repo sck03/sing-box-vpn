@@ -77,9 +77,7 @@ func TestManagedAccountIsolation(t *testing.T) {
 	delete(entries[0], "tls")
 	entries[0]["users"].([]manage.Object)[0]["flow"] = ""
 	app := manage.App{Name: "accounts", Address: "127.0.0.1", Profile: p, Inbounds: manage.MakeInbounds(p, ""), SocksPort: 40000}
-	if err = manage.CommitApp(t.Context(), root, binary, &app); err != nil {
-		t.Fatal(err)
-	}
+	publishProtocolFixture(t, root, binary, &app)
 	var exported struct {
 		Outbounds []manage.Object `json:"outbounds"`
 	}
@@ -105,7 +103,7 @@ func TestManagedAccountIsolation(t *testing.T) {
 			go func() { defer c.Close(); _, _ = io.Copy(c, c) }()
 		}
 	}()
-	for i, entry := range entries {
+	for _, entry := range entries {
 		t.Run(entry["type"].(string), func(t *testing.T) {
 			a, _ := store.Account(t.Context(), "alice")
 			a.Disabled = false
@@ -116,7 +114,7 @@ func TestManagedAccountIsolation(t *testing.T) {
 			clients := map[string]int{}
 			connections := map[string]net.Conn{}
 			for _, id := range []string{"alice", "bob"} {
-				data, _ := json.Marshal(exported.Outbounds[i])
+				data, _ := json.Marshal(protocolEntry(exported.Outbounds, entry["type"].(string)))
 				var node manage.Object
 				_ = json.Unmarshal(data, &node)
 				kind := entry["type"].(string)

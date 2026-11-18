@@ -28,13 +28,13 @@ func subscriptionPlanIdentity(root, core string) (map[string]string, error) {
 	return identity, err
 }
 
-func (s SubscriptionService) legacyPlan(ctx context.Context, command application.SubscriptionCommand, output io.Writer) error {
+func (s SubscriptionService) legacyPlan(ctx context.Context, command fixtureSubscriptionCommand, output io.Writer) error {
 	return s.plan(ctx, command, output, buildSubscriptions)
 }
 
 type subscriptionCompiler func(context.Context, string, string, sub.Config, sub.Runtime, map[string][]sub.Node) (fileBundle, sub.Snapshot, map[string]sub.Preview, error)
 
-func (s SubscriptionService) plan(ctx context.Context, command application.SubscriptionCommand, output io.Writer, compile subscriptionCompiler) error {
+func (s SubscriptionService) plan(ctx context.Context, command fixtureSubscriptionCommand, output io.Writer, compile subscriptionCompiler) error {
 	var candidate *sub.Config
 	var prepared map[string]sub.SourceCache
 	if len(command.Config) > 0 {

@@ -1,0 +1,81 @@
+{
+  "date": "2026-11-18",
+  "timezone": "Asia/Shanghai",
+  "baseline_commit": "7d2c0ac",
+  "schemas": {
+    "database": 11,
+    "platform": 4,
+    "app": 2,
+    "subscription": 2,
+    "backup_container": 7
+  },
+  "runtime": "1.14.4+sbvpn.3",
+  "local": {
+    "go_tests": "passed",
+    "go_vet": "passed",
+    "panel_dom_groups": 5,
+    "panel_api": "passed",
+    "managed_protocol_matrix": "passed",
+    "linux_targeted_go": "passed",
+    "linux_install_ownership": "passed",
+    "linux_upgrade_rollback": "passed",
+    "shellcheck": "passed",
+    "browser_visual": "blocked: Computer Use could not confidently determine the current Windows browser URL",
+    "release_build": {
+      "architectures": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "binaries": [
+        "manager",
+        "managed-core"
+      ],
+      "status": "passed"
+    }
+  },
+  "benchmark": {
+    "os": "windows",
+    "arch": "amd64",
+    "cpu": "Intel Core i5-9400F",
+    "go": "1.27.3",
+    "gomaxprocs": 4,
+    "benchtime": "1s",
+    "count": 3,
+    "take_complete_ns": [
+      149.3,
+      150.6,
+      149.4
+    ],
+    "take_complete_allocations": 0,
+    "authorization_100_ns": [
+      851509,
+      1019803,
+      1078295
+    ],
+    "authorization_100_bytes": [
+      189597,
+      189585,
+      189567
+    ],
+    "authorization_100_allocations": 2289,
+    "durable_64k_MBps": [
+      48.93,
+      48.97,
+      50.17
+    ],
+    "concurrent_reservation_MBps": [
+      117.19,
+      96.08,
+      108.22
+    ],
+    "interpretation": "Current baseline only; not end-to-end bandwidth or a controlled before/after comparison."
+  },
+  "sse": {
+    "initial_frame_bytes": 816,
+    "idle_tick_bytes": 22,
+    "scope": "Isolated no-system panel with two tasks"
+  },
+  "ci": {
+    "status": "pending_push"
+  }
+}

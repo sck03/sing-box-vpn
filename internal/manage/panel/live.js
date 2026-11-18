@@ -5,6 +5,7 @@ export function overviewStream({
   snapshot,
   unauthorized,
   disconnected,
+  heartbeat,
 }) {
   let source,
     timer,
@@ -23,6 +24,12 @@ export function overviewStream({
     const current = generation;
     const connection = new EventSource("/api/events");
     source = connection;
+    connection.addEventListener("tick", () => {
+      if (current === generation && source === connection) {
+        delay = 1000;
+        heartbeat?.();
+      }
+    });
     connection.addEventListener("overview", (event) => {
       if (current !== generation || source !== connection) return;
       try {

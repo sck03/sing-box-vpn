@@ -48,7 +48,7 @@ func TestResourceCacheSurvivesRebuildAnd304(t *testing.T) {
 		if err != nil || len(effective.RuleSets[0].Rules) != 1 {
 			t.Fatal(effective, err)
 		}
-		if _, _, _, err = compileSubscriptions(t.Context(), root, core, current, state, local, true); err != nil {
+		if _, _, _, err = compileSubscriptions(t.Context(), root, core, current, state, local, sub.Available); err != nil {
 			t.Fatal(err)
 		}
 		if !bytes.Equal(before, readBytes(t, filepath.Join(root, subscriptionsConfig))) {
@@ -104,7 +104,7 @@ func TestDisabledSubscriberBlocksCustomOutputAndExport(t *testing.T) {
 	if err := s.Accounts.SaveAccount(ctx, domain.Account{ID: "a", Name: "A", SubscriberID: "person"}); err != nil {
 		t.Fatal(err)
 	}
-	c := sub.DefaultConfig()
+	c := fixtureSubscriptionConfig()
 	c.Sources = []sub.Source{{ID: "a", Kind: "account", AccountID: "a"}}
 	c.Collections = []sub.Collection{{ID: "all", Sources: []string{"a"}}}
 	c.Outputs = []sub.Output{{ID: "custom", Collection: "all", Template: c.Templates[0].ID}}
