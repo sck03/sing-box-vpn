@@ -3,6 +3,8 @@ import { createAccountShare } from "./sharing.js";
 import { clientCatalog, clientOptions } from "./clients.js";
 import { showExport } from "./export-results.js";
 import { showRecords } from "./details.js";
+import { grants } from "./grants.js";
+import { subscribers } from "./subscribers.js";
 import {
   el,
   card,
@@ -34,12 +36,12 @@ export async function accounts(ctx) {
   const fields = (existing) => [
     { key: "id", label: "权益 ID", required: true, readonly: existing },
     { key: "name", label: "名称", required: true },
-    {
+    ...(people.length ? [{
       key: "subscriber_id",
-      label: "所属订阅者",
+      label: "用户分组（可选）",
       type: "select",
       options: [["", "独立权益"], ...people.map((p) => [p.id, p.name])],
-    },
+    }] : []),
     {
       key: "quota_bytes",
       label: "每周期额度（GiB）",
@@ -425,7 +427,7 @@ export async function accounts(ctx) {
           signal: ctx.signal,
           actionVersion: (a) => [a.id, a.revision],
           label: "搜索权益",
-          placeholder: "搜索 ID、名称或订阅者…",
+          placeholder: "搜索 ID、名称或用户分组…",
           sortOptions: [
             ["created", "创建时间"],
             ["name", "名称"],
@@ -439,5 +441,12 @@ export async function accounts(ctx) {
   ctx.updateOverview = () => {
     void list.refresh();
   };
+  if (admin) {
+    content.push(...await grants(ctx));
+    content.push(el("details", { class: "advanced" },
+      el("summary", {}, "高级：用户分组（同一用户有多份权益时使用）"),
+      ...await subscribers(ctx),
+    ));
+  }
   return content;
 }

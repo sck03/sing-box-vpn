@@ -22,7 +22,7 @@ panel() { "$MANAGER" panel --root "$SB_ROOT" --core "$CORE" --runtime "$RUNTIME"
 administrator_input() {
     local username password
     IFS= read -r -p '管理员用户名 [admin]: ' username </dev/tty
-    IFS= read -r -s -p '管理员密码（12–72 字节）: ' password </dev/tty
+    IFS= read -r -s -p '管理员密码（8–72 字节）: ' password </dev/tty
     printf '\n' >/dev/tty
     # Go reads two NUL-delimited fields; secrets stay out of argv and retain
     # quotes, backslashes, whitespace and UTF-8 without a JSON helper.
@@ -103,11 +103,11 @@ uninstall_main() {
         fi
         [[ "$answer" == yes ]] || { echo '已取消卸载。'; return 0; }
     fi
-    stop_owned_units sb-recovery.timer sb-recovery.service sb-panel.service sb-subscription.service sb-argo.service sing-box-vpngate.service yg-vpngate.service sing-box.service
+    stop_owned_units sb-recovery.timer sb-recovery.service sb-panel.service subscription.service argo.service vpngate-core.service vpngate.service sing-box.service
     "$MANAGER" cleanup --config "$SB_ROOT/vpngate/gateway.json" 2>/dev/null || true
     "$MANAGER" firewall --root "$SB_ROOT" --remove
     local service
-    for service in sb-panel sb-subscription sb-argo sing-box-vpngate yg-vpngate sing-box; do
+    for service in sb-panel subscription argo vpngate-core vpngate sing-box; do
         remove_owned_units "$service.service"
     done
     remove_owned_units sb-recovery.service sb-recovery.timer
@@ -118,8 +118,8 @@ uninstall_main() {
 }
 diagnose() {
     panel status
-    systemctl --no-pager --full status sb-panel sing-box sing-box-vpngate yg-vpngate sb-subscription sb-argo || true
-    journalctl -u sb-panel -u sing-box -u sing-box-vpngate -n 100 --no-pager
+    systemctl --no-pager --full status sb-panel sing-box vpngate-core vpngate subscription argo || true
+    journalctl -u sb-panel -u sing-box -u vpngate-core -u vpngate -n 100 --no-pager
 }
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; fi
 if (($# > 2)) || { (($# == 2)) && [[ "$1" != uninstall || "$2" != --yes ]]; }; then

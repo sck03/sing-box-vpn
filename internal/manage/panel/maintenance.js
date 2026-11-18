@@ -1,5 +1,6 @@
 import { api, download, restoreForm } from "./api.js";
 import { tasksCard } from "./tasks.js";
+import { capabilities } from "./capabilities.js";
 import {
   el,
   card,
@@ -12,20 +13,14 @@ import {
 } from "./ui.js";
 export async function maintenance(ctx) {
   const data = await (ctx.request || api)("/api/overview");
+  const metadata = await capabilities(ctx.request || api);
   const tasks = tasksCard(data.tasks, ctx);
   ctx.updateOverview = (next) =>
     tasks.querySelector(".data-table").updateItems(next.tasks);
   const logs = card(
     "运行日志",
     row(
-      ...[
-        "sing-box",
-        "sing-box-vpngate",
-        "yg-vpngate",
-        "sb-argo",
-        "sb-panel",
-        "sb-subscription",
-      ].map((service) =>
+      ...[...(metadata.services || []).map((service) => service.name), "sb-panel"].map((service) =>
         button(service, async () =>
           showResult(service, (await api("/api/logs?service=" + service)).log),
         ),

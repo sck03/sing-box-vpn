@@ -69,6 +69,9 @@ func platformError(w http.ResponseWriter, err error) {
 }
 
 func (s *PlatformService) Handler(options PanelOptions) http.Handler {
+	s.panelMu.Lock()
+	s.activePanel = &options
+	s.panelMu.Unlock()
 	base, _ := url.Parse(options.PublicURL)
 	secure := base != nil && base.Scheme == "https"
 	cookieName := "sbvpn"
@@ -195,6 +198,9 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 		}
 		ctx := r.Context()
 		access := panelAccess{actor: session.ID, publicURL: options.PublicURL, admin: admin, operator: operator, require: require, audit: audit}
+		if s.servePanelSettings(w, r, access, options) {
+			return
+		}
 		if s.serveAccounts(w, r, access) || s.serveGrants(w, r, access) || s.serveConfiguration(w, r, access) || s.serveTasks(w, r, access) {
 			return
 		}
@@ -246,21 +252,8 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 }
 
 func (s *PlatformService) Serve(ctx context.Context, options PanelOptions, out io.Writer) error {
-	host, _, err := net.SplitHostPort(options.Listen)
-	if err != nil {
+	if err := options.Validate(); err != nil {
 		return err
-	}
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return errors.New("panel listen address must be an IP")
-	}
-	if options.Certificate == "" && len(options.TrustedProxy) == 0 && !ip.IsLoopback() {
-		return errors.New("public panel requires TLS or an explicitly trusted TLS reverse proxy")
-	}
-	for _, cidr := range options.TrustedProxy {
-		if _, err = netip.ParsePrefix(cidr); err != nil {
-			return err
-		}
 	}
 	listener, err := net.Listen("tcp", options.Listen)
 	if err != nil {
@@ -281,11 +274,10 @@ func (s *PlatformService) Serve(ctx context.Context, options PanelOptions, out i
 		return errors.New("TLS panel public URL must use https")
 	}
 	if options.Certificate != "" {
-		pair, e := tls.LoadX509KeyPair(options.Certificate, options.Key)
-		if e != nil {
-			return e
-		}
-		listener = tls.NewListener(listener, &tls.Config{Certificates: []tls.Certificate{pair}, MinVersion: tls.VersionTLS12})
+		listener = tls.NewListener(listener, &tls.Config{MinVersion: tls.VersionTLS12, GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+			pair, err := tls.LoadX509KeyPair(options.Certificate, options.Key)
+			return &pair, err
+		}})
 	}
 	child, cancel := context.WithCancel(ctx)
 	defer cancel()

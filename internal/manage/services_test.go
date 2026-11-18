@@ -32,11 +32,11 @@ func serviceScript(t *testing.T, directory, root, manager, script string) {
 func TestServiceRecoveryIncludesExistingArgoAndPreservesOtherOverrides(t *testing.T) {
 	directory, root := t.TempDir(), t.TempDir()
 	legacy := "[Service]\nExecStart=/bin/true\nEnvironmentFile=/etc/s-box/argo.env\n"
-	if err := os.WriteFile(filepath.Join(directory, "sb-argo.service"), []byte(legacy), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(directory, "argo.service"), []byte(legacy), 0644); err != nil {
 		t.Fatal(err)
 	}
-	serviceScript(t, directory, root, "/bin/true", "write_service_recovery \"$SB_ROOT\" sb-argo missing-service")
-	services := []string{"sb-argo"}
+	serviceScript(t, directory, root, "/bin/true", "write_service_recovery \"$SB_ROOT\" argo missing-service")
+	services := []string{"argo"}
 	for _, service := range services {
 		path := filepath.Join(directory, service+".service.d", "10-sb-vpn-recovery.conf")
 		data := string(readBytes(t, path))
@@ -46,17 +46,17 @@ func TestServiceRecoveryIncludesExistingArgoAndPreservesOtherOverrides(t *testin
 			}
 		}
 	}
-	if string(readBytes(t, filepath.Join(directory, "sb-argo.service"))) != legacy {
+	if string(readBytes(t, filepath.Join(directory, "argo.service"))) != legacy {
 		t.Fatal("recovery upgrade replaced the configured Argo command or token path")
 	}
 	if _, err := os.Stat(filepath.Join(directory, "missing-service.service.d")); !os.IsNotExist(err) {
 		t.Fatal("recovery created an uninstalled service", err)
 	}
-	custom := filepath.Join(directory, "sb-argo.service.d", "90-user.conf")
+	custom := filepath.Join(directory, "argo.service.d", "90-user.conf")
 	if err := os.WriteFile(custom, []byte("user settings"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	serviceScript(t, directory, root, "/bin/true", "remove_service_recovery sing-box sb-subscription yg-vpngate sing-box-vpngate sb-argo")
+	serviceScript(t, directory, root, "/bin/true", "remove_service_recovery sing-box subscription vpngate vpngate-core argo")
 	if string(readBytes(t, custom)) != "user settings" {
 		t.Fatal("cleanup removed user service overrides")
 	}

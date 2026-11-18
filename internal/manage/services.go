@@ -19,7 +19,7 @@ type systemServices struct{}
 
 func (systemServices) active(ctx context.Context) ([]string, error) {
 	var active []string
-	for _, name := range []string{"sing-box", "sing-box-vpngate"} {
+	for _, name := range []string{"sing-box", "vpngate-core"} {
 		child, cancel := context.WithTimeout(ctx, 10*time.Second)
 		output, err := command.Output(child, nil, "systemctl", "is-active", "--quiet", name)
 		contextErr := child.Err()

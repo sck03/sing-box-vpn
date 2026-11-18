@@ -298,7 +298,7 @@ type failedRecoveryServices struct {
 }
 
 func (s *failedRecoveryServices) active(context.Context) ([]string, error) {
-	return []string{"sing-box", "sing-box-vpngate"}, nil
+	return []string{"sing-box", "vpngate-core"}, nil
 }
 
 func (s *failedRecoveryServices) restart(ctx context.Context, name string) error {
@@ -325,7 +325,7 @@ func TestCoreRollbackReportsServiceRecoveryFailure(t *testing.T) {
 	if !errors.Is(err, recoveryErr) {
 		t.Fatal("service recovery failure was hidden", err)
 	}
-	if string(readBytes(t, filepath.Join(root, "sing-box"))) != "old" || !reflect.DeepEqual(services.calls, []string{"sing-box", "sing-box", "sing-box-vpngate"}) {
+	if string(readBytes(t, filepath.Join(root, "sing-box"))) != "old" || !reflect.DeepEqual(services.calls, []string{"sing-box", "sing-box", "vpngate-core"}) {
 		t.Fatal("rollback did not restore the original core or try both services", services.calls)
 	}
 }

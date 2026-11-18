@@ -126,7 +126,7 @@ func TestCertificateGarbageCollectionProtectsReferencesAndGrace(t *testing.T) {
 	root, core, _ := appFixture(t)
 	s, c, _ := platformFixture(t, root, core)
 	now := time.Now()
-	for _, name := range []string{"keep", "old", "draft", "unowned"} {
+	for _, name := range []string{"keep", "panel", "old", "draft", "unowned"} {
 		dir := filepath.Join(root, "certificates", name)
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			t.Fatal(err)
@@ -143,13 +143,16 @@ func TestCertificateGarbageCollectionProtectsReferencesAndGrace(t *testing.T) {
 		}
 	}
 	c.Certificates = append(c.Certificates, CertificateAsset{ID: "keep", Certificate: filepath.Join(root, "certificates/keep/cert.pem"), Key: filepath.Join(root, "certificates/keep/key.pem")})
+	if err := AtomicJSON(filepath.Join(root, "panel.json"), PanelOptions{Listen: "127.0.0.1:2096", Certificate: filepath.Join(root, "certificates/panel/cert.pem"), Key: filepath.Join(root, "certificates/panel/key.pem")}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.Store.Queue(t.Context(), "apply", "test", []byte(`{}`), 1, mustJSON(t, c)); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.pruneCertificates(t.Context(), now); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"keep", "draft", "unowned"} {
+	for _, name := range []string{"keep", "panel", "draft", "unowned"} {
 		if _, err := os.Stat(filepath.Join(root, "certificates", name)); err != nil {
 			t.Fatal(name, err)
 		}

@@ -17,7 +17,7 @@ var tunnelDomainPattern = regexp.MustCompile(`https://([a-z0-9-]+\.trycloudflare
 // ObserveTunnel retains a confirmed hostname for exactly one running instance.
 // Once captured, journal rotation cannot invalidate it and no log scan is needed.
 func ObserveTunnel(ctx context.Context, run Command, previous Tunnel) (Tunnel, error) {
-	data, err := run(ctx, "systemctl", "show", "sb-argo", "--property=InvocationID,ActiveState")
+	data, err := run(ctx, "systemctl", "show", "argo", "--property=InvocationID,ActiveState")
 	if err != nil {
 		return previous, err
 	}

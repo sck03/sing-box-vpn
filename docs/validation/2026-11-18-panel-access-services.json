@@ -1,0 +1,45 @@
+{
+  "date": "2026-11-18",
+  "base_commit": "2a29d585df2b0e589851e4760c514e7ac6198e0d",
+  "scope": "Navigation, account sharing, public HTTPS access, administrator password and current service names",
+  "data_formats": {"database": 11, "platform": 4, "nodes": 2, "subscriptions": 2, "backup": 7},
+  "service_names": ["sing-box", "vpngate-core", "vpngate", "subscription", "argo"],
+  "checks": {
+    "windows_go_test_all": "passed",
+    "windows_go_vet_all": "passed",
+    "changed_go_formatting": "passed",
+    "panel_dom_reliability_quality_workflows_contracts": "passed",
+    "shellcheck_warning": "passed",
+    "linux_program_upgrade_and_deferred_restart": "passed",
+    "linux_install_ownership_and_uninstall": "passed",
+    "linux_installer": "passed",
+    "linux_panel_tls_proxy_validation": "passed",
+    "linux_panel_preview_save_conflict_permissions": "passed",
+    "linux_reject_loopback_before_token_creation": "passed",
+    "linux_service_catalog_names_and_workspaces": "passed",
+    "linux_certificate_gc_reference_protection": "passed",
+    "linux_real_systemd_startup_recovery": "passed",
+    "linux_system_service_state_queries": "passed"
+  },
+  "linux_commands": [
+    "bash scripts/test-program-upgrade.sh",
+    "bash scripts/test-install-ownership.sh",
+    "bash scripts/test-installer.sh",
+    "RUN_SERVICE_TESTS=1 SING_BOX_BINARY=<verified 1.14.4> GATEWAY_BINARY=<current Linux manager> ./manage.test -test.v -test.timeout=5m -test.run='TestPanelAccessSettingsValidation|TestPanelSettingsPreviewSaveConflictAndPermissions|TestShareRejectsLoopbackBeforeCreatingGrant|TestServiceCatalogNamesAndWorkspaces|TestCertificateGarbageCollectionProtectsReferencesAndGrace|TestLinuxServiceStartupRecovery|TestSystemServices'"
+  ],
+  "environment": {
+    "windows": "amd64, Go 1.27.3, Node 24.18.0, sing-box 1.14.4, Mihomo 1.19.33",
+    "linux": "dedicated Ubuntu amd64 VM, QEMU TCG, 2 vCPU and 2 GiB"
+  },
+  "cleanup": {
+    "automatic_recursive_delete": "automatic approval review rejected: blocked by policy",
+    "fallback": "Disposable caches, build products and node_modules moved under the existing .cleanup-manual folder for manual deletion",
+    "retained": "Source, meaningful tests, documentation, license notices and reusable toolchain/VM images"
+  },
+  "limits": [
+    "No production VPS deployment or real public ACME issuance performed",
+    "Linux arm64 runtime and Windows race were not exercised in this change",
+    "GitHub CI result must be checked for the pushed commit; local checks do not substitute for it",
+    "Pushing main does not replace an existing GitHub Release installation package"
+  ]
+}

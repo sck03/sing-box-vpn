@@ -239,7 +239,7 @@ func certificateUses(c PlatformConfig, path, service string) bool {
 			}
 		}
 	}
-	if service == "sing-box-vpngate" {
+	if service == "vpngate-core" {
 		p := c.VPN.Profiles[c.VPN.ActiveCountry]
 		return p.Certificate == path
 	}

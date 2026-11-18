@@ -30,8 +30,11 @@ assert.doesNotThrow(() =>
   validatePassword("一二三四五六", capabilitiesFixture.password_bytes),
 );
 assert.throws(() =>
-  validatePassword("一二三", capabilitiesFixture.password_bytes),
+  validatePassword("一二", capabilitiesFixture.password_bytes),
 );
+assert.doesNotThrow(() => validatePassword("12345678", capabilitiesFixture.password_bytes));
+assert.throws(() => validatePassword("1234567", capabilitiesFixture.password_bytes));
+assert.doesNotThrow(() => validatePassword("一二三", capabilitiesFixture.password_bytes));
 assert.throws(() =>
   validatePassword("a".repeat(73), capabilitiesFixture.password_bytes),
 );
@@ -166,4 +169,50 @@ assert(activity.textContent.includes("最后成功"));
 console.log(
   "Panel contract checks passed: UTF-8 passwords, shared gateway limits, protocol fields, workspace state, mobile sorting, usage focus, operator controls.",
 );
+const { navigation, markNavigation } = await import("../internal/manage/panel/navigation.js");
+const nav = document.createElement("nav");
+nav.append(...navigation([["工作台", ["overview"]], ["系统管理", ["access"]]],
+  [["overview", "概览"], ["access", "公网访问"]], (id, role) => role === "admin" || id === "overview",
+  "admin", () => {}, "overview"));
+document.body.append(nav);
+const groups = nav.querySelectorAll("details");
+groups[1].querySelector("summary").click();
+await tick();
+assert.equal(groups[1].open, false);
+assert.equal(window.localStorage.getItem("sbvpn-navigation:系统管理"), "closed");
+markNavigation(nav, "access", true);
+assert.equal(groups[1].open, true);
+assert.equal(nav.querySelector('[data-page="access"]').getAttribute("aria-current"), "page");
+assert.equal(navigation([["系统管理", ["access"]]], [["access", "公网访问"]], () => false, "viewer", () => {}, "overview").length, 0);
+
+const { access } = await import("../internal/manage/panel/access.js");
+const accessCalls = [];
+const initial = { listen: "127.0.0.1:2096", public_url: "", certificate: "", key: "", trusted_proxy: [] };
+globalThis.fetch = async (path, options) => {
+  const body = options.body && JSON.parse(options.body);
+  accessCalls.push({ path, body });
+  return { ok: true, json: async () => path.endsWith("preview") ? { options: body.options } : { ok: true } };
+};
+const accessPage = await access({
+  request: async () => ({ options: initial, active: { ...initial, public_url: "http://localhost:2096" }, revision: "version" }),
+  config: async () => ({ certificates: [], listener: { enabled: false, listen: "127.0.0.1", port: 2097 } }),
+  render() {},
+});
+document.querySelector("#content").replaceChildren(...accessPage);
+accessPage[0].querySelector("button").click();
+const mode = document.querySelector('[aria-label="访问方式"]');
+mode.value = "tls"; mode.dispatchEvent(new Event("change", { bubbles: true }));
+assert.equal(document.querySelector('[aria-label="监听地址"]').value, "0.0.0.0:2096");
+mode.value = "proxy"; mode.dispatchEvent(new Event("change", { bubbles: true }));
+assert.equal(document.querySelector('[aria-label="监听地址"]').value, "127.0.0.1:2096");
+document.querySelector('[aria-label="面板公网 URL"]').value = "https://panel.example.com";
+document.querySelector("dialog form").dispatchEvent(new Event("submit", { cancelable: true }));
+await tick();
+assert.equal(accessCalls.length, 1, "preview must precede settings save");
+assert.deepEqual(accessCalls[0].body.options.trusted_proxy, ["127.0.0.1/32"]);
+[...document.querySelectorAll("dialog button")].find((b) => b.textContent === "保存配置").click();
+await tick();
+assert.equal(accessCalls[1].body.revision, "version");
+assert.equal(accessCalls[1].body.options.public_url, "https://panel.example.com");
+assert.match(document.querySelector("dialog").textContent, /systemctl restart sb-panel/);
 dom.window.close();

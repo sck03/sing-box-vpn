@@ -2,6 +2,10 @@
 
 当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流五组。数据库使用 schema 11，所有旧数据库及其备份明确拒绝。
 
+当前新增公网设置和服务登记回归：`go test ./internal/manage -run 'TestPanelAccess|TestPanelSettings|TestShareRejects|TestServiceCatalog|TestCertificateGarbage'`；管理员最低 8/最高 72 UTF-8 字节，`TestEightBytePasswordBoundary` 覆盖创建、登录、修改和重置。前端契约回归包含导航折叠记忆、当前分组展开、公网访问方式切换和先预览后保存；分享回归确认随机 ID 与默认继承权益策略。
+
+`GET /api/panel/settings` 返回 `{options,active,revision,restart_required}`；`POST /api/panel/settings/preview` 接受 `{options}` 并只校验；`POST /api/panel/settings` 接受 `{options,revision}`，旧 revision 返回 409。全部要求管理员会话，写入要求 CSRF；不保存未校验配置。救援 CLI `panel configure` 从 stdin 接受相同 PanelOptions。`/api/capabilities.services` 统一登记服务及工作区；服务动作只接受 `sing-box/vpngate-core/vpngate/subscription/argo`，没有旧名称别名。
+
 本轮新增 `internal/database/database_test.go` 的连接替换/超时外键回归，以及 `platform_contracts_test.go` 的共享参数、公开分享、候选校验、WARP、缓存持久化与取消结果测试。前端第五组 `scripts/test-panel-contracts.mjs` 覆盖 UTF-8 密码、网关范围、协议字段、移动排序与操作员网关控制。
 
 `POST /api/country` 请求为 `{country,config}`，config 是完整当前草稿；返回候选配置，不修改数据库。前端拒绝用迟到结果覆盖重载或继续编辑后的草稿。可信反代必须追加真实客户端地址到 X-Forwarded-For，并设置 X-Forwarded-Proto=https。

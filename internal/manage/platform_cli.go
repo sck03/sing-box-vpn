@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sck03/sing-box-vpn/internal/adminauth"
 	strict "github.com/sck03/sing-box-vpn/internal/encoding"
 )
 
@@ -33,7 +34,7 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 		return err
 	}
 	if len(f.Args()) != 1 {
-		return errors.New("panel requires init, serve, reset-admin, status, command, apply, recover or restore")
+		return errors.New("panel requires init, serve, configure, reset-admin, status, command, apply, recover or restore")
 	}
 	if *core == "" {
 		*core = filepath.Join(*root, "sing-box")
@@ -87,8 +88,8 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 		if err != nil {
 			return err
 		}
-		if len(v.Password) < 12 || len(v.Password) > 72 {
-			return errors.New("administrator password must contain 12–72 bytes")
+		if len(v.Password) < adminauth.MinPasswordBytes || len(v.Password) > adminauth.MaxPasswordBytes {
+			return errors.New("administrator password must contain 8–72 bytes")
 		}
 		if v.Username == "" {
 			v.Username = "admin"
@@ -111,6 +112,23 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 			return err
 		}
 		return s.Auth.Bootstrap(ctx, v.Username, v.Password, true)
+	case "configure":
+		var options PanelOptions
+		if err := decode(&options); err != nil {
+			return err
+		}
+		if err := options.Validate(); err != nil {
+			return err
+		}
+		if err := s.validatePanelListener(ctx, options); err != nil {
+			return err
+		}
+		return withStartupLock(ctx, s.Root, func() error {
+			if err := s.validatePanelListener(ctx, options); err != nil {
+				return err
+			}
+			return AtomicJSON(filepath.Join(s.Root, "panel.json"), options)
+		})
 	case "serve":
 		options := PanelOptions{Listen: "127.0.0.1:2096"}
 		if _, err = ReadJSON(filepath.Join(*root, "panel.json"), &options); err != nil {

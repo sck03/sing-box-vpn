@@ -174,6 +174,19 @@ func usedPortRanges(app App, settings VPNSettings) ([]portRange, error) {
 
 func allocationPorts(root string, app App, settings VPNSettings) (map[int]bool, []portRange, error) {
 	used := usedPorts(app, settings)
+	panel := PanelOptions{Listen: "127.0.0.1:2096"}
+	if _, err := ReadJSON(filepath.Join(root, "panel.json"), &panel); err != nil {
+		return nil, nil, err
+	}
+	_, panelPort, err := net.SplitHostPort(panel.Listen)
+	if err != nil {
+		return nil, nil, err
+	}
+	port, err := strconv.Atoi(panelPort)
+	if err != nil {
+		return nil, nil, err
+	}
+	used[port] = true
 	ranges, err := usedPortRanges(app, settings)
 	if err != nil {
 		return nil, nil, err

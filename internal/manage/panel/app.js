@@ -3,6 +3,7 @@ import { overviewStream } from "./live.js";
 import { pageContext } from "./lifecycle.js";
 import { capabilities, validatePassword } from "./capabilities.js";
 import { showConfiguration } from "./config-preview.js";
+import { navigation, markNavigation } from "./navigation.js";
 import { $, el, card, help, notice, action, button, showResult } from "./ui.js";
 const lazy = (module, name) => async (context) =>
   (await import(module))[name](context);
@@ -12,8 +13,7 @@ const routing = lazy("./routing.js", "routing");
 const outbounds = lazy("./outbounds.js", "outbounds");
 const vpngate = lazy("./vpngate.js", "vpngate");
 const accounts = lazy("./accounts.js", "accounts");
-const subscribers = lazy("./subscribers.js", "subscribers");
-const grants = lazy("./grants.js", "grants");
+const access = lazy("./access.js", "access");
 const subscriptions = lazy("./subscriptions.js", "subscriptions");
 const overview = lazy("./overview.js", "overview");
 const maintenance = lazy("./maintenance.js", "maintenance");
@@ -22,8 +22,7 @@ const pages = [
   ["overview", "运行概览", overview],
   ["inbounds", "入站与发布", inbounds],
   ["accounts", "权益与用量", accounts],
-  ["subscribers", "订阅者", subscribers],
-  ["grants", "下载授权", grants],
+  ["access", "公网访问", access],
   ["subscriptions", "订阅与分发", subscriptions],
   ["routing", "路由与 DNS", routing],
   ["outbounds", "出站与隧道", outbounds],
@@ -34,16 +33,15 @@ const pages = [
 ];
 const navigationGroups = [
   ["工作台", ["overview"]],
-  ["用户与订阅", ["subscribers", "accounts", "grants", "subscriptions"]],
+  ["用户与订阅", ["accounts", "subscriptions"]],
   ["网络与节点", ["inbounds", "routing", "outbounds", "vpngate"]],
-  ["系统管理", ["certificates", "maintenance", "admins"]],
+  ["系统管理", ["access", "certificates", "maintenance", "admins"]],
 ];
 const descriptions = {
   overview: "查看服务健康、配置同步与最近任务。",
   inbounds: "配置用户连接的入口和对外发布地址。",
   accounts: "管理额度、有效期与节点授权。",
-  subscribers: "将同一用户的多份权益集中管理。",
-  grants: "管理分享链接的有效期、下载次数与撤销状态。",
+  access: "配置 HTTPS 面板入口与对外订阅地址。",
   subscriptions: "组合节点来源，生成客户端配置并自动分发。",
   routing: "设置流量去向与域名解析规则。",
   outbounds: "管理外部代理、网络检测与隧道。",
@@ -54,7 +52,7 @@ const descriptions = {
 };
 const canView = (id, role) =>
   role === "admin" ||
-  ["overview", "accounts", "subscribers"].includes(id) ||
+  ["overview", "accounts"].includes(id) ||
   (role === "operator" && ["maintenance", "vpngate"].includes(id));
 const setMenu = (open) => {
   $("#shell").classList.toggle("nav-open", open);
@@ -65,6 +63,7 @@ $("#menu-toggle").addEventListener("click", () =>
   setMenu(!$("#shell").classList.contains("nav-open")),
 );
 let page = "overview",
+  navigationPage = "",
   draft = null,
   original = null,
   revision = 0,
@@ -165,11 +164,8 @@ async function renderPage() {
   $("#page-title").textContent = definition[1];
   $("#page-description").textContent = descriptions[definition[0]];
   document.title = definition[1] + " · sing-box-vpn";
-  for (const item of $("#navigation").querySelectorAll("button"))
-    item.setAttribute(
-      "aria-current",
-      item.dataset.page === page ? "page" : "false",
-    );
+  markNavigation($("#navigation"), page, navigationPage !== page);
+  navigationPage = page;
   try {
     $("#content").setAttribute("aria-busy", "true");
     // Each render owns its callback; a late render cannot replace the live one.
@@ -236,34 +232,17 @@ async function connected(session) {
   $("#login").hidden = true;
   $("#shell").hidden = false;
   $("#identity").textContent = session.id + " · " + session.role;
-  $("#navigation").replaceChildren(
-    ...navigationGroups
-      .map(([title, ids]) => {
-        const visible = ids
-          .map((id) => pages.find((p) => p[0] === id))
-          .filter((p) => canView(p[0], session.role));
-        if (!visible.length) return null;
-        return el(
-          "section",
-          { class: "nav-group", "aria-label": title },
-          el("span", { class: "nav-label" }, title),
-          ...visible.map(([id, label]) => {
-            const b = button(label, () => {
-              page = id;
-              location.hash = id;
-              setMenu(false);
-              renderPage();
-            });
-            b.dataset.page = id;
-            return b;
-          }),
-        );
-      })
-      .filter(Boolean),
-  );
   page = location.hash.slice(1) || "overview";
   if (!pages.some((p) => p[0] === page) || !canView(page, session.role))
     page = "overview";
+  $("#navigation").replaceChildren(...navigation(
+    navigationGroups, pages, canView, session.role, (id) => {
+      page = id;
+      location.hash = id;
+      setMenu(false);
+      renderPage();
+    }, page,
+  ));
   await renderPage();
 }
 $("#login-form").addEventListener(
@@ -366,7 +345,7 @@ document.addEventListener("visibilitychange", () => {
   schedule();
 });
 window.addEventListener("hashchange", () => {
-  const next = location.hash.slice(1);
+  let next = location.hash.slice(1);
   if (next && next !== page) {
     page =
       ctx.session &&

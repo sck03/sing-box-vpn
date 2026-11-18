@@ -13,5 +13,6 @@ func panelCapabilities() Object {
 		"password_bytes":  gatewayconfig.Range{Min: adminauth.MinPasswordBytes, Max: adminauth.MaxPasswordBytes},
 		"gateway":         Object{"defaults": gatewayconfig.Default(), "limits": gatewayconfig.Limits},
 		"service_actions": []string{"start", "stop", "restart", "enable", "disable"},
+		"services":        serviceDefinitions,
 	}
 }

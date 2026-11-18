@@ -19,7 +19,7 @@ upgrade_program() (
     [[ "$SCRIPT_ROOT" != "$APP_HOME" && -x "$SCRIPT_ROOT/.bin/linux-$arch/yg-vpngate" && -x "$SCRIPT_ROOT/.bin/linux-$arch/managed-core" ]] || {
         echo '升级需要解压后的完整发行包' >&2; return 1;
     }
-    for unit in yg-vpngate sing-box sing-box-vpngate sb-subscription sb-argo sb-panel; do
+    for unit in vpngate sing-box vpngate-core subscription argo sb-panel; do
         state=$(systemctl show "$unit" --property=ActiveState --value)
         case "$state" in active) running+=("$unit");; inactive|failed) ;; *) echo "$unit 正在切换状态" >&2; return 1;; esac
     done
@@ -72,9 +72,9 @@ upgrade_program() (
         systemctl restart "$unit"
         systemctl is-active --quiet "$unit"
         case "$unit" in
-            sing-box|sing-box-vpngate)
+            sing-box|vpngate-core)
                 local instance=normal
-                [[ "$unit" != sing-box-vpngate ]] || instance=vpngate
+                [[ "$unit" != vpngate-core ]] || instance=vpngate
                 printf '{"instance":"%s","started":%s}\n' "$instance" "$started" | "$MANAGER" panel --root "$SB_ROOT" wait-runtime
                 ;;
         esac

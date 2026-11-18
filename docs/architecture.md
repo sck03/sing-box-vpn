@@ -18,6 +18,8 @@
 | internal/accounting | 权益激活、日历账期、凭据代次、预留/检查点、下载计数 |
 | internal/controlstore | desired/applied revision、持久任务、运行心跳、观测状态 |
 | internal/manage/platform_* | 应用编排、配置图校验、备份、证书、主机服务、HTTP/CLI |
+| internal/manage/platform_services | 统一服务登记：systemd 名称、职责、对应工作区、受管核心实例；供状态、能力目录和恢复共用 |
+| internal/manage/platform_panel_settings | 启动访问配置的验证、预览、并发版本核对和原子保存；不参与权益计量 |
 | internal/manage/platform_compile | 候选准备、运行恢复编译、完整草稿预览及输出诊断 |
 | internal/manage/platform_acme | 内置 lego 客户端、HTTP-01 验证、账户与签发结果持久化；复用平台任务调度与证书发布 |
 | internal/manage/certificate_material | 独立的 PEM 匹配、域名验证与有效期检查；已解析材料供状态、续期和导入复用，无共享过期缓存 |
@@ -32,6 +34,10 @@
 | internal/httpserver | HTTP 生命周期、连接上限、独立请求并发准入，不依赖业务或数据库 |
 
 面板、普通核心、VPNGate 核心、VPNGate 网关和可选下载/Argo 服务分进程运行。一个权益不创建一个进程或端口。普通与 VPNGate 同库共享额度池，网关后端不重复计费。
+
+服务名为 `sing-box`（普通核心）、`vpngate-core`（VPNGate 用户核心）、`vpngate`（隧道网关）、`subscription`（下载）、`argo`（Cloudflare 隧道）；不注册旧名称别名。`vpngate-core` 依赖 `vpngate.service`，受管核心实例 ID 仍为业务范围 `normal` / `vpngate`，实例身份与系统服务名分离。前端日志入口消费能力目录，概览消费服务 DTO 的职责和工作区，不另维护一份服务名称清单。
+
+`panel.json` 是面板监听、TLS 和可信代理的启动配置，独立于数据库中的节点/权益配置。管理员通过 `/api/panel/settings/preview` 校验，通过 `/api/panel/settings` 的版本核对保存；变更需明确重启面板才生效。节点配置与面板设置相互核查端口，证书引用纳入材料回收保护。分享地址只读取已应用下载配置与当前生效面板源站；不可分享的回环地址在创建下载令牌前拒绝。
 
 数据库连接级 PRAGMA 通过 SQLite DSN 设置，每条新连接均启用外键、WAL/FULL、5 秒 busy timeout 和 trusted_schema=OFF。取消导致驱动淘汰物理连接后仍保持同一策略。节点文档移除 `app.warp`，WireGuard 只从 `advanced.endpoints` 读取；旧节点和订阅文档格式直接拒绝。
 

@@ -18,7 +18,7 @@ type restoreServices interface {
 }
 type systemRestoreServices struct{ root string }
 
-var restoreUnits = []string{"sing-box", "yg-vpngate", "sing-box-vpngate", "sb-subscription"}
+var restoreUnits = []string{"sing-box", "vpngate", "vpngate-core", "subscription"}
 
 func (s systemRestoreServices) states(ctx context.Context) (map[string]unitState, error) {
 	states := map[string]unitState{}
@@ -121,13 +121,13 @@ func applySubscriptionRestore(ctx context.Context, root string, files fileBundle
 	for unit, state := range states {
 		desired[unit] = state
 	}
-	desired["sb-subscription"] = unitState{}
+	desired["subscription"] = unitState{}
 	var gateway struct {
 		Enabled bool `json:"enabled"`
 	}
 	_ = json.Unmarshal(files["vpngate/gateway.json"], &gateway)
 	if !gateway.Enabled || files["vpngate/server.json"] == nil {
-		desired["yg-vpngate"], desired["sing-box-vpngate"] = unitState{}, unitState{}
+		desired["vpngate"], desired["vpngate-core"] = unitState{}, unitState{}
 	}
 	if err := services.apply(ctx, desired, states); err != nil {
 		return rollback(err, true)

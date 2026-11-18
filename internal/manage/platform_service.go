@@ -37,6 +37,8 @@ type PlatformService struct {
 	statusVersion       uint64
 	statusLoading       chan struct{}
 	backupBusy          atomic.Bool
+	panelMu             sync.RWMutex
+	activePanel         *PanelOptions
 }
 type PlatformAction struct {
 	Operation    string                          `json:"operation"`
@@ -134,6 +136,9 @@ func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revi
 	if err := c.Validate(); err != nil {
 		return 0, err
 	}
+	if err := s.validateConfiguredPanelPort(c); err != nil {
+		return 0, err
+	}
 	state, err := s.Store.State(ctx)
 	if err != nil {
 		return 0, err
@@ -176,7 +181,14 @@ func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revi
 		return 0, err
 	}
 	input, _ := json.Marshal(applyInput{Revision: revision + 1, Active: active, Enabled: enabled, Sources: prepared})
-	id, err := s.Store.Queue(ctx, "apply", actor, input, revision, data)
+	var id int64
+	err = withStartupLock(ctx, s.Root, func() error {
+		if err := s.validateConfiguredPanelPort(c); err != nil {
+			return err
+		}
+		id, err = s.Store.Queue(ctx, "apply", actor, input, revision, data)
+		return err
+	})
 	if err == nil {
 		s.signal()
 	}
@@ -215,6 +227,9 @@ func (s *PlatformService) Queue(ctx context.Context, a PlatformAction, actor str
 	}
 	if !slices.Contains([]string{"service", "gateway", "account", "subscription", "certificate-renew", "bbr", "program-upgrade", "runtime-rollback", "outbound-probe"}, a.Operation) {
 		return 0, errors.New("unknown platform action")
+	}
+	if a.Operation == "service" && (!slices.Contains(platformServices, a.Service) || !slices.Contains([]string{"start", "stop", "restart", "enable", "disable"}, a.Value)) {
+		return 0, errors.New("unsupported service action")
 	}
 	if a.Operation == "account" && !slices.Contains([]string{"bind", "rotate", "unbind"}, a.Account.Operation) {
 		return 0, errors.New("account task must bind, unbind or rotate credentials")

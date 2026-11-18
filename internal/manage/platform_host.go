@@ -20,11 +20,11 @@ import (
 	"time"
 )
 
-var platformServices = []string{"sing-box", "sing-box-vpngate", "yg-vpngate", "sb-subscription", "sb-argo"}
-
 func scopeService(scope string) string {
-	if scope == "vpngate" {
-		return "sing-box-vpngate"
+	for _, service := range serviceDefinitions {
+		if service.Runtime == scope {
+			return service.Name
+		}
 	}
 	return "sing-box"
 }
@@ -58,11 +58,7 @@ func (s *PlatformService) service(ctx context.Context, name, action string) erro
 	_, err := command.Output(ctx, nil, "systemctl", action, name)
 	if err == nil && (action == "start" || action == "restart") {
 		_, err = command.Output(ctx, nil, "systemctl", "is-active", "--quiet", name)
-		if err == nil && (name == "sing-box" || name == "sing-box-vpngate") {
-			instance := "normal"
-			if name == "sing-box-vpngate" {
-				instance = "vpngate"
-			}
+		if instance := serviceDetails(name).Runtime; err == nil && instance != "" {
 			err = s.awaitRuntime(ctx, instance, started)
 		}
 	}
@@ -87,7 +83,8 @@ func (s *PlatformService) ServiceStatus(ctx context.Context) ([]Object, error) {
 	}
 	result := []Object{}
 	for _, name := range platformServices {
-		v := Object{"name": name}
+		definition := serviceDetails(name)
+		v := Object{"name": name, "label": definition.Label, "description": definition.Description, "page": definition.Page}
 		if s.NoSystem {
 			v["state"] = "unavailable"
 		} else if state, ok := states[name]; ok {
@@ -159,31 +156,31 @@ func deploymentPlan(c, old PlatformConfig, active []string) []serviceChange {
 	oldServer, _ := serverForApp(old.App)
 	vpnChanged := !reflect.DeepEqual(c.VPN, old.VPN) || !reflect.DeepEqual(c.VPNSecrets, old.VPNSecrets)
 	changed := map[string]bool{
-		"sing-box":         !reflect.DeepEqual(currentServer, oldServer),
-		"yg-vpngate":       !reflect.DeepEqual(c.Gateway, old.Gateway),
-		"sing-box-vpngate": vpnChanged || !reflect.DeepEqual(c.Gateway, old.Gateway),
-		"sb-subscription":  c.Listener != old.Listener,
-		"sb-argo":          c.Argo != old.Argo || !reflect.DeepEqual(currentServer, oldServer),
+		"sing-box":     !reflect.DeepEqual(currentServer, oldServer),
+		"vpngate":      !reflect.DeepEqual(c.Gateway, old.Gateway),
+		"vpngate-core": vpnChanged || !reflect.DeepEqual(c.Gateway, old.Gateway),
+		"subscription": c.Listener != old.Listener,
+		"argo":         c.Argo != old.Argo || !reflect.DeepEqual(currentServer, oldServer),
 	}
 	enabled := func(v PlatformConfig, name string) bool {
 		switch name {
-		case "yg-vpngate", "sing-box-vpngate":
+		case "vpngate", "vpngate-core":
 			return v.VPN.ActiveCountry != "" && v.Gateway["enabled"] != false
-		case "sb-subscription":
+		case "subscription":
 			return v.Listener.Enabled
-		case "sb-argo":
+		case "argo":
 			return v.Argo.Mode == "fixed" || v.Argo.Mode == "temporary"
 		default:
 			return true
 		}
 	}
 	plan := []serviceChange{}
-	for _, name := range []string{"sing-box-vpngate", "yg-vpngate", "sb-subscription", "sb-argo"} {
+	for _, name := range []string{"vpngate-core", "vpngate", "subscription", "argo"} {
 		if !enabled(c, name) && enabled(old, name) {
 			plan = append(plan, serviceChange{name, "disable-stop"})
 		}
 	}
-	for _, name := range []string{"yg-vpngate", "sing-box", "sing-box-vpngate", "sb-subscription", "sb-argo"} {
+	for _, name := range []string{"vpngate", "sing-box", "vpngate-core", "subscription", "argo"} {
 		if !enabled(c, name) {
 			continue
 		}
@@ -212,7 +209,7 @@ func (s *PlatformService) applyHost(ctx context.Context, c, old PlatformConfig, 
 	plan := deploymentPlan(c, old, active)
 	if rollback {
 		plan = nil
-		for _, name := range []string{"sing-box-vpngate", "yg-vpngate", "sb-subscription", "sb-argo", "sing-box"} {
+		for _, name := range []string{"vpngate-core", "vpngate", "subscription", "argo", "sing-box"} {
 			if !slices.Contains(active, name) {
 				load, err := command.Output(ctx, nil, "systemctl", "show", name, "--property=LoadState", "--value")
 				if err != nil {
@@ -224,7 +221,7 @@ func (s *PlatformService) applyHost(ctx context.Context, c, old PlatformConfig, 
 				plan = append(plan, serviceChange{name, "stop"})
 			}
 		}
-		for _, name := range []string{"yg-vpngate", "sing-box", "sing-box-vpngate", "sb-subscription", "sb-argo"} {
+		for _, name := range []string{"vpngate", "sing-box", "vpngate-core", "subscription", "argo"} {
 			if slices.Contains(active, name) {
 				plan = append(plan, serviceChange{name, "restart"})
 			}
@@ -309,13 +306,13 @@ func (s *PlatformService) WriteUnits(ctx context.Context) error {
 		return err
 	}
 	units := map[string]string{
-		"sing-box":         fmt.Sprintf("ExecStart=%s --config %s --database %s --instance normal\n", binary, config, db),
-		"sing-box-vpngate": fmt.Sprintf("ExecStart=%s --config %s --database %s --instance vpngate\n", binary, vpnConfig, db),
-		"yg-vpngate":       fmt.Sprintf("ExecStart=%s daemon --config %s\nExecStopPost=%s cleanup --config %s\n", manager, gwConfig, manager, gwConfig),
-		"sb-subscription":  fmt.Sprintf("ExecStart=%s subscription --root %s\n", manager, root),
-		"sb-panel":         fmt.Sprintf("ExecStart=%s panel --root %s --core %s --runtime %s serve\n", manager, root, core, binary),
+		"sing-box":     fmt.Sprintf("ExecStart=%s --config %s --database %s --instance normal\n", binary, config, db),
+		"vpngate-core": fmt.Sprintf("ExecStart=%s --config %s --database %s --instance vpngate\n", binary, vpnConfig, db),
+		"vpngate":      fmt.Sprintf("ExecStart=%s daemon --config %s\nExecStopPost=%s cleanup --config %s\n", manager, gwConfig, manager, gwConfig),
+		"subscription": fmt.Sprintf("ExecStart=%s subscription --root %s\n", manager, root),
+		"sb-panel":     fmt.Sprintf("ExecStart=%s panel --root %s --core %s --runtime %s serve\n", manager, root, core, binary),
 	}
-	paths := []string{"/etc/systemd/system/sb-argo.service"}
+	paths := []string{"/etc/systemd/system/argo.service"}
 	for name := range units {
 		paths = append(paths, filepath.Join("/etc/systemd/system", name+".service"))
 	}
@@ -327,11 +324,11 @@ func (s *PlatformService) WriteUnits(ctx context.Context) error {
 	}
 	for name, body := range units {
 		extra := ""
-		if name == "sing-box-vpngate" {
-			extra = "Requires=yg-vpngate.service\nAfter=yg-vpngate.service\n"
+		if name == "vpngate-core" {
+			extra = "Requires=vpngate.service\nAfter=vpngate.service\n"
 		}
 		pre := ""
-		if name == "sing-box" || name == "sing-box-vpngate" {
+		if name == "sing-box" || name == "vpngate-core" {
 			pre = fmt.Sprintf("ExecStartPre=%s firewall --root %s --wait\n", manager, root)
 		}
 		// WorkingDirectory is a single path, unlike the quoted ExecStart argv.

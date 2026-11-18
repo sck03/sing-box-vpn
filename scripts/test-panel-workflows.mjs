@@ -27,7 +27,7 @@ globalThis.fetch = async (path, options) => {
   const value =
     path === "/api/subscribers"
       ? []
-      : path.startsWith("/api/accounts?")
+      : path.startsWith("/api/accounts?") || path.startsWith("/api/grants?")
         ? { items: [], total: 0 }
         : path.startsWith("/api/inbound-options")
           ? []

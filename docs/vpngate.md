@@ -70,8 +70,8 @@ profile 指令最多三个参数，使用固定字段缓冲并提前拒绝多余
 | internal/manage/platform_host.go | 服务单元、失败回滚、15 秒重试及 5 分钟最多 10 次启动 |
 | internal/subscription/ | 类型化节点、来源集合、预览、独立客户端模板与快照生成 |
 | sing-box.service | 普通五协议 |
-| yg-vpngate.service | 出口管理器与认证 SOCKS5 |
-| sing-box-vpngate.service | 独立五协议 VPNGate 入口 |
+| vpngate.service | OpenVPN 隧道、出口选择与检查、认证 SOCKS5 网关 |
+| vpngate-core.service | 用户连接、认证和流量计量，五协议 VPNGate 入口 |
 | /etc/s-box/control.db | 权威配置、权益、凭据、用量与任务，当前 schema 11 |
 | /etc/s-box/vpngate/ | 网关、服务端等运行投影，不作为配置真源 |
 | /var/lib/yg-vpngate/ | 缓存、profile、状态、限量日志 |

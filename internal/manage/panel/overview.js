@@ -105,9 +105,17 @@ export async function overview(ctx) {
     ),
     card(
       "系统服务",
+      help("服务启动只运行已保存的配置。点击服务对应的设置入口配置功能；VPNGate 节点核心与隧道网关分工运行，共用同一 VPNGate 页面。"),
       table(
         [
           { key: "name", label: "服务" },
+          { label: "职责", value: (v) => v.description || v.label || "",
+            render: (v) => el("div", {}, el("strong", {}, v.label || v.name), help(v.description || "")) },
+          { label: "功能设置", value: (v) => v.page || "",
+            render: (v) => {
+              const allowed = ctx.session.role === "admin" || (ctx.session.role === "operator" && v.page === "vpngate");
+              return v.page && allowed ? el("a", { href: "#" + v.page }, ({ inbounds: "入站与发布", vpngate: "VPNGate", access: "公网访问 / 下载监听", outbounds: "出站与隧道 / Argo" })[v.page] || "功能设置") : el("span", {}, "请联系管理员配置");
+            } },
           { label: "安装", value: (v) => v.LoadState || "本地开发" },
           {
             label: "运行",

@@ -187,7 +187,7 @@ func TestSubscriptionRestoreTransaction(t *testing.T) {
 			if err := AtomicBytes(filepath.Join(root, "sb.json"), []byte("old"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			service := &fakeRestoreServices{before: map[string]unitState{"sing-box": {true, true}, "sb-subscription": {true, true}, "yg-vpngate": {true, true}}, failOnce: failure}
+			service := &fakeRestoreServices{before: map[string]unitState{"sing-box": {true, true}, "subscription": {true, true}, "vpngate": {true, true}}, failOnce: failure}
 			err := applySubscriptionRestore(context.Background(), root, fileBundle{"sb.json": []byte("new"), "new.json": []byte("new")}, service)
 			if failure {
 				if err == nil || string(readBytes(t, filepath.Join(root, "sb.json"))) != "old" || !reflect.DeepEqual(service.after, service.before) {
@@ -196,7 +196,7 @@ func TestSubscriptionRestoreTransaction(t *testing.T) {
 				if _, err := os.Stat(filepath.Join(root, "new.json")); !errors.Is(err, os.ErrNotExist) {
 					t.Fatal("new file survived rollback")
 				}
-			} else if err != nil || service.after["sb-subscription"].Active || service.after["yg-vpngate"].Enabled || !service.after["sing-box"].Active {
+			} else if err != nil || service.after["subscription"].Active || service.after["vpngate"].Enabled || !service.after["sing-box"].Active {
 				t.Fatal("restore state invalid", err)
 			}
 		})

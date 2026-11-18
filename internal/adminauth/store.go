@@ -27,7 +27,7 @@ import (
 var ErrUnauthorized = errors.New("invalid credentials or expired session")
 var ErrLimited = errors.New("too many login attempts; retry after 15 minutes")
 
-const MinPasswordBytes = 12
+const MinPasswordBytes = 8
 const MaxPasswordBytes = 72
 
 type Store struct{ db *sql.DB }
@@ -68,7 +68,7 @@ func Secret() string          { var b [32]byte; _, _ = rand.Read(b[:]); return h
 func hash(v string) string    { b := sha256.Sum256([]byte(v)); return hex.EncodeToString(b[:]) }
 func passwordHash(password string) ([]byte, error) {
 	if len(password) < MinPasswordBytes || len(password) > MaxPasswordBytes {
-		return nil, errors.New("password must contain 12–72 bytes")
+		return nil, errors.New("password must contain 8–72 bytes")
 	}
 	return bcrypt.GenerateFromPassword([]byte(password), 12)
 }

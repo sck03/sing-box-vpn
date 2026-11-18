@@ -25,7 +25,7 @@ func recoverServices(ctx context.Context, root string) error {
 	defer cancel()
 	return hostservice.Recover(ctx, func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		return command.Output(ctx, nil, name, args...)
-	}, hostservice.ReadUnit, []string{"yg-vpngate", "sing-box", "sing-box-vpngate", "sb-subscription", "sb-argo", "sb-panel"})
+	}, hostservice.ReadUnit, append(append([]string{}, platformServices...), "sb-panel"))
 }
 
 // Shared with the installer/upgrade shell. A retry controller must never race

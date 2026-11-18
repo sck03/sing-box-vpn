@@ -20,7 +20,7 @@ func TestDeploymentPlanPreservesStoppedAndUnaffected(t *testing.T) {
 	c := old
 	c.Listener.Enabled = true
 	plan := deploymentPlan(c, old, []string{"sing-box"})
-	if !reflect.DeepEqual(plan, []serviceChange{{"sb-subscription", "enable-start"}}) {
+	if !reflect.DeepEqual(plan, []serviceChange{{"subscription", "enable-start"}}) {
 		t.Fatal(plan)
 	}
 	c = old

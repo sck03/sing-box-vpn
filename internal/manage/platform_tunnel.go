@@ -69,10 +69,10 @@ func (s *PlatformService) writeTunnel(ctx context.Context, c PlatformConfig) err
 		return err
 	}
 	unit := "# Managed by sing-box-vpn v4\n[Unit]\nDescription=sing-box-vpn Cloudflare tunnel\nAfter=network-online.target sing-box.service\nWants=network-online.target\n[Service]\nUMask=0077\nRestart=on-failure\nRestartSec=10\nEnvironmentFile=" + envPath + "\n" + body + "[Install]\nWantedBy=multi-user.target\n"
-	if old, e := os.ReadFile("/etc/systemd/system/sb-argo.service"); e == nil && !bytes.HasPrefix(old, []byte("# Managed by sing-box-vpn v4\n")) {
+	if old, e := os.ReadFile("/etc/systemd/system/argo.service"); e == nil && !bytes.HasPrefix(old, []byte("# Managed by sing-box-vpn v4\n")) {
 		return errors.New("refusing to overwrite an unrelated tunnel unit")
 	}
-	if err = AtomicBytes("/etc/systemd/system/sb-argo.service", []byte(unit), 0644); err != nil {
+	if err = AtomicBytes("/etc/systemd/system/argo.service", []byte(unit), 0644); err != nil {
 		return err
 	}
 	_, err = command.Output(ctx, nil, "systemctl", "daemon-reload")

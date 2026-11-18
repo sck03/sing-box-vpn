@@ -256,7 +256,7 @@ func waitArgo(ctx context.Context, root, core string, timeout time.Duration, out
 		}
 		select {
 		case <-child.Done():
-			return errors.New("临时 Argo 域名未生成，请查看 sb-argo 日志")
+			return errors.New("临时 Argo 域名未生成，请查看 argo 日志")
 		case <-tick.C:
 		}
 	}

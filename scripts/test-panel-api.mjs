@@ -54,8 +54,8 @@ assert.equal(
   ok(await call("/api/capabilities")).gateway.limits.max_connections.max,
   1024,
 );
-const state = ok(await call("/api/config")),
-  config = state.config;
+let state = ok(await call("/api/config"));
+const config = state.config;
 assert.equal(config.app.schema, 2);
 assert.equal(config.subscriptions.version, 2);
 const invalid = structuredClone(config);
@@ -115,6 +115,13 @@ async function finished(id) {
   throw new Error("Test task did not finish");
 }
 await finished(queued.task_id);
+assert.equal((await call("/api/grants", {
+  id: "local-" + suffix, account_id: account, clients: ["uri"],
+})).status, 400, "loopback shares must be rejected");
+// This synthetic origin is used only in the disposable no-system installation.
+config.listener = { enabled: true, listen: "127.0.0.1", port: 2097, public_base_url: "https://subscriptions.example.test" };
+await finished(ok(await call("/api/config", { revision: state.revision, config })).task_id);
+state = ok(await call("/api/config"));
 assert(
   ok(
     await call("/api/accounts/export", {
@@ -133,6 +140,7 @@ const grant = ok(
     max_downloads: 1,
   }),
 );
+assert.match(grant.user_url, /^https:\/\/subscriptions\.example\.test\/user#/);
 ok(
   await call("/user", undefined, {
     "Sec-Fetch-Site": "cross-site",

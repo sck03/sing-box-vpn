@@ -34,7 +34,7 @@ export async function subscriptions(ctx) {
     card(
       "订阅编译与分发",
       help(
-        "本机独立账户请在「下载授权」创建分享。要自定义模板或分发，添加账户来源，再创建集合和输出。新安装不发布共用入口凭据。第三方节点只能控制下载，不能执行代理流量额度。",
+        "本机用户在「权益与用量」绑定入站后点击分享即可，无需配置来源、集合和输出。下面的高级工作区用于组合第三方节点、自定义模板和自动分发。第三方节点的流量由其服务商控制。",
       ),
       el(
         "details",
@@ -95,28 +95,7 @@ export async function subscriptions(ctx) {
             },
           ),
         ),
-        button("下载监听", () =>
-          formDialog(
-            "下载监听",
-            [
-              { key: "enabled", label: "启用独立下载监听", type: "bool" },
-              { key: "listen", label: "监听 IP" },
-              {
-                key: "port",
-                label: "端口",
-                type: "number",
-                min: 1,
-                max: 65535,
-              },
-              { key: "public_base_url", label: "公网下载 URL（推荐 HTTPS）" },
-            ],
-            c.listener,
-            (v) => {
-              c.listener = v;
-              change();
-            },
-          ),
-        ),
+        el("a", { href: "#access" }, "设置公网访问与订阅地址 →"),
       ),
     ),
     resourceEditor({
@@ -351,7 +330,7 @@ export async function subscriptions(ctx) {
           },
         ),
       ),
-      el("p", {}, el("a", { href: "#grants" }, "查看与撤销全部下载授权 →")),
+      el("p", {}, el("a", { href: "#accounts" }, "查看与撤销分享链接 →")),
     ),
     card(
       "诊断与立即分发",
@@ -403,13 +382,16 @@ export async function subscriptions(ctx) {
   ];
   return [
     content[0],
-    workspace("subscriptions", [
+    el("details", { class: "advanced" },
+      el("summary", {}, "高级订阅：来源、模板与分发"),
+      workspace("subscriptions", [
       ["来源", [content[1]]],
       ["集合", [content[2]]],
       ["模板与规则", [content[3], content[4]]],
       ["输出与授权", [content[5], content[7]]],
       ["分发与检测", [content[6], content[8]]],
       ["运行状态", [await subscriptionStatus(ctx)]],
-    ]),
+      ]),
+    ),
   ];
 }

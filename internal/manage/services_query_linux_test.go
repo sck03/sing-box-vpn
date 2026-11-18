@@ -65,7 +65,7 @@ func TestSystemServicesActiveRecognizesUnitStates(t *testing.T) {
 	for _, code := range []string{"3", "4"} {
 		t.Run(code, func(t *testing.T) {
 			bin := t.TempDir()
-			script := "#!/bin/sh\ncase \"$3\" in\nsing-box) exit 0;;\nsing-box-vpngate) exit " + code + ";;\nesac\nexit 1\n"
+			script := "#!/bin/sh\ncase \"$3\" in\nsing-box) exit 0;;\nvpngate-core) exit " + code + ";;\nesac\nexit 1\n"
 			if err := os.WriteFile(filepath.Join(bin, "systemctl"), []byte(script), 0700); err != nil {
 				t.Fatal(err)
 			}

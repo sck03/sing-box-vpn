@@ -32,6 +32,22 @@ func (s *PlatformService) pruneCertificates(ctx context.Context, now time.Time) 
 			return errors.New("certificate material root must be a real directory")
 		}
 		keep := map[string]bool{}
+		panel, _, err := s.panelSettings()
+		if err != nil {
+			return err
+		}
+		paths := []string{panel.Certificate, panel.Key}
+		s.panelMu.RLock()
+		if s.activePanel != nil {
+			paths = append(paths, s.activePanel.Certificate, s.activePanel.Key)
+		}
+		s.panelMu.RUnlock()
+		for _, name := range paths {
+			rel, e := filepath.Rel(base, name)
+			if e == nil && filepath.IsLocal(rel) {
+				keep[strings.Split(filepath.ToSlash(rel), "/")[0]] = true
+			}
+		}
 		for _, raw := range [][]byte{state.Desired, state.Applied} {
 			c, e := decodePlatform(raw)
 			if e != nil {

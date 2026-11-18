@@ -26,7 +26,7 @@ for scenario in stopped active fail; do
     systemctl() {
         printf '%s\n' "$*" >> "$TEST_LOG"
         case "$1" in
-            show) if [[ "$2" == sb-subscription && "$TEST_SCENARIO" != stopped ]]; then echo active; else echo inactive; fi;;
+            show) if [[ "$2" == subscription && "$TEST_SCENARIO" != stopped ]]; then echo active; else echo inactive; fi;;
             restart) if [[ "$TEST_SCENARIO" == fail && $("$MANAGER") == new ]]; then return 1; fi;;
             is-active) return 0;;
             *) echo 'unexpected systemctl operation' >&2; return 1;;

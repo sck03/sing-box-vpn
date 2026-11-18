@@ -181,12 +181,16 @@ await createAccountShare([{ id: "a", name: "Alice" }], {
   },
   render() {},
 });
-document.querySelector('dialog input[aria-label="授权 ID"]').value = "share";
+assert.equal(document.querySelector('dialog input[aria-label="授权 ID"]'), null);
+assert.equal(document.querySelector('dialog input[aria-label="下载到期"]'), null);
 document
   .querySelector("dialog form")
   .dispatchEvent(new Event("submit", { cancelable: true }));
 await new Promise((resolve) => setTimeout(resolve, 0));
 assert.equal(createdShare.account_id, "a");
+assert.match(createdShare.id, /^share-[a-f0-9]{32}$/);
+assert.equal(createdShare.expires_at, null);
+assert.equal(createdShare.max_downloads, null);
 assert.equal(
   document.querySelector("dialog").open,
   true,

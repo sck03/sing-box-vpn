@@ -12,6 +12,42 @@ import (
 
 const testPassword = "correct-password-123"
 
+func TestEightBytePasswordBoundary(t *testing.T) {
+	for _, password := range []string{"1234567", "一二", string(make([]byte, 73))} {
+		if _, err := passwordHash(password); err == nil {
+			t.Fatal("accepted invalid byte length", len(password))
+		}
+	}
+	s, err := Open(filepath.Join(t.TempDir(), "control.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err = s.Bootstrap(t.Context(), "admin", "12345678", false); err != nil {
+		t.Fatal(err)
+	}
+	session, err := s.Login(t.Context(), "admin", "12345678", "", "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	admins, err := s.List(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Save(t.Context(), "admin", admins[0], "一二三"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Authenticate(t.Context(), session.Token, "", false); !errors.Is(err, ErrUnauthorized) {
+		t.Fatal("old session survived", err)
+	}
+	if _, err = s.Login(t.Context(), "admin", "一二三", "", "local"); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Bootstrap(t.Context(), "admin", "87654321", true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestUnknownUserHashHasLoginCost(t *testing.T) {
 	cost, err := bcrypt.Cost(dummyHash)
 	if err != nil || cost != 12 {

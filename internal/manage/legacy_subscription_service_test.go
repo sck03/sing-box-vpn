@@ -18,7 +18,7 @@ type subscriptionService interface {
 type systemSubscriptionService struct{ root string }
 
 func querySubscriptionUnit(ctx context.Context, query string, negative ...int) (bool, error) {
-	return queryUnit(ctx, "sb-subscription", query, negative...)
+	return queryUnit(ctx, "subscription", query, negative...)
 }
 
 func (s systemSubscriptionService) state(ctx context.Context) (bool, bool, error) {
@@ -38,16 +38,16 @@ func (s systemSubscriptionService) apply(ctx context.Context, enabled, restart b
 		return err
 	}
 	if !enabled {
-		_, err := commandOutput(ctx, "systemctl", "disable", "--now", "sb-subscription")
+		_, err := commandOutput(ctx, "systemctl", "disable", "--now", "subscription")
 		return err
 	}
-	if _, err := commandOutput(ctx, "systemctl", "enable", "sb-subscription"); err != nil {
+	if _, err := commandOutput(ctx, "systemctl", "enable", "subscription"); err != nil {
 		return err
 	}
 	if restart {
-		return (systemServices{}).restart(ctx, "sb-subscription")
+		return (systemServices{}).restart(ctx, "subscription")
 	}
-	_, err := commandOutput(ctx, "systemctl", "start", "sb-subscription")
+	_, err := commandOutput(ctx, "systemctl", "start", "subscription")
 	return err
 }
 
@@ -59,13 +59,13 @@ func (s systemSubscriptionService) restore(ctx context.Context, active, enabled 
 	if enabled {
 		enable = "enable"
 	}
-	if _, err := commandOutput(ctx, "systemctl", enable, "sb-subscription"); err != nil {
+	if _, err := commandOutput(ctx, "systemctl", enable, "subscription"); err != nil {
 		return err
 	}
 	if active {
-		return (systemServices{}).restart(ctx, "sb-subscription")
+		return (systemServices{}).restart(ctx, "subscription")
 	}
-	_, err := commandOutput(ctx, "systemctl", "stop", "sb-subscription")
+	_, err := commandOutput(ctx, "systemctl", "stop", "subscription")
 	return err
 }
 

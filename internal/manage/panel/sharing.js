@@ -2,7 +2,7 @@ import { api } from "./api.js";
 import { clientCatalog, clientOptions } from "./clients.js";
 import { $, el, button, row, help, formDialog, notice } from "./ui.js";
 
-// Used both from an entitlement and the authorization inventory.
+// Ordinary account shares inherit time and quota from the entitlement.
 export async function createAccountShare(accounts, ctx) {
   if (!accounts.length) throw new Error("请先创建权益并绑定入站。");
   const request = ctx.workflowRequest || api;
@@ -10,7 +10,6 @@ export async function createAccountShare(accounts, ctx) {
   formDialog(
     "创建账户分享",
     [
-      { key: "id", label: "授权 ID", required: true },
       {
         key: "account_id",
         label: "使用权益",
@@ -35,17 +34,9 @@ export async function createAccountShare(accounts, ctx) {
         options: clientOptions(catalog),
         required: true,
       },
-      { key: "expires_at", label: "下载到期", type: "date" },
-      {
-        key: "max_downloads",
-        label: "下载次数上限（留空不限）",
-        type: "number",
-        nullable: true,
-        min: 0,
-      },
     ],
     {
-      id: "",
+      id: "share-" + crypto.randomUUID().replaceAll("-", ""),
       account_id: accounts[0].id,
       scope: "",
       clients: ["sing-box", "mihomo", "uri"],
@@ -60,7 +51,7 @@ export async function createAccountShare(accounts, ctx) {
       dialog.replaceChildren(
         el("h2", {}, "分享已创建"),
         help(
-          "请保存这个地址，之后无法再次查看完整链接。接收者可查看用量并下载配置。",
+          "请保存这个地址，之后无法再次查看完整链接。有效期和流量由权益统一控制；链接可以在本页撤销。",
         ),
         address,
         row(

@@ -6,9 +6,9 @@ export async function grants(ctx) {
   const accounts = await request("/api/account-options");
   return [
     card(
-      "下载授权",
+      "分享链接",
       help(
-        "下载令牌只决定是否能够获取配置。代理到期、流量限额与凭据轮换由权益管理。创建后令牌只展示一次，之后只能撤销重建。",
+        "直接选择权益创建订阅链接，期限和流量在上方统一管理。完整链接只展示一次，请妥善保存；撤销可阻止后续下载。高级输出和已有链接的下载限制也在此列出。",
       ),
       button(
         "创建账户分享",
@@ -17,7 +17,7 @@ export async function grants(ctx) {
       ),
       await remoteTable(
         [
-          { key: "id", label: "授权 ID" },
+          { key: "id", label: "链接 ID" },
           {
             label: "权益 / 输出",
             value: (g) => g.account_id || (g.outputs || []).join(", "),
