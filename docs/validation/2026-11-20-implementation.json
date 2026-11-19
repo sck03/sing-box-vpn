@@ -35,7 +35,7 @@
     "application_race": "passed",
     "controlstore_race": "passed",
     "accounting_race": "passed",
-    "remaining": "Stopped the duplicate emulated management/protocol run after preserving three passing package results; final revision is validated by GitHub CI on native Linux. No local pass claimed for the interrupted packages."
+    "remaining": "Three local package race results retained; duplicate emulated management/protocol run stopped. Complete final-revision Linux race, protocol and privileged deployment validation passed in GitHub CI."
   },
   "benchmark": {
     "environment": "Windows amd64, Intel i5-9400F, Go 1.27.3, 500ms x3; final samples taken after QEMU shutdown and local regression completion",
@@ -240,8 +240,8 @@
   },
   "cleanup": {
     "manual_directory": ".cleanup-manual/2026-11-20-review",
-    "moved_items": 14,
-    "reason": "Earlier automatic approval rejected deletion; moved obsolete review and final verification binaries, failed panel directories, old screenshots and temporary patch/source archive into the user-requested single folder. Toolchains, reusable caches, VM assets, historical validation evidence, current screenshots and license files retained."
+    "moved_items": 18,
+    "reason": "Earlier automatic approval rejected deletion. Obsolete review/verification binaries, failed panel directories, old screenshots, temporary patches/source archive and stale browser profiles/artifacts are grouped for manual removal. Toolchains, reusable caches, VM assets, historical validation evidence, current screenshots and licenses retained."
   },
   "limits": [
     "Affected inbound connections can be interrupted; no per-user seamless update claim.",
@@ -251,7 +251,120 @@
     "Official upstream protocol constructors are used; no copied s-ui protocol forks."
   ],
   "github_ci": {
-    "status": "pending",
-    "note": "Final workflow result will be recorded after the complete native Linux matrix finishes."
+    "status": "success",
+    "run_id": 44638938250,
+    "url": "https://github.com/sck03/sing-box-vpn/actions/runs/44638938250",
+    "tested_commit": "a23ccb44b55077f9ef78aaccb10434c1fc632c12",
+    "completed_at": "2026-11-19T23:54:44Z",
+    "steps": [
+      {
+        "name": "Set up job",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run actions/checkout@v7.0.1",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run actions/setup-go@v7.0.0",
+        "conclusion": "success"
+      },
+      {
+        "name": "Resolve and synchronize release version",
+        "conclusion": "success"
+      },
+      {
+        "name": "Dependencies",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run actions/setup-node@v6",
+        "conclusion": "success"
+      },
+      {
+        "name": "Generated panel contracts and DOM regression",
+        "conclusion": "success"
+      },
+      {
+        "name": "Download verified sing-box 1.14.4",
+        "conclusion": "success"
+      },
+      {
+        "name": "Download verified Mihomo 1.19.33 for subscription acceptance",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build managed runtime with all advertised capabilities",
+        "conclusion": "success"
+      },
+      {
+        "name": "Strict protocol fixture preflight",
+        "conclusion": "success"
+      },
+      {
+        "name": "Go tests, race detection and 72 real subscription TCP/UDP links",
+        "conclusion": "success"
+      },
+      {
+        "name": "Managed runtime account isolation and real TCP/UDP links",
+        "conclusion": "success"
+      },
+      {
+        "name": "Formatting, vet and shell checks",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build Linux management and gateway binary",
+        "conclusion": "success"
+      },
+      {
+        "name": "Online validator download and current platform CLI",
+        "conclusion": "success"
+      },
+      {
+        "name": "Install browser acceptance dependencies",
+        "conclusion": "success"
+      },
+      {
+        "name": "Real panel API and desktop/mobile browser contracts",
+        "conclusion": "success"
+      },
+      {
+        "name": "OpenVPN, tunnel DNS and fail-closed namespace acceptance",
+        "conclusion": "success"
+      },
+      {
+        "name": "IPv4 and IPv6 multiport forwarding and owned firewall cleanup",
+        "conclusion": "success"
+      },
+      {
+        "name": "Disk exhaustion and killed accounting process recovery",
+        "conclusion": "success"
+      },
+      {
+        "name": "systemd startup recovery after firewall loss and unexpected clean exit",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build both release architectures",
+        "conclusion": "success"
+      },
+      {
+        "name": "Fresh installation and panel deployment rollback",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run actions/upload-artifact@v7.0.2",
+        "conclusion": "success"
+      },
+      {
+        "name": "Preserve acceptance diagnostics",
+        "conclusion": "skipped"
+      },
+      {
+        "name": "Complete job",
+        "conclusion": "success"
+      }
+    ]
   }
 }
