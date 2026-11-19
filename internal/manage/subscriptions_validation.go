@@ -27,6 +27,13 @@ func validateSubscriptionArtifact(ctx context.Context, root, core string, templa
 	switch template.Client {
 	case "sing-box":
 		result.Scope = "core-config"
+		if core == "" {
+			if os.Getenv("SBVPN_REQUIRE_CLIENT_CHECK") == "1" {
+				return result, fmt.Errorf("sing-box validator is required")
+			}
+			result.State = "unavailable"
+			return result, nil
+		}
 		var config Object
 		if err := json.Unmarshal(artifact.Data, &config); err != nil {
 			return result, err

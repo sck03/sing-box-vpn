@@ -13,15 +13,16 @@ export async function api(
   { blob = false, signal, timeout = body === undefined ? 15000 : 120000 } = {},
 ) {
   const generation = sessionGeneration;
+  const requestSignal = AbortSignal.any([
+    sessionRequests.signal,
+    AbortSignal.timeout(timeout),
+    ...(signal ? [signal] : []),
+  ]);
   const multipart = body instanceof FormData;
   const response = await fetch(path, {
     method: body === undefined ? "GET" : "POST",
     credentials: "same-origin",
-    signal: AbortSignal.any([
-      sessionRequests.signal,
-      AbortSignal.timeout(timeout),
-      ...(signal ? [signal] : []),
-    ]),
+    signal: requestSignal,
     headers:
       body === undefined
         ? {}
@@ -32,6 +33,7 @@ export async function api(
       body === undefined ? undefined : multipart ? body : JSON.stringify(body),
   });
   const stale = () => {
+    requestSignal.throwIfAborted();
     if (generation !== sessionGeneration)
       throw new DOMException("会话已更改", "AbortError");
   };

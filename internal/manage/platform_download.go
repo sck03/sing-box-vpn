@@ -52,16 +52,12 @@ func (service AccountService) ServeDownload(w http.ResponseWriter, r *http.Reque
 		clients := []AccountClientOption{}
 		if denial == "" {
 			service.Store = store
-			options, e := service.ClientOptions(r.Context(), grant.AccountID, grant.Scope)
+			options, e := service.ClientOptions(r.Context(), grant.AccountID, grant.Scope, append([]string{}, grant.Clients...))
 			if e != nil {
 				http.Error(w, "account service unavailable", 503)
 				return
 			}
-			for _, option := range options {
-				if slices.Contains(grant.Clients, option.Client) {
-					clients = append(clients, option)
-				}
-			}
+			clients = options
 		}
 		jsonResponse(w, Object{"name": usage.Name, "state": usage.State, "quota_bytes": usage.QuotaBytes, "charged_bytes": usage.Charged, "upload_bytes": usage.Upload, "download_bytes": usage.Download, "effective_expires_at": usage.EffectiveExpiresAt, "started_at": usage.StartedAt, "start_mode": usage.StartMode, "next_reset": usage.NextReset, "download_expires_at": grant.ExpiresAt, "downloads": grant.Downloads, "max_downloads": grant.MaxDownloads, "clients": clients, "download_denial": denial})
 		return
@@ -125,6 +121,9 @@ func accountSubscriptionUsage(usage accounting.Usage) string {
 }
 
 func unifiedDownloadHandler(service AccountService) http.Handler {
+	if service.exports == nil {
+		service.exports = &accountExportCache{}
+	}
 	if service.view == nil {
 		service.view = &subscriptionView{}
 	}

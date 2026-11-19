@@ -57,16 +57,23 @@ assert.equal(
 let state = ok(await call("/api/config"));
 const config = state.config;
 assert.equal(config.app.schema, 2);
-assert.equal(config.subscriptions.version, 4);
+assert.equal(config.subscriptions.version, 5);
 const subscriptionCapabilities = ok(
   await call("/api/subscription-capabilities"),
 );
-assert.equal(subscriptionCapabilities.schema_version, 4);
+assert.equal(subscriptionCapabilities.schema_version, 5);
 assert(subscriptionCapabilities.formats.includes("auto"));
 assert(subscriptionCapabilities.formats.includes("loon"));
 const clients = ok(await call("/api/clients"));
 assert(clients.mihomo.connections.trojan.transports.includes("grpc"));
 assert.equal(clients.mihomo.extension, "yaml");
+assert(clients.mihomo.native_fields.defaults.includes("mixed-port"));
+assert(clients.mihomo.native_fields.managed.includes("dns"));
+assert(clients.mihomo.native_fields.forbidden.includes("proxy-providers"));
+assert(clients.egern.connections.vless.transports.includes("grpc"));
+for (const client of ["sing-box", "mihomo", "openclash", "egern"])
+  assert.equal(clients[client].features.hop_interval, true);
+assert.equal(clients.stash.features.hop_interval, false);
 assert(
   ok(await call("/api/subscription-presets")).some(
     (preset) => preset.id === "regional",

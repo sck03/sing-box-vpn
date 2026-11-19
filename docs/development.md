@@ -1,6 +1,6 @@
 # 开发与发布
 
-当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载七组。数据库使用 schema 13，所有旧数据库及其备份明确拒绝。
+当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载、订阅模板与预览七组。数据库使用 schema 13，所有旧数据库及其备份明确拒绝。
 
 `scripts/test-panel-navigation.mjs` 覆盖角色过滤、搜索定位、空/非法路由、同页标签的前进/返回与表单复用、延迟读取合并与取消、错误重试、权益初始读取预算、稀疏订阅草稿和 SSE 启动。`TestPanelEphemeralDevelopmentListener` 实际启动回环随机端口、请求能力接口并关闭服务，同时拒绝公网随机端口；设置校验仍拒绝保存端口 0。`TestPanelHealthSurvivesSaturatedRequests` 验证 32 个业务请求占满限额时，本机健康检查仍能准确判断 worker 就绪状态。
 
@@ -75,11 +75,13 @@ Windows 先加载 `scripts/dev-env.ps1`，将 `GATEWAY_BINARY` 和 `MANAGED_CORE
 
 可对该独立面板运行真实 HTTP 工作流：设置 `PANEL_TEST_URL`、`PANEL_TEST_USERNAME`（默认 reviewadmin）和 `PANEL_TEST_PASSWORD`，执行 `node scripts/test-panel-api.mjs`。脚本只接受回环 URL，并在创建数据前确认服务均处于 no-system 状态。验证绑定/导出、下载次数、跨站分享、完整候选预览和任务应用；不能指向真实安装。
 
-配置预览为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回普通服务端脱敏配置、输出节点数/变化及结构化验证。`POST /api/config/preview-output` 接受 `{id,config}`，只编译目标图并返回有界脱敏内容。旧 `/api/subscriptions/preview` 不恢复。节点文档 schema=2、订阅 schema=4、CompilerVersion=2、模板 version=1、平台 schema=4；备份容器仍为 7，数据库仍为 13，旧订阅内容明确拒绝。
+配置预览为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回普通服务端脱敏配置、输出节点数/变化及结构化验证。`POST /api/config/preview-output` 接受 `{id,config}`，只编译目标图并返回有界脱敏内容。旧 `/api/subscriptions/preview` 不恢复。节点文档 schema=2、订阅 schema=5、CompilerVersion=3、模板 version=1、平台 schema=4；备份容器仍为 7，数据库仍为 13，旧订阅内容明确拒绝。
 
 新增回归 `compiler_regression_test.go`、`preview_test.go` 覆盖 URI 认证/端口、SIP003、WS early-data、gRPC/XHTTP、名称和策略组范围、脱敏与真实核心检查。`TestImportedTrojanTransportsWithMihomo` 使用真实 sing-box 服务端和 Mihomo 客户端验证 WS/gRPC，错误路径或服务名必须失败。`TestRefreshValidationDoesNotHoldPublicationLock` 覆盖锁外编译与过期配置拒绝，`TestLimitedServerPreservesTLSAndHTTP2` 覆盖 TLS 状态及协议协商。
 
-`test-panel-subscriptions.mjs` 是第七组前端回归，覆盖默认 DNS 与显式关闭、动态客户端范围、迟到响应、候选向导和局部列表更新。真实 API 套件检查 schema=4、账户模板覆盖、可用性、扩展名、下载元信息和脱敏预览；浏览器套件沿用隔离目录与真实事件。
+`test-panel-subscriptions.mjs` 是第七组前端回归，覆盖默认 DNS 与显式关闭、动态客户端范围、迟到响应、候选向导和局部列表更新。真实 API 套件检查订阅 schema=5、账户模板覆盖、可用性、扩展名、下载元信息和脱敏预览；浏览器套件沿用隔离目录与真实事件。
+
+`template_contract_test.go` 覆盖 DNS 三态与空排除数组、原生字段归属、Egern IPv6/TLS 和端口跳跃间隔。`account_export_cache_test.go` 覆盖容量/过期/并发合并、凭据轮换、授权撤销、正文隔离、严格核心校验和 ParserVersion 升级后的完整抓取。运行 `go test ./internal/manage -run '^$' -bench '^BenchmarkAccountCompilation$' -benchtime=300ms -count=3 -benchmem` 可复测缓存，测量范围见[验证记录](validation/2026-11-19-subscription-quality.json)。
 
 `GET /api/accounts/clients?id=…&scope=…` 和用户用量的 clients 对象数组共用实际导出计划；`GET /api/outbound-options` 返回已应用出站。新字段与契约直接更新，不增加旧数组或旧接口适配器。完整订阅说明见 [订阅](subscriptions.md)。
 

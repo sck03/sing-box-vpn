@@ -192,11 +192,11 @@ func clashTemplate(nodes []Node, native []Object, t Template) Object {
 	rules = append(rules, "MATCH,"+templateFinal(nodes, t))
 	p := dnsPolicy(t)
 	mode := "redir-host"
-	if p.FakeIP {
+	if p.fakeIPEnabled() {
 		mode = "fake-ip"
 	}
 	dns := Object{"enable": true, "respect-rules": true, "enhanced-mode": mode, "nameserver": p.Remote, "proxy-server-nameserver": p.Bootstrap, "default-nameserver": p.Bootstrap, "ipv6": p.IPv6}
-	if p.FakeIP {
+	if p.fakeIPEnabled() {
 		dns["fake-ip-filter"] = p.FakeIPFilter
 	}
 	policy := Object{}
@@ -225,109 +225,6 @@ func textRule(r Rule, target string) string {
 		kind = "IP-CIDR6"
 	}
 	return kind + "," + r.Value + "," + target
-}
-
-func stashNode(n Node) Object {
-	m := n.Mihomo()
-	if n.Protocol == "hysteria2" {
-		m["auth"] = n.Password
-		delete(m, "password")
-	}
-	if n.Protocol == "tuic" {
-		m["version"] = 5
-	}
-	// Stash has its own schema; only its documented common fields are emitted.
-	delete(m, "client-fingerprint")
-	delete(m, "fingerprint")
-	return m
-}
-
-func egernNode(n Node) Object {
-	kind := n.Protocol
-	if kind == "ss" {
-		kind = "shadowsocks"
-	}
-	m := Object{"name": n.Name, "server": n.Server, "port": n.Port}
-	if n.Password != "" {
-		m["password"] = n.Password
-	}
-	if n.TLS.Enabled {
-		m["sni"], m["skip_tls_verify"] = n.TLS.ServerName, n.TLS.Insecure
-	}
-	switch n.Protocol {
-	case "vmess", "vless":
-		m["user_id"] = n.UUID
-		if n.Protocol == "vmess" {
-			m["security"] = fallback(n.Cipher, "auto")
-		}
-		if n.Flow != "" {
-			m["flow"] = n.Flow
-		}
-		tls := Object{"sni": n.TLS.ServerName, "skip_tls_verify": n.TLS.Insecure}
-		if n.TLS.RealityKey != "" {
-			tls["reality"] = Object{"public_key": n.TLS.RealityKey, "short_id": n.TLS.RealityShortID}
-		}
-		if n.Transport.Type == "ws" {
-			tls["path"], tls["headers"] = n.Transport.Path, Object{"Host": n.Transport.Host}
-			k := "ws"
-			if n.TLS.Enabled {
-				k = "wss"
-			}
-			m["transport"] = Object{k: tls}
-		} else if n.TLS.Enabled {
-			m["transport"] = Object{"tls": tls}
-		}
-		delete(m, "sni")
-		delete(m, "skip_tls_verify")
-	case "hysteria2":
-		m["auth"] = n.Password
-		delete(m, "password")
-		if len(n.Ports) > 0 {
-			m["port_hopping"] = strings.ReplaceAll(strings.Join(n.Ports, ","), ":", "-")
-		}
-	case "tuic":
-		m["uuid"], m["alpn"] = n.UUID, n.TLS.ALPN
-	case "ss":
-		m["method"] = n.Cipher
-		if n.Cipher == "chacha20-ietf-poly1305" {
-			m["method"] = "chacha20-poly1305"
-		}
-	case "trojan":
-		if n.Transport.Type == "ws" {
-			m["websocket"] = Object{"path": n.Transport.Path, "host": n.Transport.Host}
-		}
-	}
-	return Object{kind: m}
-}
-
-func egernTemplate(nodes []Node, native []Object, t Template) Object {
-	normal, gateway := groups(nodes)
-	policy := []Object{}
-	if len(normal) > 0 {
-		policy = append(policy, Object{"select": Object{"name": "PROXY", "policies": normal}})
-	}
-	if len(gateway) > 0 {
-		policy = append(policy, Object{"select": Object{"name": "VPNGate", "policies": gateway}})
-	}
-	rules := []Object{}
-	for _, r := range t.Rules {
-		target := r.Target
-		if target == "PROXY" {
-			target = templateFinal(nodes, t)
-		}
-		key := map[string]string{"domain": "domain", "domain_suffix": "domain_suffix", "ip_cidr": "ip_cidr"}[r.Type]
-		rules = append(rules, Object{key: Object{"match": r.Value, "policy": target}})
-	}
-	if t.PrivateNetwork {
-		for _, cidr := range privateCIDRs {
-			rules = append(rules, Object{"ip_cidr": Object{"match": cidr, "policy": "DIRECT"}})
-		}
-	}
-	if t.Preset == "split" {
-		rules = append(rules, Object{"geoip": Object{"match": "CN", "policy": "DIRECT"}})
-	}
-	rules = append(rules, Object{"default": Object{"policy": templateFinal(nodes, t)}})
-	return applyNativeTemplate(t.Native, Object{"proxies": native, "policy_groups": policy, "rules": rules})
 }
 
 func shadowrocketRules(t Template) string {

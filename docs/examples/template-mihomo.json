@@ -35,5 +35,9 @@
   "rules": [
     { "type": "domain_suffix", "value": "youtube.com", "target": "Media" }
   ],
-  "native": { "external-controller": "127.0.0.1:9090" }
+  "native": {
+    "mixed-port": 17890,
+    "log-level": "info",
+    "external-controller": "127.0.0.1:9090"
+  }
 }

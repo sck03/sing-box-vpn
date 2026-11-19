@@ -38,6 +38,17 @@ func validateTemplateExtensions(t Template) error {
 	if (len(t.Groups) > 0 || len(t.Providers) > 0 || t.DNSPolicy != nil || len(t.Native) > 0) && t.Mode != "config" {
 		return errors.New("template extensions require complete config mode")
 	}
+	fields := clientprofile.TemplateFields(t.Client)
+	for _, key := range fields.Managed {
+		if _, exists := t.Native[key]; exists {
+			return fmt.Errorf("native.%s is managed by the template compiler; use the corresponding template setting", key)
+		}
+	}
+	for _, key := range fields.Forbidden {
+		if _, exists := t.Native[key]; exists {
+			return fmt.Errorf("native.%s is forbidden; declare sources and rules in the subscription configuration", key)
+		}
+	}
 	if len(t.Groups) > 0 && !cap.Features.PolicyGroups || len(t.Providers) > 0 && !cap.Features.RuleProviders || t.DNSPolicy != nil && !cap.Features.AdvancedDNS || len(t.Native) > 0 && !cap.Features.NativeTemplate {
 		return errors.New("target adapter cannot preserve template extensions")
 	}
@@ -145,7 +156,7 @@ func validateTemplateExtensions(t Template) error {
 		}
 	}
 	if t.DNSPolicy != nil {
-		if t.Client == "sing-box" && (t.DNSPolicy.FakeIP || t.DNSPolicy.IPv6 || len(t.DNSPolicy.FakeIPFilter) > 0 || len(t.DNSPolicy.Local) > 1 || len(t.DNSPolicy.Remote) > 1 || len(t.DNSPolicy.Bootstrap) > 1) {
+		if t.Client == "sing-box" && (t.DNSPolicy.FakeIP != nil && *t.DNSPolicy.FakeIP || t.DNSPolicy.IPv6 || len(t.DNSPolicy.FakeIPFilter) > 0 || len(t.DNSPolicy.Local) > 1 || len(t.DNSPolicy.Remote) > 1 || len(t.DNSPolicy.Bootstrap) > 1) {
 			return errors.New("sing-box DNS policy accepts one resolver per role and uses native address handling")
 		}
 		return t.DNSPolicy.Validate()
@@ -181,11 +192,11 @@ func applyNativeTemplate(base Object, generated Object) Object {
 		return generated
 	}
 	result := make(Object, len(base)+len(generated))
-	for key, value := range base {
+	// Validation excludes managed sections. User base fields override defaults.
+	for key, value := range generated {
 		result[key] = value
 	}
-	// Generated connection, routing and DNS sections remain authoritative.
-	for key, value := range generated {
+	for key, value := range base {
 		result[key] = value
 	}
 	return result

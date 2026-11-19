@@ -61,14 +61,28 @@ formDialog(
   true,
 );
 assert.equal(
-  field("Fake-IP").checked,
-  true,
+  field("Fake-IP").value,
+  "",
   "form did not show the effective default",
 );
-field("Fake-IP").checked = false;
+field("代理 DNS").value = "https://dns.google/dns-query";
+submit();
+await tick();
+assert.equal(saved.dns_policy.fake_ip, undefined, "editing DNS must preserve inheritance");
+assert.deepEqual(saved.dns_policy.remote, ["https://dns.google/dns-query"]);
+formDialog("关闭 Fake-IP", templateFields(catalog), saved, (value) => { saved = normalizeTemplate(value, catalog); }, true);
+field("Fake-IP").value = "false";
 submit();
 await tick();
 assert.equal(saved.dns_policy.fake_ip, false, "explicit disable was discarded");
+formDialog("继承 Fake-IP", templateFields(catalog), saved, (value) => { saved = normalizeTemplate(value, catalog); }, true);
+field("Fake-IP").value = "";
+submit();
+await tick();
+assert.equal(Object.hasOwn(saved.dns_policy, "fake_ip"), false);
+assert.throws(() => normalizeTemplate({ client: "mihomo", mode: "config", native: { dns: {} } }, {
+  mihomo: { ...catalog.mihomo, native_fields: { managed: ["dns"] } },
+}), /native.dns/);
 
 const calls = [];
 const account = {
@@ -168,7 +182,7 @@ document.querySelector("dialog").close();
 
 const config = {
   subscriptions: {
-    version: 4,
+    version: 5,
     sources: [],
     collections: [],
     templates: [],
@@ -197,7 +211,7 @@ const wizardContext = {
     changed = true;
   },
   render() {},
-  workflowRequest: async (path, value) => {
+  request: async (path, value) => {
     assert.equal(path, "/api/config/preview");
     assert.equal(value.subscriptions.sources[0].format, "auto");
     return {
@@ -263,6 +277,40 @@ assert(localChange.local);
 assert.equal(editor.querySelector(".search"), search);
 assert.equal(search.value, "Alpha");
 assert.match(editor.textContent, /Alpha updated/);
+
+const { requestConfiguration, showConfiguration } = await import("../internal/manage/panel/config-preview.js");
+const dialog = document.querySelector("dialog");
+let resolvePreview, previewSignal;
+const previewController = new AbortController();
+const pendingPreview = requestConfiguration((signal) => {
+  previewSignal = signal;
+  return new Promise((resolve) => { resolvePreview = resolve; });
+}, [], { signal: previewController.signal });
+formDialog("新的编辑窗口", [{ key: "name", label: "新名称" }], {}, () => {});
+await tick();
+assert(previewSignal.aborted, "replacing a preview must abort its request");
+resolvePreview({ outputs: [] });
+await pendingPreview;
+assert.match(dialog.textContent, /新的编辑窗口/, "late preview replaced a newer editor");
+
+let resolveDetail, detailSignal;
+const page = new AbortController();
+showConfiguration({ outputs: [{ id: "out", available: true }] }, [], {
+  signal: page.signal,
+  loadOutput: (id, signal) => {
+    detailSignal = signal;
+    return new Promise((resolve) => { resolveDetail = resolve; });
+  },
+});
+click("查看配置", dialog);
+page.abort();
+assert(detailSignal.aborted);
+assert.equal(dialog.open, false, "page exit must close its preview");
+formDialog("下一页编辑", [], {}, () => {});
+resolveDetail({ preview: { content: "stale secret" } });
+await tick();
+assert.match(dialog.textContent, /下一页编辑/);
+assert.doesNotMatch(dialog.textContent, /stale secret/);
 
 clearTimeout(notice.timer);
 dom.window.close();

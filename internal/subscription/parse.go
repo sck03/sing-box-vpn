@@ -243,6 +243,13 @@ func FromSingBox(m Object) (Node, error) {
 	if n.Protocol == "shadowsocks" {
 		n.Protocol, n.Cipher = "ss", str(m["method"])
 	}
+	if value, exists := m["hop_interval"]; exists {
+		var err error
+		n.HopIntervalSeconds, err = hoppingInterval(str(value))
+		if err != nil {
+			return n, err
+		}
+	}
 	t := obj(m["tls"])
 	reality := obj(t["reality"])
 	n.TLS = TLS{Enabled: boolean(t["enabled"]), ServerName: str(t["server_name"]), Insecure: boolean(t["insecure"]), ALPN: stringList(t["alpn"]), PublicKeyPins: stringList(t["certificate_public_key_sha256"]), Fingerprint: str(obj(t["utls"])["fingerprint"]), RealityKey: str(reality["public_key"]), RealityShortID: str(reality["short_id"])}
@@ -307,6 +314,7 @@ func fromMihomo(m Object) (Node, error) {
 	if ports := str(m["ports"]); ports != "" {
 		n.Ports = strings.Split(ports, ",")
 	}
+	n.HopIntervalSeconds = integer(m["hop-interval"])
 	n = normalizeNode(n)
 	return n, n.Validate()
 }

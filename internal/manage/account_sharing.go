@@ -99,7 +99,7 @@ func (s *PlatformService) validateShare(ctx context.Context, g accounting.Grant)
 	if reason != "" {
 		return errors.New(reason)
 	}
-	options, err := s.accountService().ClientOptions(ctx, g.AccountID, g.Scope)
+	options, err := s.accountService().ClientOptions(ctx, g.AccountID, g.Scope, append([]string{}, g.Clients...))
 	if err != nil {
 		return err
 	}

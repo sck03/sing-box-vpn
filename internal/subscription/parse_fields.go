@@ -63,7 +63,7 @@ func nativeFields(m Object, stringsKeys, integers, booleans, objects, lists stri
 }
 
 func singBoxFields(m Object) error {
-	if err := nativeFields(m, "type tag server uuid password flow security method congestion_control udp_relay_mode heartbeat idle_session_check_interval idle_session_timeout plugin plugin_opts", "server_port alter_id min_idle_session", "zero_rtt_handshake", "tls transport obfs", "server_ports"); err != nil {
+	if err := nativeFields(m, "type tag server uuid password flow security method congestion_control udp_relay_mode hop_interval heartbeat idle_session_check_interval idle_session_timeout plugin plugin_opts", "server_port alter_id min_idle_session", "zero_rtt_handshake", "tls transport obfs", "server_ports"); err != nil {
 		return err
 	}
 	if integer(m["alter_id"]) != 0 || boolean(m["zero_rtt_handshake"]) {
@@ -107,7 +107,7 @@ func singBoxFields(m Object) error {
 }
 
 func mihomoFields(m Object) error {
-	if err := nativeFields(m, "name type server uuid password cipher flow congestion-controller udp-relay-mode servername sni fingerprint client-fingerprint network ports obfs obfs-password plugin", "port alterId idle-session-check-interval idle-session-timeout min-idle-session", "tls skip-cert-verify udp", "reality-opts ws-opts grpc-opts plugin-opts xhttp-opts", "alpn"); err != nil {
+	if err := nativeFields(m, "name type server uuid password cipher flow congestion-controller udp-relay-mode servername sni fingerprint client-fingerprint network ports obfs obfs-password plugin", "port alterId hop-interval idle-session-check-interval idle-session-timeout min-idle-session", "tls skip-cert-verify udp", "reality-opts ws-opts grpc-opts plugin-opts xhttp-opts", "alpn"); err != nil {
 		return err
 	}
 	if value, ok := m["udp"]; ok && !boolean(value) {

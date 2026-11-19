@@ -118,8 +118,8 @@ export function templateFields(catalog) {
     {
       key: "dns_policy.fake_ip",
       label: "Fake-IP",
-      type: "bool",
-      default: true,
+      type: "tristate",
+      options: [["", "继承模板默认（启用）"], ["true", "启用"], ["false", "关闭"]],
       advanced: true,
       visible: (v) =>
         complete(v) && ["mihomo", "openclash", "stash"].includes(v.client),
@@ -132,7 +132,7 @@ export function templateFields(catalog) {
       visible: (v) =>
         complete(v) &&
         ["mihomo", "openclash", "stash"].includes(v.client) &&
-        v.dns_policy?.fake_ip,
+        v.dns_policy?.fake_ip !== false,
     },
     {
       key: "dns_policy.ipv6",
@@ -149,7 +149,7 @@ export function templateFields(catalog) {
       wide: true,
       advanced: true,
       visible: (v) => complete(v) && capability(v)?.features.native_template,
-      help: "补充客户端字段；节点、策略组、路由和 DNS 由模板编译器生成。",
+      help: "基础字段可覆盖默认值；节点、策略组、路由和 DNS 等受管理字段不可覆盖。详见客户端字段范围。",
     },
     {
       key: "rules",
@@ -164,6 +164,11 @@ export function templateFields(catalog) {
 
 export function normalizeTemplate(value, catalog) {
   const features = catalog[value.client]?.features || {};
+  const nativeFields = catalog[value.client]?.native_fields;
+  for (const key of [...(nativeFields?.managed || []), ...(nativeFields?.forbidden || [])]) {
+    if (Object.hasOwn(value.native || {}, key))
+      throw new Error(`native.${key} 由订阅编译器管理或禁止覆盖，请使用对应模板设置。`);
+  }
   if (value.mode !== "config") {
     delete value.preset;
     delete value.dns;
@@ -184,11 +189,13 @@ export function normalizeTemplate(value, catalog) {
   if (!features.rule_providers) delete value.providers;
   if (!features.native_template) delete value.native;
   if (value.client === "sing-box" && value.dns_policy) {
-    value.dns_policy.fake_ip = false;
-    value.dns_policy.ipv6 = false;
+    delete value.dns_policy.fake_ip;
+    delete value.dns_policy.ipv6;
     delete value.dns_policy.fake_ip_filter;
   }
-  if (value.dns_policy && !value.dns_policy.fake_ip)
+  if (value.dns_policy?.fake_ip === undefined)
+    delete value.dns_policy?.fake_ip;
+  if (value.dns_policy?.fake_ip === false)
     delete value.dns_policy.fake_ip_filter;
   if (value.dns_policy && Object.keys(value.dns_policy).length === 0)
     delete value.dns_policy;

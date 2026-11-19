@@ -20,12 +20,13 @@ type AccountService struct {
 	Control configurationReader
 	// Config supplies an explicit immutable candidate for compilation. Downloads
 	// leave it nil and capture the confirmed configuration once per operation.
-	Config *PlatformConfig
-	view   *subscriptionView
+	Config  *PlatformConfig
+	view    *subscriptionView
+	exports *accountExportCache
 }
 
 func (s *PlatformService) accountService() AccountService {
-	return AccountService{Root: s.Root, Core: s.Core, Store: s.Accounts, Control: s.Store, view: &s.exportView}
+	return AccountService{Root: s.Root, Core: s.Core, Store: s.Accounts, Control: s.Store, view: &s.exportView, exports: &s.exportPlans}
 }
 
 type bindingRepository struct{ *accounting.Store }

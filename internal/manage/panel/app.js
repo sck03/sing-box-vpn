@@ -2,7 +2,7 @@ import { api, setCSRF } from "./api.js";
 import { overviewStream } from "./live.js";
 import { pageContext } from "./lifecycle.js";
 import { capabilities, validatePassword } from "./capabilities.js";
-import { showConfiguration } from "./config-preview.js";
+import { requestConfiguration } from "./config-preview.js";
 import {
   navigation,
   markNavigation,
@@ -223,6 +223,8 @@ function navigate(id) {
 function applyRoute(next) {
   setMenu(false);
   if (page === next.page && section === next.section) return;
+  if ($("#dialog").open) $("#dialog").close();
+  $("#dialog").replaceChildren();
   const samePage = page === next.page;
   page = next.page;
   section = next.section;
@@ -288,8 +290,6 @@ $("#preview").addEventListener(
     const submitted = structuredClone(draft);
     const baseline = original;
     const generation = draftGeneration;
-    const result = await api("/api/config/preview", submitted);
-    if (generation !== draftGeneration) return;
     const changed = [];
     function diff(a, b, path = "") {
       if (JSON.stringify(a) === JSON.stringify(b)) return;
@@ -306,7 +306,15 @@ $("#preview").addEventListener(
       } else changed.push(path);
     }
     diff(baseline, submitted);
-    showConfiguration(result, changed);
+    await requestConfiguration(async (signal) => {
+      const result = await api("/api/config/preview", submitted, { signal });
+      if (generation !== draftGeneration)
+        throw new DOMException("草稿已重新载入", "AbortError");
+      return result;
+    }, changed, {
+      signal: pageRequest?.signal,
+      loadOutput: (id, signal) => api("/api/config/preview-output", { id, config: submitted }, { signal }),
+    });
   }),
 );
 $("#discard").addEventListener(

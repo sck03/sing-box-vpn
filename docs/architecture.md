@@ -1,6 +1,6 @@
 # 架构与维护
 
-`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 13；平台配置 schema=4、节点文档 schema=2、订阅配置 schema=4、模板 version=1 是各自独立的格式版本。只接受当前配置，不提供旧数据库、订阅内容、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责。
+`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 13；平台配置 schema=4、节点文档 schema=2、订阅配置 schema=5、模板 version=1 是各自独立的格式版本。只接受当前配置，不提供旧数据库、订阅内容、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责。
 
 公网传输由 `internal/publicaccess` 管理，共用 `internal/tlsconfig`；服务登记位于 `internal/servicecatalog`。主机操作按 service/deployment/units/gateway/network/journal 分文件，日志系统适配位于 `internal/hostservice`。任务保留策略与执行终态分离；面板访问重启由独立助手和持久收据完成。账户服务不再回退读取旧 JSON 配置，调用者必须注入配置/控制仓库，或读取当前数据库。
 
@@ -8,7 +8,7 @@
 
 订阅流水线为 Source → ParseResult → normalize/Process → PreparedOutput → renderer → Snapshot。纯解析、连接模型、账户模板策略与声明式模板位于 `internal/subscription`；`renderers.go` 显式登记编码器，sing-box、Mihomo、URI 的字段映射各自独立。`internal/clientprofile` 描述客户端、协议、传输、加密和插件范围。新增客户端必须登记编码器和能力，补充字段往返及核心/应用验收，不使用隐式文本回退。
 
-编译缓存以 SchemaVersion、CompilerVersion、选定节点和有效模板的摘要为键，复用前验证产物 ETag/正文摘要。连接、证书、模板或规则变化会失效；来源/能力/路由安全仍每次检查。改变解析或渲染语义时递增 CompilerVersion，数据结构变化时再递增 SchemaVersion。sing-box 核心校验另以核心身份和产物 ETag 缓存。
+编译缓存以 SchemaVersion、CompilerVersion、选定节点和有效模板的摘要为键，复用前验证产物 ETag/正文摘要。连接、证书、模板或规则变化会失效；来源/能力/路由安全仍每次检查。解析语义变化时递增 ParserVersion，使来源正文与条件请求缓存失效；渲染语义变化时递增 CompilerVersion；持久化结构变化时递增 SchemaVersion。sing-box 核心校验另以核心身份和产物 ETag 缓存。
 
 subscriptions/schedule.json 是截止时间与权益修订的小型投影，不包含节点、远端凭据或内联正文；运行缓存与调度投影通过同一发布日志提交。常规空闲调度只读此文件，缺失时可从当前配置/运行元信息恢复。subscriptions/output-status.json 记录输出节点数量、实际验证和最多 20 条诊断，避免状态查询解码整个已发布节点正文。这些文件都可重建，配置权威仍为数据库。
 
@@ -85,6 +85,10 @@ HTTP/CLI → Validate → 校验资源引用/核心配置 → revision CAS 保�
 账户导出一次捕获完整已应用配置；候选订阅编译显式注入候选快照，地址、入口、VPNGate 与 Argo 不混读不同版本。临时 Argo 观察包含隧道设置、systemd InvocationID 与域名；同一次运行的域名不因日志滚动丢失，设置或运行代次变化后不复用。发布失败用独立有界恢复上下文还原观察记录。BBR 恢复先校验所有权与原值，成功恢复内核值后才删除项目文件，最后清理恢复记录。
 
 ## 计量与恢复
+
+订阅编译保持无 HTTP/数据库依赖的 `internal/subscription` 边界；客户端字段与原生模板归属由 `internal/clientprofile` 提供。解析、规范化、能力判断、输出计划及客户端渲染按独立文件组织，Egern/Stash 不再混在通用模板文件内。管理层负责快照、授权、核心校验及发布；`account_export_cache.go` 只持有有界不可变编译结果，不缓存权限和用量。解析缓存与渲染缓存分别由 ParserVersion 和 CompilerVersion 失效，避免修改解析器却继续使用旧 304 节点。
+
+前端 `dialog-session.js` 管理预览弹窗的归属、取消信号和清理；`config-preview.js` 负责内容展示。页面请求和弹窗请求的信号组合后传递至 API，响应正文读取结束仍检查取消状态。其他编辑器替换弹窗时，旧预览不能写回新编辑器。
 
 每权益每实例共享最多 64 KiB 持久预留池，批量累计检查点幂等结算。预留先落盘再交付转发，崩溃保守占用剩余额度。关闭连接时回收无引用池；无图表观看时不影响计量。周期以 IANA 时区与日历计算，短月截断，时钟回拨不回退 period ID。旧周期检查点只结算旧账期。
 

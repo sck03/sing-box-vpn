@@ -218,7 +218,7 @@ func TestAccountDownloadsUseSharedClientCatalog(t *testing.T) {
 	}
 	defer store.Close()
 	config := PlatformConfig{App: app}
-	service := AccountService{Root: root, Store: store, Config: &config}
+	service := AccountService{Root: root, Core: core, Store: store, Config: &config}
 	if err := store.SaveAccount(t.Context(), domain.Account{ID: "all", Name: "All"}); err != nil {
 		t.Fatal(err)
 	}

@@ -1,11 +1,11 @@
 import { api } from "./api.js";
 import { clientOptions } from "./clients.js";
 import { formDialog } from "./ui.js";
-import { showConfiguration } from "./config-preview.js";
+import { requestConfiguration } from "./config-preview.js";
 import { resourceID } from "./template-settings.js";
 
 export function subscriptionWizard(ctx, config, catalog, presets) {
-  const request = ctx.workflowRequest || api;
+  const request = ctx.request || api;
   const defaultClient = catalog["sing-box"]
     ? "sing-box"
     : Object.keys(catalog)[0];
@@ -107,8 +107,8 @@ export function subscriptionWizard(ctx, config, catalog, presets) {
         template: template.id,
         skip_unsupported: value.skip_unsupported,
       });
-      const preview = await request("/api/config/preview", candidate);
       const current = async () => {
+        ctx.signal?.throwIfAborted();
         if (
           (await ctx.config()) !== config ||
           JSON.stringify(config) !== before
@@ -117,10 +117,14 @@ export function subscriptionWizard(ctx, config, catalog, presets) {
             "预览期间草稿发生变化，请重新创建，避免覆盖其他修改。",
           );
       };
-      await current();
-      showConfiguration(preview, [], {
-        loadOutput: (id) =>
-          request("/api/config/preview-output", { id, config: candidate }),
+      await requestConfiguration(async (signal) => {
+        const result = await request("/api/config/preview", candidate, { signal });
+        await current();
+        return result;
+      }, [], {
+        signal: ctx.signal,
+        loadOutput: (id, signal) =>
+          request("/api/config/preview-output", { id, config: candidate }, { signal }),
         applyDraft: async () => {
           await current();
           config.subscriptions = candidate.subscriptions;

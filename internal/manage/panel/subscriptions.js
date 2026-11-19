@@ -1,7 +1,7 @@
 import { api } from "./api.js";
 import { workspace } from "./workspace.js";
 import { disclosure } from "./sections.js";
-import { showConfiguration } from "./config-preview.js";
+import { requestConfiguration } from "./config-preview.js";
 import { subscriptionStatus } from "./subscription-status.js";
 import { clientCatalog, templateFields, normalizeTemplate } from "./clients.js";
 import { processorFields, templateResources } from "./subscription-fields.js";
@@ -11,7 +11,7 @@ import {
   resourceID,
 } from "./template-settings.js";
 import { subscriptionWizard } from "./subscription-wizard.js";
-import { showClientCapabilities } from "./client-capabilities.js";
+import { showClientCapabilities, verificationLabel } from "./client-capabilities.js";
 import {
   el,
   card,
@@ -82,12 +82,7 @@ export async function subscriptions(ctx) {
                 { label: "支持输出", value: (p) => p.modes.join(" / ") },
                 {
                   label: "验证",
-                  value: (p) =>
-                    p.tested_version
-                      ? "参考核心 " + p.tested_version
-                      : p.experimental
-                        ? "实验适配"
-                        : "通用格式",
+                  value: verificationLabel,
                 },
               ],
               Object.values(await getClients()),
@@ -111,9 +106,10 @@ export async function subscriptions(ctx) {
             "primary",
           ),
           button("预览", async () =>
-            showConfiguration(await api("/api/config/preview", c), [], {
-              loadOutput: (id) =>
-                api("/api/config/preview-output", { id, config: c }),
+            requestConfiguration((signal) => request("/api/config/preview", c, { signal }), [], {
+              signal: ctx.signal,
+              loadOutput: (id, signal) =>
+                request("/api/config/preview-output", { id, config: c }, { signal }),
             }),
           ),
           button("刷新来源", () =>

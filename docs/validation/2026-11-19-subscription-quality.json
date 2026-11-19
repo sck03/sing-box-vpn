@@ -1,0 +1,92 @@
+{
+  "date": "2026-11-19",
+  "base_commit": "733cd750e61cd7e3fd1ab30ba9bb85eb9c0c9c2e",
+  "environment": {
+    "os": "Windows amd64",
+    "cpu": "Intel Core i5-9400F",
+    "go": "1.27.3",
+    "node": "24.18.0",
+    "sing_box": "1.14.4",
+    "mihomo": "1.19.33"
+  },
+  "versions": {
+    "subscription_schema": 5,
+    "parser": 1,
+    "compiler": 3,
+    "template": 1,
+    "platform": 4,
+    "node_document": 2,
+    "database": 13,
+    "backup": 7
+  },
+  "validation": {
+    "go_test_all": "passed",
+    "go_vet_all": "passed",
+    "npm_test": "all seven suites passed",
+    "race": "go test -race ./internal/subscription ./internal/manage passed; cache, authorization, strict-validator and parser-upgrade tests rerun with race after final production fix",
+    "strict_client_validation": "passed: SBVPN_REQUIRE_CLIENT_CHECK=1 go test ./internal/manage ./internal/subscription -count=1",
+    "native_configuration": "sing-box and Mihomo configuration checks passed, including Hysteria2 hopping intervals and extended DNS/templates",
+    "live_panel_api": "passed using final binary with SBVPN_REQUIRE_CLIENT_CHECK=1; checks schema 5, shared native-field ownership and hopping capabilities, binding/export/share/download limits/preview/apply",
+    "browser": "Chrome desktop 1280x900 and mobile viewport 390x844 passed; preview and mobile screenshots visually inspected; no page errors",
+    "build": "Windows amd64 gateway and managed core; Linux amd64 and arm64 gateway and managed core passed",
+    "github_ci": "pushed revision is checked independently by the existing GitHub Actions workflow"
+  },
+  "cache_benchmark": {
+    "command": "go test ./internal/manage -run '^$' -bench '^BenchmarkAccountCompilation$' -benchtime=300ms -count=3 -benchmem",
+    "fixture": "256 distinct Trojan nodes rendered as URI; immutable account inputs already captured",
+    "uncached": [
+      {
+        "ns_op": 3312389,
+        "bytes_op": 1285009,
+        "allocs_op": 5189
+      },
+      {
+        "ns_op": 3205234,
+        "bytes_op": 1287908,
+        "allocs_op": 5189
+      },
+      {
+        "ns_op": 2678288,
+        "bytes_op": 1290834,
+        "allocs_op": 5190
+      }
+    ],
+    "cached": [
+      {
+        "ns_op": 1945414,
+        "bytes_op": 866068,
+        "allocs_op": 3107
+      },
+      {
+        "ns_op": 1988543,
+        "bytes_op": 868085,
+        "allocs_op": 3108
+      },
+      {
+        "ns_op": 2349296,
+        "bytes_op": 867438,
+        "allocs_op": 3108
+      }
+    ],
+    "scope": "Includes template lookup, planning/rendering on misses and format validation on every request; excludes database reads, node digest calculation, export response copies and network I/O. No production RSS or proxy throughput claim."
+  },
+  "cleanup": {
+    "action": "moved",
+    "directory": ".cleanup-manual/subscription-quality-2026-11-19/",
+    "files": 19,
+    "size_mib_rounded": 196.1,
+    "reason": "Deletion command was blocked by automatic policy; moved the files using the user-authorized fallback.",
+    "contents": [
+      "six disposable Windows/Linux build binaries",
+      "three superseded test logs",
+      "nine browser screenshots (current preview retained in docs/images/subscription-preview.png)",
+      "temporary upstream-egern.js reference"
+    ],
+    "retained": "Reusable Go/Node/Python toolchains and dependency caches; legacy_*_test.go fixtures still used by credential, port, publication and export regressions, excluded from production builds."
+  },
+  "not_validated": [
+    "Commercial client application import and physical OpenClash/mobile devices",
+    "Long-running production load, physical power loss, public ACME and volunteer VPNGate endpoints",
+    "New native Linux runtime acceptance is left to CI; cross-compilation is not a Linux runtime test"
+  ]
+}

@@ -41,6 +41,7 @@ type PlatformService struct {
 	activePanel         *PanelOptions
 	workerReady         atomic.Bool
 	exportView          subscriptionView
+	exportPlans         accountExportCache
 }
 type PlatformAction struct {
 	Operation    string                          `json:"operation"`

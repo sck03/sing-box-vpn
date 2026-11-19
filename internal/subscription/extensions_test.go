@@ -184,7 +184,7 @@ func TestTemplatePolicySafetyAndOrder(t *testing.T) {
 		Groups:    []PolicyGroup{{ID: "Region", Type: "urltest", Scope: "normal"}},
 		Providers: []RuleProvider{{ID: "Custom", URL: "https://example.com/rules.mrs", Type: "domain", Format: "mrs", Target: "Region"}},
 		Rules:     []Rule{{Type: "domain", Value: "local.example.com", Target: "DIRECT"}},
-		Native:    Object{"external-controller": "127.0.0.1:9090", "rules": []string{"MATCH,DIRECT"}},
+		Native:    Object{"external-controller": "127.0.0.1:9090"},
 	}
 	a, _, err := Render([]Node{n}, template, false)
 	if err != nil {
@@ -235,10 +235,11 @@ func TestExtendedTemplatesWithInstalledCores(t *testing.T) {
 			upgrade.Transport = Transport{Type: "httpupgrade", Host: "ws.example.com", Path: "/upgrade"}
 			hy2 := testNodes()[2]
 			hy2.Obfs, hy2.ObfsPassword = "salamander", "obfs-secret"
+			hy2.Ports, hy2.HopIntervalSeconds = []string{"1000:2000"}, 30
 			policy := &DNSPolicy{Local: []string{"https://dns.alidns.com/dns-query"}, Remote: []string{"tls://one.one.one.one:853"}, Bootstrap: []string{"223.5.5.5"}}
 			template := Template{ID: "test", Client: client, Version: 1, Mode: "config", Preset: "split", DNSPolicy: policy, Groups: []PolicyGroup{{ID: "Region", Type: "urltest", Scope: "normal", Tolerance: 50}}}
 			if client == "mihomo" {
-				policy.FakeIP, policy.IPv6 = true, true
+				policy.FakeIP, policy.IPv6 = new(true), true
 			}
 			a, _, err := Render([]Node{n, upgrade, hy2}, template, false)
 			if err != nil {

@@ -12,8 +12,8 @@ type DNSPolicy struct {
 	Local        []string `json:"local,omitempty"`
 	Remote       []string `json:"remote,omitempty"`
 	Bootstrap    []string `json:"bootstrap,omitempty"`
-	FakeIP       bool     `json:"fake_ip"`
-	FakeIPFilter []string `json:"fake_ip_filter,omitempty"`
+	FakeIP       *bool    `json:"fake_ip,omitempty"`
+	FakeIPFilter []string `json:"fake_ip_filter,omitzero"`
 	IPv6         bool     `json:"ipv6"`
 }
 
@@ -56,7 +56,7 @@ func (p DNSPolicy) Validate() error {
 			return err
 		}
 	}
-	if p.FakeIP {
+	if p.fakeIPEnabled() {
 		return nil
 	}
 	if len(p.FakeIPFilter) > 0 {
@@ -65,8 +65,11 @@ func (p DNSPolicy) Validate() error {
 	return nil
 }
 
+// nil inherits the managed default; explicit false must survive JSON round trips.
+func (p DNSPolicy) fakeIPEnabled() bool { return p.FakeIP == nil || *p.FakeIP }
+
 func dnsPolicy(t Template) DNSPolicy {
-	p := DNSPolicy{Local: []string{"223.5.5.5"}, Remote: templateDNS(t), Bootstrap: []string{"223.5.5.5"}, FakeIP: true, FakeIPFilter: []string{"*.lan", "localhost", "+.local"}}
+	p := DNSPolicy{Local: []string{"223.5.5.5"}, Remote: templateDNS(t), Bootstrap: []string{"223.5.5.5"}, FakeIPFilter: []string{"*.lan", "localhost", "+.local"}}
 	if t.DNSPolicy != nil {
 		if len(t.DNSPolicy.Local) > 0 {
 			p.Local = t.DNSPolicy.Local
@@ -77,7 +80,10 @@ func dnsPolicy(t Template) DNSPolicy {
 		if len(t.DNSPolicy.Bootstrap) > 0 {
 			p.Bootstrap = t.DNSPolicy.Bootstrap
 		}
-		p.FakeIP, p.IPv6, p.FakeIPFilter = t.DNSPolicy.FakeIP, t.DNSPolicy.IPv6, t.DNSPolicy.FakeIPFilter
+		p.FakeIP, p.IPv6 = t.DNSPolicy.FakeIP, t.DNSPolicy.IPv6
+		if t.DNSPolicy.FakeIPFilter != nil {
+			p.FakeIPFilter = t.DNSPolicy.FakeIPFilter
+		}
 	}
 	return p
 }

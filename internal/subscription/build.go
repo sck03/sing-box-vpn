@@ -98,7 +98,13 @@ type Snapshot struct {
 	Validations  map[string]Validation   `json:"validations,omitempty"`
 }
 
-func SourceHash(source Source) string { data, _ := json.Marshal(source); return Digest(data) }
+func SourceHash(source Source) string {
+	data, _ := json.Marshal(struct {
+		Parser int
+		Source Source
+	}{ParserVersion, source})
+	return Digest(data)
+}
 
 func DefaultConfig() Config {
 	c := Config{Version: SchemaVersion, Revision: 1, RuleSets: []RuleSet{}, Sources: []Source{}, Collections: []Collection{}, Outputs: []Output{}}

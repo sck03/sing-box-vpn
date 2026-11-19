@@ -1,6 +1,9 @@
 package subscription
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 func (n Node) SingBox() Object {
 	kind := n.Protocol
@@ -82,6 +85,9 @@ func (n Node) SingBox() Object {
 			ports[i] = p
 		}
 		o["server_ports"] = ports
+	}
+	if n.HopIntervalSeconds != 0 {
+		o["hop_interval"] = strconv.Itoa(n.HopIntervalSeconds) + "s"
 	}
 	if n.Protocol == "tuic" {
 		o["congestion_control"], o["udp_relay_mode"], o["zero_rtt_handshake"], o["heartbeat"] = fallback(n.Congestion, "bbr"), fallback(n.UDPRelay, "native"), false, "10s"

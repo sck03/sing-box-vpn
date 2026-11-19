@@ -89,6 +89,9 @@ func (n Node) Mihomo() Object {
 	if len(n.Ports) > 0 {
 		o["ports"] = strings.ReplaceAll(strings.Join(n.Ports, ","), ":", "-")
 	}
+	if n.HopIntervalSeconds != 0 {
+		o["hop-interval"] = n.HopIntervalSeconds
+	}
 	if n.Protocol == "tuic" {
 		o["congestion-controller"], o["udp-relay-mode"] = fallback(n.Congestion, "bbr"), fallback(n.UDPRelay, "native")
 	}

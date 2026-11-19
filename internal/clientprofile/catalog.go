@@ -9,6 +9,7 @@ type Features struct {
 	DNS            bool `json:"dns"`
 	Probe          bool `json:"probe"`
 	PortHopping    bool `json:"port_hopping"`
+	HopInterval    bool `json:"hop_interval"`
 	CertificatePin bool `json:"certificate_pin"`
 	PublicKeyPin   bool `json:"public_key_pin"`
 	UTLS           bool `json:"utls"`
@@ -46,9 +47,11 @@ type Connection struct {
 
 type Client struct {
 	Profile
-	Extension   string                `json:"extension"`
-	Platforms   []string              `json:"platforms"`
-	Connections map[string]Connection `json:"connections"`
+	Extension    string                `json:"extension"`
+	Platforms    []string              `json:"platforms"`
+	Connections  map[string]Connection `json:"connections"`
+	NativeFields NativeFields          `json:"native_fields"`
+	Limitations  []string              `json:"limitations,omitempty"`
 }
 
 var protocols = []string{"vless", "vmess", "hysteria2", "tuic", "anytls", "trojan", "ss"}
@@ -65,7 +68,7 @@ var catalog = map[string]Profile{
 	"quantumult-x": {"Quantumult X", []string{"vless", "vmess", "anytls", "trojan", "ss"}, []string{"nodes", "config"}, "config", "encoder-only", "", true, Features{DNS: true}},
 	"surfboard":    {"Surfboard", []string{"vmess", "hysteria2", "tuic", "anytls", "trojan", "ss"}, []string{"nodes", "config"}, "config", "encoder-only", "", true, Features{DNS: true, PortHopping: true, CertificatePin: true}},
 	"stash":        {"Stash", protocols, []string{"provider", "config"}, "provider", "encoder-only", "", true, Features{DNS: true, Probe: true}},
-	"egern":        {"Egern", protocols, []string{"nodes", "config"}, "config", "encoder-only", "", true, Features{PortHopping: true}},
+	"egern":        {"Egern", protocols, []string{"nodes", "config"}, "config", "encoder-only", "", true, Features{PortHopping: true, CertificatePin: true, HysteriaObfs: true, GRPC: true}},
 	"shadowrocket": {"Shadowrocket", protocols, []string{"nodes", "rules"}, "nodes", "uri-roundtrip; app untested", "", true, Features{PortHopping: true, UTLS: true}},
 	"uri":          {"通用 URI", protocols, []string{"nodes"}, "nodes", "parser-roundtrip", "", false, Features{PortHopping: true, UTLS: true}},
 	"base64":       {"Base64 URI", protocols, []string{"nodes"}, "nodes", "parser-roundtrip", "", false, Features{PortHopping: true, UTLS: true}},
@@ -73,6 +76,7 @@ var catalog = map[string]Profile{
 
 func Lookup(id string) (Profile, bool) {
 	p, ok := catalog[id]
+	p.Features.HopInterval = slices.Contains([]string{"sing-box", "mihomo", "openclash", "egern"}, id)
 	if slices.Contains([]string{"sing-box", "mihomo", "openclash", "uri", "base64", "shadowrocket"}, id) {
 		p.Features.GRPC, p.Features.HTTPUpgrade = true, true
 	}
@@ -104,9 +108,12 @@ func SupportsAccount(id string) bool { _, ok := catalog[id]; return ok }
 
 func Describe(id string) (Client, bool) {
 	p, ok := Lookup(id)
-	c := Client{Profile: p, Extension: Extension(id), Connections: map[string]Connection{}}
+	c := Client{Profile: p, Extension: Extension(id), Connections: map[string]Connection{}, NativeFields: TemplateFields(id)}
 	for _, protocol := range p.Protocols {
 		c.Connections[protocol] = connection(id, protocol)
+	}
+	if id == "egern" {
+		c.Limitations = []string{"gRPC 需要 TLS；显式 ALPN 仅支持 TUIC。", "TUIC 自定义拥塞控制和 UDP 中继模式暂不输出；其他协议启用 UDP 中继。"}
 	}
 	switch id {
 	case "sing-box", "mihomo":
@@ -153,6 +160,10 @@ func connection(client, protocol string) Connection {
 	if slices.Contains([]string{"vless", "vmess", "trojan"}, protocol) {
 		c.Transports = append(c.Transports, "ws")
 		if native || uri {
+			c.Transports = append(c.Transports, "grpc")
+			c.GRPCModes = []string{"gun"}
+		}
+		if client == "egern" && protocol != "trojan" {
 			c.Transports = append(c.Transports, "grpc")
 			c.GRPCModes = []string{"gun"}
 		}

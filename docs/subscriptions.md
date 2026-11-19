@@ -2,7 +2,7 @@
 
 [使用指南](usage.md) · [架构](architecture.md) · [兼容性](compatibility.md)
 
-当前订阅配置为 **schema=4**，编译器语义版本为 2。只接受当前配置，不迁移旧数据或恢复旧管理接口。平台配置 schema=4、节点文档 schema=2、模板 version=1、数据库 schema=13 和备份容器格式 7 分别维护，不能一起机械递增。
+当前订阅配置为 **schema=5**，CompilerVersion=3、ParserVersion=1。只接受当前配置，不迁移旧数据或恢复旧管理接口。平台配置 schema=4、节点文档 schema=2、模板 version=1、数据库 schema=13 和备份容器格式 7 分别维护，不能一起机械递增。
 
 ## 普通账户分享
 
@@ -30,6 +30,8 @@
 
 首次配置为各客户端提供独立的账户默认模板。远程模板使用已发布、展开规则后的模板快照；下载过程中不请求远端模板。不可用或不匹配的模板会明确拒绝下载。
 
+公开用量及分享检查只编译授权选择的客户端。编译缓存由每个服务持有，最多 128 条、正文和诊断的估算容量预算 16 MiB、有效期 5 分钟，并合并相同输入的并发编译。缓存键包含账户及其版本、实例范围、含实际凭据的完整节点摘要、有效模板、跳过策略和 CompilerVersion；凭据轮换、模板或地址变化会产生新键。缓存不保存授权决定或流量计数；每次请求重新检查账户状态、核心身份与格式验证，实际下载仍原子检查授权和次数。
+
 ## 快速创建与高级编排
 
 「快速创建订阅」提供来源、客户端和模板用途选择。预览成功后点击「加入草稿」，再统一保存应用。预览期间其他草稿修改会使本次加入操作失效，避免覆盖用户的新修改。
@@ -51,6 +53,7 @@
 当前节点协议为 VLESS、VMess、Hysteria2、TUIC、AnyTLS、Trojan、Shadowsocks。客户端支持范围按协议和传输分别登记，不能只凭协议名称推断全部字段可用。
 
 - Hysteria2 支持默认 443、完整认证字符串、mport 和地址内端口列表；不会截断含冒号的认证信息。
+- 节点字段 `hop_interval_seconds` 为 5–86400 的整数，必须同时提供 Hysteria2 跳跃端口；支持 sing-box、Mihomo/OpenClash、Egern 输出和 sing-box/Mihomo 输入。通用 URI 及其他未适配目标明确报告不能保留间隔，不静默丢弃。
 - Shadowsocks 支持常见 SIP002 URI，以及受控 SIP003 obfs / v2ray-plugin 参数。插件只表示连接参数，不允许指定外部可执行程序。
 - 支持 TCP、WS、gRPC、HTTPUpgrade；VLESS XHTTP 仅输出给能表达该传输的客户端。
 - WS early-data、gRPC 模式/authority、Hysteria2 salamander、TLS/Reality、端口跳跃和证书固定均经过能力检查。
@@ -75,9 +78,17 @@
 
 本地规则、引用规则集、自定义 Provider、局域网/国内规则及最终策略按顺序执行。sing-box 使用 SRS，Mihomo/OpenClash 使用 MRS。远端规则的可达性和内容不由核心语法检查担保，客户端仍需在目标网络获取。
 
-DNS 分为 local、remote、bootstrap；bootstrap 使用 IP，其余支持 IP 或 udp/tcp/tls/https URL。sing-box 每角色一个解析器；Mihomo 系支持 Fake-IP、排除域名和 IPv6。省略 dns_policy 继承默认值；显式 `fake_ip=false` 即使不填写解析器也保持关闭。仅编辑其他字段不会改写继承的 DNS 策略。
+DNS 分为 local、remote、bootstrap；bootstrap 使用 IP，其余支持 IP 或 udp/tcp/tls/https URL。sing-box 每角色一个解析器；Mihomo 系支持 Fake-IP、排除域名和 IPv6。`fake_ip` 省略或 null 表示继承（Mihomo 系默认启用），true 显式启用，false 显式关闭。表单提供对应三态；仅修改代理 DNS 不影响 Fake-IP。`fake_ip_filter` 省略继承默认排除域名，显式 `[]` 清空默认列表；关闭 Fake-IP 时不能设置非空排除列表。sing-box 使用自身地址处理，不接受 Fake-IP 启用或排除列表。
 
-`native` 补充未受管的根字段。编译器生成的节点、组、路由、DNS 等根字段整体覆盖同名 native 字段。模板不是任意脚本入口。
+`native` 补充未受管的根字段，可覆盖日志、混合端口等基础默认值。受管理字段及禁止字段在保存/预览时报出 `native.<字段>` 错误，不再静默覆盖。规则同时由 `/api/clients.native_fields` 提供给前端。模板不是任意脚本入口。
+
+| 客户端 | 可覆盖默认值 | 编译器管理 | 禁止额外注入 |
+| --- | --- | --- | --- |
+| sing-box | log | inbounds、outbounds、route、dns | endpoints、services |
+| Mihomo/OpenClash/Stash | mixed-port、allow-lan、mode、log-level | proxies、proxy-groups、rules、rule-providers、dns、tun | proxy-providers |
+| Egern | 其他非受管根字段直接保留 | proxies、policy_groups、rules | proxy_providers、policy_group_providers、rule_providers |
+
+表中以外的原生字段由目标客户端校验；实验适配器未通过实体应用验收，不能把“已编码”理解为客户端已接受。
 
 示例：[Mihomo](examples/template-mihomo.json)、[sing-box](examples/template-sing-box.json)。客户端模板与服务端「路由与 DNS」独立。
 
@@ -96,7 +107,7 @@ DNS 分为 local、remote、bootstrap；bootstrap 使用 IP，其余支持 IP �
 | GET /api/outbound-options              | 已应用服务端出站选择器，供实际连接探测        |
 | GET /api/subscriptions/status          | 输出验证及来源/模板/分发运行状态              |
 
-写入和敏感管理接口继续要求管理员会话及 CSRF。输出预览最多显示 64 KiB，Base64 列表可解码展示，凭据和私有 URL 被隐藏；预览不能直接代替真实下载文件。
+写入和敏感管理接口继续要求管理员会话及 CSRF。输出预览最多显示 64 KiB，Base64 列表可解码展示，凭据和私有 URL 被隐藏；预览不能直接代替真实下载文件。预览弹窗显示加载、可发布输出、核心校验和待关注数量。关闭、离页、切换标签、登出或打开其他编辑弹窗会取消其在途请求，迟到结果不会替换新窗口。
 
 验证对象包含 `state`、`engine`、`scope`、`cached`、`application_verified`，前端不解析英文消息推断状态。核心配置检查、解析往返和客户端应用导入分开表达。
 
@@ -104,7 +115,7 @@ DNS 分为 local、remote、bootstrap；bootstrap 使用 IP，其余支持 IP �
 
 刷新在发布锁外抓取与编译，提交前重新检查配置、账户凭据和核心身份。新的模板/规则未通过输出验证时保留旧资源，并继续更新无关输出及已失效账户状态。记录与分发元数据在提交时合并，避免覆盖并发探测结果。
 
-缓存按订阅 schema、CompilerVersion、所选节点与有效模板摘要失效；正文摘要防止复用损坏产物。sing-box/Mihomo 的校验缓存包括实际二进制身份。调度只读取 schedule.json；不再写入 subscriptions/local.json。
+产物缓存按订阅 schema、CompilerVersion、所选节点与有效模板摘要失效；正文摘要防止复用损坏产物。来源摘要包含 ParserVersion，解析语义升级时清空旧节点和 ETag，重新获取正文，避免 304 延续旧解析结果。sing-box/Mihomo 的校验缓存包括实际二进制身份。调度只读取 schedule.json；不再写入 subscriptions/local.json。
 
 来源有刷新间隔、最大陈旧时间和失败退避；304 合并有效元信息。必需来源不可用时撤下相关输出，可选来源过期时移除。每分钟核对账户状态，恢复额度、账户或新周期后可重新编译。
 
@@ -115,6 +126,8 @@ DNS 分为 local、remote、bootstrap；bootstrap 使用 IP，其余支持 IP �
 授权统一通过 /api/grants 创建、查询和撤销。输出分享为 `/s/<token>/<output-id>`，账户分享与输出分享互斥。自定义输出在 HEAD/304 前重新检查授权、账户和缓存期限。
 
 ## 验证范围与预算
+
+Egern 独立渲染 IPv4 `ip_cidr` 与 IPv6 `ip_cidr6`，支持 UDP 中继、Hysteria2 跳跃端口/间隔及 salamander、VLESS/VMess TLS gRPC、WebSocket、Reality 和证书 SHA256 指纹。TUIC 未指定 ALPN 时输出 h3；显式 ALPN 仅在 TUIC 保留。TUIC 自定义拥塞控制/UDP 中继模式、gRPC 明文与未支持字段会拒绝或按输出策略跳过。该适配器仍为实验级，不能以其他客户端核心检查代替 Egern 应用导入。
 
 核心基线为 sing-box 1.14.4、Mihomo 1.19.33。Surge、Surge Mac、Loon、Quantumult X、Surfboard、Stash、Egern、Shadowrocket 仍标注应用导入未验收；OpenClash 核心路径不代替实体路由器验收。Mihomo 对部分自签证书 URI 参数的处理存在限制，优先使用原生配置。
 

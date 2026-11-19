@@ -163,7 +163,7 @@ func BenchmarkRepeatedNodeNames(b *testing.B) {
 
 func TestExplicitFakeIPDisable(t *testing.T) {
 	n := portableNodes()[0]
-	a, _, err := Render([]Node{n}, Template{Client: "mihomo", Version: 1, Mode: "config", DNSPolicy: &DNSPolicy{FakeIP: false}}, false)
+	a, _, err := Render([]Node{n}, Template{Client: "mihomo", Version: 1, Mode: "config", DNSPolicy: &DNSPolicy{FakeIP: new(false)}}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

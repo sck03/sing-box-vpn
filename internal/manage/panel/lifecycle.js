@@ -4,7 +4,10 @@ import { api } from "./api.js";
 export function pageContext(context, signal) {
   const view = Object.create(context);
   view.signal = signal;
-  view.request = (path, body) => api(path, body, { signal });
+  view.request = (path, body, options = {}) => api(path, body, {
+    ...options,
+    signal: options.signal ? AbortSignal.any([signal, options.signal]) : signal,
+  });
   view.workflowRequest = api;
   return view;
 }

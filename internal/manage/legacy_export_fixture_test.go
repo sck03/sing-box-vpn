@@ -6,8 +6,23 @@ import (
 	"errors"
 	"fmt"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
+	"path/filepath"
 	"strings"
 )
+
+// Conventional export locations are needed only by historical regression fixtures.
+var exportNames = []string{"sbox.json", "clmi.yaml", "proxies.yaml", "jhsub.txt", "jhsub-base64.txt", "share.json"}
+
+func exportDirectory(root, scope string) (string, error) {
+	switch scope {
+	case normalScope:
+		return root, nil
+	case vpngateScope:
+		return filepath.Join(root, "vpngate"), nil
+	default:
+		return "", errors.New("节点类型必须为 normal 或 vpngate")
+	}
+}
 
 func collectLocalSubscriptionNodes(app App, settings VPNSettings, private map[string]Secrets) (map[string][]sub.Node, error) {
 	local := map[string][]sub.Node{normalScope: {}, vpngateScope: {}}

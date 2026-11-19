@@ -74,7 +74,7 @@ func (s *PlatformService) serveAccounts(w http.ResponseWriter, r *http.Request, 
 		if !require(admin) {
 			return true
 		}
-		options, e := s.accountService().ClientOptions(ctx, r.URL.Query().Get("id"), r.URL.Query().Get("scope"))
+		options, e := s.accountService().ClientOptions(ctx, r.URL.Query().Get("id"), r.URL.Query().Get("scope"), nil)
 		if e != nil {
 			platformError(w, e)
 		} else {

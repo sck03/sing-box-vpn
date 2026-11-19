@@ -62,7 +62,7 @@ export function formDialog(title, fields, value, save, preserve = false) {
     const raw = getPath(value, field.key);
     const current = field.scale && raw != null ? raw / field.scale : raw;
     let input;
-    if (field.type === "select" || field.type === "multiselect") {
+    if (["select", "multiselect", "tristate"].includes(field.type)) {
       input = el("select");
       input.multiple = field.type === "multiselect";
       const options =
@@ -148,6 +148,8 @@ export function formDialog(title, fields, value, save, preserve = false) {
         field.key,
         field.type === "bool"
           ? input.checked
+          : field.type === "tristate"
+            ? input.value === "" ? undefined : input.value === "true"
           : field.type === "multiselect"
             ? [...input.selectedOptions].map((o) => o.value)
             : input.value,
@@ -257,6 +259,9 @@ export function formDialog(title, fields, value, save, preserve = false) {
               break;
             case "bool":
               v = input.checked;
+              break;
+            case "tristate":
+              v = v === "" ? undefined : v === "true";
               break;
             case "number":
               if (v === "") {

@@ -17,10 +17,11 @@ import (
 )
 
 const (
-	SchemaVersion = 4
-	// Increment whenever parser or renderer semantics change, independently of
-	// the persisted configuration schema, to invalidate derived artifacts.
-	CompilerVersion = 2
+	SchemaVersion = 5
+	// ParserVersion invalidates fetched node caches, including conditional GETs.
+	ParserVersion = 1
+	// CompilerVersion invalidates rendered artifacts and account export plans.
+	CompilerVersion = 3
 	MaxNodes        = 4096
 	MaxBody         = 8 << 20
 	MaxObjects      = 128
@@ -53,26 +54,27 @@ type Transport struct {
 // Node is the only representation used between parsing, processing and adapters.
 // Gateway is trusted local metadata, never accepted from a remote subscription.
 type Node struct {
-	ID           string    `json:"id"`
-	SourceID     string    `json:"source_id,omitempty"`
-	Name         string    `json:"name"`
-	Tags         []string  `json:"tags,omitempty"`
-	Gateway      bool      `json:"gateway,omitempty"`
-	Protocol     string    `json:"protocol"`
-	Server       string    `json:"server"`
-	Port         int       `json:"port"`
-	UUID         string    `json:"uuid,omitempty"`
-	Password     string    `json:"password,omitempty"`
-	Cipher       string    `json:"cipher,omitempty"`
-	Flow         string    `json:"flow,omitempty"`
-	TLS          TLS       `json:"tls,omitempty"`
-	Transport    Transport `json:"transport,omitempty"`
-	Ports        []string  `json:"ports,omitempty"`
-	Congestion   string    `json:"congestion,omitempty"`
-	UDPRelay     string    `json:"udp_relay,omitempty"`
-	Obfs         string    `json:"obfs,omitempty"`
-	ObfsPassword string    `json:"obfs_password,omitempty"`
-	Plugin       *Plugin   `json:"plugin,omitempty"`
+	ID                 string    `json:"id"`
+	SourceID           string    `json:"source_id,omitempty"`
+	Name               string    `json:"name"`
+	Tags               []string  `json:"tags,omitempty"`
+	Gateway            bool      `json:"gateway,omitempty"`
+	Protocol           string    `json:"protocol"`
+	Server             string    `json:"server"`
+	Port               int       `json:"port"`
+	UUID               string    `json:"uuid,omitempty"`
+	Password           string    `json:"password,omitempty"`
+	Cipher             string    `json:"cipher,omitempty"`
+	Flow               string    `json:"flow,omitempty"`
+	TLS                TLS       `json:"tls,omitempty"`
+	Transport          Transport `json:"transport,omitempty"`
+	Ports              []string  `json:"ports,omitempty"`
+	HopIntervalSeconds int       `json:"hop_interval_seconds,omitempty"`
+	Congestion         string    `json:"congestion,omitempty"`
+	UDPRelay           string    `json:"udp_relay,omitempty"`
+	Obfs               string    `json:"obfs,omitempty"`
+	ObfsPassword       string    `json:"obfs_password,omitempty"`
+	Plugin             *Plugin   `json:"plugin,omitempty"`
 }
 
 var idPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
@@ -138,6 +140,9 @@ func (n Node) Validate() error {
 	}
 	if len(n.Ports) > 0 && n.Protocol != "hysteria2" {
 		return errors.New("port hopping requires Hysteria2")
+	}
+	if n.HopIntervalSeconds != 0 && (n.Protocol != "hysteria2" || len(n.Ports) == 0 || n.HopIntervalSeconds < 5 || n.HopIntervalSeconds > 86400) {
+		return errors.New("port hopping interval requires Hysteria2 ports and 5–86400 seconds")
 	}
 	for _, p := range n.Ports {
 		if !portRangePattern.MatchString(p) {

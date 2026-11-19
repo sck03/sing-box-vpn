@@ -14,14 +14,14 @@ import (
 )
 
 func TestAccountCommandsAndExportsKeepIndependentCredentials(t *testing.T) {
-	root, _, app := appFixture(t)
+	root, core, app := appFixture(t)
 	store, err := accounting.Open(filepath.Join(root, "control.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer store.Close()
 	config := PlatformConfig{App: app}
-	service := AccountService{Root: root, Store: store, Config: &config}
+	service := AccountService{Root: root, Core: core, Store: store, Config: &config}
 	outputs := map[string]string{}
 	for _, id := range []string{"alice", "bob"} {
 		if err := store.SaveAccount(t.Context(), domain.Account{ID: id, Name: id}); err != nil {

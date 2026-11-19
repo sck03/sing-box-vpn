@@ -2,6 +2,7 @@ package manage
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"slices"
@@ -36,6 +37,7 @@ type accountExportInputs struct {
 	templates map[string]sub.Template
 	nodes     []sub.Node
 	usage     accounting.Usage
+	digest    string
 }
 
 type AccountExport struct {
@@ -73,6 +75,16 @@ func (s AccountService) exportInputs(ctx context.Context, command application.Ac
 			return err
 		}
 		result = accountExportInputs{config: config.Subscriptions, templates: sub.EffectiveTemplates(config.Subscriptions), nodes: processed.Nodes, usage: usage}
+		data, err := json.Marshal(struct {
+			Account  string
+			Scope    string
+			Revision int64
+			Nodes    []sub.Node
+		}{command.ID, command.Scope, usage.Revision, processed.Nodes})
+		if err != nil {
+			return err
+		}
+		result.digest = sub.Digest(data)
 		// Local templates require no snapshot read. Remote templates use the same
 		// immutable, atomically published cache as custom output downloads.
 		remote := slices.ContainsFunc(config.Subscriptions.Templates, func(t sub.Template) bool { return t.URL != "" })
@@ -122,31 +134,36 @@ func (inputs accountExportInputs) selectClient(account, client string) (AccountC
 	return option, plan, err
 }
 
-func (s AccountService) ClientOptions(ctx context.Context, id, scope string) ([]AccountClientOption, error) {
+// nil requests the catalog; a non-nil list restricts compilation before any work.
+func (s AccountService) ClientOptions(ctx context.Context, id, scope string, clients []string) ([]AccountClientOption, error) {
+	if clients == nil {
+		for client := range clientprofile.All() {
+			clients = append(clients, client)
+		}
+	} else {
+		clients = slices.Clone(clients)
+	}
+	slices.Sort(clients)
+	clients = slices.Compact(clients)
+	result := make([]AccountClientOption, 0, len(clients))
+	if len(clients) == 0 {
+		return result, nil
+	}
+	for _, client := range clients {
+		if !clientprofile.SupportsAccount(client) {
+			return nil, errors.New("unsupported account client")
+		}
+	}
 	inputs, err := s.exportInputs(ctx, application.AccountCommand{ID: id, Scope: scope})
 	if err != nil {
 		return nil, err
 	}
-	clients := make([]string, 0, len(clientprofile.All()))
-	for client := range clientprofile.All() {
-		clients = append(clients, client)
-	}
-	slices.Sort(clients)
-	result := make([]AccountClientOption, 0, len(clients))
 	for _, client := range clients {
-		option, plan, selectedErr := inputs.selectClient(id, client)
-		if selectedErr == nil {
-			artifact, _, err := plan.Render()
-			if err == nil && s.Core != "" {
-				option.Validation, err = validateSubscriptionArtifact(ctx, s.Root, s.Core, sub.Template{Client: client, Mode: option.Mode}, artifact)
-			}
-			if err != nil {
-				option.Available = false
-				option.Reason = "当前下载模板未通过配置校验"
-				option.Diagnostics = append(option.Diagnostics, sub.Diagnostic{Stage: "validation", Message: err.Error()})
-			}
+		compiled, _ := s.compileAccount(ctx, inputs, id, client)
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
-		result = append(result, option)
+		result = append(result, compiled.option)
 	}
 	return result, nil
 }
@@ -157,14 +174,50 @@ func (s AccountService) ExportDetailed(ctx context.Context, command application.
 	if err != nil {
 		return result, err
 	}
-	option, plan, err := inputs.selectClient(command.ID, command.Client)
-	result.Client, result.Usage = option, inputs.usage
-	if err != nil {
-		return result, err
-	}
-	result.Artifact, _, err = plan.Render()
-	if err == nil && s.Core != "" {
-		result.Validation, err = validateSubscriptionArtifact(ctx, s.Root, s.Core, sub.Template{Client: command.Client, Mode: option.Mode}, result.Artifact)
-	}
+	compiled, err := s.compileAccount(ctx, inputs, command.ID, command.Client)
+	result.Client, result.Usage = compiled.option, inputs.usage
+	result.Artifact, result.Validation = compiled.artifact, compiled.option.Validation
+	result.Artifact.Data = slices.Clone(result.Artifact.Data)
 	return result, err
+}
+
+func (s AccountService) compileAccount(ctx context.Context, inputs accountExportInputs, account, client string) (accountCompilation, error) {
+	template, skip, err := inputs.config.AccountTemplate(account, client, inputs.templates)
+	if err != nil {
+		option, _, selectErr := inputs.selectClient(account, client)
+		return accountCompilation{option: option}, selectErr
+	}
+	data, err := json.Marshal(struct {
+		Compiler int
+		Inputs   string
+		Template sub.Template
+		Skip     bool
+	}{sub.CompilerVersion, inputs.digest, template, skip})
+	if err != nil {
+		return accountCompilation{}, err
+	}
+	compiled, err := s.exports.compile(ctx, sub.Digest(data), func() (accountCompilation, error) {
+		option, plan, err := inputs.selectClient(account, client)
+		value := accountCompilation{option: option}
+		if err == nil {
+			value.artifact, _, err = plan.Render()
+		}
+		if err != nil {
+			value.option.Available = false
+			if value.option.Reason == "" {
+				value.option.Reason = "配置生成失败"
+			}
+		}
+		return value, err
+	})
+	compiled.option.Diagnostics = slices.Clone(compiled.option.Diagnostics)
+	if err == nil {
+		compiled.option.Validation, err = validateSubscriptionArtifact(ctx, s.Root, s.Core, template, compiled.artifact)
+		if err != nil {
+			compiled.option.Available = false
+			compiled.option.Reason = "当前下载模板未通过配置校验"
+			compiled.option.Diagnostics = append(compiled.option.Diagnostics, sub.Diagnostic{Stage: "validation", Message: err.Error()})
+		}
+	}
+	return compiled, err
 }

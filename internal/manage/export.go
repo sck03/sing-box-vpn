@@ -1,8 +1,6 @@
 package manage
 
 import (
-	"errors"
-	"path/filepath"
 	"strings"
 
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
@@ -13,18 +11,6 @@ type fileBundle map[string][]byte
 const normalScope = "normal"
 const vpngateScope = "vpngate"
 
-var exportNames = []string{"sbox.json", "clmi.yaml", "proxies.yaml", "jhsub.txt", "jhsub-base64.txt", "share.json"}
-
-func exportDirectory(root, scope string) (string, error) {
-	switch scope {
-	case normalScope:
-		return root, nil
-	case vpngateScope:
-		return filepath.Join(root, "vpngate"), nil
-	default:
-		return "", errors.New("节点类型必须为 normal 或 vpngate")
-	}
-}
 func (files fileBundle) json(name string, value any) error {
 	data, err := JSONBytes(value)
 	if err == nil {
