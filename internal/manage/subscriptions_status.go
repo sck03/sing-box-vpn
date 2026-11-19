@@ -56,11 +56,15 @@ func (s *PlatformService) SubscriptionStatus(ctx context.Context) (Object, error
 	var config sub.Config
 	var cached subscriptionActivityCache
 	var notificationState sub.NotificationState
+	outputs := []subscriptionOutputStatus{}
 	err := withStartupLock(ctx, s.Root, func() error {
 		if _, err := ReadJSON(filepath.Join(s.Root, subscriptionsConfig), &config); err != nil {
 			return err
 		}
 		if _, err := ReadJSON(filepath.Join(s.Root, subscriptionsRuntime), &cached); err != nil {
+			return err
+		}
+		if _, err := ReadJSON(filepath.Join(s.Root, subscriptionsOutputStatus), &outputs); err != nil {
 			return err
 		}
 		_, err := ReadJSON(filepath.Join(s.Root, subscriptionNotification), &notificationState)
@@ -111,5 +115,5 @@ func (s *PlatformService) SubscriptionStatus(ctx context.Context) (Object, error
 	if config.Webhook == "" {
 		notification.State = "disabled"
 	}
-	return Object{"revision": config.Revision, "sources": sources, "resources": resources, "notification": Object{"configured": config.Webhook != "", "activity": notification, "event": n.Event, "object_id": n.ObjectID}}, nil
+	return Object{"revision": config.Revision, "sources": sources, "resources": resources, "outputs": outputs, "notification": Object{"configured": config.Webhook != "", "activity": notification, "event": n.Event, "object_id": n.ObjectID}}, nil
 }

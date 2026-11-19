@@ -24,8 +24,9 @@ globalThis.fetch = async (path) => ({
 });
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const { formDialog, table } = await import("../internal/manage/panel/ui.js");
-const { validatePassword } =
-  await import("../internal/manage/panel/capabilities.js");
+const { validatePassword } = await import(
+  "../internal/manage/panel/capabilities.js"
+);
 assert.doesNotThrow(() =>
   validatePassword("一二三四五六", capabilitiesFixture.password_bytes),
 );
@@ -49,8 +50,9 @@ assert.equal(
   null,
 );
 
-const { gatewayFields } =
-  await import("../internal/manage/panel/network-fields.js");
+const { gatewayFields } = await import(
+  "../internal/manage/panel/network-fields.js"
+);
 formDialog(
   "网关",
   gatewayFields(capabilitiesFixture.gateway.limits),
@@ -64,8 +66,9 @@ const connections = document.querySelector('[aria-label="最大连接数"]');
 connections.value = "2048";
 assert.equal(connections.checkValidity(), false);
 
-const { outboundFields, normalizeOutbound } =
-  await import("../internal/manage/panel/outbound-fields.js");
+const { outboundFields, normalizeOutbound } = await import(
+  "../internal/manage/panel/outbound-fields.js"
+);
 let submitted;
 formDialog(
   "出站",
@@ -179,8 +182,9 @@ const panel = document.createElement("div");
 panel.append(...operator);
 assert(panel.textContent.includes("换 IP"));
 assert(!panel.textContent.includes("选择 / 新增国家"));
-const { subscriptionStatus } =
-  await import("../internal/manage/panel/subscription-status.js");
+const { subscriptionStatus } = await import(
+  "../internal/manage/panel/subscription-status.js"
+);
 const activity = await subscriptionStatus({
   request: async () => ({
     resources: [
@@ -208,8 +212,9 @@ assert(activity.textContent.includes("最后成功"));
 console.log(
   "Panel contract checks passed: UTF-8 passwords, shared gateway limits, protocol fields, workspace state, mobile sorting, usage focus, operator controls.",
 );
-const { navigation, markNavigation } =
-  await import("../internal/manage/panel/navigation.js");
+const { navigation, markNavigation } = await import(
+  "../internal/manage/panel/navigation.js"
+);
 const nav = document.createElement("nav");
 nav.append(...navigation("admin", () => {}, "overview"));
 document.body.append(nav);
@@ -308,8 +313,9 @@ assert.equal(
 );
 assert.match(document.querySelector("dialog").textContent, /重启/);
 // Both public listeners use the same TLS/proxy contract.
-const { accessFields, accessOptions, accessValue } =
-  await import("../internal/manage/panel/public-access-fields.js");
+const { accessFields, accessOptions, accessValue } = await import(
+  "../internal/manage/panel/public-access-fields.js"
+);
 const certificateAssets = [
   {
     id: "shared",
@@ -354,8 +360,9 @@ assert.deepEqual(
     trusted_proxy: [],
   },
 );
-const { tasksCard, taskDetails, taskStage } =
-  await import("../internal/manage/panel/tasks.js");
+const { tasksCard, taskDetails, taskStage } = await import(
+  "../internal/manage/panel/tasks.js"
+);
 assert.equal(
   taskStage({ state: "failed", phase: "executing" }),
   "失败于：执行中",
@@ -417,8 +424,9 @@ assert.deepEqual(maintenanceCalls.pop(), {
   path: "/api/tasks/delete",
   body: { id: 1 },
 });
-const { historyControls, journalCard } =
-  await import("../internal/manage/panel/log-maintenance.js");
+const { historyControls, journalCard } = await import(
+  "../internal/manage/panel/log-maintenance.js"
+);
 const retention = await historyControls(historyContext);
 [...retention.querySelectorAll("button")]
   .find((b) => b.textContent === "清理已处理")
@@ -444,4 +452,107 @@ assert(
     (s) => s.name === "sb-vpngate-gateway" && s.section === "gateway",
   ),
 );
+// New connection fields must save exact values and disappear after a protocol
+// switch, while an unrelated template edit keeps inherited DNS defaults.
+formDialog(
+  "Hy2",
+  outboundFields(capabilitiesFixture.protocols, [], []),
+  {
+    tag: "hy2",
+    type: "hysteria2",
+    server: "example.com",
+    server_port: 443,
+    password: "secret",
+    tls: { enabled: true },
+  },
+  (v) => {
+    submitted = normalizeOutbound(v);
+  },
+  true,
+);
+document.querySelector('[aria-label="Hysteria2 跳跃端口"]').value =
+  "31000:31100, 31200:31200";
+const obfs = document.querySelector('[aria-label="Hysteria2 混淆"]');
+obfs.value = "salamander";
+obfs.dispatchEvent(new Event("change", { bubbles: true }));
+document.querySelector('[aria-label="混淆密码"]').value = "obfs-secret";
+document
+  .querySelector("#dialog form")
+  .dispatchEvent(new Event("submit", { cancelable: true }));
+await tick();
+assert.deepEqual(submitted.server_ports, ["31000:31100", "31200:31200"]);
+assert.deepEqual(submitted.obfs, {
+  type: "salamander",
+  password: "obfs-secret",
+});
+const switched = normalizeOutbound({ ...submitted, type: "direct" }, submitted);
+assert.equal(switched.obfs, undefined);
+assert.equal(switched.server_ports, undefined);
+assert.equal(switched.tls, undefined);
+
+const { templateFields, normalizeTemplate } = await import(
+  "../internal/manage/panel/clients.js"
+);
+const catalog = {
+  mihomo: {
+    label: "Mihomo",
+    modes: ["config"],
+    features: {
+      dns: true,
+      advanced_dns: true,
+      policy_groups: true,
+      rule_providers: true,
+      native_template: true,
+    },
+  },
+};
+const template = {
+  id: "original",
+  client: "mihomo",
+  version: 1,
+  mode: "config",
+  rules: [],
+};
+formDialog(
+  "模板",
+  templateFields(catalog),
+  template,
+  (v) => {
+    submitted = normalizeTemplate(v, catalog);
+  },
+  true,
+);
+document.querySelector('[aria-label="ID"]').value = "renamed";
+document
+  .querySelector("#dialog form")
+  .dispatchEvent(new Event("submit", { cancelable: true }));
+await tick();
+assert.equal(
+  submitted.dns_policy,
+  undefined,
+  "unrelated edit replaced inherited DNS policy",
+);
+
+const { templateResources } = await import(
+  "../internal/manage/panel/subscription-fields.js"
+);
+template.groups = [];
+template.providers = [];
+template.rules = [
+  { type: "domain", value: "first.example", target: "DIRECT" },
+  { type: "domain", value: "second.example", target: "PROXY" },
+];
+let resourceChanges = 0;
+const resources = templateResources(
+  [template],
+  catalog,
+  () => resourceChanges++,
+);
+document.querySelector("#content").replaceChildren(resources);
+[...resources.querySelectorAll("button")]
+  .find((b) => b.textContent === "↓")
+  .click();
+await tick();
+assert.equal(template.rules[0].value, "second.example");
+assert.equal(resourceChanges, 1);
 dom.window.close();

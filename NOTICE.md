@@ -10,9 +10,17 @@ Its MIT license is reproduced below.
 
 Subscription processing and client field mappings were reviewed against
 sub-store-org/Sub-Store commit 7f2de2f33b1e7af6cf5e092e2d8d3d50b8eb1212
-(MIT). This project contains independent Go implementations, not its JavaScript runtime.
+(AGPL-3.0). This project contains independent Go implementations, not its JavaScript runtime.
 YAML parsing links go.yaml.in/yaml/v3 v3.0.6 (MIT/Apache-2.0).
 Its original LICENSE, NOTICE and Apache license are distributed in third_party/modules/.
+
+The 2026-11-19 subscription design review additionally references
+bestruirui/MiniSubConvert commit 734d582860021f5027ce15b8438cfd4fa4cb5b1e and
+sub-store-org/Sub-Store commit 2a173b88dcbd7d232864f05087998855da59eec1
+(AGPL-3.0 at these commits). Their code, JavaScript runtime and templates are
+not copied or vendored; parsing, policy and rendering logic is independently
+implemented in Go. The earlier Sub-Store notice above refers to its historical
+fixed revision, not the current upstream license.
 
 The separate managed-core executable links SagerNet/sing-box v1.14.4
 (GPL-3.0-or-later), with an independently implemented authenticated-stream

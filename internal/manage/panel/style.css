@@ -323,8 +323,6 @@ footer {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-}
-.card {
   box-shadow: var(--shadow);
 }
 .access-address {
@@ -865,7 +863,7 @@ form[aria-busy="true"] button[type="submit"]::after {
   font-size: 13px;
 }
 .user-page {
-  max-width: 850px;
+  max-width: 1020px;
   margin: 42px auto;
   padding: 0 22px;
 }
@@ -894,17 +892,34 @@ progress {
   height: 7px;
   accent-color: var(--accent);
 }
+.client-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
 .client-download {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding: 16px 0;
-  border-top: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: 1fr;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.client-download h3 {
+  margin: 0;
+  font-size: 16px;
+}
+.client-download small {
+  min-height: 36px;
 }
 .client-download input {
-  flex-basis: 100%;
+  min-width: 0;
+  margin: 0;
 }
 .download-link {
   color: var(--accent);

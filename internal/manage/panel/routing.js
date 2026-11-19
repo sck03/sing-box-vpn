@@ -105,12 +105,20 @@ export async function routing(ctx) {
   const dns = resourceEditor({
     title: "服务器 DNS",
     normalize: (v) => {
-      for (const k of ["server", "server_port", "detour"])
+      for (const k of [
+        "server",
+        "server_port",
+        "detour",
+        "domain_resolver",
+        "path",
+      ])
         if (!v[k]) delete v[k];
       if (["local", "resolved"].includes(v.type)) {
         delete v.server;
         delete v.server_port;
+        delete v.domain_resolver;
       }
+      if (v.type !== "https") delete v.path;
       return v;
     },
     items: a.dns.servers,
@@ -124,6 +132,22 @@ export async function routing(ctx) {
       },
       { key: "server", label: "服务器" },
       { key: "server_port", label: "端口", type: "number" },
+      {
+        key: "path",
+        label: "DoH 路径",
+        default: "/dns-query",
+        visible: (v) => v.type === "https",
+      },
+      {
+        key: "domain_resolver",
+        label: "服务器域名解析器",
+        type: "select",
+        options: (v) => [
+          ["", "默认解析器"],
+          ...a.dns.servers.filter((s) => s.tag !== v.tag).map((s) => s.tag),
+        ],
+        visible: (v) => !["local", "resolved"].includes(v.type),
+      },
       { key: "detour", label: "出站 tag（可留空）" },
     ],
     defaults: {

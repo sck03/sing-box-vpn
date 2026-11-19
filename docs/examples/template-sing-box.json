@@ -1,0 +1,33 @@
+{
+  "id": "sing-box-split",
+  "version": 1,
+  "client": "sing-box",
+  "mode": "config",
+  "preset": "split",
+  "tun": true,
+  "groups": [
+    {
+      "id": "AutoSelect",
+      "type": "urltest",
+      "scope": "normal",
+      "interval_seconds": 300,
+      "tolerance": 50
+    },
+    {
+      "id": "Media",
+      "type": "select",
+      "scope": "normal",
+      "members": ["AutoSelect"]
+    }
+  ],
+  "dns_policy": {
+    "local": ["223.5.5.5"],
+    "remote": ["https://cloudflare-dns.com/dns-query"],
+    "bootstrap": ["223.5.5.5"],
+    "fake_ip": false,
+    "ipv6": false
+  },
+  "rules": [
+    { "type": "domain_suffix", "value": "youtube.com", "target": "Media" }
+  ]
+}

@@ -17,6 +17,14 @@
 
 这些是结构和交互参考；本轮没有复制上述项目源码，也没有引入其前端框架或整套 VPN 后端。开源许可证和来源记录见 [NOTICE](../NOTICE.md)。性能、故障测试及尚未覆盖的条件见 [实施记录](unified-management-status.md)。
 
+## 订阅转换设计参考（2026-11-19）
+
+本轮参考 [MiniSubConvert 固定提交](https://github.com/bestruirui/MiniSubConvert/tree/734d582860021f5027ce15b8438cfd4fa4cb5b1e) 和 [Sub-Store 固定提交](https://github.com/sub-store-org/Sub-Store/tree/2a173b88dcbd7d232864f05087998855da59eec1) 的解析器、producers 与 VMess security 映射。MiniSubConvert 复用 Sub-Store 核心，不能把二者当作独立的两套协议兼容证明。
+
+采用的方向包括：逐节点解析与诊断、等价 cipher 拼写标准化、显式能力筛选、重名处理、策略组/测速/规则 Provider、分角色 DNS 和有界编译缓存。VMess auto 的文本输出按目标格式处理，不能表达的 zero 等显式参数直接拒绝；TLS/传输等安全字段不通过删除来实现“兼容”。
+
+当前两个参考提交使用 AGPL-3.0；本项目只做行为和结构参考，独立实现 Go 逻辑，没有复制其 JavaScript 源码、运行时或整套模板。重新读取历史固定提交的 LICENSE 后，也将 NOTICE 中错误的 Sub-Store MIT 标注修正为 AGPL-3.0。完整原生模板不直接搬入服务端，使用声明式资源与受管根字段生成，客户端最终导入仍按实际应用验收。
+
 ## 证书实现选择（2026-11-18）
 
 平台内置 [lego v5.6.0](https://github.com/go-acme/lego/releases/tag/v5.6.0)（MIT），使用 Go 库完成 ACME 注册、HTTP-01 验证、签发和续期。项目已有任务调度、材料发布与失败回滚，因此这些职责继续由平台管理。当前接入范围为 HTTP-01，未开放 lego 的全部 DNS 提供器。

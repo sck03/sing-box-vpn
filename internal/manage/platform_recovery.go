@@ -3,7 +3,6 @@ package manage
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -51,12 +50,5 @@ func withServiceLock(ctx context.Context, root string, operation func() error) e
 			return ctx.Err()
 		case <-ticker.C:
 		}
-	}
-}
-
-func recoveryUnits(root string) map[string]string {
-	return map[string]string{
-		"sb-recovery.service": fmt.Sprintf("# Managed by sing-box-vpn v4\n[Unit]\nDescription=sing-box-vpn failed service recovery\n[Service]\nType=oneshot\nUMask=0077\nTimeoutStartSec=50\nExecStart=/usr/local/bin/yg-vpngate panel --root %s recover-services\n", root),
-		"sb-recovery.timer":   "# Managed by sing-box-vpn v4\n[Unit]\nDescription=sing-box-vpn recovery schedule\n[Timer]\nOnBootSec=5min\nOnUnitActiveSec=5min\nRandomizedDelaySec=30\nUnit=sb-recovery.service\n[Install]\nWantedBy=timers.target\n",
 	}
 }

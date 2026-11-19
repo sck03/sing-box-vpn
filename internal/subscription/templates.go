@@ -1,6 +1,9 @@
 package subscription
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 func groups(nodes []Node) (normal, gateway []string) {
 	for _, n := range nodes {
@@ -29,6 +32,23 @@ func templateDNS(t Template) []string {
 
 func singBoxTemplate(nodes []Node, native []Object, t Template) Object {
 	normal, gateway := groups(nodes)
+	for _, g := range t.Groups {
+		kind := g.Type
+		if kind == "select" {
+			kind = "selector"
+		}
+		entry := Object{"type": kind, "tag": g.ID, "outbounds": policyMembers(g, nodes)}
+		if g.Type == "urltest" {
+			endpoint, interval := policyDefaults(g)
+			entry["url"], entry["interval"], entry["tolerance"] = endpoint, fmt.Sprintf("%ds", interval), g.Tolerance
+		}
+		native = append(native, entry)
+		if g.Scope != "vpngate" && len(normal) > 0 {
+			normal = append(normal, g.ID)
+		} else if g.Scope == "vpngate" && len(gateway) > 0 {
+			gateway = append(gateway, g.ID)
+		}
+	}
 	if len(normal) > 0 {
 		native = append(native, Object{"type": "selector", "tag": "PROXY", "outbounds": normal})
 	}
@@ -54,13 +74,39 @@ func singBoxTemplate(nodes []Node, native []Object, t Template) Object {
 	route := Object{"final": final, "rules": rules, "auto_detect_interface": true, "default_domain_resolver": "bootstrap"}
 	if t.Preset == "split" {
 		route["rule_set"] = []Object{{"type": "remote", "tag": "cn-domains", "format": "binary", "url": "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/cn.srs"}, {"type": "remote", "tag": "cn-ips", "format": "binary", "url": "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/cn.srs"}}
-		route["rules"] = append(rules, Object{"rule_set": []string{"cn-domains", "cn-ips"}, "action": "route", "outbound": "DIRECT"})
 	}
 	inbounds := []Object{{"type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": 7890}}
+	for _, provider := range t.Providers {
+		format := "source"
+		if provider.Format == "srs" {
+			format = "binary"
+		}
+		sets, _ := route["rule_set"].([]Object)
+		route["rule_set"] = append(sets, Object{"type": "remote", "tag": provider.ID, "format": format, "url": provider.URL})
+		target := provider.Target
+		if target == "PROXY" {
+			target = final
+		}
+		rules, _ := route["rules"].([]Object)
+		rule := Object{"rule_set": provider.ID, "action": "route", "outbound": target}
+		if target == "REJECT" {
+			rule = Object{"rule_set": provider.ID, "action": "reject"}
+		}
+		route["rules"] = append(rules, rule)
+	}
+	if t.Preset == "split" {
+		current, _ := route["rules"].([]Object)
+		route["rules"] = append(current, Object{"rule_set": []string{"cn-domains", "cn-ips"}, "action": "route", "outbound": "DIRECT"})
+	}
 	if t.TUN {
 		inbounds = append(inbounds, Object{"type": "tun", "tag": "tun-in", "address": []string{"172.19.0.1/30"}, "auto_route": true, "strict_route": true, "mtu": 1420})
 	}
-	return Object{"log": Object{"level": "warn"}, "inbounds": inbounds, "outbounds": native, "route": route, "dns": Object{"servers": []Object{{"type": "udp", "tag": "bootstrap", "server": templateDNS(t)[0]}, {"type": "udp", "tag": "remote", "server": templateDNS(t)[0], "detour": final}}, "final": "remote"}}
+	p := dnsPolicy(t)
+	dns := Object{"servers": []Object{singDNS(p.Bootstrap[0], "bootstrap", ""), singDNS(p.Remote[0], "remote", final), singDNS(p.Local[0], "local", "")}, "final": "remote"}
+	if t.Preset == "split" {
+		dns["rules"] = []Object{{"rule_set": "cn-domains", "action": "route", "server": "local"}}
+	}
+	return applyNativeTemplate(t.Native, Object{"log": Object{"level": "warn"}, "inbounds": inbounds, "outbounds": native, "route": route, "dns": dns})
 }
 
 func clashTemplate(nodes []Node, native []Object, t Template) Object {
@@ -76,6 +122,29 @@ func clashTemplate(nodes []Node, native []Object, t Template) Object {
 		group = append(group, Object{"name": "AUTO", "type": "url-test", "proxies": normal, "url": t.ProbeURL, "interval": 600})
 		group[0]["proxies"] = append([]string{"AUTO"}, normal...)
 	}
+	for _, g := range t.Groups {
+		kind := g.Type
+		if kind == "urltest" {
+			kind = "url-test"
+		}
+		entry := Object{"name": g.ID, "type": kind, "proxies": policyMembers(g, nodes)}
+		if g.Type != "select" {
+			endpoint, interval := policyDefaults(g)
+			entry["url"], entry["interval"], entry["tolerance"] = endpoint, interval, g.Tolerance
+		}
+		group = append(group, entry)
+		if g.Scope != "vpngate" && len(normal) > 0 {
+			members := group[0]["proxies"].([]string)
+			group[0]["proxies"] = append([]string{g.ID}, members...)
+		} else if g.Scope == "vpngate" && len(gateway) > 0 {
+			index := 0
+			if len(normal) > 0 {
+				index = 1
+			}
+			members := group[index]["proxies"].([]string)
+			group[index]["proxies"] = append(members, g.ID)
+		}
+	}
 	rules := []string{}
 	for _, r := range t.Rules {
 		target := r.Target
@@ -84,15 +153,46 @@ func clashTemplate(nodes []Node, native []Object, t Template) Object {
 		}
 		rules = append(rules, textRule(r, target))
 	}
+	providers := Object{}
+	for _, p := range t.Providers {
+		providers[p.ID] = Object{"type": "http", "behavior": strings.ReplaceAll(p.Type, "ip_cidr", "ipcidr"), "format": p.Format, "url": p.URL, "path": "./rules/" + p.ID + "." + p.Format, "interval": 86400}
+		target := p.Target
+		if target == "PROXY" {
+			target = finalGroup(nodes)
+		}
+		rules = append(rules, "RULE-SET,"+p.ID+","+target)
+	}
 	if t.Preset == "split" {
-		rules = append(rules, "GEOIP,CN,DIRECT")
+		for _, kind := range []string{"domains", "ips"} {
+			id, behavior, category := "cn-"+kind, "domain", "geosite"
+			if kind == "ips" {
+				behavior, category = "ipcidr", "geoip"
+			}
+			providers[id] = Object{"type": "http", "behavior": behavior, "format": "mrs", "url": "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/" + category + "/cn.mrs", "path": "./rules/" + id + ".mrs", "interval": 86400}
+			rules = append(rules, "RULE-SET,"+id+",DIRECT")
+		}
 	}
 	rules = append(rules, "MATCH,"+finalGroup(nodes))
-	result := Object{"mixed-port": 7890, "allow-lan": false, "mode": "rule", "log-level": "warning", "proxies": native, "proxy-groups": group, "rules": rules, "dns": Object{"enable": true, "respect-rules": true, "enhanced-mode": "fake-ip", "nameserver": templateDNS(t), "proxy-server-nameserver": templateDNS(t)}}
+	p := dnsPolicy(t)
+	mode := "redir-host"
+	if p.FakeIP {
+		mode = "fake-ip"
+	}
+	dns := Object{"enable": true, "respect-rules": true, "enhanced-mode": mode, "nameserver": p.Remote, "proxy-server-nameserver": p.Bootstrap, "default-nameserver": p.Bootstrap, "ipv6": p.IPv6}
+	if p.FakeIP {
+		dns["fake-ip-filter"] = p.FakeIPFilter
+	}
+	if t.Preset == "split" {
+		dns["nameserver-policy"] = Object{"rule-set:cn-domains": p.Local}
+	}
+	result := Object{"mixed-port": 7890, "allow-lan": false, "mode": "rule", "log-level": "warning", "proxies": native, "proxy-groups": group, "rules": rules, "dns": dns}
+	if len(providers) > 0 {
+		result["rule-providers"] = providers
+	}
 	if t.TUN {
 		result["tun"] = Object{"enable": true, "stack": "mixed", "auto-route": true, "auto-detect-interface": true, "dns-hijack": []string{"any:53"}}
 	}
-	return result
+	return applyNativeTemplate(t.Native, result)
 }
 
 func textRule(r Rule, target string) string {
@@ -165,6 +265,9 @@ func egernNode(n Node) Object {
 		m["uuid"], m["alpn"] = n.UUID, n.TLS.ALPN
 	case "ss":
 		m["method"] = n.Cipher
+		if n.Cipher == "chacha20-ietf-poly1305" {
+			m["method"] = "chacha20-poly1305"
+		}
 	case "trojan":
 		if n.Transport.Type == "ws" {
 			m["websocket"] = Object{"path": n.Transport.Path, "host": n.Transport.Host}
@@ -195,7 +298,7 @@ func egernTemplate(nodes []Node, native []Object, t Template) Object {
 		rules = append(rules, Object{"geoip": Object{"match": "CN", "policy": "DIRECT"}})
 	}
 	rules = append(rules, Object{"default": Object{"policy": finalGroup(nodes)}})
-	return Object{"proxies": native, "policy_groups": policy, "rules": rules}
+	return applyNativeTemplate(t.Native, Object{"proxies": native, "policy_groups": policy, "rules": rules})
 }
 
 func shadowrocketRules(t Template) string {

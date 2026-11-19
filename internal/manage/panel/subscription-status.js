@@ -1,5 +1,15 @@
 import { api } from "./api.js";
-import { el, card, row, button, help, table, badge, date } from "./ui.js";
+import {
+  el,
+  card,
+  row,
+  button,
+  help,
+  table,
+  badge,
+  date,
+  showResult,
+} from "./ui.js";
 
 const labels = {
   pending: "尚未检查",
@@ -74,6 +84,40 @@ export async function subscriptionStatus(ctx) {
       ])
         facts.append(el("dt", {}, label), el("dd", {}, value));
       body.replaceChildren(
+        card(
+          "已发布输出",
+          table(
+            [
+              { label: "输出", value: (v) => v.name || v.id },
+              { key: "client", label: "客户端" },
+              { key: "nodes", label: "有效节点" },
+              {
+                label: "状态",
+                value: (v) => (v.available ? "已发布" : "已撤下"),
+                render: (v) =>
+                  badge(
+                    v.available ? "已发布" : "已撤下",
+                    v.available ? "good" : "bad",
+                  ),
+              },
+              { key: "validation", label: "实际验证" },
+            ],
+            status.outputs || [],
+            (v) => [
+              button("诊断 " + v.diagnostic_count, () =>
+                showResult(
+                  "输出诊断 · " + v.id,
+                  (v.diagnostics || [])
+                    .map(
+                      (d) =>
+                        `${d.stage} · ${d.name || d.node_id || ""} · ${d.message}`,
+                    )
+                    .join("\n") || "没有诊断记录",
+                ),
+              ),
+            ],
+          ),
+        ),
         card(
           "Webhook 通知",
           badge(

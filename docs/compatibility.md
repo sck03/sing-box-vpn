@@ -2,6 +2,8 @@
 
 本版只接受新数据库 schema 13 / 备份格式 7，不迁移旧账户或管理接口。平台配置 schema 4 与数据库版本独立。Linux Debian/Ubuntu + systemd，amd64/arm64；Windows 用于开发与本机测试。数据目录由 root 独占，面板默认回环。
 
+订阅配置 schema=3，不接受旧 schema=2。来源新增 auto、Surge/Loon/Quantumult X 文本输入，gRPC/HTTPUpgrade 与 Hysteria2 salamander 只输出给能保留参数的适配器。原生模板的策略组、规则 Provider 与 DNS 策略按客户端能力校验；Mihomo 国内分流改用 MRS，不要求本地 Country.mmdb。节点文档和模板版本独立，不能统一机械升级。
+
 Release 标签使用 `vMAJOR.MINOR.PATCH`，主版本号与数据格式无绑定：v5.0.0 等正式标签可安装，但包内容必须满足当前平台约定。版本号变化不会自动迁移数据库。证书提供方仅接受 `acme` / `import`，旧 `certbot` 标记不兼容。
 
 受管核心固定 sing-box 1.14.4，适配版本 1.14.4+sbvpn.3；截至 2026-11-17 查询仍是上游最新稳定版。官方二进制用于生成配置验证；不能用任意官方核心替换受管运行时，否则丢失认证后账户计量。更新需双程序一起验证。

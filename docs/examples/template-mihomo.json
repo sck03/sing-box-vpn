@@ -1,0 +1,34 @@
+{
+  "id": "mihomo-split",
+  "version": 1,
+  "client": "mihomo",
+  "mode": "config",
+  "preset": "split",
+  "groups": [
+    {
+      "id": "AutoSelect",
+      "type": "urltest",
+      "scope": "normal",
+      "interval_seconds": 300,
+      "tolerance": 50
+    },
+    {
+      "id": "Media",
+      "type": "select",
+      "scope": "normal",
+      "members": ["AutoSelect"]
+    }
+  ],
+  "dns_policy": {
+    "local": ["https://dns.alidns.com/dns-query"],
+    "remote": ["https://cloudflare-dns.com/dns-query"],
+    "bootstrap": ["223.5.5.5"],
+    "fake_ip": true,
+    "fake_ip_filter": ["*.lan", "localhost", "+.local"],
+    "ipv6": false
+  },
+  "rules": [
+    { "type": "domain_suffix", "value": "youtube.com", "target": "Media" }
+  ],
+  "native": { "external-controller": "127.0.0.1:9090" }
+}

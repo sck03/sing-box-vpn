@@ -201,12 +201,12 @@ func checkSubscriptionOutput(ctx context.Context, root, core, id, endpoint strin
 		var recordErr error
 		if ctx.Err() == nil {
 			recordErr = withLock(root, func() error {
-				_, state, err := loadSubscriptionState(root)
+				current, state, err := loadSubscriptionState(root)
 				if err != nil {
 					return err
 				}
 				state.Record("check", id, fmt.Sprintf("%d/%d protocol HTTP probes succeeded", passed, len(results)), time.Now())
-				return AtomicJSON(filepath.Join(root, subscriptionsRuntime), state)
+				return writeSubscriptionRuntime(root, current, state)
 			})
 		}
 		outcome := "passed"

@@ -72,6 +72,20 @@ def check(browser, base):
         "id": account + "-share", "account_id": account, "clients": ["uri"],
     })
     assert grant.ok, grant.text()
+    page.goto(base + "/user#" + grant.json()["token"])
+    expect(page.locator(".client-grid .client-download")).to_have_count(1)
+    expect(page.get_by_role("heading", name="通用 URI", exact=True)).to_be_visible()
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    screenshots = os.getenv("PANEL_TEST_SCREENSHOT_DIR")
+    if screenshots:
+        os.makedirs(screenshots, exist_ok=True)
+        page.screenshot(path=os.path.join(screenshots, "user-available.png"), full_page=True)
+    page.goto(base + "/#subscriptions/status")
+    expect(page.get_by_role("heading", name="已发布输出", exact=True)).to_be_visible()
+    expect(page.get_by_text("已发布", exact=True)).to_be_visible()
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    if screenshots:
+        page.screenshot(path=os.path.join(screenshots, "subscription-status.png"), full_page=True)
     record = api.get(base + "/api/accounts?q=" + account).json()["items"][0]
     assert api.post(base + "/api/accounts", headers=headers, data={"account": {
         "id": account, "name": record["name"], "duration_seconds": 86400,

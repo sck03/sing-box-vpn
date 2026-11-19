@@ -12,6 +12,13 @@ type Features struct {
 	CertificatePin bool `json:"certificate_pin"`
 	PublicKeyPin   bool `json:"public_key_pin"`
 	UTLS           bool `json:"utls"`
+	GRPC           bool `json:"grpc"`
+	HTTPUpgrade    bool `json:"http_upgrade"`
+	HysteriaObfs   bool `json:"hysteria_obfs"`
+	PolicyGroups   bool `json:"policy_groups"`
+	AdvancedDNS    bool `json:"advanced_dns"`
+	RuleProviders  bool `json:"rule_providers"`
+	NativeTemplate bool `json:"native_template"`
 }
 
 type Profile struct {
@@ -47,6 +54,18 @@ var catalog = map[string]Profile{
 
 func Lookup(id string) (Profile, bool) {
 	p, ok := catalog[id]
+	if slices.Contains([]string{"sing-box", "mihomo", "openclash", "uri", "base64", "shadowrocket"}, id) {
+		p.Features.GRPC, p.Features.HTTPUpgrade = true, true
+	}
+	if slices.Contains([]string{"sing-box", "mihomo", "openclash", "stash", "uri", "base64", "shadowrocket"}, id) {
+		p.Features.HysteriaObfs = true
+	}
+	if slices.Contains([]string{"sing-box", "mihomo", "openclash", "stash"}, id) {
+		p.Features.PolicyGroups, p.Features.AdvancedDNS, p.Features.RuleProviders, p.Features.NativeTemplate = true, true, true, true
+	}
+	if id == "egern" {
+		p.Features.NativeTemplate = true
+	}
 	p.Protocols, p.Modes = slices.Clone(p.Protocols), slices.Clone(p.Modes)
 	return p, ok
 }

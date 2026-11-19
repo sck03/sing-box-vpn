@@ -1,6 +1,20 @@
 # 部署前重构与验收记录
 
-更新：2026-11-19。本轮公网访问、任务与模块整理基于 `b9c7883`。数据库 schema **13**、节点文档 schema **2**、订阅配置 schema **2**、平台配置 schema **4**；备份容器为 **7**，只接受本版数据库。旧数据与旧接口不迁移。后面的既有阶段记录保留其当时验证范围。
+更新：2026-11-19。当前订阅重构基于 `208e022`。数据库 schema **13**、节点文档 schema **2**、订阅配置 schema **3**、平台配置 schema **4**；备份容器为 **7**，只接受本版数据库。旧数据与旧接口不迁移。后面的既有阶段记录保留其当时验证范围。
+
+## 当前订阅转换与模块重构
+
+- 解析、标准化、能力选择、模板策略/DNS 与编码分模块；新增 auto、Surge/Loon/Quantumult X 输入、逐节点跳过与诊断、稳定重名处理、gRPC/HTTPUpgrade 和 Hysteria2 salamander。不能表达的显式参数继续拒绝，Quantumult X 不将 VMess zero 改成其他加密算法。
+- 原生完整模板提供策略组、测速/故障切换、远程规则 Provider、分角色 DNS 和补充根字段；国内规则使用 SRS/MRS。示例、参考固定提交及许可证说明已同步，不复制上游脚本或模板。
+- 编译产物按真实输入摘要复用，带独立 CompilerVersion；调度和输出状态使用无节点正文的专用投影，状态展示实际节点数与验证结果。下载 handler 只初始化一次缓存，授权仍逐请求执行。
+- 前端新增结构化集合/模板资源与高级连接字段、输出诊断、已应用操作选择器、友好客户端下载卡片；保持原生模块、取消保护、主题和移动布局。
+- 服务单元生成迁入纯 hostservice renderer，删除旧 platform_units.go、services_test.go 与 service-recovery.sh 复制夹具，保留直接检查生产生成器和 Linux 实际恢复的测试。
+
+本机全量 Go 常规测试、vet、六组 npm 回归、新增订阅/管理回归、订阅与 hostservice 及相关管理用例的 race 检查通过。五协议 × 普通/VPNGate × 原生 sing-box/Mihomo/provider/URI 的 72 条真实 TCP/UDP 链路通过；VMess/TUIC 自签 URI 的 4 组按已知导入限制跳过。扩展 DNS URL/gRPC/策略组/国内规则通过官方核心配置检查。隔离 no-system 面板完成真实 HTTP、Chrome 桌面和手机视口鼠标/键盘/触屏验收，已检查用户下载卡片与输出状态截图。
+
+Shell 语法和 ShellCheck 通过；本机 Windows 的安装/升级脚本运行受缺少 Linux flock、/etc/os-release 限制，不记录为通过。GitHub CI 承担全量 Linux race、netns、防火墙、存储、systemd、双架构与安装验收，推送结果单独核对。未完成商业客户端实机导入、实体 OpenClash、物理手机、志愿 VPNGate、公网 ACME、长期满载或断电实验。详细范围见 [验证数据](validation/2026-11-19-subscription-refactor.json)。
+
+本轮验证进程已结束。自动策略阻止递归删除测试产物，按用户要求将两个临时程序及截图目录统一移动到 .cleanup-manual/subscription-refactor/，可手动删除；该目录被 Git 和发行包忽略。保留在用工具链与可复用 Go/Node 依赖缓存，源码中的过时单元生成文件和复制夹具已删除。
 
 ## 本轮完整重构
 

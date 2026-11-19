@@ -93,11 +93,27 @@ async function load(token, signal, current) {
     element("h2", "添加到客户端"),
     element("p", "选择对应客户端，复制订阅链接导入，或直接下载配置。"),
   );
+  const grid = element("div", "");
+  grid.className = "client-grid";
+  target.append(grid);
   for (const client of u.clients) {
+    const profile = u.client_profiles?.[client];
+    const label = profile?.label || client;
     const wrap = document.createElement("div");
     wrap.className = "client-download";
     const address = new URL("u/" + token + "/" + client, base).href;
-    const link = element("a", "下载 " + client);
+    wrap.append(
+      element("h3", label),
+      element(
+        "small",
+        profile?.experimental
+          ? "实验适配 · 需要目标应用验收"
+          : profile?.tested_version
+            ? "参考核心版本 " + profile.tested_version
+            : "通用节点格式",
+      ),
+    );
+    const link = element("a", "下载 " + label);
     link.href = address;
     link.rel = "noreferrer";
     link.className = "download-link";
@@ -118,7 +134,7 @@ async function load(token, signal, current) {
       }
     });
     wrap.append(link, document.createTextNode(" "), copy);
-    target.append(wrap);
+    grid.append(wrap);
   }
 }
 let loading = false,

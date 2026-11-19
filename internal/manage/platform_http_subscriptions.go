@@ -1,6 +1,7 @@
 package manage
 
 import (
+	"github.com/sck03/sing-box-vpn/internal/clientprofile"
 	"net/http"
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
@@ -25,6 +26,35 @@ func (s *PlatformService) serveGrants(w http.ResponseWriter, r *http.Request, ac
 	}
 	if path == "/api/clients" && r.Method == "GET" {
 		jsonResponse(w, sub.Capabilities())
+		return true
+	}
+	if path == "/api/subscription-capabilities" && r.Method == "GET" {
+		profile, _ := clientprofile.Lookup("sing-box")
+		jsonResponse(w, Object{"schema_version": sub.SchemaVersion, "formats": sub.InputFormats(), "protocols": profile.Protocols})
+		return true
+	}
+	if path == "/api/subscriptions/actions" && r.Method == "GET" {
+		if !require(admin) {
+			return true
+		}
+		state, err := s.Store.State(ctx)
+		if err != nil {
+			platformError(w, err)
+			return true
+		}
+		config, err := decodePlatform(state.Applied)
+		if err != nil {
+			platformError(w, err)
+			return true
+		}
+		outputs, deliveries := []Object{}, []Object{}
+		for _, output := range config.Subscriptions.Outputs {
+			outputs = append(outputs, Object{"id": output.ID, "name": output.Name})
+		}
+		for _, delivery := range config.Subscriptions.Deliveries {
+			deliveries = append(deliveries, Object{"id": delivery.ID})
+		}
+		jsonResponse(w, Object{"revision": state.AppliedRevision, "pending": state.Revision != state.AppliedRevision, "outputs": outputs, "deliveries": deliveries})
 		return true
 	}
 	if path == "/api/grant-options" && r.Method == "GET" {

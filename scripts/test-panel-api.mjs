@@ -57,7 +57,17 @@ assert.equal(
 let state = ok(await call("/api/config"));
 const config = state.config;
 assert.equal(config.app.schema, 2);
-assert.equal(config.subscriptions.version, 2);
+assert.equal(config.subscriptions.version, 3);
+const subscriptionCapabilities = ok(
+  await call("/api/subscription-capabilities"),
+);
+assert.equal(subscriptionCapabilities.schema_version, 3);
+assert(subscriptionCapabilities.formats.includes("auto"));
+assert(subscriptionCapabilities.formats.includes("loon"));
+const subscriptionActions = ok(await call("/api/subscriptions/actions"));
+assert.deepEqual(subscriptionActions.outputs, []);
+assert.deepEqual(subscriptionActions.deliveries, []);
+assert(Array.isArray(ok(await call("/api/subscriptions/status")).outputs));
 const invalid = structuredClone(config);
 invalid.gateway = { connect_timeout: 240 };
 assert.equal((await call("/api/config/preview", invalid)).status, 400);

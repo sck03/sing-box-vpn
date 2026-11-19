@@ -56,9 +56,10 @@ export function templateFields(catalog) {
     },
     {
       key: "dns",
-      label: "DNS 服务器 IP",
+      label: "默认 DNS",
       type: "csv",
       visible: (v) => complete(v) && capability(v)?.features.dns,
+      help: "原生核心模板支持 IP 和 udp/tcp/tls/https URL；其他客户端使用 IP。",
     },
     {
       key: "probe_url",
@@ -73,9 +74,67 @@ export function templateFields(catalog) {
     },
     { key: "rule_sets", label: "规则集 ID", type: "csv", visible: rules },
     {
+      key: "dns_policy.local",
+      label: "国内 DNS",
+      type: "csv",
+      advanced: true,
+      visible: (v) => complete(v) && capability(v)?.features.advanced_dns,
+    },
+    {
+      key: "dns_policy.remote",
+      label: "代理 DNS",
+      type: "csv",
+      advanced: true,
+      visible: (v) => complete(v) && capability(v)?.features.advanced_dns,
+      help: "sing-box 每种用途使用一个解析器。",
+    },
+    {
+      key: "dns_policy.bootstrap",
+      label: "引导 DNS（IP）",
+      type: "csv",
+      advanced: true,
+      visible: (v) => complete(v) && capability(v)?.features.advanced_dns,
+    },
+    {
+      key: "dns_policy.fake_ip",
+      label: "Fake-IP",
+      type: "bool",
+      advanced: true,
+      visible: (v) =>
+        complete(v) && ["mihomo", "openclash", "stash"].includes(v.client),
+    },
+    {
+      key: "dns_policy.fake_ip_filter",
+      label: "Fake-IP 排除域名",
+      type: "csv",
+      advanced: true,
+      visible: (v) =>
+        complete(v) &&
+        ["mihomo", "openclash", "stash"].includes(v.client) &&
+        v.dns_policy?.fake_ip,
+    },
+    {
+      key: "dns_policy.ipv6",
+      label: "DNS 返回 IPv6",
+      type: "bool",
+      advanced: true,
+      visible: (v) =>
+        complete(v) && ["mihomo", "openclash", "stash"].includes(v.client),
+    },
+    {
+      key: "native",
+      label: "客户端原生基础字段 JSON",
+      type: "json",
+      wide: true,
+      advanced: true,
+      visible: (v) => complete(v) && capability(v)?.features.native_template,
+      help: "补充客户端字段；节点、策略组、路由和 DNS 由模板编译器生成。",
+    },
+    {
       key: "rules",
       label: "高级路由规则 JSON",
       type: "json",
+      default: [],
       wide: true,
       visible: rules,
     },
@@ -89,10 +148,34 @@ export function normalizeTemplate(value, catalog) {
     delete value.dns;
     delete value.probe_url;
     delete value.tun;
+    delete value.dns_policy;
+    delete value.groups;
+    delete value.providers;
+    delete value.native;
   }
   if (!features.dns) delete value.dns;
   if (!features.probe) delete value.probe_url;
   if (!features.tun) delete value.tun;
+  if (!features.advanced_dns) delete value.dns_policy;
+  if (!features.policy_groups) delete value.groups;
+  if (!features.rule_providers) delete value.providers;
+  if (!features.native_template) delete value.native;
+  if (value.client === "sing-box" && value.dns_policy) {
+    value.dns_policy.fake_ip = false;
+    value.dns_policy.ipv6 = false;
+    delete value.dns_policy.fake_ip_filter;
+  }
+  if (value.dns_policy && !value.dns_policy.fake_ip)
+    delete value.dns_policy.fake_ip_filter;
+  if (
+    value.dns_policy &&
+    !value.dns_policy.fake_ip &&
+    !value.dns_policy.ipv6 &&
+    !["local", "remote", "bootstrap"].some(
+      (key) => value.dns_policy[key]?.length,
+    )
+  )
+    delete value.dns_policy;
   if (value.mode !== "config" && value.mode !== "rules") {
     delete value.rules;
     delete value.rule_sets;

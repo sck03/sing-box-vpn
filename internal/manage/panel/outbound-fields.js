@@ -116,6 +116,21 @@ export function outboundFields(protocols, tags, resolvers) {
       visible: (v) => tlsProtocols.includes(v.type) && tlsActive(v),
     },
     {
+      key: "tls.alpn",
+      label: "ALPN",
+      type: "csv",
+      help: "例如 h2、http/1.1；留空使用协议默认值。",
+      visible: (v) => tlsProtocols.includes(v.type) && tlsActive(v),
+    },
+    {
+      key: "tls.certificate_public_key_sha256",
+      label: "证书公钥 SHA-256 固定值",
+      type: "csv",
+      wide: true,
+      help: "Base64 编码的 SHA-256 公钥摘要；不是证书文件的十六进制摘要。",
+      visible: (v) => tlsProtocols.includes(v.type) && tlsActive(v),
+    },
+    {
       key: "tls.reality.enabled",
       label: "使用 Reality",
       type: "bool",
@@ -160,6 +175,7 @@ export function outboundFields(protocols, tags, resolvers) {
         ["", "TCP"],
         ["ws", "WebSocket"],
         ["grpc", "gRPC"],
+        ["httpupgrade", "HTTPUpgrade"],
       ],
       visible: (v) => ["vless", "vmess"].includes(v.type),
     },
@@ -174,13 +190,21 @@ export function outboundFields(protocols, tags, resolvers) {
       label: "WebSocket 路径",
       default: "/",
       visible: (v) =>
-        ["vless", "vmess"].includes(v.type) && v.transport?.type === "ws",
+        ["vless", "vmess"].includes(v.type) &&
+        ["ws", "httpupgrade"].includes(v.transport?.type),
     },
     {
       key: "transport.headers.Host",
       label: "WebSocket Host",
       visible: (v) =>
         ["vless", "vmess"].includes(v.type) && v.transport?.type === "ws",
+    },
+    {
+      key: "transport.host",
+      label: "HTTPUpgrade Host",
+      visible: (v) =>
+        ["vless", "vmess"].includes(v.type) &&
+        v.transport?.type === "httpupgrade",
     },
     {
       key: "congestion_control",
@@ -191,12 +215,61 @@ export function outboundFields(protocols, tags, resolvers) {
       visible: (v) => v.type === "tuic",
     },
     {
+      key: "server_ports",
+      label: "Hysteria2 跳跃端口",
+      type: "csv",
+      help: "例如 31000:31100、31200:31200；留空使用固定端口。",
+      visible: (v) => v.type === "hysteria2",
+    },
+    {
+      key: "obfs.type",
+      label: "Hysteria2 混淆",
+      type: "select",
+      options: [["", "关闭"], "salamander"],
+      visible: (v) => v.type === "hysteria2",
+    },
+    {
+      key: "obfs.password",
+      label: "混淆密码",
+      type: "password",
+      required: true,
+      visible: (v) => v.type === "hysteria2" && !!v.obfs?.type,
+    },
+    {
       key: "domain_resolver",
       label: "域名解析器",
       type: "select",
       options: [["", "使用默认解析器"], ...resolvers],
       visible: isRemote,
     },
+    {
+      key: "udp_relay_mode",
+      label: "TUIC UDP 模式",
+      type: "select",
+      options: ["native", "quic"],
+      default: "native",
+      visible: (v) => v.type === "tuic",
+    },
+    ...[
+      "idle_session_check_interval",
+      "idle_session_timeout",
+      "min_idle_session",
+    ].map((key) => ({
+      key,
+      label: {
+        idle_session_check_interval: "空闲会话检查间隔",
+        idle_session_timeout: "空闲会话超时",
+        min_idle_session: "最少空闲会话数",
+      }[key],
+      type: key === "min_idle_session" ? "number" : "text",
+      nullable: key === "min_idle_session",
+      min: 0,
+      help:
+        key === "min_idle_session"
+          ? "留空使用核心默认值。"
+          : "例如 30s；留空使用核心默认值。",
+      visible: (v) => v.type === "anytls",
+    })),
     {
       key: "detour",
       label: "链式上游",
@@ -213,20 +286,14 @@ export function normalizeOutbound(v, previous) {
     previous.transport?.type !== v.transport?.type &&
     v.transport
   ) {
-    const { type, path, headers, service_name } = v.transport;
+    const { type, path, headers, service_name, host } = v.transport;
     v.transport =
-      type === "ws" ? { type, path, headers } : { type, service_name };
+      type === "ws"
+        ? { type, path, headers }
+        : type === "httpupgrade"
+          ? { type, path, host }
+          : { type, service_name };
   }
-  if (
-    previous &&
-    previous.type === v.type &&
-    previous.flow === v.flow &&
-    previous.tls?.enabled === v.tls?.enabled &&
-    previous.tls?.reality?.enabled === v.tls?.reality?.enabled &&
-    previous.tls?.utls?.enabled === v.tls?.utls?.enabled &&
-    previous.transport?.type === v.transport?.type
-  )
-    return v;
   if (!isRemote(v)) {
     delete v.server;
     delete v.server_port;
@@ -247,7 +314,18 @@ export function normalizeOutbound(v, previous) {
   }
   if (v.type !== "vmess") delete v.security;
   if (v.type !== "vless" || !v.flow) delete v.flow;
-  if (v.type !== "tuic") delete v.congestion_control;
+  if (v.type !== "tuic") {
+    delete v.congestion_control;
+    delete v.udp_relay_mode;
+  }
+  if (v.type !== "hysteria2") delete v.server_ports;
+  if (v.type !== "hysteria2" || !v.obfs?.type) delete v.obfs;
+  for (const key of [
+    "idle_session_check_interval",
+    "idle_session_timeout",
+    "min_idle_session",
+  ])
+    if (v.type !== "anytls" || v[key] === "" || v[key] == null) delete v[key];
   if (["hysteria2", "tuic", "anytls"].includes(v.type)) {
     v.tls ??= {};
     v.tls.enabled = true;

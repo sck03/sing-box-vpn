@@ -17,10 +17,13 @@ import (
 )
 
 const (
-	SchemaVersion = 2
-	MaxNodes      = 4096
-	MaxBody       = 8 << 20
-	MaxObjects    = 128
+	SchemaVersion = 3
+	// Increment whenever parser or renderer semantics change, independently of
+	// the persisted configuration schema, to invalidate derived artifacts.
+	CompilerVersion = 1
+	MaxNodes        = 4096
+	MaxBody         = 8 << 20
+	MaxObjects      = 128
 )
 
 type TLS struct {
@@ -36,31 +39,34 @@ type TLS struct {
 }
 
 type Transport struct {
-	Type string `json:"type,omitempty"`
-	Path string `json:"path,omitempty"`
-	Host string `json:"host,omitempty"`
+	Type        string `json:"type,omitempty"`
+	Path        string `json:"path,omitempty"`
+	Host        string `json:"host,omitempty"`
+	ServiceName string `json:"service_name,omitempty"`
 }
 
 // Node is the only representation used between parsing, processing and adapters.
 // Gateway is trusted local metadata, never accepted from a remote subscription.
 type Node struct {
-	ID         string    `json:"id"`
-	SourceID   string    `json:"source_id,omitempty"`
-	Name       string    `json:"name"`
-	Tags       []string  `json:"tags,omitempty"`
-	Gateway    bool      `json:"gateway,omitempty"`
-	Protocol   string    `json:"protocol"`
-	Server     string    `json:"server"`
-	Port       int       `json:"port"`
-	UUID       string    `json:"uuid,omitempty"`
-	Password   string    `json:"password,omitempty"`
-	Cipher     string    `json:"cipher,omitempty"`
-	Flow       string    `json:"flow,omitempty"`
-	TLS        TLS       `json:"tls,omitempty"`
-	Transport  Transport `json:"transport,omitempty"`
-	Ports      []string  `json:"ports,omitempty"`
-	Congestion string    `json:"congestion,omitempty"`
-	UDPRelay   string    `json:"udp_relay,omitempty"`
+	ID           string    `json:"id"`
+	SourceID     string    `json:"source_id,omitempty"`
+	Name         string    `json:"name"`
+	Tags         []string  `json:"tags,omitempty"`
+	Gateway      bool      `json:"gateway,omitempty"`
+	Protocol     string    `json:"protocol"`
+	Server       string    `json:"server"`
+	Port         int       `json:"port"`
+	UUID         string    `json:"uuid,omitempty"`
+	Password     string    `json:"password,omitempty"`
+	Cipher       string    `json:"cipher,omitempty"`
+	Flow         string    `json:"flow,omitempty"`
+	TLS          TLS       `json:"tls,omitempty"`
+	Transport    Transport `json:"transport,omitempty"`
+	Ports        []string  `json:"ports,omitempty"`
+	Congestion   string    `json:"congestion,omitempty"`
+	UDPRelay     string    `json:"udp_relay,omitempty"`
+	Obfs         string    `json:"obfs,omitempty"`
+	ObfsPassword string    `json:"obfs_password,omitempty"`
 }
 
 var idPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
@@ -103,16 +109,19 @@ func (n Node) Validate() error {
 	if len(n.Password) > 4096 || strings.ContainsAny(n.Password, "\r\n\x00") {
 		return errors.New("invalid password")
 	}
-	if n.Transport.Type != "" && n.Transport.Type != "tcp" && n.Transport.Type != "ws" {
-		return errors.New("only TCP and WebSocket transports are supported")
+	if !slices.Contains([]string{"", "tcp", "ws", "grpc", "httpupgrade"}, n.Transport.Type) {
+		return errors.New("unsupported transport")
 	}
-	if n.Transport.Type == "ws" && (!strings.HasPrefix(n.Transport.Path, "/") || strings.ContainsAny(n.Transport.Path+n.Transport.Host, "\r\n\x00")) {
+	if (n.Transport.Type == "ws" || n.Transport.Type == "httpupgrade") && (!strings.HasPrefix(n.Transport.Path, "/") || strings.ContainsAny(n.Transport.Path+n.Transport.Host, "\r\n\x00")) {
 		return errors.New("invalid WebSocket transport")
+	}
+	if n.Transport.Type != "ws" && n.Transport.Type != "httpupgrade" && (n.Transport.Path != "" || n.Transport.Host != "") {
+		return errors.New("path and host require WebSocket or HTTPUpgrade")
 	}
 	if n.Flow != "" && (n.Protocol != "vless" || n.Flow != "xtls-rprx-vision") {
 		return errors.New("unsupported flow")
 	}
-	if n.Flow != "" && (!n.TLS.Enabled || n.Transport.Type == "ws") {
+	if n.Flow != "" && (!n.TLS.Enabled || (n.Transport.Type != "" && n.Transport.Type != "tcp")) {
 		return errors.New("Vision requires TLS over TCP")
 	}
 	if len(n.Tags) > 64 || len(n.TLS.ALPN) > 16 || len(n.Ports) > 256 {
@@ -171,8 +180,26 @@ func (n Node) Validate() error {
 	if slices.Contains([]string{"hysteria2", "tuic", "anytls", "trojan"}, n.Protocol) && !n.TLS.Enabled {
 		return errors.New("protocol requires TLS")
 	}
-	if n.Transport.Type == "ws" && !slices.Contains([]string{"vmess", "vless", "trojan"}, n.Protocol) {
-		return errors.New("protocol does not support WebSocket")
+	if n.Transport.Type != "" && n.Transport.Type != "tcp" && !slices.Contains([]string{"vmess", "vless", "trojan"}, n.Protocol) {
+		return errors.New("protocol does not support this transport")
+	}
+	if len(n.Transport.ServiceName) > 256 || strings.ContainsAny(n.Transport.ServiceName, "\r\n\x00") || (n.Transport.ServiceName != "" && n.Transport.Type != "grpc") {
+		return errors.New("invalid gRPC service name")
+	}
+	if n.Obfs != "" && (n.Protocol != "hysteria2" || n.Obfs != "salamander" || n.ObfsPassword == "") {
+		return errors.New("unsupported obfuscation")
+	}
+	if len(n.ObfsPassword) > 4096 || strings.ContainsAny(n.ObfsPassword, "\r\n\x00") || (n.ObfsPassword != "" && n.Obfs == "") {
+		return errors.New("invalid obfuscation password")
+	}
+	if n.Protocol == "vmess" && !slices.Contains([]string{"", "auto", "none", "zero", "aes-128-gcm", "chacha20-poly1305"}, n.Cipher) {
+		return errors.New("unsupported VMess security")
+	}
+	if n.Congestion != "" && (n.Protocol != "tuic" || !slices.Contains([]string{"bbr", "cubic", "new_reno"}, n.Congestion)) {
+		return errors.New("unsupported congestion controller")
+	}
+	if n.UDPRelay != "" && (n.Protocol != "tuic" || !slices.Contains([]string{"native", "quic"}, n.UDPRelay)) {
+		return errors.New("unsupported UDP relay mode")
 	}
 	if n.Protocol == "ss" && !slices.Contains([]string{"aes-128-gcm", "aes-256-gcm", "chacha20-ietf-poly1305", "2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm", "2022-blake3-chacha20-poly1305"}, n.Cipher) {
 		return errors.New("unsupported Shadowsocks cipher")
@@ -236,7 +263,7 @@ func Process(nodes []Node, p Processor) (Preview, error) {
 	}
 	seen, names := map[string]bool{}, map[string]bool{}
 	for _, original := range nodes {
-		n := original
+		n := normalizeNode(original)
 		if err := n.Validate(); err != nil {
 			return result, fmt.Errorf("node %s: %w", n.ID, err)
 		}
@@ -271,11 +298,9 @@ func Process(nodes []Node, p Processor) (Preview, error) {
 			n.Name = patterns[2].ReplaceAllString(n.Name, p.RenameReplacement)
 		}
 		n.Name = p.Prefix + n.Name
+		n.Name = uniqueNodeName(n.Name, names)
 		if n.Name != original.Name {
 			result.Diagnostics = append(result.Diagnostics, Diagnostic{n.ID, original.Name, "rename", n.Name})
-		}
-		if names[n.Name] || reservedName(n.Name) {
-			return result, fmt.Errorf("duplicate or reserved node name %q", n.Name)
 		}
 		if err := n.Validate(); err != nil {
 			return result, err

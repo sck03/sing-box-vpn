@@ -149,7 +149,11 @@ func accountSourceState(ctx context.Context, store *accounting.Store, id string,
 
 func compilePreparedSubscriptions(ctx context.Context, root, core string, c sub.Config, r sub.Runtime, local map[string][]sub.Node, mode sub.BuildMode) (fileBundle, sub.Snapshot, map[string]sub.Preview, error) {
 	r = sub.PruneRuntime(c, r)
-	snapshot, previews, err := sub.Compile(c, r, local, time.Now(), mode)
+	var previous sub.Snapshot
+	if _, err := ReadJSON(filepath.Join(root, subscriptionsSnapshot), &previous); err != nil {
+		previous = sub.Snapshot{}
+	}
+	snapshot, previews, err := sub.CompileCached(c, r, local, time.Now(), mode, previous)
 	if err != nil {
 		return nil, snapshot, previews, err
 	}
@@ -157,12 +161,8 @@ func compilePreparedSubscriptions(ctx context.Context, root, core string, c sub.
 	if err != nil {
 		return nil, snapshot, previews, err
 	}
-	var previous sub.Snapshot
 	// This is only a validation cache. A broken projection is rebuilt, never
 	// allowed to prevent recovery of the database-owned configuration.
-	if _, err := ReadJSON(filepath.Join(root, subscriptionsSnapshot), &previous); err != nil {
-		previous = sub.Snapshot{}
-	}
 	templates := map[string]sub.Template{}
 	effective, err := sub.ResolveResources(c, r.Resources)
 	if err != nil {
@@ -192,7 +192,7 @@ func compilePreparedSubscriptions(ctx context.Context, root, core string, c sub.
 		snapshot.Diagnostics[output.ID] = append(snapshot.Diagnostics[output.ID], sub.Diagnostic{Stage: "validation", Message: verification})
 	}
 	files := fileBundle{}
-	for name, value := range map[string]any{subscriptionsConfig: c, subscriptionsRuntime: r, subscriptionsLocal: local, subscriptionsSnapshot: snapshot} {
+	for name, value := range map[string]any{subscriptionsConfig: c, subscriptionsRuntime: r, subscriptionsLocal: local, subscriptionsSnapshot: snapshot, subscriptionsSchedule: subscriptionDeadlines(c, r), subscriptionsOutputStatus: outputStatus(c, snapshot)} {
 		if err := files.json(name, value); err != nil {
 			return nil, snapshot, previews, err
 		}
@@ -211,4 +211,16 @@ func validateSubscriptionsRevision(current, candidate sub.Config) error {
 		return application.ErrConflict
 	}
 	return nil
+}
+
+// Runtime metadata and scheduler deadlines commit through the same journal.
+func writeSubscriptionRuntime(root string, config sub.Config, runtime sub.Runtime) error {
+	files := fileBundle{}
+	if err := files.json(subscriptionsRuntime, runtime); err != nil {
+		return err
+	}
+	if err := files.json(subscriptionsSchedule, subscriptionDeadlines(config, runtime)); err != nil {
+		return err
+	}
+	return publish(root, files)
 }

@@ -1,10 +1,20 @@
 # 架构与维护
 
-`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 13；平台配置 schema=4、节点文档 schema=2、订阅配置 schema=2 是各自独立的格式版本。面向空目录，不提供旧数据库、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责，不允许旧 CLI 修改配置投影。
+`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 13；平台配置 schema=4、节点文档 schema=2、订阅配置 schema=3 是各自独立的格式版本。面向空目录，不提供旧数据库、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责，不允许旧 CLI 修改配置投影。
 
 公网传输由 `internal/publicaccess` 管理，共用 `internal/tlsconfig`；服务登记位于 `internal/servicecatalog`。主机操作按 service/deployment/units/gateway/network/journal 分文件，日志系统适配位于 `internal/hostservice`。任务保留策略与执行终态分离；面板访问重启由独立助手和持久收据完成。账户服务不再回退读取旧 JSON 配置，调用者必须注入配置/控制仓库，或读取当前数据库。
 
 ## 模块边界
+
+订阅流水线为 Source → ParseResult（节点/诊断）→ normalize/Process → Select（客户端能力）→ renderer → Snapshot。纯解析、策略组/DNS/Provider 规则与编码器位于 internal/subscription；HTTP、网络刷新、核心校验与发布位于 manage，客户端目录位于 clientprofile。新增客户端先登记能力，再实现参数映射与拒绝边界，补充往返和核心/应用验收。
+
+编译缓存以 SchemaVersion、CompilerVersion、选定节点和有效模板的摘要为键，复用前验证产物 ETag/正文摘要。连接、证书、模板或规则变化会失效；来源/能力/路由安全仍每次检查。改变解析或渲染语义时递增 CompilerVersion，数据结构变化时再递增 SchemaVersion。sing-box 核心校验另以核心身份和产物 ETag 缓存。
+
+subscriptions/schedule.json 是截止时间与权益修订的小型投影，不包含节点、远端凭据或内联正文；运行缓存与调度投影通过同一发布日志提交。常规空闲调度只读此文件，缺失时可从当前配置/运行元信息恢复。subscriptions/output-status.json 记录输出节点数量、实际验证和最多 20 条诊断，避免状态查询解码整个已发布节点正文。这些文件都可重建，配置权威仍为数据库。
+
+认证后的 GET /api/subscription-capabilities 返回 schema_version、formats 和 protocols；GET /api/clients 返回客户端目录。管理员 GET /api/subscriptions/actions 只提供已应用输出/分发 ID、revision、pending，用于立即检测/分发，草稿 ID 不进入运行操作。GET /api/subscriptions/status 增加 outputs；账户用量接口增加 client_profiles，用户页按友好名称和验证范围展示下载卡片。
+
+主机服务单元由 internal/hostservice 的纯 PlatformUnits 函数生成，manage/platform_units_install.go 负责所有权检查、写入与 systemctl。恢复测试直接检查生产生成器及运行恢复边界，不再维护一份过时 shell 单元夹具。
 
 | 模块                                                             | 职责                                                                                    |
 | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------- |

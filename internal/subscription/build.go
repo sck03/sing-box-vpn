@@ -15,16 +15,17 @@ type Usage struct {
 }
 
 type SourceCache struct {
-	SourceHash     string    `json:"source_hash"`
-	Nodes          []Node    `json:"nodes"`
-	ETag           string    `json:"etag,omitempty"`
-	Usage          Usage     `json:"usage"`
-	Success        time.Time `json:"success"`
-	Checked        time.Time `json:"checked"`
-	Next           time.Time `json:"next"`
-	Failures       int       `json:"failures,omitempty"`
-	Error          string    `json:"error,omitempty"`
-	NotifiedExpiry int64     `json:"notified_expiry,omitempty"`
+	SourceHash     string       `json:"source_hash"`
+	Nodes          []Node       `json:"nodes"`
+	ETag           string       `json:"etag,omitempty"`
+	Usage          Usage        `json:"usage"`
+	Success        time.Time    `json:"success"`
+	Checked        time.Time    `json:"checked"`
+	Next           time.Time    `json:"next"`
+	Failures       int          `json:"failures,omitempty"`
+	Error          string       `json:"error,omitempty"`
+	Diagnostics    []Diagnostic `json:"diagnostics,omitempty"`
+	NotifiedExpiry int64        `json:"notified_expiry,omitempty"`
 }
 
 type ResourceCache struct {
@@ -86,6 +87,8 @@ type Snapshot struct {
 	Usage        map[string]Usage        `json:"usage"`
 	SourceTimes  map[string]time.Time    `json:"source_times"`
 	CoreIdentity string                  `json:"core_identity,omitempty"`
+	InputDigests map[string]string       `json:"input_digests,omitempty"`
+	NodeCounts   map[string]int          `json:"node_counts,omitempty"`
 }
 
 func SourceHash(source Source) string { data, _ := json.Marshal(source); return Digest(data) }
@@ -132,7 +135,15 @@ func Compile(c Config, runtime Runtime, local map[string][]Node, now time.Time, 
 	return build(c, runtime, local, now, mode)
 }
 
+func CompileCached(c Config, runtime Runtime, local map[string][]Node, now time.Time, mode BuildMode, previous Snapshot) (Snapshot, map[string]Preview, error) {
+	return buildCached(c, runtime, local, now, mode, previous)
+}
+
 func build(c Config, runtime Runtime, local map[string][]Node, now time.Time, mode BuildMode) (Snapshot, map[string]Preview, error) {
+	return buildCached(c, runtime, local, now, mode, Snapshot{})
+}
+
+func buildCached(c Config, runtime Runtime, local map[string][]Node, now time.Time, mode BuildMode, previous Snapshot) (Snapshot, map[string]Preview, error) {
 	available := mode != Strict
 	var err error
 	c, err = ResolveResources(c, runtime.Resources)
@@ -141,6 +152,8 @@ func build(c Config, runtime Runtime, local map[string][]Node, now time.Time, mo
 	}
 	result := Snapshot{Version: SchemaVersion, Revision: c.Revision, Artifacts: map[string]Artifact{}, Diagnostics: map[string][]Diagnostic{}, Usage: map[string]Usage{}, SourceTimes: map[string]time.Time{}}
 	previews := map[string]Preview{}
+	result.InputDigests = map[string]string{}
+	result.NodeCounts = map[string]int{}
 	if err := c.Validate(); err != nil {
 		return result, previews, err
 	}
@@ -154,7 +167,10 @@ func build(c Config, runtime Runtime, local map[string][]Node, now time.Time, mo
 		case "account":
 			nodes = local["account:"+source.ID]
 		case "inline":
-			nodes, err = Parse([]byte(source.Content), source.Format, source.ID)
+			var parsed ParseResult
+			parsed, err = ParseSource([]byte(source.Content), source)
+			nodes = parsed.Nodes
+			result.Diagnostics["source:"+source.ID] = parsed.Diagnostics
 		case "remote":
 			cached, exists := runtime.Sources[source.ID]
 			maxStale := source.MaxStaleSeconds
@@ -165,6 +181,7 @@ func build(c Config, runtime Runtime, local map[string][]Node, now time.Time, mo
 				err = errors.New("no fresh successful source cache")
 			} else {
 				nodes = cached.Nodes
+				result.Diagnostics["source:"+source.ID] = cached.Diagnostics
 				result.Usage[source.ID], result.SourceTimes[source.ID] = cached.Usage, cached.Success
 			}
 		}
@@ -209,6 +226,9 @@ func build(c Config, runtime Runtime, local map[string][]Node, now time.Time, mo
 		if err != nil {
 			return result, previews, fmt.Errorf("collection %s: %w", collection.ID, err)
 		}
+		for _, sourceID := range collection.Sources {
+			preview.Diagnostics = append(preview.Diagnostics, result.Diagnostics["source:"+sourceID]...)
+		}
 		previews[collection.ID] = preview
 	}
 	templates := map[string]Template{}
@@ -234,7 +254,29 @@ func build(c Config, runtime Runtime, local map[string][]Node, now time.Time, mo
 			result.Diagnostics[output.ID] = append(append([]Diagnostic(nil), preview.Diagnostics...), Diagnostic{Stage: "selection", Message: "empty or unavailable collection; output unavailable"})
 			continue
 		}
-		artifact, diagnostics, err := Render(preview.Nodes, templates[output.Template], output.SkipUnsupported)
+		template := templates[output.Template]
+		selected, diagnostics, err := Select(preview.Nodes, template, output.SkipUnsupported)
+		var artifact Artifact
+		if err == nil {
+			input, marshalErr := json.Marshal(struct {
+				Schema, Compiler int
+				Nodes            []Node
+				Template         Template
+			}{SchemaVersion, CompilerVersion, selected, template})
+			if marshalErr != nil {
+				return result, previews, marshalErr
+			}
+			digest := Digest(input)
+			old, exists := previous.Artifacts[output.ID]
+			if previous.Version == SchemaVersion && exists && previous.InputDigests[output.ID] == digest && old.ETag == `"`+Digest(old.Data)+`"` {
+				artifact = old
+			} else {
+				artifact, diagnostics, err = renderSelected(selected, template, Artifact{Name: template.ID}, diagnostics)
+			}
+			if err == nil {
+				result.InputDigests[output.ID] = digest
+			}
+		}
 		result.Diagnostics[output.ID] = append(append([]Diagnostic(nil), preview.Diagnostics...), diagnostics...)
 		if err != nil {
 			if mode == Available {
@@ -244,6 +286,7 @@ func build(c Config, runtime Runtime, local map[string][]Node, now time.Time, mo
 			return result, previews, fmt.Errorf("output %s: %w", output.ID, err)
 		}
 		artifact.Name = output.Name
+		result.NodeCounts[output.ID] = len(selected)
 		result.Artifacts[output.ID] = artifact
 		total += len(artifact.Data)
 		if total > MaxBody {

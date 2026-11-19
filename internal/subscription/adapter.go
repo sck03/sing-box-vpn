@@ -25,6 +25,15 @@ func capabilityError(n Node, client string) error {
 	if !ok || !slices.Contains(cap.Protocols, n.Protocol) {
 		return fmt.Errorf("%s does not support %s", client, n.Protocol)
 	}
+	if n.Transport.Type == "grpc" && !cap.Features.GRPC || n.Transport.Type == "httpupgrade" && !cap.Features.HTTPUpgrade {
+		return errors.New("target adapter cannot preserve this transport")
+	}
+	if n.Obfs != "" && !cap.Features.HysteriaObfs {
+		return errors.New("target adapter cannot preserve Hysteria2 obfuscation")
+	}
+	if client == "quantumult-x" && n.Protocol == "vmess" && !slices.Contains([]string{"", "auto", "none", "chacha20-poly1305"}, n.Cipher) {
+		return errors.New("Quantumult X cannot preserve this VMess security")
+	}
 	if len(n.TLS.PublicKeyPins) > 0 && n.TLS.CertificateHash == "" && client != "sing-box" {
 		return errors.New("target cannot preserve public-key certificate pin")
 	}
@@ -80,6 +89,7 @@ func Select(nodes []Node, t Template, skipUnsupported bool) ([]Node, []Diagnosti
 	}
 	selected := make([]Node, 0, len(nodes))
 	for _, n := range nodes {
+		n = normalizeNode(n)
 		if err := n.Validate(); err != nil {
 			return nil, diagnostics, err
 		}
@@ -202,6 +212,29 @@ func validatePolicy(nodes []Node, t Template) error {
 	}
 	if gateway && !normal && t.Preset == "split" {
 		return errors.New("VPNGate-only output cannot use direct split routing")
+	}
+	if gateway && !normal && len(t.Native) > 0 {
+		return errors.New("VPNGate-only output requires the managed template")
+	}
+	names := map[string]bool{}
+	for _, node := range nodes {
+		names[node.Name] = true
+	}
+	for _, group := range t.Groups {
+		if names[group.ID] || len(policyMembers(group, nodes)) == 0 {
+			return errors.New("empty policy group or group/node name conflict")
+		}
+		if gateway && !normal && group.Scope == "normal" {
+			return errors.New("VPNGate-only output cannot use a normal group")
+		}
+	}
+	for _, provider := range t.Providers {
+		if gateway && !normal && provider.Target == "DIRECT" {
+			return errors.New("VPNGate-only output cannot route providers to DIRECT")
+		}
+		if provider.Target == "VPNGate" && !gateway {
+			return errors.New("provider references empty VPNGate group")
+		}
 	}
 	for _, r := range t.Rules {
 		if r.Target == "VPNGate" && !gateway {

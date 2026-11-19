@@ -239,7 +239,7 @@ func deliverSubscriptions(ctx context.Context, root, id string, automatic bool, 
 					}
 				}
 			}
-			return AtomicJSON(filepath.Join(root, subscriptionsRuntime), state)
+			return writeSubscriptionRuntime(root, current, state)
 		})
 		for _, event := range events {
 			notifySubscriptionEvent(ctx, client, root, c, event)

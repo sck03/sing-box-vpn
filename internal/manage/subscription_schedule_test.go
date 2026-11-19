@@ -31,12 +31,14 @@ func TestSubscriptionScheduleReadsOnlyDeadlines(t *testing.T) {
 
 func BenchmarkSubscriptionScheduleRead(b *testing.B) {
 	root := b.TempDir()
+	config := sub.DefaultConfig()
+	config.Sources = []sub.Source{{ID: "remote", Kind: "remote", Format: "auto", URL: "https://example.com/sub", Required: true}}
 	nodes := make([]sub.Node, 4096)
 	for i := range nodes {
 		nodes[i] = sub.Node{ID: "node", Name: "Benchmark", Protocol: "vless", Server: "example.com", Port: 443, UUID: "f5dbdb8a-84c0-4c3a-b511-f5f599b37651"}
 	}
 	for path, data := range map[string]any{
-		subscriptionsConfig:  sub.DefaultConfig(),
+		subscriptionsConfig:  config,
 		subscriptionsRuntime: sub.Runtime{Sources: map[string]sub.SourceCache{"remote": {Nodes: nodes, Next: time.Now().Add(time.Hour)}}},
 		subscriptionsLocal:   map[string][]sub.Node{"local": nodes},
 	} {
@@ -45,6 +47,7 @@ func BenchmarkSubscriptionScheduleRead(b *testing.B) {
 		}
 	}
 	b.Run("full-projections", func(b *testing.B) {
+		// Baseline includes the complete node-bearing projections.
 		b.ReportAllocs()
 		for b.Loop() {
 			if _, _, _, err := loadSubscriptions(root); err != nil {
@@ -53,6 +56,10 @@ func BenchmarkSubscriptionScheduleRead(b *testing.B) {
 		}
 	})
 	b.Run("schedule", func(b *testing.B) {
+		runtime := sub.Runtime{Sources: map[string]sub.SourceCache{"remote": {Nodes: nodes, Next: time.Now().Add(time.Hour)}}}
+		if err := AtomicJSON(filepath.Join(root, subscriptionsSchedule), subscriptionDeadlines(config, runtime)); err != nil {
+			b.Fatal(err)
+		}
 		b.ReportAllocs()
 		for b.Loop() {
 			if _, _, err := loadSubscriptionSchedule(root); err != nil {

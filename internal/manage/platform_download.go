@@ -41,12 +41,18 @@ func (service AccountService) ServeDownload(w http.ResponseWriter, r *http.Reque
 	}
 	denial := usage.DownloadDenial(grant)
 	if resource == "usage" {
+		profiles := map[string]clientprofile.Profile{}
+		for _, client := range grant.Clients {
+			if profile, ok := clientprofile.Lookup(client); ok {
+				profiles[client] = profile
+			}
+		}
 		denial, err = service.grantDenial(r.Context(), store, usage, grant)
 		if err != nil {
 			http.Error(w, "account service unavailable", 503)
 			return
 		}
-		jsonResponse(w, Object{"name": usage.Name, "state": usage.State, "quota_bytes": usage.QuotaBytes, "charged_bytes": usage.Charged, "upload_bytes": usage.Upload, "download_bytes": usage.Download, "effective_expires_at": usage.EffectiveExpiresAt, "started_at": usage.StartedAt, "start_mode": usage.StartMode, "next_reset": usage.NextReset, "download_expires_at": grant.ExpiresAt, "downloads": grant.Downloads, "max_downloads": grant.MaxDownloads, "clients": grant.Clients, "download_denial": denial})
+		jsonResponse(w, Object{"name": usage.Name, "state": usage.State, "quota_bytes": usage.QuotaBytes, "charged_bytes": usage.Charged, "upload_bytes": usage.Upload, "download_bytes": usage.Download, "effective_expires_at": usage.EffectiveExpiresAt, "started_at": usage.StartedAt, "start_mode": usage.StartMode, "next_reset": usage.NextReset, "download_expires_at": grant.ExpiresAt, "downloads": grant.Downloads, "max_downloads": grant.MaxDownloads, "clients": grant.Clients, "client_profiles": profiles, "download_denial": denial})
 		return
 	}
 	if !slices.Contains(grant.Clients, resource) {

@@ -24,44 +24,91 @@ func decodeBase64(s string) ([]byte, error) {
 	return nil, errors.New("invalid base64")
 }
 
-// Parse accepts only declared formats; a remote document cannot select a parser,
-// execute code, introduce local file references, or mark nodes as trusted gateways.
+type ParseResult struct {
+	Format      string       `json:"format"`
+	Nodes       []Node       `json:"nodes"`
+	Diagnostics []Diagnostic `json:"diagnostics"`
+}
+
+func InputFormats() []string {
+	return []string{"auto", "uri", "base64", "mihomo", "sing-box", "nodes", "surge", "loon", "quantumult-x"}
+}
+
+// Parsers operate on bounded data, never execute scripts or resolve local files.
 func Parse(data []byte, format, sourceID string) ([]Node, error) {
+	result, err := ParseSource(data, Source{ID: sourceID, Format: format})
+	return result.Nodes, err
+}
+
+func ParseSource(data []byte, source Source) (ParseResult, error) {
+	result := ParseResult{Format: source.Format, Nodes: []Node{}, Diagnostics: []Diagnostic{}}
 	if len(data) == 0 || len(data) > MaxBody {
-		return nil, errors.New("empty or oversized source")
+		return result, errors.New("empty or oversized source")
+	}
+	data = bytes.TrimSpace(bytes.TrimPrefix(data, []byte{0xef, 0xbb, 0xbf}))
+	format := source.Format
+	if format == "auto" {
+		format = detectFormat(data)
+		if format == "" {
+			return result, errors.New("cannot identify subscription format")
+		}
 	}
 	if format == "base64" {
 		decoded, err := decodeBase64(strings.Join(strings.Fields(string(data)), ""))
 		if err != nil {
-			return nil, err
+			return result, err
 		}
 		data, format = decoded, "uri"
 	}
+	result.Format = format
 	var nodes []Node
+	count := 0
+	accept := func(n Node, err error) error {
+		count++
+		if count > MaxNodes {
+			return errors.New("node limit exceeded")
+		}
+		n = normalizeNode(n)
+		if err == nil {
+			err = n.Validate()
+		}
+		if err != nil {
+			if !source.SkipInvalid {
+				return fmt.Errorf("node %d: %w", count, err)
+			}
+			result.Diagnostics = append(result.Diagnostics, Diagnostic{Name: n.Name, Stage: "parse", Message: fmt.Sprintf("node %d: %s", count, err)})
+			return nil
+		}
+		nodes = append(nodes, n)
+		return nil
+	}
 	switch format {
 	case "uri":
 		for line := range strings.SplitSeq(string(data), "\n") {
 			line = strings.TrimSpace(line)
-			if line == "" {
+			if line == "" || strings.HasPrefix(line, "#") {
 				continue
 			}
-			if len(nodes) >= MaxNodes {
-				return nil, errors.New("node limit exceeded")
-			}
 			n, err := ParseURI(line)
-			if err != nil {
-				return nil, fmt.Errorf("line %d: %w", len(nodes)+1, err)
+			if err = accept(n, err); err != nil {
+				return result, err
 			}
-			nodes = append(nodes, n)
 		}
 	case "nodes":
 		decoder := json.NewDecoder(bytes.NewReader(data))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&nodes); err != nil {
-			return nil, err
+			return result, err
 		}
 		if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
-			return nil, errors.New("expected one JSON document")
+			return result, errors.New("expected one JSON document")
+		}
+		input := nodes
+		nodes = nil
+		for _, n := range input {
+			if err := accept(n, nil); err != nil {
+				return result, err
+			}
 		}
 	case "mihomo", "sing-box":
 		var document struct {
@@ -71,16 +118,16 @@ func Parse(data []byte, format, sourceID string) ([]Node, error) {
 		var tree yaml.Node
 		decoder := yaml.NewDecoder(bytes.NewReader(data))
 		if err := decoder.Decode(&tree); err != nil {
-			return nil, err
+			return result, err
 		}
 		if err := decoder.Decode(new(yaml.Node)); !errors.Is(err, io.EOF) {
-			return nil, errors.New("expected one YAML document")
+			return result, errors.New("expected one YAML document")
 		}
 		if err := validateYAMLTree(&tree, 0); err != nil {
-			return nil, err
+			return result, err
 		}
 		if err := tree.Decode(&document); err != nil {
-			return nil, err
+			return result, err
 		}
 		items := document.Proxies
 		if format == "sing-box" {
@@ -88,7 +135,7 @@ func Parse(data []byte, format, sourceID string) ([]Node, error) {
 		}
 		for i, item := range items {
 			if i >= MaxNodes {
-				return nil, errors.New("node limit exceeded")
+				return result, errors.New("node limit exceeded")
 			}
 			var n Node
 			var err error
@@ -100,33 +147,46 @@ func Parse(data []byte, format, sourceID string) ([]Node, error) {
 			} else {
 				n, err = fromMihomo(item)
 			}
-			if err != nil {
-				return nil, fmt.Errorf("node %d: %w", i+1, err)
+			if err = accept(n, err); err != nil {
+				return result, err
 			}
-			nodes = append(nodes, n)
+		}
+	case "surge", "loon", "quantumult-x":
+		active := true
+		for line := range strings.SplitSeq(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "[") {
+				active = strings.EqualFold(line, "[Proxy]") || strings.EqualFold(line, "[server_local]")
+				continue
+			}
+			if !active || line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") || strings.HasPrefix(line, "//") {
+				continue
+			}
+			n, err := parseTextNode(line, format)
+			if err = accept(n, err); err != nil {
+				return result, err
+			}
 		}
 	default:
-		return nil, fmt.Errorf("unknown input format %q", format)
+		return result, fmt.Errorf("unknown input format %q", format)
 	}
 	if len(nodes) == 0 || len(nodes) > MaxNodes {
-		return nil, errors.New("source must contain 1-4096 nodes")
+		return result, errors.New("source must contain 1-4096 valid nodes")
 	}
 	seen := map[string]bool{}
 	for i := range nodes {
 		n := &nodes[i]
 		n.Gateway = false
-		n.SourceID = sourceID
-		if err := n.Validate(); err != nil {
-			return nil, fmt.Errorf("node %d: %w", i+1, err)
-		}
-		n.ID = Digest([]byte(sourceID + ":" + n.Identity()))[:24]
+		n.SourceID = source.ID
+		n.ID = Digest([]byte(source.ID + ":" + n.Identity()))[:24]
 		// Identical nodes still pass through Process's explicit deduplication rule.
 		if seen[n.ID] {
 			n.ID = Digest([]byte(n.ID + ":" + strconv.Itoa(i)))[:24]
 		}
 		seen[n.ID] = true
 	}
-	return nodes, nil
+	result.Nodes = nodes
+	return result, nil
 }
 
 func validateYAMLTree(n *yaml.Node, depth int) error {
@@ -183,7 +243,7 @@ func FromSingBox(m Object) (Node, error) {
 	if n.Protocol == "shadowsocks" {
 		n.Protocol, n.Cipher = "ss", str(m["method"])
 	}
-	for _, key := range []string{"detour", "multiplex", "obfs", "plugin", "packet_encoding", "bind_interface", "routing_mark", "udp_over_tcp"} {
+	for _, key := range []string{"detour", "multiplex", "plugin", "packet_encoding", "bind_interface", "routing_mark", "udp_over_tcp"} {
 		if v, ok := m[key]; ok && v != nil {
 			return n, fmt.Errorf("unsupported sing-box field %s", key)
 		}
@@ -198,6 +258,14 @@ func FromSingBox(m Object) (Node, error) {
 	}
 	transport := obj(m["transport"])
 	n.Transport = Transport{Type: str(transport["type"]), Path: str(transport["path"]), Host: str(obj(transport["headers"])["Host"])}
+	if n.Transport.Type == "grpc" {
+		n.Transport.ServiceName = str(transport["service_name"])
+	}
+	if n.Transport.Type == "httpupgrade" {
+		n.Transport.Host = str(transport["host"])
+	}
+	n.Obfs, n.ObfsPassword = str(obj(m["obfs"])["type"]), str(obj(m["obfs"])["password"])
+	n = normalizeNode(n)
 	return n, n.Validate()
 }
 
@@ -206,7 +274,7 @@ func fromMihomo(m Object) (Node, error) {
 		return Node{}, err
 	}
 	n := Node{Name: str(m["name"]), Protocol: str(m["type"]), Server: str(m["server"]), Port: integer(m["port"]), UUID: str(m["uuid"]), Password: str(m["password"]), Cipher: str(m["cipher"]), Flow: str(m["flow"]), Congestion: str(m["congestion-controller"]), UDPRelay: str(m["udp-relay-mode"])}
-	for _, key := range []string{"plugin", "obfs", "dialer-proxy", "smux", "reality-opts-extra", "client-certificate", "client-key"} {
+	for _, key := range []string{"plugin", "dialer-proxy", "smux", "reality-opts-extra", "client-certificate", "client-key"} {
 		if _, exists := m[key]; exists {
 			return n, fmt.Errorf("unsupported Mihomo field %s", key)
 		}
@@ -218,12 +286,17 @@ func fromMihomo(m Object) (Node, error) {
 	n.TLS = TLS{Enabled: boolean(m["tls"]) || n.Protocol == "hysteria2" || n.Protocol == "tuic" || n.Protocol == "anytls" || n.Protocol == "trojan", ServerName: fallback(str(m["servername"]), str(m["sni"])), Insecure: boolean(m["skip-cert-verify"]), ALPN: stringList(m["alpn"]), CertificateHash: str(m["fingerprint"]), Fingerprint: str(m["client-fingerprint"]), RealityKey: str(r["public-key"]), RealityShortID: str(r["short-id"])}
 	w := obj(m["ws-opts"])
 	n.Transport = Transport{Type: str(m["network"]), Path: str(w["path"]), Host: str(obj(w["headers"])["Host"])}
-	if boolean(w["v2ray-http-upgrade"]) || integer(w["max-early-data"]) > 0 {
-		return n, errors.New("unsupported WebSocket upgrade/early data")
+	if boolean(w["v2ray-http-upgrade"]) {
+		n.Transport.Type = "httpupgrade"
 	}
+	if n.Transport.Type == "grpc" {
+		n.Transport.ServiceName = str(obj(m["grpc-opts"])["grpc-service-name"])
+	}
+	n.Obfs, n.ObfsPassword = str(m["obfs"]), str(m["obfs-password"])
 	if ports := str(m["ports"]); ports != "" {
 		n.Ports = strings.Split(ports, ",")
 	}
+	n = normalizeNode(n)
 	return n, n.Validate()
 }
 
@@ -261,11 +334,15 @@ func ParseURI(line string) (Node, error) {
 		if integer(m["aid"]) != 0 {
 			return Node{}, errors.New("legacy VMess alterId is unsupported")
 		}
-		n := Node{Name: str(m["ps"]), Protocol: "vmess", Server: str(m["add"]), Port: integer(m["port"]), UUID: str(m["id"]), Cipher: fallback(str(m["scy"]), "auto"), Transport: Transport{Type: str(m["net"]), Host: str(m["host"]), Path: str(m["path"])}, TLS: TLS{Enabled: str(m["tls"]) == "tls", ServerName: str(m["sni"]), Insecure: str(m["insecure"]) == "1" || boolean(m["insecure"])}}
+		n := Node{Name: fallback(str(m["ps"]), str(m["add"])), Protocol: "vmess", Server: str(m["add"]), Port: integer(m["port"]), UUID: str(m["id"]), Cipher: fallback(str(m["scy"]), "auto"), Transport: Transport{Type: str(m["net"]), Host: str(m["host"]), Path: str(m["path"])}, TLS: TLS{Enabled: str(m["tls"]) == "tls", ServerName: str(m["sni"]), Insecure: str(m["insecure"]) == "1" || boolean(m["insecure"])}}
 		n.TLS.Fingerprint = str(m["fp"])
+		if n.Transport.Type == "grpc" {
+			n.Transport.ServiceName, n.Transport.Path = n.Transport.Path, ""
+		}
 		if alpn := str(m["alpn"]); alpn != "" {
 			n.TLS.ALPN = strings.Split(alpn, ",")
 		}
+		n = normalizeNode(n)
 		return n, n.Validate()
 	}
 	u, err := url.Parse(line)
@@ -291,7 +368,7 @@ func ParseURI(line string) (Node, error) {
 		if len(q[key]) != 1 {
 			return n, errors.New("duplicate URI parameter")
 		}
-		if !strings.Contains("|sni|peer|flow|security|encryption|fp|pbk|sid|type|path|host|alpn|insecure|allow_insecure|allowInsecure|pinSHA256|mport|congestion_control|udp_relay_mode|", "|"+key+"|") {
+		if !strings.Contains("|sni|peer|flow|security|encryption|fp|pbk|sid|type|path|host|serviceName|service_name|alpn|insecure|allow_insecure|allowInsecure|pinSHA256|mport|congestion_control|udp_relay_mode|obfs|obfs-password|", "|"+key+"|") {
 			return n, fmt.Errorf("unsupported URI parameter %s", key)
 		}
 	}
@@ -322,6 +399,8 @@ func ParseURI(line string) (Node, error) {
 	if ports := q.Get("mport"); ports != "" {
 		n.Ports = strings.Split(ports, ",")
 	}
+	n.Transport.ServiceName = fallback(q.Get("serviceName"), q.Get("service_name"))
+	n.Obfs, n.ObfsPassword = q.Get("obfs"), q.Get("obfs-password")
 	switch kind {
 	case "vless":
 		n.UUID = u.User.Username()
@@ -329,17 +408,22 @@ func ParseURI(line string) (Node, error) {
 		n.UUID = u.User.Username()
 		n.Password, _ = u.User.Password()
 	case "ss":
-		credential, err := decodeBase64(u.User.Username())
-		if err != nil {
-			return n, err
-		}
-		var ok bool
-		n.Cipher, n.Password, ok = strings.Cut(string(credential), ":")
-		if !ok {
-			return n, errors.New("invalid Shadowsocks credential")
+		if password, plain := u.User.Password(); plain {
+			n.Cipher, n.Password = u.User.Username(), password
+		} else {
+			credential, err := decodeBase64(u.User.Username())
+			if err != nil {
+				return n, err
+			}
+			var ok bool
+			n.Cipher, n.Password, ok = strings.Cut(string(credential), ":")
+			if !ok {
+				return n, errors.New("invalid Shadowsocks credential")
+			}
 		}
 	default:
 		n.Password = u.User.Username()
 	}
+	n = normalizeNode(n)
 	return n, n.Validate()
 }

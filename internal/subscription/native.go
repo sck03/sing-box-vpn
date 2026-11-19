@@ -58,6 +58,15 @@ func (n Node) SingBox() Object {
 	if n.Transport.Type == "ws" {
 		o["transport"] = Object{"type": "ws", "path": n.Transport.Path, "headers": Object{"Host": n.Transport.Host}}
 	}
+	if n.Transport.Type == "grpc" {
+		o["transport"] = Object{"type": "grpc", "service_name": n.Transport.ServiceName}
+	}
+	if n.Transport.Type == "httpupgrade" {
+		o["transport"] = Object{"type": "httpupgrade", "host": n.Transport.Host, "path": n.Transport.Path}
+	}
+	if n.Obfs != "" {
+		o["obfs"] = Object{"type": n.Obfs, "password": n.ObfsPassword}
+	}
 	if len(n.Ports) > 0 {
 		ports := make([]string, len(n.Ports))
 		for i, p := range n.Ports {
@@ -120,6 +129,16 @@ func (n Node) Mihomo() Object {
 	if n.Transport.Type == "ws" {
 		o["ws-opts"] = Object{"path": n.Transport.Path, "headers": Object{"Host": n.Transport.Host}}
 	}
+	if n.Transport.Type == "grpc" {
+		o["grpc-opts"] = Object{"grpc-service-name": n.Transport.ServiceName}
+	}
+	if n.Transport.Type == "httpupgrade" {
+		o["network"] = "ws"
+		o["ws-opts"] = Object{"path": n.Transport.Path, "headers": Object{"Host": n.Transport.Host}, "v2ray-http-upgrade": true}
+	}
+	if n.Obfs != "" {
+		o["obfs"], o["obfs-password"] = n.Obfs, n.ObfsPassword
+	}
 	if len(n.Ports) > 0 {
 		o["ports"] = strings.ReplaceAll(strings.Join(n.Ports, ","), ":", "-")
 	}
@@ -142,6 +161,9 @@ func fallback(value, defaultValue string) string {
 func (n Node) URI() string {
 	if n.Protocol == "vmess" {
 		v := Object{"v": "2", "ps": n.Name, "add": n.Server, "port": strconv.Itoa(n.Port), "id": n.UUID, "aid": "0", "scy": fallback(n.Cipher, "auto"), "net": fallback(n.Transport.Type, "tcp"), "type": "none", "host": n.Transport.Host, "path": n.Transport.Path, "tls": "", "sni": n.TLS.ServerName}
+		if n.Transport.Type == "grpc" {
+			v["path"] = n.Transport.ServiceName
+		}
 		if n.TLS.Enabled {
 			v["tls"] = "tls"
 			if n.TLS.Fingerprint != "" {
@@ -211,10 +233,18 @@ func (n Node) URI() string {
 			q.Set("mport", strings.ReplaceAll(strings.Join(n.Ports, ","), ":", "-"))
 		}
 	}
-	if n.Transport.Type == "ws" {
-		q.Set("type", "ws")
+	if n.Transport.Type == "ws" || n.Transport.Type == "httpupgrade" {
+		q.Set("type", n.Transport.Type)
 		q.Set("path", n.Transport.Path)
 		q.Set("host", n.Transport.Host)
+	}
+	if n.Transport.Type == "grpc" {
+		q.Set("type", "grpc")
+		q.Set("serviceName", n.Transport.ServiceName)
+	}
+	if n.Obfs != "" {
+		q.Set("obfs", n.Obfs)
+		q.Set("obfs-password", n.ObfsPassword)
 	}
 	u.RawQuery = q.Encode()
 	return u.String()

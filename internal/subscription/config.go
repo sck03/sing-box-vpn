@@ -24,6 +24,7 @@ type Source struct {
 	Required        bool   `json:"required"`
 	IntervalSeconds int    `json:"interval_seconds,omitempty"`
 	MaxStaleSeconds int    `json:"max_stale_seconds,omitempty"`
+	SkipInvalid     bool   `json:"skip_invalid,omitempty"`
 }
 
 type Collection struct {
@@ -46,17 +47,21 @@ type RuleSet struct {
 }
 
 type Template struct {
-	ID       string   `json:"id"`
-	Client   string   `json:"client"`
-	Version  int      `json:"version"`
-	Mode     string   `json:"mode"`   // nodes, provider, config, rules
-	Preset   string   `json:"preset"` // proxy, split
-	DNS      []string `json:"dns,omitempty"`
-	ProbeURL string   `json:"probe_url,omitempty"`
-	TUN      bool     `json:"tun,omitempty"`
-	Rules    []Rule   `json:"rules,omitempty"`
-	RuleSets []string `json:"rule_sets,omitempty"`
-	URL      string   `json:"url,omitempty"` // remote declarative JSON template
+	ID        string         `json:"id"`
+	Client    string         `json:"client"`
+	Version   int            `json:"version"`
+	Mode      string         `json:"mode"`   // nodes, provider, config, rules
+	Preset    string         `json:"preset"` // proxy, split
+	DNS       []string       `json:"dns,omitempty"`
+	ProbeURL  string         `json:"probe_url,omitempty"`
+	TUN       bool           `json:"tun,omitempty"`
+	Rules     []Rule         `json:"rules,omitempty"`
+	RuleSets  []string       `json:"rule_sets,omitempty"`
+	URL       string         `json:"url,omitempty"` // remote declarative JSON template
+	Groups    []PolicyGroup  `json:"groups,omitempty"`
+	Providers []RuleProvider `json:"providers,omitempty"`
+	DNSPolicy *DNSPolicy     `json:"dns_policy,omitempty"`
+	Native    Object         `json:"native,omitempty"`
 }
 
 type Output struct {
@@ -104,7 +109,7 @@ func HTTPURL(value string) error {
 }
 
 func (r Rule) Validate() error {
-	if !slices.Contains([]string{"PROXY", "VPNGate", "DIRECT", "REJECT"}, r.Target) {
+	if !slices.Contains([]string{"PROXY", "VPNGate", "DIRECT", "REJECT"}, r.Target) && !ValidID(r.Target) {
 		return errors.New("unknown rule target")
 	}
 	if r.Value == "" || strings.ContainsAny(r.Value, ",\r\n\t =#") {
@@ -173,11 +178,11 @@ func (t Template) Validate() error {
 		}
 	}
 	for _, dns := range t.DNS {
-		if _, err := netip.ParseAddr(dns); err != nil {
-			return errors.New("template DNS must be an IP address")
+		if err := validateResolver(dns, !cap.Features.AdvancedDNS); err != nil {
+			return err
 		}
 	}
-	return nil
+	return validateTemplateExtensions(t)
 }
 
 func (c Config) Validate() error {
@@ -210,7 +215,7 @@ func (c Config) Validate() error {
 				return errors.New("account source requires an account ID and valid scope")
 			}
 		case "inline", "remote":
-			if !slices.Contains([]string{"uri", "base64", "mihomo", "sing-box", "nodes"}, s.Format) {
+			if !slices.Contains(InputFormats(), s.Format) {
 				return errors.New("unsupported input format")
 			}
 			if s.Kind == "remote" {
@@ -221,7 +226,7 @@ func (c Config) Validate() error {
 		default:
 			return errors.New("unknown source kind")
 		}
-		if len(s.Content) > MaxBody || s.IntervalSeconds < 0 || (s.IntervalSeconds > 0 && s.IntervalSeconds < 60) || s.MaxStaleSeconds < 0 || s.MaxStaleSeconds > 30*86400 {
+		if len(s.Content) > MaxBody || s.IntervalSeconds < 0 || s.IntervalSeconds > 30*86400 || (s.IntervalSeconds > 0 && s.IntervalSeconds < 60) || s.MaxStaleSeconds < 0 || s.MaxStaleSeconds > 30*86400 {
 			return errors.New("invalid source size, refresh interval or stale lifetime")
 		}
 	}

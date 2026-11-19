@@ -54,7 +54,7 @@ func nativeFields(m Object, stringsKeys, integers, booleans, objects, lists stri
 }
 
 func singBoxFields(m Object) error {
-	if err := nativeFields(m, "type tag server uuid password flow security method congestion_control udp_relay_mode heartbeat idle_session_check_interval idle_session_timeout", "server_port alter_id min_idle_session", "zero_rtt_handshake", "tls transport", "server_ports"); err != nil {
+	if err := nativeFields(m, "type tag server uuid password flow security method congestion_control udp_relay_mode heartbeat idle_session_check_interval idle_session_timeout", "server_port alter_id min_idle_session", "zero_rtt_handshake", "tls transport obfs", "server_ports"); err != nil {
 		return err
 	}
 	if integer(m["alter_id"]) != 0 || boolean(m["zero_rtt_handshake"]) {
@@ -85,14 +85,20 @@ func singBoxFields(m Object) error {
 		return errors.New("disabled Reality options are unsupported")
 	}
 	w := obj(m["transport"])
-	if err := nativeFields(w, "type path", "", "", "headers", ""); err != nil {
+	if err := nativeFields(w, "type path host service_name", "", "", "headers", ""); err != nil {
 		return err
 	}
-	return nativeFields(obj(w["headers"]), "Host", "", "", "", "")
+	if err := nativeFields(obj(w["headers"]), "Host", "", "", "", ""); err != nil {
+		return err
+	}
+	if str(w["type"]) != "grpc" && str(w["service_name"]) != "" || str(w["type"]) != "httpupgrade" && str(w["host"]) != "" || str(w["type"]) == "httpupgrade" && len(obj(w["headers"])) > 0 {
+		return errors.New("transport options do not match transport type")
+	}
+	return nativeFields(obj(m["obfs"]), "type password", "", "", "", "")
 }
 
 func mihomoFields(m Object) error {
-	if err := nativeFields(m, "name type server uuid password cipher flow congestion-controller udp-relay-mode servername sni fingerprint client-fingerprint network ports", "port alterId idle-session-check-interval idle-session-timeout min-idle-session", "tls skip-cert-verify udp", "reality-opts ws-opts", "alpn"); err != nil {
+	if err := nativeFields(m, "name type server uuid password cipher flow congestion-controller udp-relay-mode servername sni fingerprint client-fingerprint network ports obfs obfs-password", "port alterId idle-session-check-interval idle-session-timeout min-idle-session", "tls skip-cert-verify udp", "reality-opts ws-opts grpc-opts", "alpn"); err != nil {
 		return err
 	}
 	if value, ok := m["udp"]; ok && !boolean(value) {
@@ -107,8 +113,14 @@ func mihomoFields(m Object) error {
 		return err
 	}
 	w := obj(m["ws-opts"])
-	if err := nativeFields(w, "path", "", "", "headers", ""); err != nil {
+	if len(w) > 0 && str(m["network"]) != "ws" && str(m["network"]) != "websocket" || len(obj(m["grpc-opts"])) > 0 && str(m["network"]) != "grpc" {
+		return errors.New("transport options do not match network")
+	}
+	if err := nativeFields(w, "path", "", "v2ray-http-upgrade", "headers", ""); err != nil {
 		return err
 	}
-	return nativeFields(obj(w["headers"]), "Host", "", "", "", "")
+	if err := nativeFields(obj(w["headers"]), "Host", "", "", "", ""); err != nil {
+		return err
+	}
+	return nativeFields(obj(m["grpc-opts"]), "grpc-service-name", "", "", "", "")
 }

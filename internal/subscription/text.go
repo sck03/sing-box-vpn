@@ -103,7 +103,10 @@ func surgeNode(n Node) string {
 		parts = append(parts, `password="`+n.Password+`"`)
 	}
 	if n.Protocol == "vmess" {
-		parts = append(parts, "vmess-aead=true", "encrypt-method="+fallback(n.Cipher, "auto"))
+		parts = append(parts, "vmess-aead=true")
+		if method := vmessMethod(n.Cipher, "surge"); method != "auto" {
+			parts = append(parts, "encrypt-method="+method)
+		}
 	}
 	if n.Protocol == "ss" {
 		parts = append(parts, "encrypt-method="+n.Cipher)
@@ -146,7 +149,7 @@ func loonNode(n Node) string {
 	}
 	parts := []string{n.Name + " = " + kind, n.Server, strconv.Itoa(n.Port)}
 	if n.Protocol == "vmess" {
-		parts = append(parts, fallback(n.Cipher, "auto"))
+		parts = append(parts, vmessMethod(n.Cipher, "loon"))
 	}
 	if n.Protocol == "ss" {
 		parts = append(parts, n.Cipher)
@@ -190,7 +193,7 @@ func quantumultNode(n Node) string {
 	}
 	parts = append(parts, "password="+credential)
 	if n.Protocol == "vmess" {
-		parts = append(parts, "method="+fallback(n.Cipher, "chacha20-ietf-poly1305"), "aead=true")
+		parts = append(parts, "method="+vmessMethod(n.Cipher, "quantumult-x"), "aead=true")
 	}
 	if n.Protocol == "vless" {
 		parts = append(parts, "method=none")

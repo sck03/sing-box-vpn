@@ -133,7 +133,12 @@ func refreshSource(ctx context.Context, client *http.Client, source sub.Source, 
 	if err == nil {
 		nodes, usage, etag := old.Nodes, old.Usage, old.ETag
 		if !unchanged {
-			nodes, err = sub.Parse(data, source.Format, source.ID)
+			var parsed sub.ParseResult
+			parsed, err = sub.ParseSource(data, source)
+			nodes = parsed.Nodes
+			if err == nil {
+				old.Diagnostics = parsed.Diagnostics
+			}
 			usage, etag = sub.Usage{}, headers.Get("ETag")
 		}
 		if err == nil {
@@ -341,7 +346,7 @@ func refreshSubscriptionsResult(ctx context.Context, root, core string, force bo
 				state.Resources[id] = previous
 			}
 			state.Record("publish", "", buildErr.Error(), now)
-			if err := AtomicJSON(filepath.Join(root, subscriptionsRuntime), state); err != nil {
+			if err := writeSubscriptionRuntime(root, current, state); err != nil {
 				return errors.Join(buildErr, err)
 			}
 			return buildErr

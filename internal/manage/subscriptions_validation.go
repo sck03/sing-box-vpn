@@ -31,17 +31,12 @@ func validateSubscriptionArtifact(ctx context.Context, root, core string, templa
 			binary, _ = exec.LookPath("mihomo")
 		}
 		if binary == "" {
+			if os.Getenv("SBVPN_REQUIRE_CLIENT_CHECK") == "1" {
+				return "", fmt.Errorf("Mihomo validator is required")
+			}
 			return "encoder-only; Mihomo validator unavailable", nil
 		}
 		validationHome := os.Getenv("MIHOMO_HOME")
-		if template.Mode == "config" && template.Preset == "split" {
-			if validationHome == "" {
-				return "encoder-only; split validation requires MIHOMO_HOME with local Country.mmdb", nil
-			}
-			if _, err := os.Stat(filepath.Join(validationHome, "Country.mmdb")); err != nil {
-				return "encoder-only; local Country.mmdb unavailable", nil
-			}
-		}
 		stage, err := os.MkdirTemp(root, ".client-check-")
 		if err != nil {
 			return "", err

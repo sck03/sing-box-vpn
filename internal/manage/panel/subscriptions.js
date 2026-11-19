@@ -4,6 +4,7 @@ import { disclosure } from "./sections.js";
 import { showConfiguration } from "./config-preview.js";
 import { subscriptionStatus } from "./subscription-status.js";
 import { clientCatalog, templateFields, normalizeTemplate } from "./clients.js";
+import { processorFields, templateResources } from "./subscription-fields.js";
 import {
   el,
   card,
@@ -114,8 +115,9 @@ export async function subscriptions(ctx) {
           el("a", { href: "#access" }, "设置公网访问与订阅地址 →"),
         ),
       ),
-    sources: async () =>
-      resourceEditor({
+    sources: async () => {
+      const capabilities = await request("/api/subscription-capabilities");
+      return resourceEditor({
         title: "订阅来源",
         items: s.sources,
         fields: [
@@ -153,7 +155,8 @@ export async function subscriptions(ctx) {
             key: "format",
             label: "格式",
             type: "select",
-            options: ["uri", "sing-box", "mihomo", "base64", "nodes"],
+            options: capabilities.formats,
+            visible: (v) => v.kind !== "account",
           },
           {
             key: "content",
@@ -163,18 +166,35 @@ export async function subscriptions(ctx) {
             visible: (v) => v.kind === "inline",
           },
           { key: "required", label: "必需来源", type: "bool" },
-          { key: "interval_seconds", label: "刷新间隔（秒）", type: "number" },
+          {
+            key: "skip_invalid",
+            label: "跳过异常或不支持的节点",
+            type: "bool",
+            visible: (v) => v.kind !== "account",
+            help: "保留有效节点并报告跳过原因；全部无效时仍会拒绝更新。",
+          },
+          {
+            key: "interval_seconds",
+            label: "刷新间隔（秒）",
+            type: "number",
+            min: 0,
+            max: 2592000,
+            help: "0 使用默认间隔；其他值为 60 秒至 30 天。",
+          },
           {
             key: "max_stale_seconds",
             label: "最长陈旧时间（秒）",
             type: "number",
+            min: 0,
+            max: 2592000,
           },
         ],
         defaults: {
           id: "",
           name: "",
           kind: "remote",
-          format: "uri",
+          format: "auto",
+          skip_invalid: true,
           required: false,
           interval_seconds: 3600,
           max_stale_seconds: 86400,
@@ -185,7 +205,8 @@ export async function subscriptions(ctx) {
           { key: "name", label: "名称" },
         ],
         change,
-      }),
+      });
+    },
     collections: () =>
       resourceEditor({
         title: "节点集合",
@@ -198,14 +219,14 @@ export async function subscriptions(ctx) {
             type: "multiselect",
             options: s.sources.map((v) => [v.id, v.name || v.id]),
           },
-          {
-            key: "processor",
-            label: "过滤 / 排序 / 去重",
-            type: "json",
-            wide: true,
-          },
+          ...processorFields,
         ],
-        defaults: { id: "", name: "", sources: [], processor: {} },
+        defaults: {
+          id: "",
+          name: "",
+          sources: [],
+          processor: { deduplicate: true, sort: true },
+        },
         change,
       }),
     templates: async () => {
@@ -215,6 +236,7 @@ export async function subscriptions(ctx) {
         items: s.templates,
         fields: templateFields(catalog),
         normalize: (v) => normalizeTemplate(v, catalog),
+        preserve: true,
         defaults: {
           id: "",
           version: 1,
@@ -331,94 +353,114 @@ export async function subscriptions(ctx) {
       }),
     sharing: async () => {
       const applied = await request("/api/grant-options");
-      const reason = applied.unavailable || (!applied.outputs.length && "请先创建并应用一个订阅输出。");
+      const reason =
+        applied.unavailable ||
+        (!applied.outputs.length && "请先创建并应用一个订阅输出。");
       return card(
         "输出下载授权",
         help(
           "允许下载已应用的输出。留空表示不限，0 禁止下载。创建和撤销立即生效；授权与计数保存在数据库。",
         ),
-        (applied.pending || ctx.dirty) ? help("配置有待应用的更改。当前只能分享已生效的输出。") : null,
-        reason ? help(reason) : button("创建输出分享", () =>
-          formDialog(
-            "输出授权",
-            [
-              { key: "id", label: "授权 ID", required: true },
-              {
-                key: "outputs",
-                label: "选择输出",
-                type: "multiselect",
-                options: applied.outputs.map((v) => [v.id, v.name || v.id]),
-                required: true,
-              },
-              { key: "expires_at", label: "下载到期", type: "date" },
-              {
-                key: "max_downloads",
-                label: "下载次数（留空不限，0 禁止）",
-                type: "number",
-                nullable: true,
-                min: 0,
-              },
-            ],
-            { id: "", outputs: [], max_downloads: null },
-            async (v) => {
-              if (!v.outputs.length) throw new Error("请选择已生效的输出");
-              const result = await api("/api/grants", v);
-              showResult("请保存分享链接", result.urls.join("\n"));
-              ctx.render();
-            },
-          ),
-        ),
+        applied.pending || ctx.dirty
+          ? help("配置有待应用的更改。当前只能分享已生效的输出。")
+          : null,
+        reason
+          ? help(reason)
+          : button("创建输出分享", () =>
+              formDialog(
+                "输出授权",
+                [
+                  { key: "id", label: "授权 ID", required: true },
+                  {
+                    key: "outputs",
+                    label: "选择输出",
+                    type: "multiselect",
+                    options: applied.outputs.map((v) => [v.id, v.name || v.id]),
+                    required: true,
+                  },
+                  { key: "expires_at", label: "下载到期", type: "date" },
+                  {
+                    key: "max_downloads",
+                    label: "下载次数（留空不限，0 禁止）",
+                    type: "number",
+                    nullable: true,
+                    min: 0,
+                  },
+                ],
+                { id: "", outputs: [], max_downloads: null },
+                async (v) => {
+                  if (!v.outputs.length) throw new Error("请选择已生效的输出");
+                  const result = await api("/api/grants", v);
+                  showResult("请保存分享链接", result.urls.join("\n"));
+                  ctx.render();
+                },
+              ),
+            ),
         el("p", {}, el("a", { href: "#grants" }, "查看与撤销分享链接 →")),
       );
     },
-    diagnostics: () =>
-      card(
+    diagnostics: async () => {
+      const applied = await request("/api/subscriptions/actions");
+      return card(
         "诊断与立即分发",
-        row(
-          button("检测输出", () =>
-            formDialog(
-              "检测",
-              [
-                {
-                  key: "id",
-                  label: "输出 ID",
-                  type: "select",
-                  options: s.outputs.map((v) => v.id),
-                },
-                { key: "probe_url", label: "探测 URL" },
-              ],
-              {
-                id: s.outputs[0]?.id,
-                probe_url: "https://www.gstatic.com/generate_204",
-              },
-              (v) =>
-                ctx.task({
-                  operation: "subscription",
-                  subscription: { operation: "check", ...v },
-                }),
-            ),
-          ),
-          button("分发输出", () =>
-            formDialog(
-              "立即分发",
-              [
-                {
-                  key: "id",
-                  label: "目的地",
-                  type: "select",
-                  options: (s.deliveries || []).map((v) => v.id),
-                },
-              ],
-              {},
-              (v) =>
-                ctx.task({
-                  operation: "subscription",
-                  subscription: { operation: "deliver", ...v },
-                }),
-            ),
-          ),
+        help(
+          applied.pending || ctx.dirty
+            ? "草稿有待应用的更改，以下操作使用已生效配置。"
+            : "以下操作使用已生效配置。",
         ),
-      ),
+        row(
+          applied.outputs.length
+            ? button("检测输出", () =>
+                formDialog(
+                  "检测",
+                  [
+                    {
+                      key: "id",
+                      label: "输出 ID",
+                      type: "select",
+                      options: applied.outputs.map((v) => [
+                        v.id,
+                        v.name || v.id,
+                      ]),
+                    },
+                    { key: "probe_url", label: "探测 URL" },
+                  ],
+                  {
+                    id: applied.outputs[0]?.id,
+                    probe_url: "https://www.gstatic.com/generate_204",
+                  },
+                  (v) =>
+                    ctx.task({
+                      operation: "subscription",
+                      subscription: { operation: "check", ...v },
+                    }),
+                ),
+              )
+            : help("尚无已生效输出，请先保存并应用。"),
+          applied.deliveries.length
+            ? button("分发输出", () =>
+                formDialog(
+                  "立即分发",
+                  [
+                    {
+                      key: "id",
+                      label: "目的地",
+                      type: "select",
+                      options: applied.deliveries.map((v) => v.id),
+                    },
+                  ],
+                  {},
+                  (v) =>
+                    ctx.task({
+                      operation: "subscription",
+                      subscription: { operation: "deliver", ...v },
+                    }),
+                ),
+              )
+            : help("尚无已生效分发目的地。"),
+        ),
+      );
+    },
   };
   return [
     views.introduction(),
@@ -427,9 +469,13 @@ export async function subscriptions(ctx) {
       {
         sources: views.sources,
         collections: views.collections,
-        templates: async () => [await views.templates(), views.rules()],
+        templates: async () => [
+          await views.templates(),
+          templateResources(s.templates, await getClients(), change),
+          views.rules(),
+        ],
         outputs: async () => [views.outputs(), await views.sharing()],
-        deliveries: () => [views.deliveries(), views.diagnostics()],
+        deliveries: async () => [views.deliveries(), await views.diagnostics()],
         status: () => subscriptionStatus(ctx),
       },
       ctx,

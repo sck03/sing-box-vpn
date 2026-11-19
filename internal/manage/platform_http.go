@@ -80,6 +80,7 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 	proxy, _ := publicaccess.NewProxyPolicy(options.TrustedProxy)
 	loginSlots := make(chan struct{}, 2)
 	requests, streams := make(httpserver.Gate, 32), make(httpserver.Gate, 32)
+	downloads := unifiedDownloadHandler(s.accountService())
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -145,7 +146,7 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 			return
 		}
 		if strings.HasPrefix(path, "/u/") || strings.HasPrefix(path, "/s/") {
-			unifiedDownloadHandler(s.accountService()).ServeHTTP(w, r)
+			downloads.ServeHTTP(w, r)
 			return
 		}
 		if path == "/api/auth/login" && r.Method == "POST" {
