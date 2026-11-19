@@ -18,7 +18,7 @@ func TestCredentialPublicationSurvivesFailureAndStaleAcknowledgement(t *testing.
 		t.Fatal(err)
 	}
 	c := domain.Credential{ID: "c", AccountID: "a", RuntimeID: "normal", InboundID: "in", Protocol: "vless", Generation: 1, UUID: "aabbccdd-1122-4333-8444-5566778899aa"}
-	if err = s.Bind(ctx, c); err != nil {
+	if err = s.BindBatch(ctx, []domain.Credential{c}); err != nil {
 		t.Fatal(err)
 	}
 	users, revision, err := s.CredentialSnapshot(ctx, "normal")

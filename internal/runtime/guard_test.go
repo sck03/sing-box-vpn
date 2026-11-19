@@ -36,7 +36,7 @@ func TestStreamReservationBoundaries(t *testing.T) {
 			if err = store.SaveAccount(ctx, domain.Account{ID: "a", Name: "A", QuotaBytes: &quota}); err != nil {
 				t.Fatal(err)
 			}
-			if err = store.Bind(ctx, domain.Credential{ID: "c", AccountID: "a", RuntimeID: "normal", InboundID: "in", Protocol: "vless", Generation: 1, UUID: "aabbccdd-1122-4333-8444-5566778899aa"}); err != nil {
+			if err = store.BindBatch(ctx, []domain.Credential{{ID: "c", AccountID: "a", RuntimeID: "normal", InboundID: "in", Protocol: "vless", Generation: 1, UUID: "aabbccdd-1122-4333-8444-5566778899aa"}}); err != nil {
 				t.Fatal(err)
 			}
 			payload := bytes.Repeat([]byte("abcdefg"), 20000)

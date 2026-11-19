@@ -102,16 +102,16 @@ func TestExpiryDisableRevisionAndGeneration(t *testing.T) {
 	s, _ := fixture(t, 100000)
 	ctx := context.Background()
 	c := domain.Credential{ID: "c1", AccountID: "alice", RuntimeID: "normal", InboundID: "vless", Protocol: "vless", Generation: 1, UUID: "aabbccdd-1122-4333-8444-5566778899aa"}
-	if err := s.Bind(ctx, c); err != nil {
+	if err := s.BindBatch(ctx, []domain.Credential{c}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Authorized(ctx, "c1", 1, time.Now()); err != nil {
+	if _, err := s.authorize(ctx, "c1", 1, time.Now(), false); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Rotate(ctx, "c1", "bbbbccdd-1122-4333-8444-5566778899aa", "", 1); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Authorized(ctx, "c1", 1, time.Now()); !errors.Is(err, ErrDenied) {
+	if _, err := s.authorize(ctx, "c1", 1, time.Now(), false); !errors.Is(err, ErrDenied) {
 		t.Fatal("old generation accepted", err)
 	}
 	u, _ := s.Account(ctx, "alice")
@@ -123,7 +123,7 @@ func TestExpiryDisableRevisionAndGeneration(t *testing.T) {
 	if err := s.SaveAccount(ctx, a); !errors.Is(err, ErrConflict) {
 		t.Fatal(err)
 	}
-	if _, err := s.Authorized(ctx, "c1", 2, time.Now()); !errors.Is(err, ErrDenied) {
+	if _, err := s.authorize(ctx, "c1", 2, time.Now(), false); !errors.Is(err, ErrDenied) {
 		t.Fatal(err)
 	}
 	if _, err := s.Reserve(ctx, "l", "alice", "normal", 1, time.Now()); !errors.Is(err, ErrDenied) {

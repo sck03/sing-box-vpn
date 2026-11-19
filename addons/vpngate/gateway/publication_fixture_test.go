@@ -80,7 +80,7 @@ func publishProtocolFixture(t *testing.T, root, core string, app *manage.App) {
 			kind := entry["type"].(string)
 			credential := domain.Credential{ID: "fixture-" + scope + "-" + kind, AccountID: "export-fixture", RuntimeID: scope, InboundID: entry["tag"].(string), Protocol: kind, Generation: 1}
 			credential.UUID, credential.Password = protocolSecrets(scope, kind)
-			if err = store.Bind(t.Context(), credential); err != nil {
+			if err = store.BindBatch(t.Context(), []domain.Credential{credential}); err != nil {
 				t.Fatal(err)
 			}
 			credentials = append(credentials, credential)

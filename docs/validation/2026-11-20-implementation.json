@@ -16,14 +16,14 @@
     "Credential publication reloads only changed inbounds using independent sing-box scopes; failed start restores old listeners; failed rollback terminates core; three consecutive reload failures terminate core.",
     "Configuration publish/activate/confirm/recover orchestration extracted into application.Deployment; manager adapters separated by responsibility.",
     "Mobile secondary fields expand on demand and keep expansion on live updates; coherent alert colors; five-row overview task preview; localized service states.",
-    "Removed test-only production Export/Tasks/TaskSummaries wrappers and moved random fixture helpers into test files; updated current documentation and mobile screenshot."
+    "Removed test-only production Export/Tasks/TaskSummaries/Bind/Authorized wrappers; tests use current batch binding and authorization implementations; moved random fixture helpers into test files; updated current documentation and mobile screenshot."
   ],
   "windows_validation": {
     "go_test_all_with_managed_runtime": "passed (full-final.log)",
     "go_vet": "passed",
     "generated_contract_check": "passed",
     "tagged_runtime_tests": "passed; unchanged inbound isolation, unchanged users no-op, construction/start recovery, multi-inbound rollback, reference preservation, shutdown serialization",
-    "real_five_protocol_reload": "passed: VLESS, VMess, Hysteria2, TUIC, AnyTLS; old generation blocked, new generation connects, other inbound TCP streams preserved, core started timestamp unchanged",
+    "real_five_protocol_reload": "passed: VLESS, VMess, Hysteria2, TUIC, AnyTLS; old generation TCP/UDP blocked, new generation TCP/UDP connects, other inbound TCP/UDP sessions preserved, core started timestamp unchanged",
     "targeted_task_boundary_and_publication": "passed",
     "frontend_eight_suites": "passed",
     "frontend_typecheck": "passed",
@@ -35,7 +35,7 @@
     "application_race": "passed",
     "controlstore_race": "passed",
     "accounting_race": "passed",
-    "remaining": "Management, tagged runtime and real protocol race validation in progress at implementation commit; final outcome recorded in follow-up validation."
+    "remaining": "Stopped the duplicate emulated management/protocol run after preserving three passing package results; final revision is validated by GitHub CI on native Linux. No local pass claimed for the interrupted packages."
   },
   "benchmark": {
     "environment": "Windows amd64, Intel i5-9400F, Go 1.27.3, 500ms x3; concurrent QEMU validation affects timing",
@@ -146,7 +146,7 @@
   },
   "cleanup": {
     "manual_directory": ".cleanup-manual/2026-11-20-review",
-    "moved_items": 8,
+    "moved_items": 9,
     "reason": "Earlier automatic approval rejected deletion; moved obsolete review binaries, failed panel directories, old screenshots and temporary patch into the user-requested single folder. Toolchains, reusable caches, VM assets, historical validation evidence and license files retained."
   },
   "limits": [
@@ -155,5 +155,9 @@
     "Frontend JS remains checkJs with strict=false for dynamic extension boundaries.",
     "Microbenchmarks are not production throughput or long-duration load validation.",
     "Official upstream protocol constructors are used; no copied s-ui protocol forks."
-  ]
+  ],
+  "github_ci": {
+    "status": "pending",
+    "note": "Final workflow result will be recorded after the complete native Linux matrix finishes."
+  }
 }

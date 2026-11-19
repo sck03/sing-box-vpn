@@ -28,7 +28,7 @@ func periodFixture(t *testing.T, mode string) (*Store, string, domain.Credential
 		t.Fatal(e)
 	}
 	c := domain.Credential{ID: "cred", AccountID: "alice", RuntimeID: "normal", InboundID: "vmess", Protocol: "vmess", UUID: "aabbccdd-1122-4333-8444-5566778899aa", Generation: 1}
-	if e = s.Bind(t.Context(), c); e != nil {
+	if e = s.BindBatch(t.Context(), []domain.Credential{c}); e != nil {
 		t.Fatal(e)
 	}
 	return s, path, c
@@ -47,7 +47,7 @@ func TestFirstUseDownloadAndRevocation(t *testing.T) {
 	if u.StartedAt != nil {
 		t.Fatal("download activated entitlement")
 	}
-	if _, e = s.Authorized(ctx, c.ID, 1, time.Now()); !errors.Is(e, ErrDenied) {
+	if _, e = s.authorize(ctx, c.ID, 1, time.Now(), false); !errors.Is(e, ErrDenied) {
 		t.Fatal(e)
 	}
 	u, e = s.authorize(ctx, c.ID, 1, time.Now(), true)
@@ -57,10 +57,10 @@ func TestFirstUseDownloadAndRevocation(t *testing.T) {
 	if e = s.Unbind(ctx, c.ID, 1); e != nil {
 		t.Fatal(e)
 	}
-	if e = s.Bind(ctx, c); e == nil {
+	if e = s.BindBatch(ctx, []domain.Credential{c}); e == nil {
 		t.Fatal("revoked ID reused")
 	}
-	if _, e = s.Authorized(ctx, c.ID, 1, time.Now()); !errors.Is(e, ErrDenied) {
+	if _, e = s.authorize(ctx, c.ID, 1, time.Now(), false); !errors.Is(e, ErrDenied) {
 		t.Fatal(e)
 	}
 }

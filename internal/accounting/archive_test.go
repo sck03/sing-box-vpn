@@ -119,12 +119,12 @@ func TestArchiveCapacityRevocationAndSettlement(t *testing.T) {
 		t.Fatal("new grant", err)
 	}
 	cred := domain.Credential{ID: "fresh", AccountID: "alice", RuntimeID: "normal", InboundID: "in", Protocol: "vless", Generation: 1, UUID: "aabbccdd-1122-4333-8444-5566778899aa"}
-	if err = s.Bind(ctx, cred); !errors.Is(err, ErrDenied) {
+	if err = s.BindBatch(ctx, []domain.Credential{cred}); !errors.Is(err, ErrDenied) {
 		t.Fatal("archived binding", err)
 	}
 	cred.AccountID = replacement.ID
 	cred.ID = "credential"
-	if err = s.Bind(ctx, cred); err == nil {
+	if err = s.BindBatch(ctx, []domain.Credential{cred}); err == nil {
 		t.Fatal("revoked ID reused")
 	}
 }

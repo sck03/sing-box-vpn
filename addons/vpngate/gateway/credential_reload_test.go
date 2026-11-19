@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -73,6 +74,27 @@ func TestManagedCredentialReload(t *testing.T) {
 		}
 	}()
 	connections := map[string]net.Conn{}
+	type packetSession struct {
+		socket net.Conn
+		header []byte
+	}
+	packets := map[string]packetSession{}
+	udpTarget := protocolUDP(t, "reload:")
+	packetEcho := func(session packetSession, payload string) error {
+		_ = session.socket.SetDeadline(time.Now().Add(2 * time.Second))
+		if _, err := session.socket.Write(append(append([]byte(nil), session.header...), []byte(payload)...)); err != nil {
+			return err
+		}
+		response := make([]byte, 2048)
+		n, err := session.socket.Read(response)
+		if err != nil {
+			return err
+		}
+		if !bytes.HasSuffix(response[:n], []byte("reload:"+payload)) {
+			return fmt.Errorf("unexpected UDP echo")
+		}
+		return nil
+	}
 	nodes := map[string]manage.Object{}
 	client := func(kind, suffix string, node manage.Object) net.Conn {
 		port, e := manage.AvailablePort(used)
@@ -81,6 +103,20 @@ func TestManagedCredentialReload(t *testing.T) {
 		}
 		config := manage.Object{"inbounds": []manage.Object{{"type": "mixed", "listen": "127.0.0.1", "listen_port": port}}, "outbounds": []manage.Object{node}, "route": manage.Object{"final": node["tag"]}}
 		protocolCore(t, root, kind+suffix, binary, config, port)
+		control, bind := protocolMixed(t, port, 3, udpTarget)
+		udp, e := net.DialTimeout("udp4", bind, 3*time.Second)
+		if e != nil {
+			t.Fatal(e)
+		}
+		t.Cleanup(func() { control.Close(); udp.Close() })
+		header, e := udpResponseHeader(udpTarget)
+		if e != nil {
+			t.Fatal(e)
+		}
+		packets[kind] = packetSession{socket: udp, header: header}
+		if e = packetEcho(packets[kind], kind+suffix); e != nil {
+			t.Fatal(e)
+		}
 		c, _ := protocolMixed(t, port, 1, echo.Addr().String())
 		t.Cleanup(func() { c.Close() })
 		if e = echoPayload(c, kind+suffix); e != nil {
@@ -131,10 +167,16 @@ func TestManagedCredentialReload(t *testing.T) {
 			if err = echoPayload(connections[kind], "old-generation"); err == nil {
 				t.Fatal("old credential still forwards")
 			}
+			if err = packetEcho(packets[kind], "old-generation"); err == nil {
+				t.Fatal("old UDP credential still forwards")
+			}
 			for other, c := range connections {
 				if other != kind {
 					if err = echoPayload(c, "uninterrupted-"+kind); err != nil {
 						t.Fatalf("%s disrupted by %s: %v", other, kind, err)
+					}
+					if err = packetEcho(packets[other], "uninterrupted-"+kind); err != nil {
+						t.Fatalf("UDP %s disrupted by %s: %v", other, kind, err)
 					}
 				}
 			}

@@ -19,7 +19,7 @@ func BenchmarkMeterTakeComplete(b *testing.B) {
 	if err = s.SaveAccount(ctx, domain.Account{ID: "a", Name: "A"}); err != nil {
 		b.Fatal(err)
 	}
-	if err = s.Bind(ctx, domain.Credential{ID: "c", AccountID: "a", RuntimeID: "normal", InboundID: "in", Protocol: "vless", Generation: 1, UUID: "aabbccdd-1122-4333-8444-5566778899aa"}); err != nil {
+	if err = s.BindBatch(ctx, []domain.Credential{{ID: "c", AccountID: "a", RuntimeID: "normal", InboundID: "in", Protocol: "vless", Generation: 1, UUID: "aabbccdd-1122-4333-8444-5566778899aa"}}); err != nil {
 		b.Fatal(err)
 	}
 	m := NewMeter(s, "normal")

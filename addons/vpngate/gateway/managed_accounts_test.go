@@ -42,7 +42,7 @@ func startManagedCore(t *testing.T, root, name, instance string, config manage.O
 				c.UUID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 				c.Password = "bob-independent-password"
 			}
-			if err = store.Bind(t.Context(), c); err != nil {
+			if err = store.BindBatch(t.Context(), []domain.Credential{c}); err != nil {
 				t.Fatal(err)
 			}
 		}

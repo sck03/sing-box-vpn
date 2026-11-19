@@ -25,7 +25,7 @@ func TestCredentialPublicationRetryDoesNotRepeatRotation(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := domain.Credential{ID: "credential", AccountID: "a", RuntimeID: "normal", InboundID: "vless-reality", Protocol: "vless", Generation: 1, UUID: randomUUID(), Password: randomSecret()}
-	if err := s.Accounts.Bind(ctx, c); err != nil {
+	if err := s.Accounts.BindBatch(ctx, []domain.Credential{c}); err != nil {
 		t.Fatal(err)
 	}
 	command := application.AccountCommand{Operation: "rotate", ID: c.ID, Generation: 1, Scope: "normal"}

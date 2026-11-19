@@ -257,10 +257,6 @@ func pruneEvents(ctx context.Context, tx *sql.Tx) error {
 	return err
 }
 
-func (s *Store) Bind(ctx context.Context, c domain.Credential) error {
-	return s.BindBatch(ctx, []domain.Credential{c})
-}
-
 // BindBatch publishes every credential in one transaction. A conflict on any
 // inbound leaves all accounts unchanged.
 func (s *Store) BindBatch(ctx context.Context, credentials []domain.Credential) error {
@@ -365,11 +361,6 @@ func (s *Store) credentials(ctx context.Context, predicate string, args ...any) 
 		return nil, errors.New("credential limit exceeded")
 	}
 	return result, rows.Err()
-}
-
-func (s *Store) Authorized(ctx context.Context, credential string, generation int64, now time.Time) (string, error) {
-	u, err := s.authorize(ctx, credential, generation, now, false)
-	return u.ID, err
 }
 
 // Reserve atomically allocates one shared pool across both runtime processes.

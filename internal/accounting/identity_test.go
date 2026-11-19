@@ -29,7 +29,7 @@ func TestCredentialCanonicalIdentity(t *testing.T) {
 				}
 			}
 			c := domain.Credential{ID: "one", AccountID: "a", RuntimeID: "normal", InboundID: "in", Protocol: "vless", Generation: 1, UUID: spelling}
-			if err = s.Bind(ctx, c); err != nil {
+			if err = s.BindBatch(ctx, []domain.Credential{c}); err != nil {
 				t.Fatal(err)
 			}
 			list, err := s.Credentials(ctx, "normal")
@@ -37,7 +37,7 @@ func TestCredentialCanonicalIdentity(t *testing.T) {
 				t.Fatal(list, err)
 			}
 			c.ID, c.AccountID, c.UUID = "two", "b", list[0].UUID
-			if err = s.Bind(ctx, c); err == nil {
+			if err = s.BindBatch(ctx, []domain.Credential{c}); err == nil {
 				t.Fatal("equivalent UUID accepted for another account")
 			}
 			if err = s.Rotate(ctx, "one", strings.ToUpper(list[0].UUID), "", 1); err == nil {
@@ -58,7 +58,7 @@ func TestTUICPasswordRotationPreservesUniqueUUID(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := domain.Credential{ID: "one", AccountID: "a", RuntimeID: "normal", InboundID: "tuic", Protocol: "tuic", Generation: 1, UUID: "aabbccdd-1122-4333-8444-5566778899aa", Password: "old-tuic-password"}
-	if err = s.Bind(ctx, c); err != nil {
+	if err = s.BindBatch(ctx, []domain.Credential{c}); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.Rotate(ctx, c.ID, strings.ToUpper(c.UUID), c.Password, 1); err == nil {
@@ -71,7 +71,7 @@ func TestTUICPasswordRotationPreservesUniqueUUID(t *testing.T) {
 	if err != nil || len(list) != 1 || list[0].Generation != 2 || list[0].UUID != c.UUID || list[0].Password != "new-tuic-password" {
 		t.Fatal(list, err)
 	}
-	if _, err = s.Authorized(ctx, c.ID, 1, time.Now()); err == nil {
+	if _, err = s.authorize(ctx, c.ID, 1, time.Now(), false); err == nil {
 		t.Fatal("old credential generation remains authorized")
 	}
 }
