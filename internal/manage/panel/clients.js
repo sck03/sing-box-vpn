@@ -23,7 +23,8 @@ export function templateFields(catalog) {
   const complete = (value) => value.mode === "config";
   const rules = (value) => complete(value) || value.mode === "rules";
   return [
-    { key: "id", label: "ID", required: true },
+    { key: "id", label: "ID", required: true, advanced: true },
+    { key: "name", label: "模板名称" },
     {
       key: "url",
       label: "远程模板 URL（可留空）",
@@ -74,6 +75,25 @@ export function templateFields(catalog) {
     },
     { key: "rule_sets", label: "规则集 ID", type: "csv", visible: rules },
     {
+      key: "final",
+      label: "默认策略",
+      type: "select",
+      visible: complete,
+      options: (v) => [
+        ["", "自动选择普通 / VPNGate"],
+        ["PROXY", "普通代理"],
+        ["VPNGate", "VPNGate"],
+        ...(v.groups || []).map((g) => [g.id, g.name || g.id]),
+      ],
+    },
+    {
+      key: "private_network",
+      label: "局域网直连",
+      type: "bool",
+      visible: complete,
+      help: "VPNGate 专用输出不允许启用；自定义规则仍优先执行。",
+    },
+    {
       key: "dns_policy.local",
       label: "国内 DNS",
       type: "csv",
@@ -99,6 +119,7 @@ export function templateFields(catalog) {
       key: "dns_policy.fake_ip",
       label: "Fake-IP",
       type: "bool",
+      default: true,
       advanced: true,
       visible: (v) =>
         complete(v) && ["mihomo", "openclash", "stash"].includes(v.client),
@@ -152,6 +173,8 @@ export function normalizeTemplate(value, catalog) {
     delete value.groups;
     delete value.providers;
     delete value.native;
+    delete value.final;
+    delete value.private_network;
   }
   if (!features.dns) delete value.dns;
   if (!features.probe) delete value.probe_url;
@@ -167,14 +190,7 @@ export function normalizeTemplate(value, catalog) {
   }
   if (value.dns_policy && !value.dns_policy.fake_ip)
     delete value.dns_policy.fake_ip_filter;
-  if (
-    value.dns_policy &&
-    !value.dns_policy.fake_ip &&
-    !value.dns_policy.ipv6 &&
-    !["local", "remote", "bootstrap"].some(
-      (key) => value.dns_policy[key]?.length,
-    )
-  )
+  if (value.dns_policy && Object.keys(value.dns_policy).length === 0)
     delete value.dns_policy;
   if (value.mode !== "config" && value.mode !== "rules") {
     delete value.rules;

@@ -2,7 +2,6 @@ package manage
 
 import (
 	"context"
-	"crypto/tls"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -273,14 +272,14 @@ func (s *PlatformService) Serve(ctx context.Context, options PanelOptions, out i
 		return err
 	}
 	options.PublicURL = options.origin()
-	if options.Certificate != "" {
-		listener = tls.NewListener(listener, publicaccess.Options(options).TLS())
-	}
 	child, cancel := context.WithCancel(ctx)
 	defer cancel()
 	worker := make(chan error, 1)
 	go func() { worker <- s.Run(child); cancel() }()
 	server := &http.Server{Handler: s.Handler(options), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 3 * time.Minute, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
+	if options.Certificate != "" {
+		server.TLSConfig = publicaccess.Options(options).TLS()
+	}
 	fmt.Fprintln(out, "管理面板："+options.PublicURL)
 	err = httpserver.Serve(child, listener, server, 128)
 	cancel()

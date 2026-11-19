@@ -135,6 +135,27 @@ def check(browser, base):
     expect(page.get_by_role("button", name="清理运行日志", exact=True)).to_be_visible()
     if screenshots:
         page.screenshot(path=os.path.join(screenshots, "maintenance.png"), full_page=True)
+    page.goto(base + "/#subscriptions/templates")
+    page.get_by_role("button", name="从预设添加", exact=True).click()
+    page.get_by_label("客户端", exact=True).select_option("mihomo")
+    page.get_by_label("用途", exact=True).select_option("automatic")
+    page.get_by_label("模板名称（可留空）", exact=True).fill("自动线路")
+    page.locator("#dialog").get_by_role("button", name="保存", exact=True).click()
+    expect(page.locator("#dialog")).not_to_be_visible()
+    expect(page.get_by_text("自动线路", exact=True)).to_be_visible()
+    if screenshots:
+        page.screenshot(path=os.path.join(screenshots, "templates.png"), full_page=True)
+    page.get_by_role("button", name="快速创建订阅", exact=True).click()
+    page.get_by_label("订阅名称", exact=True).fill("导入演示")
+    page.get_by_label("来源", exact=True).select_option("inline")
+    page.get_by_label("节点内容", exact=True).fill("trojan://test-password@127.0.0.1:14443?sni=localhost&insecure=1#sample")
+    page.get_by_label("客户端", exact=True).select_option("mihomo")
+    page.locator("#dialog").get_by_role("button", name="保存", exact=True).click()
+    expect(page.get_by_role("heading", name="配置校验与发布预览", exact=True)).to_be_visible(timeout=30000)
+    if screenshots:
+        page.screenshot(path=os.path.join(screenshots, "subscription-preview.png"), full_page=True)
+    page.keyboard.press("Escape")
+    assert not browser_errors, browser_errors
     context.close()
 
 

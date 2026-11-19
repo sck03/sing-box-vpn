@@ -9,11 +9,11 @@
 
 ## 管理平台设计参考（2026-11-17）
 
-| 项目 | 本轮采用的设计方向 | 对应实现 |
-| --- | --- | --- |
-| [s-ui](https://github.com/alireza0/s-ui/tree/d1c2ce92a77b32388845bc863a7f0a70871f74ca)（GPL-3.0） | 将业务用例与 HTTP、持久化、运行时发布分开 | application 定义用例、分页和刷新结果；HTTP 按业务拆分，accounting 持久化凭据发布意图，hostservice 隔离主机恢复 |
-| [Zashboard](https://github.com/Zephyruso/zashboard/tree/b51d07099e0b18c0c5126cac22ed4e5e01291a1e)（MIT） / [metacubexd](https://github.com/MetaCubeX/metacubexd/tree/3cbbaa327969134468a9417e407f650ce9512093)（MIT） | 运行状态优先、主题切换、紧凑导航、表格状态保留 | 配置/凭据/心跳综合状态、表格排序与偏好、账户分页、资源选择器、任务实时更新与焦点保留，SSE 生命周期集中管理 |
-| [Gluetun](https://github.com/qdm12/gluetun/tree/3da0f7d1fe4df19d6d2e7bef3b79a9dce0477dbd)（MIT） | 将进程存活、业务就绪与故障恢复分开；故障时禁止绕过隧道 | 核心新心跳就绪、失败服务定时恢复、持久凭据重试与退避、升级和回滚协调；VPNGate netns 继续执行断线拒绝直连 |
+| 项目                                                                                                                                                                                                                  | 本轮采用的设计方向                                     | 对应实现                                                                                                       |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| [s-ui](https://github.com/alireza0/s-ui/tree/d1c2ce92a77b32388845bc863a7f0a70871f74ca)（GPL-3.0）                                                                                                                     | 将业务用例与 HTTP、持久化、运行时发布分开              | application 定义用例、分页和刷新结果；HTTP 按业务拆分，accounting 持久化凭据发布意图，hostservice 隔离主机恢复 |
+| [Zashboard](https://github.com/Zephyruso/zashboard/tree/b51d07099e0b18c0c5126cac22ed4e5e01291a1e)（MIT） / [metacubexd](https://github.com/MetaCubeX/metacubexd/tree/3cbbaa327969134468a9417e407f650ce9512093)（MIT） | 运行状态优先、主题切换、紧凑导航、表格状态保留         | 配置/凭据/心跳综合状态、表格排序与偏好、账户分页、资源选择器、任务实时更新与焦点保留，SSE 生命周期集中管理     |
+| [Gluetun](https://github.com/qdm12/gluetun/tree/3da0f7d1fe4df19d6d2e7bef3b79a9dce0477dbd)（MIT）                                                                                                                      | 将进程存活、业务就绪与故障恢复分开；故障时禁止绕过隧道 | 核心新心跳就绪、失败服务定时恢复、持久凭据重试与退避、升级和回滚协调；VPNGate netns 继续执行断线拒绝直连       |
 
 这些是结构和交互参考；本轮没有复制上述项目源码，也没有引入其前端框架或整套 VPN 后端。开源许可证和来源记录见 [NOTICE](../NOTICE.md)。性能、故障测试及尚未覆盖的条件见 [实施记录](unified-management-status.md)。
 
@@ -22,6 +22,8 @@
 本轮参考 [MiniSubConvert 固定提交](https://github.com/bestruirui/MiniSubConvert/tree/734d582860021f5027ce15b8438cfd4fa4cb5b1e) 和 [Sub-Store 固定提交](https://github.com/sub-store-org/Sub-Store/tree/2a173b88dcbd7d232864f05087998855da59eec1) 的解析器、producers 与 VMess security 映射。MiniSubConvert 复用 Sub-Store 核心，不能把二者当作独立的两套协议兼容证明。
 
 采用的方向包括：逐节点解析与诊断、等价 cipher 拼写标准化、显式能力筛选、重名处理、策略组/测速/规则 Provider、分角色 DNS 和有界编译缓存。VMess auto 的文本输出按目标格式处理，不能表达的 zero 等显式参数直接拒绝；TLS/传输等安全字段不通过删除来实现“兼容”。
+
+订阅 schema=4 继续依据相同固定提交核对 Hysteria2 默认端口/认证/跳跃地址、SIP003、WS early-data、gRPC 参数和 XHTTP 输出范围。sing-box 1.14.4 源码未注册 XHTTP，因此不会生成该核心无法接受的传输；Mihomo 输出经过真实核心检查。客户端连接选项与编码器通过显式目录和注册表连接，目标应用未验收仍标为实验。MiniSubConvert/Sub-Store 的部署插件不是可直接套用的通用分流模板；本项目的七种用途预设、账户默认/覆盖和规则映射由 Go 独立实现。
 
 当前两个参考提交使用 AGPL-3.0；本项目只做行为和结构参考，独立实现 Go 逻辑，没有复制其 JavaScript 源码、运行时或整套模板。重新读取历史固定提交的 LICENSE 后，也将 NOTICE 中错误的 Sub-Store MIT 标注修正为 AGPL-3.0。完整原生模板不直接搬入服务端，使用声明式资源与受管根字段生成，客户端最终导入仍按实际应用验收。
 
@@ -42,13 +44,13 @@
 [1.14 官方变更记录](https://github.com/SagerNet/sing-box/blob/v1.14.4/docs/changelog.md)
 中与本项目相关的新增能力：
 
-| 能力 | 上游范围 | 本项目状态 |
-| --- | --- | --- |
-| Snell | 新增入站/出站；当前标签文档列出 v5/v6 入站、v4/v6 出站，不含 v5 QUIC 模式 | 尚未增加第六种菜单协议 |
-| OpenVPN | 新增客户端/服务端 endpoint、推送 DNS、认证及隧道参数 | VPNGate 仍使用独立 OpenVPN 进程和 netns |
-| OpenConnect | AnyConnect、GlobalProtect、Fortinet 等客户端 endpoint | 尚未提供企业 VPN 接入配置 |
-| Hysteria2 | Chrome QUIC 指纹、BBR profile、随机跳跃间隔、gecko 混淆；Realm 服务用于 NAT 穿透 | 已有普通 Hy2 与端口跳跃；新增选项尚未开放到菜单 |
-| 网络命名空间 / L3 | 声明式 netns、bridge、L3 转发 | 现有网关沿用经过隔离验收的独立 worker 后端 |
+| 能力              | 上游范围                                                                         | 本项目状态                                      |
+| ----------------- | -------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Snell             | 新增入站/出站；当前标签文档列出 v5/v6 入站、v4/v6 出站，不含 v5 QUIC 模式        | 尚未增加第六种菜单协议                          |
+| OpenVPN           | 新增客户端/服务端 endpoint、推送 DNS、认证及隧道参数                             | VPNGate 仍使用独立 OpenVPN 进程和 netns         |
+| OpenConnect       | AnyConnect、GlobalProtect、Fortinet 等客户端 endpoint                            | 尚未提供企业 VPN 接入配置                       |
+| Hysteria2         | Chrome QUIC 指纹、BBR profile、随机跳跃间隔、gecko 混淆；Realm 服务用于 NAT 穿透 | 已有普通 Hy2 与端口跳跃；新增选项尚未开放到菜单 |
+| 网络命名空间 / L3 | 声明式 netns、bridge、L3 转发                                                    | 现有网关沿用经过隔离验收的独立 worker 后端      |
 
 Snell 的版本需要分别匹配：
 [sing-box 入站](https://github.com/SagerNet/sing-box/blob/v1.14.4/docs/configuration/inbound/snell.md)、
@@ -82,14 +84,14 @@ Mihomo 更新包括 DNS 拨号收敛、代理循环检查性能及重载保留 f
 
 ## VPNGate 与相关项目
 
-| 来源 | 本次核对结果 | 对本项目的意义 |
-| --- | --- | --- |
-| [VPNGate 官网](https://www.vpngate.net/en/) | 仍公布 SoftEther SSL-VPN、OpenVPN、L2TP/IPsec、MS-SSTP | 没有据此确认新增官方 WireGuard 服务；可用协议取决于志愿节点 |
-| [OpenVPN 2.7.9](https://github.com/OpenVPN/openvpn/releases/tag/v2.7.9) | 2026-11-05 发布；Linux 可用时设置 IFF_BACKPRESSURE，另含内存、认证和平台修复 | 项目由 apt 安装 OpenVPN，实际版本与安全补丁由发行版提供；没有自动切换到上游二进制 |
-| [SoftEther 开发分支 5.2.5189](https://github.com/SoftEtherVPN/SoftEtherVPN/releases/tag/5.2.5189) | 2026-11-05 发布；内存/并发修复、ARM64 支持、OQS 依赖与 OpenSSL 构建调整 | 不等同于 VPNGate 所有节点启用新技术，也不证明公共出口已支持后量子协商 |
-| [SoftEther Stable](https://github.com/SoftEtherVPN/SoftEtherVPN_Stable/releases/tag/v4.41-9787-rtm) | 独立稳定仓库仍为 v4.41-9787-rtm | 与 5.x 开发仓库分开判断 |
-| [fanout](https://github.com/byJoey/fanout/commit/d7ce5224caf3469b19876982abdf8d1be16c4a8b) | 最新提交仍与本项目来源记录一致，主要涉及 netns 线程污染修复 | 本项目通过独立进程进入 netns，并保留隔离验收 |
-| [conduitvpn](https://github.com/sarices/conduitvpn/commit/4afc89bb9647fc1ccd8c240ab88e6e84e879398e) | 最新提交仍与来源记录一致，涉及 VPNGate 节点源和部署 | 继续采用受限 profile 校验与有界 CSV 解析 |
+| 来源                                                                                                | 本次核对结果                                                                 | 对本项目的意义                                                                    |
+| --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| [VPNGate 官网](https://www.vpngate.net/en/)                                                         | 仍公布 SoftEther SSL-VPN、OpenVPN、L2TP/IPsec、MS-SSTP                       | 没有据此确认新增官方 WireGuard 服务；可用协议取决于志愿节点                       |
+| [OpenVPN 2.7.9](https://github.com/OpenVPN/openvpn/releases/tag/v2.7.9)                             | 2026-11-05 发布；Linux 可用时设置 IFF_BACKPRESSURE，另含内存、认证和平台修复 | 项目由 apt 安装 OpenVPN，实际版本与安全补丁由发行版提供；没有自动切换到上游二进制 |
+| [SoftEther 开发分支 5.2.5189](https://github.com/SoftEtherVPN/SoftEtherVPN/releases/tag/5.2.5189)   | 2026-11-05 发布；内存/并发修复、ARM64 支持、OQS 依赖与 OpenSSL 构建调整      | 不等同于 VPNGate 所有节点启用新技术，也不证明公共出口已支持后量子协商             |
+| [SoftEther Stable](https://github.com/SoftEtherVPN/SoftEtherVPN_Stable/releases/tag/v4.41-9787-rtm) | 独立稳定仓库仍为 v4.41-9787-rtm                                              | 与 5.x 开发仓库分开判断                                                           |
+| [fanout](https://github.com/byJoey/fanout/commit/d7ce5224caf3469b19876982abdf8d1be16c4a8b)          | 最新提交仍与本项目来源记录一致，主要涉及 netns 线程污染修复                  | 本项目通过独立进程进入 netns，并保留隔离验收                                      |
+| [conduitvpn](https://github.com/sarices/conduitvpn/commit/4afc89bb9647fc1ccd8c240ab88e6e84e879398e) | 最新提交仍与来源记录一致，涉及 VPNGate 节点源和部署                          | 继续采用受限 profile 校验与有界 CSV 解析                                          |
 
 OpenVPN DCO 能否使用依赖内核、客户端/服务端和密码套件；只升级客户端版本不能保证 VPNGate
 志愿节点支持。当前保持 Go 管理器、独立 OpenVPN 后端与明确的 `tunnel`/`proxyAccess`

@@ -16,7 +16,7 @@ import (
 
 func subscriptionPlanIdentity(root, core string) (map[string]string, error) {
 	identity := map[string]string{}
-	for _, name := range []string{subscriptionsConfig, subscriptionsRuntime, subscriptionsLocal} {
+	for _, name := range []string{subscriptionsConfig, subscriptionsRuntime} {
 		digest, err := fingerprintFile(filepath.Join(root, name))
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return nil, err

@@ -125,16 +125,30 @@ func parseTextNode(line, client string) (Node, error) {
 			if enabled {
 				n.Transport.Type = "ws"
 			}
-		case "ws-path", "path", "obfs-uri":
+		case "ws-path", "path", "obfs-uri", "xhttp-path":
 			n.Transport.Path = value
-		case "host", "obfs-host":
-			n.Transport.Host = value
+		case "host", "obfs-host", "xhttp-host":
+			if n.Protocol == "ss" {
+				if n.Plugin == nil {
+					n.Plugin = &Plugin{Type: "obfs"}
+				}
+				n.Plugin.Host = value
+			} else {
+				n.Transport.Host = value
+			}
 		case "ws-headers":
 			if !strings.HasPrefix(value, "Host:") {
 				return n, errors.New("unsupported WebSocket headers")
 			}
 			n.Transport.Host = strings.TrimSpace(strings.TrimPrefix(value, "Host:"))
-		case "obfs":
+		case "obfs", "obfs-name":
+			if n.Protocol == "ss" {
+				if n.Plugin == nil {
+					n.Plugin = &Plugin{Type: "obfs"}
+				}
+				n.Plugin.Mode = value
+				break
+			}
 			switch value {
 			case "ws", "wss":
 				n.Transport.Type = "ws"
@@ -146,6 +160,18 @@ func parseTextNode(line, client string) (Node, error) {
 			}
 		case "flow", "vless-flow":
 			n.Flow = value
+		case "grpc", "xhttp":
+			var enabled bool
+			enabled, err = truth()
+			if enabled {
+				n.Transport.Type = key
+			}
+		case "grpc-service-name":
+			n.Transport.ServiceName = value
+		case "grpc-mode", "xhttp-mode":
+			n.Transport.Mode = value
+		case "grpc-authority":
+			n.Transport.Authority = value
 		case "reality-public-key", "public-key", "reality-base64-pubkey":
 			n.TLS.RealityKey = value
 		case "reality-short-id", "short-id", "reality-hex-shortid":

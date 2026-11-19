@@ -96,9 +96,9 @@ async function load(token, signal, current) {
   const grid = element("div", "");
   grid.className = "client-grid";
   target.append(grid);
-  for (const client of u.clients) {
-    const profile = u.client_profiles?.[client];
-    const label = profile?.label || client;
+  for (const profile of u.clients) {
+    const client = profile.client;
+    const label = profile.label;
     const wrap = document.createElement("div");
     wrap.className = "client-download";
     const address = new URL("u/" + token + "/" + client, base).href;
@@ -106,13 +106,36 @@ async function load(token, signal, current) {
       element("h3", label),
       element(
         "small",
-        profile?.experimental
+        profile.experimental
           ? "实验适配 · 需要目标应用验收"
-          : profile?.tested_version
-            ? "参考核心版本 " + profile.tested_version
+          : profile.reference_version
+            ? "参考核心版本 " + profile.reference_version
             : "通用节点格式",
       ),
     );
+    wrap.append(
+      element(
+        "p",
+        `${profile.nodes}/${profile.input_nodes} 个可用节点${profile.skipped ? ` · 跳过 ${profile.skipped} 个不兼容节点` : ""}`,
+      ),
+    );
+    if (profile.diagnostics?.some((diagnostic) => diagnostic.stage === "tls"))
+      wrap.append(
+        element(
+          "p",
+          "此格式存在证书导入限制，建议优先使用 sing-box 或 Mihomo 原生配置。",
+        ),
+      );
+    if (!profile.available) {
+      wrap.append(
+        element(
+          "p",
+          profile.reason || "当前绑定与下载模板不兼容，请联系管理员。",
+        ),
+      );
+      grid.append(wrap);
+      continue;
+    }
     const link = element("a", "下载 " + label);
     link.href = address;
     link.rel = "noreferrer";

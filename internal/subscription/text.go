@@ -54,14 +54,24 @@ func textTemplate(nodes []Node, t Template) ([]byte, error) {
 			}
 			target := r.Target
 			if target == "PROXY" {
-				target = finalGroup(nodes)
+				target = templateFinal(nodes, t)
 			}
 			fmt.Fprintf(&b, "%s,%s,%s\n", kind, r.Value, target)
+		}
+		if t.PrivateNetwork {
+			for _, cidr := range privateCIDRs {
+				kind := "ip-cidr"
+				if strings.Contains(cidr, ":") {
+					kind = "ip6-cidr"
+				}
+				fmt.Fprintf(&b, "%s,%s,DIRECT\n", kind, cidr)
+			}
+			b.WriteString("host-suffix,lan,DIRECT\nhost-suffix,local,DIRECT\n")
 		}
 		if t.Preset == "split" {
 			b.WriteString("geoip,CN,DIRECT\n")
 		}
-		b.WriteString("final," + finalGroup(nodes) + "\n")
+		b.WriteString("final," + templateFinal(nodes, t) + "\n")
 	} else {
 		b.WriteString("\n[Proxy Group]\n")
 		if len(normal) > 0 {
@@ -74,14 +84,20 @@ func textTemplate(nodes []Node, t Template) ([]byte, error) {
 		for _, r := range t.Rules {
 			target := r.Target
 			if target == "PROXY" {
-				target = finalGroup(nodes)
+				target = templateFinal(nodes, t)
 			}
 			b.WriteString(textRule(r, target) + "\n")
+		}
+		if t.PrivateNetwork {
+			for _, cidr := range privateCIDRs {
+				b.WriteString(textRule(Rule{Type: "ip_cidr", Value: cidr}, "DIRECT") + ",no-resolve\n")
+			}
+			b.WriteString("DOMAIN-SUFFIX,lan,DIRECT\nDOMAIN-SUFFIX,local,DIRECT\n")
 		}
 		if t.Preset == "split" {
 			b.WriteString("GEOIP,CN,DIRECT\n")
 		}
-		b.WriteString("FINAL," + finalGroup(nodes) + "\n")
+		b.WriteString("FINAL," + templateFinal(nodes, t) + "\n")
 	}
 	return []byte(b.String()), nil
 }
@@ -110,6 +126,9 @@ func surgeNode(n Node) string {
 	}
 	if n.Protocol == "ss" {
 		parts = append(parts, "encrypt-method="+n.Cipher)
+		if n.Plugin != nil {
+			parts = append(parts, "obfs="+n.Plugin.Mode, "obfs-host="+n.Plugin.Host)
+		}
 	}
 	if n.Flow != "" {
 		parts = append(parts, "flow="+n.Flow)
@@ -132,6 +151,18 @@ func surgeNode(n Node) string {
 	if n.Transport.Type == "ws" {
 		parts = append(parts, "ws=true", "ws-path="+n.Transport.Path, `ws-headers="Host:`+n.Transport.Host+`"`)
 	}
+	if n.Transport.Type == "grpc" {
+		parts = append(parts, "grpc=true", "grpc-service-name="+n.Transport.ServiceName)
+		if n.Transport.Mode != "" {
+			parts = append(parts, "grpc-mode="+n.Transport.Mode)
+		}
+		if n.Transport.Authority != "" {
+			parts = append(parts, "grpc-authority="+n.Transport.Authority)
+		}
+	}
+	if n.Transport.Type == "xhttp" {
+		parts = append(parts, "xhttp=true", "xhttp-path="+n.Transport.Path, "xhttp-host="+n.Transport.Host, "xhttp-mode="+fallback(n.Transport.Mode, "auto"))
+	}
 	if len(n.Ports) > 0 {
 		parts = append(parts, `port-hopping="`+strings.ReplaceAll(strings.Join(n.Ports, ";"), ":", "-")+`"`)
 	}
@@ -153,13 +184,17 @@ func loonNode(n Node) string {
 	}
 	if n.Protocol == "ss" {
 		parts = append(parts, n.Cipher)
+		// Plugin fields follow the positional credential below.
 	}
 	credential := n.Password
 	if n.UUID != "" {
 		credential = n.UUID
 	}
 	parts = append(parts, `"`+credential+`"`)
-	if n.Protocol == "vmess" || n.Protocol == "vless" {
+	if n.Plugin != nil {
+		parts = append(parts, "obfs-name="+n.Plugin.Mode, "obfs-host="+n.Plugin.Host)
+	}
+	if n.Protocol == "vmess" || n.Protocol == "vless" || n.Protocol == "trojan" {
 		parts = append(parts, "transport="+fallback(n.Transport.Type, "tcp"), "over-tls="+strconv.FormatBool(n.TLS.Enabled))
 	}
 	if n.Transport.Type == "ws" {
@@ -200,6 +235,9 @@ func quantumultNode(n Node) string {
 	}
 	if n.Protocol == "ss" {
 		parts = append(parts, "method="+n.Cipher)
+		if n.Plugin != nil {
+			parts = append(parts, "obfs="+n.Plugin.Mode, "obfs-host="+n.Plugin.Host)
+		}
 	}
 	if n.Transport.Type == "ws" {
 		mode := "ws"

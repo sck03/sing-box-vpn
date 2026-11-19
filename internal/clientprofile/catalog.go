@@ -32,6 +32,25 @@ type Profile struct {
 	Features      Features `json:"features"`
 }
 
+type Connection struct {
+	Transports    []string `json:"transports"`
+	Ciphers       []string `json:"ciphers,omitempty"`
+	Plugins       []string `json:"plugins,omitempty"`
+	GRPCModes     []string `json:"grpc_modes,omitempty"`
+	GRPCAuthority bool     `json:"grpc_authority"`
+	EarlyData     bool     `json:"early_data"`
+	XHTTPExtra    bool     `json:"xhttp_extra"`
+	Reality       bool     `json:"reality"`
+	UTLS          bool     `json:"utls"`
+}
+
+type Client struct {
+	Profile
+	Extension   string                `json:"extension"`
+	Platforms   []string              `json:"platforms"`
+	Connections map[string]Connection `json:"connections"`
+}
+
 var protocols = []string{"vless", "vmess", "hysteria2", "tuic", "anytls", "trojan", "ss"}
 
 // Experimental adapters describe this project's encoders, not a claim that
@@ -57,6 +76,9 @@ func Lookup(id string) (Profile, bool) {
 	if slices.Contains([]string{"sing-box", "mihomo", "openclash", "uri", "base64", "shadowrocket"}, id) {
 		p.Features.GRPC, p.Features.HTTPUpgrade = true, true
 	}
+	if slices.Contains([]string{"stash", "surge", "surge-mac"}, id) {
+		p.Features.GRPC = true
+	}
 	if slices.Contains([]string{"sing-box", "mihomo", "openclash", "stash", "uri", "base64", "shadowrocket"}, id) {
 		p.Features.HysteriaObfs = true
 	}
@@ -79,3 +101,117 @@ func All() map[string]Profile {
 }
 
 func SupportsAccount(id string) bool { _, ok := catalog[id]; return ok }
+
+func Describe(id string) (Client, bool) {
+	p, ok := Lookup(id)
+	c := Client{Profile: p, Extension: Extension(id), Connections: map[string]Connection{}}
+	for _, protocol := range p.Protocols {
+		c.Connections[protocol] = connection(id, protocol)
+	}
+	switch id {
+	case "sing-box", "mihomo":
+		c.Platforms = []string{"Windows", "macOS", "Linux", "Android", "iOS"}
+	case "openclash":
+		c.Platforms = []string{"OpenWrt"}
+	case "surge-mac":
+		c.Platforms = []string{"macOS"}
+	case "surfboard":
+		c.Platforms = []string{"Android"}
+	case "uri", "base64":
+		c.Platforms = []string{"通用导入"}
+	default:
+		c.Platforms = []string{"iOS", "macOS"}
+	}
+	return c, ok
+}
+
+func Catalog() map[string]Client {
+	result := make(map[string]Client, len(catalog))
+	for id := range catalog {
+		result[id], _ = Describe(id)
+	}
+	return result
+}
+
+func Extension(id string) string {
+	switch id {
+	case "sing-box":
+		return "json"
+	case "mihomo", "openclash", "stash", "egern":
+		return "yaml"
+	case "surge", "surge-mac", "loon", "quantumult-x", "surfboard":
+		return "conf"
+	default:
+		return "txt"
+	}
+}
+
+func connection(client, protocol string) Connection {
+	c := Connection{Transports: []string{"tcp"}}
+	uri := slices.Contains([]string{"uri", "base64", "shadowrocket"}, client)
+	native := slices.Contains([]string{"sing-box", "mihomo", "openclash", "stash"}, client)
+	if slices.Contains([]string{"vless", "vmess", "trojan"}, protocol) {
+		c.Transports = append(c.Transports, "ws")
+		if native || uri {
+			c.Transports = append(c.Transports, "grpc")
+			c.GRPCModes = []string{"gun"}
+		}
+		if client != "stash" && (native || uri) {
+			c.Transports = append(c.Transports, "httpupgrade")
+		}
+		if (client == "surge" || client == "surge-mac") && protocol == "vless" {
+			c.Transports = append(c.Transports, "grpc")
+			c.GRPCModes = []string{"gun", "multi"}
+			c.GRPCAuthority = true
+		}
+		if uri && protocol != "vmess" {
+			c.GRPCModes = []string{"gun", "multi"}
+			c.GRPCAuthority = true
+		}
+		c.EarlyData = client == "sing-box" || client == "mihomo" || client == "openclash" || client == "stash" || uri
+	}
+	if protocol == "vless" {
+		c.Reality = true
+		if client == "mihomo" || client == "openclash" || client == "stash" || client == "surge" || client == "surge-mac" || uri {
+			c.Transports = append(c.Transports, "xhttp")
+		}
+		c.XHTTPExtra = client == "mihomo" || client == "openclash" || client == "stash" || uri
+	}
+	c.UTLS = (client == "sing-box" || client == "mihomo" || client == "openclash" || uri) && slices.Contains([]string{"vless", "vmess", "trojan", "anytls"}, protocol)
+	if protocol == "ss" {
+		c.Ciphers = []string{"aes-128-gcm", "aes-256-gcm", "chacha20-ietf-poly1305", "2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm"}
+		if client == "sing-box" || client == "mihomo" || client == "openclash" || client == "uri" || client == "base64" {
+			c.Ciphers = append(c.Ciphers, "2022-blake3-chacha20-poly1305")
+		}
+		if native || uri {
+			c.Plugins = []string{"obfs", "v2ray-plugin"}
+		} else if slices.Contains([]string{"surge", "surge-mac", "loon", "quantumult-x", "surfboard"}, client) {
+			c.Plugins = []string{"obfs"}
+		}
+	}
+	if protocol == "vmess" {
+		c.Ciphers = []string{"auto", "none", "zero", "aes-128-gcm", "chacha20-poly1305"}
+		if client == "quantumult-x" {
+			c.Ciphers = []string{"auto", "none", "chacha20-poly1305"}
+		}
+	}
+	return c
+}
+
+var connectionMatrix = func() map[string]map[string]Connection {
+	result := make(map[string]map[string]Connection, len(catalog))
+	for client, profile := range catalog {
+		result[client] = make(map[string]Connection, len(profile.Protocols))
+		for _, protocol := range profile.Protocols {
+			result[client][protocol] = connection(client, protocol)
+		}
+	}
+	return result
+}()
+
+// ConnectionFor is the read-only compiler view; UI metadata is independently
+// constructed by Describe so callers cannot mutate this shared registry.
+func ConnectionFor(client, protocol string) (Connection, bool) {
+	value, ok := connectionMatrix[client][protocol]
+	return value, ok
+}

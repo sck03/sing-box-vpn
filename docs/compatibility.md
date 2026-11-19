@@ -2,7 +2,7 @@
 
 本版只接受新数据库 schema 13 / 备份格式 7，不迁移旧账户或管理接口。平台配置 schema 4 与数据库版本独立。Linux Debian/Ubuntu + systemd，amd64/arm64；Windows 用于开发与本机测试。数据目录由 root 独占，面板默认回环。
 
-订阅配置 schema=3，不接受旧 schema=2。来源新增 auto、Surge/Loon/Quantumult X 文本输入，gRPC/HTTPUpgrade 与 Hysteria2 salamander 只输出给能保留参数的适配器。原生模板的策略组、规则 Provider 与 DNS 策略按客户端能力校验；Mihomo 国内分流改用 MRS，不要求本地 Country.mmdb。节点文档和模板版本独立，不能统一机械升级。
+订阅配置 schema=4，不接受旧订阅配置。模板 version=1、平台 schema=4、数据库 schema=13 与备份容器 7 保持独立；同数据库版本中的旧订阅内容也会被拒绝。转换新增受控 SIP003、WS early-data、gRPC 参数、VLESS XHTTP 和 Hysteria2 地址规范化，按客户端/协议/传输/加密方式筛选。sing-box 1.14.4 不接受 XHTTP，相关输出或探测使用支持它的目标；未知 XHTTP extra 字段明确拒绝。
 
 Release 标签使用 `vMAJOR.MINOR.PATCH`，主版本号与数据格式无绑定：v5.0.0 等正式标签可安装，但包内容必须满足当前平台约定。版本号变化不会自动迁移数据库。证书提供方仅接受 `acme` / `import`，旧 `certbot` 标记不兼容。
 
@@ -14,7 +14,7 @@ Release 标签使用 `vMAJOR.MINOR.PATCH`，主版本号与数据格式无绑定
 
 Mihomo 测试基线 1.19.33。原生 sing-box/Mihomo 配置和 provider 是推荐导出方式。Mihomo URI 导入器忽略 VMess insecure 和 TUIC allow_insecure；这两类自签 TLS URI 不纳入真实链路通过项，其原生配置已覆盖。OpenClash 使用 Mihomo provider 的结构与核心路径，尚不代表实体 OpenWrt/LuCI 验收。
 
-客户端与模式统一登记在 `internal/clientprofile`，通过 `/api/clients` 提供给面板和授权流程。Surge、Surge Mac、Loon、Quantumult X、Surfboard、Stash、Egern、Shadowrocket 标为实验适配；协议列表表示编码器覆盖范围，不表示所有应用版本及组合已通过。不能表达的显式参数拒绝生成，只有输出明确允许时才跳过节点并记录诊断。详见[订阅模板验证](subscriptions.md#客户端与验证范围)。
+客户端与模式统一登记在 `internal/clientprofile`，通过 `/api/clients` 提供详细字段范围。`/api/accounts/clients` 按账户和实例计算实际可下载格式，公开用量的 `clients` 改为对象数组。Surge、Surge Mac、Loon、Quantumult X、Surfboard、Stash、Egern、Shadowrocket 标为实验适配；范围不代表所有应用版本和组合已通过。账户模板策略明确控制是否跳过不兼容节点，并展示数量与原因。详见[订阅验证范围](subscriptions.md#验证范围与预算)。
 
 域名解析优先级使用 resolve/prefer_ipv4/prefer_ipv6，保留其他地址族回退；IP 请求不会被 SNI/HTTP Host 隐式替换。现代 DNS 与 SRS 规则集有效，旧 geosite/geoip 和 DNS 格式不兼容。
 

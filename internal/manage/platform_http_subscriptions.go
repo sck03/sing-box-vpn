@@ -33,6 +33,10 @@ func (s *PlatformService) serveGrants(w http.ResponseWriter, r *http.Request, ac
 		jsonResponse(w, Object{"schema_version": sub.SchemaVersion, "formats": sub.InputFormats(), "protocols": profile.Protocols})
 		return true
 	}
+	if path == "/api/subscription-presets" && r.Method == "GET" {
+		jsonResponse(w, sub.Presets())
+		return true
+	}
 	if path == "/api/subscriptions/actions" && r.Method == "GET" {
 		if !require(admin) {
 			return true

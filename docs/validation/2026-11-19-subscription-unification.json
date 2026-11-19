@@ -1,0 +1,92 @@
+{
+  "date": "2026-11-19",
+  "base_commit": "f0575cf356ea4cb663fd9920cb102895f2900e51",
+  "scope": "Subscription compiler, account export contracts, template presets, bounded publication and panel workflows",
+  "formats": {
+    "database": 13,
+    "platform": 4,
+    "node": 2,
+    "subscription": 4,
+    "template": 1,
+    "backup": 7,
+    "compiler": 2
+  },
+  "checks": {
+    "windows_go": "go test -count=1 -timeout=12m ./... passed; SING_BOX_BINARY and MIHOMO_BINARY configured, SBVPN_REQUIRE_CLIENT_CHECK=1",
+    "windows_vet": "go vet ./... passed",
+    "frontend": "All seven npm suites passed",
+    "browser": "Isolated real panel API and Chrome desktop/mobile checks passed, including preset creation and subscription preview",
+    "interop": "Real sing-box Trojan WS/gRPC server to Mihomo client passed; wrong path/service rejected; fixture waits for listener readiness",
+    "tls": "Bounded TLS listener retains request.TLS and negotiates HTTP/2",
+    "publication": "Lock-free validation, stale configuration rejection and credential-header redirect isolation tests passed",
+    "linux_specialized": [
+      "systemd recovery after firewall loss/unexpected exit",
+      "IPv4/IPv6 multiport forwarding",
+      "ENOSPC accounting recovery",
+      "SIGKILL preserves durable reservation",
+      "network namespace/OpenVPN/DNS isolation",
+      "program upgrade states and delayed restart receipts",
+      "installer and service-unit ownership protection"
+    ],
+    "linux_race": "Local QEMU TCG full race build stopped after dependency/build preparation; not recorded as passed. Exact committed source is verified by GitHub CI after push.",
+    "shellcheck": "warning severity passed",
+    "linux_builds": "Linux amd64 management/core/test binaries built and used for specialized checks"
+  },
+  "measurements": {
+    "environment": "Windows amd64, Intel i5-9400F, Go 1.27.3; VM and test panel stopped. Wall-clock samples fluctuate and are diagnostic, not VPS throughput claims.",
+    "same_name_sample": {
+      "nodes": 4096,
+      "baseline": {
+        "milliseconds": 2368.1281,
+        "allocated_bytes": 211084736
+      },
+      "current": {
+        "milliseconds": 24.673,
+        "allocated_bytes": 10403376
+      },
+      "note": "Same short-name VLESS Process sample. Single samples; allocation is cumulative, not peak RSS."
+    },
+    "unicode_name_benchmark": {
+      "nodes": 4096,
+      "name": "80 Chinese characters",
+      "ns_per_op": [92279917, 57533320, 44508181],
+      "bytes_per_op": [11261028, 11260000, 11260228]
+    },
+    "client_render": {
+      "sing_box": {
+        "ns_per_op": [218569, 187660, 185547],
+        "bytes_per_op": [31732, 31709, 31724],
+        "allocations_per_op": 380
+      },
+      "mihomo": {
+        "ns_per_op": [191802, 343644, 626503],
+        "bytes_per_op": [26435, 26431, 26479],
+        "allocations_per_op": 352
+      },
+      "base64": {
+        "ns_per_op": [155232, 105928, 168447],
+        "bytes_per_op": [19817, 19819, 19818],
+        "allocations_per_op": 142
+      }
+    },
+    "meter": {
+      "ns_per_op": [247, 221.1, 213.8],
+      "bytes_per_op": 0,
+      "allocations_per_op": 0
+    }
+  },
+  "limitations": [
+    "Commercial client application import and physical OpenClash router not certified",
+    "No physical phone, volunteer VPNGate production load, public ACME or power-loss endurance test",
+    "No old data or API migration"
+  ],
+  "references": {
+    "MiniSubConvert": "734d582860021f5027ce15b8438cfd4fa4cb5b1e",
+    "SubStore": "2a173b88dcbd7d232864f05087998855da59eec1"
+  },
+  "screenshots": [
+    "../images/subscriptions.png",
+    "../images/mobile-accounts.png",
+    "../images/subscription-preview.png"
+  ]
+}

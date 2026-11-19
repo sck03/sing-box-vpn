@@ -5,9 +5,12 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/clientprofile"
+	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 )
 
 func (service AccountService) ServeDownload(w http.ResponseWriter, r *http.Request) {
@@ -41,18 +44,26 @@ func (service AccountService) ServeDownload(w http.ResponseWriter, r *http.Reque
 	}
 	denial := usage.DownloadDenial(grant)
 	if resource == "usage" {
-		profiles := map[string]clientprofile.Profile{}
-		for _, client := range grant.Clients {
-			if profile, ok := clientprofile.Lookup(client); ok {
-				profiles[client] = profile
-			}
-		}
 		denial, err = service.grantDenial(r.Context(), store, usage, grant)
 		if err != nil {
 			http.Error(w, "account service unavailable", 503)
 			return
 		}
-		jsonResponse(w, Object{"name": usage.Name, "state": usage.State, "quota_bytes": usage.QuotaBytes, "charged_bytes": usage.Charged, "upload_bytes": usage.Upload, "download_bytes": usage.Download, "effective_expires_at": usage.EffectiveExpiresAt, "started_at": usage.StartedAt, "start_mode": usage.StartMode, "next_reset": usage.NextReset, "download_expires_at": grant.ExpiresAt, "downloads": grant.Downloads, "max_downloads": grant.MaxDownloads, "clients": grant.Clients, "client_profiles": profiles, "download_denial": denial})
+		clients := []AccountClientOption{}
+		if denial == "" {
+			service.Store = store
+			options, e := service.ClientOptions(r.Context(), grant.AccountID, grant.Scope)
+			if e != nil {
+				http.Error(w, "account service unavailable", 503)
+				return
+			}
+			for _, option := range options {
+				if slices.Contains(grant.Clients, option.Client) {
+					clients = append(clients, option)
+				}
+			}
+		}
+		jsonResponse(w, Object{"name": usage.Name, "state": usage.State, "quota_bytes": usage.QuotaBytes, "charged_bytes": usage.Charged, "upload_bytes": usage.Upload, "download_bytes": usage.Download, "effective_expires_at": usage.EffectiveExpiresAt, "started_at": usage.StartedAt, "start_mode": usage.StartMode, "next_reset": usage.NextReset, "download_expires_at": grant.ExpiresAt, "downloads": grant.Downloads, "max_downloads": grant.MaxDownloads, "clients": clients, "download_denial": denial})
 		return
 	}
 	if !slices.Contains(grant.Clients, resource) {
@@ -64,7 +75,7 @@ func (service AccountService) ServeDownload(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	service.Store = store
-	artifact, err := service.Export(r.Context(), application.AccountCommand{ID: grant.AccountID, Scope: grant.Scope, Client: resource})
+	result, err := service.ExportDetailed(r.Context(), application.AccountCommand{ID: grant.AccountID, Scope: grant.Scope, Client: resource})
 	if errors.Is(err, errNoBoundInbound) {
 		http.Error(w, "no_bound_inbound", http.StatusForbidden)
 		return
@@ -74,9 +85,14 @@ func (service AccountService) ServeDownload(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err != nil {
-		http.Error(w, "account output unavailable", 503)
+		if result.Client.Reason != "" {
+			http.Error(w, result.Client.Reason, http.StatusUnprocessableEntity)
+		} else {
+			http.Error(w, "account output unavailable", 503)
+		}
 		return
 	}
+	artifact := result.Artifact
 	// The atomic reservation happens after rendering, immediately before sending.
 	if r.Method == "GET" {
 		if err = store.CountDownload(r.Context(), token, resource); err != nil {
@@ -85,14 +101,34 @@ func (service AccountService) ServeDownload(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	w.Header().Set("Content-Type", artifact.MIME+"; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="account-`+resource+`.txt"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="account-`+resource+`.`+clientprofile.Extension(resource)+`"`)
+	w.Header().Set("profile-update-interval", "1")
+	w.Header().Set("subscription-userinfo", accountSubscriptionUsage(result.Usage))
+	w.Header().Set("Content-Length", strconv.Itoa(len(artifact.Data)))
 	if r.Method == "GET" {
 		_, _ = w.Write(artifact.Data)
 	}
 }
 
+func accountSubscriptionUsage(usage accounting.Usage) string {
+	upload, download := uint64(max(0, usage.Upload)), uint64(max(0, usage.Download))
+	value := sub.Usage{Upload: &upload, Download: &download}
+	if usage.QuotaBytes != nil {
+		total := uint64(max(0, *usage.QuotaBytes))
+		value.Total = &total
+	}
+	if usage.EffectiveExpiresAt != nil && usage.EffectiveExpiresAt.After(time.Unix(0, 0)) {
+		expiry := usage.EffectiveExpiresAt.Unix()
+		value.Expire = &expiry
+	}
+	return formatSubscriptionUsage(value)
+}
+
 func unifiedDownloadHandler(service AccountService) http.Handler {
-	outputs := subscriptionHandler(service.Root, service.Store)
+	if service.view == nil {
+		service.view = &subscriptionView{}
+	}
+	outputs := subscriptionHandlerView(service.Root, service.view, service.Store)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/u/") {
 			service.ServeDownload(w, r)

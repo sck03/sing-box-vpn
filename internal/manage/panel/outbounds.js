@@ -72,25 +72,36 @@ export async function outbounds(ctx) {
             },
           ),
         ),
-        button("按需探测", () =>
-          formDialog(
+        button("按需探测", async () => {
+          const applied = await (ctx.workflowRequest || api)(
+            "/api/outbound-options",
+          );
+          const form = formDialog(
             "探测已应用出站",
             [
               {
                 key: "id",
                 label: "出站 tag",
                 type: "select",
-                options: [...a.outbounds, ...a.endpoints].map((v) => v.tag),
+                options: applied.items.map((v) => [
+                  v.id,
+                  `${v.id} · ${v.type}`,
+                ]),
               },
               { key: "value", label: "探测 URL", required: true },
             ],
             {
-              id: a.outbounds[0]?.tag,
+              id: applied.items[0]?.id,
               value: "https://www.gstatic.com/generate_204",
             },
             (v) => ctx.task({ operation: "outbound-probe", ...v }),
-          ),
-        ),
+          );
+          form.form.prepend(
+            help(
+              `使用已应用版本 ${applied.revision}${applied.pending || ctx.dirty ? "；草稿变更尚未参与检测。" : "。"}`,
+            ),
+          );
+        }),
       ),
     );
   const proxy = async () => {

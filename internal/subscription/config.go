@@ -13,18 +13,20 @@ import (
 )
 
 type Source struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	Kind            string `json:"kind"` // account, inline, remote
-	Format          string `json:"format,omitempty"`
-	URL             string `json:"url,omitempty"`
-	Content         string `json:"content,omitempty"`
-	Scope           string `json:"scope,omitempty"`
-	AccountID       string `json:"account_id,omitempty"`
-	Required        bool   `json:"required"`
-	IntervalSeconds int    `json:"interval_seconds,omitempty"`
-	MaxStaleSeconds int    `json:"max_stale_seconds,omitempty"`
-	SkipInvalid     bool   `json:"skip_invalid,omitempty"`
+	ID              string            `json:"id"`
+	Name            string            `json:"name"`
+	Kind            string            `json:"kind"` // account, inline, remote
+	Format          string            `json:"format,omitempty"`
+	URL             string            `json:"url,omitempty"`
+	Content         string            `json:"content,omitempty"`
+	Scope           string            `json:"scope,omitempty"`
+	AccountID       string            `json:"account_id,omitempty"`
+	Required        bool              `json:"required"`
+	IntervalSeconds int               `json:"interval_seconds,omitempty"`
+	MaxStaleSeconds int               `json:"max_stale_seconds,omitempty"`
+	SkipInvalid     bool              `json:"skip_invalid,omitempty"`
+	UserAgent       string            `json:"user_agent,omitempty"`
+	Headers         map[string]string `json:"headers,omitempty"`
 }
 
 type Collection struct {
@@ -47,21 +49,24 @@ type RuleSet struct {
 }
 
 type Template struct {
-	ID        string         `json:"id"`
-	Client    string         `json:"client"`
-	Version   int            `json:"version"`
-	Mode      string         `json:"mode"`   // nodes, provider, config, rules
-	Preset    string         `json:"preset"` // proxy, split
-	DNS       []string       `json:"dns,omitempty"`
-	ProbeURL  string         `json:"probe_url,omitempty"`
-	TUN       bool           `json:"tun,omitempty"`
-	Rules     []Rule         `json:"rules,omitempty"`
-	RuleSets  []string       `json:"rule_sets,omitempty"`
-	URL       string         `json:"url,omitempty"` // remote declarative JSON template
-	Groups    []PolicyGroup  `json:"groups,omitempty"`
-	Providers []RuleProvider `json:"providers,omitempty"`
-	DNSPolicy *DNSPolicy     `json:"dns_policy,omitempty"`
-	Native    Object         `json:"native,omitempty"`
+	ID             string         `json:"id"`
+	Name           string         `json:"name,omitempty"`
+	Client         string         `json:"client"`
+	Version        int            `json:"version"`
+	Mode           string         `json:"mode"`   // nodes, provider, config, rules
+	Preset         string         `json:"preset"` // proxy, split
+	DNS            []string       `json:"dns,omitempty"`
+	ProbeURL       string         `json:"probe_url,omitempty"`
+	TUN            bool           `json:"tun,omitempty"`
+	Rules          []Rule         `json:"rules,omitempty"`
+	RuleSets       []string       `json:"rule_sets,omitempty"`
+	URL            string         `json:"url,omitempty"` // remote declarative JSON template
+	Groups         []PolicyGroup  `json:"groups,omitempty"`
+	Providers      []RuleProvider `json:"providers,omitempty"`
+	DNSPolicy      *DNSPolicy     `json:"dns_policy,omitempty"`
+	Native         Object         `json:"native,omitempty"`
+	Final          string         `json:"final,omitempty"`
+	PrivateNetwork bool           `json:"private_network,omitempty"`
 }
 
 type Output struct {
@@ -73,15 +78,17 @@ type Output struct {
 }
 
 type Config struct {
-	Version     int          `json:"version"`
-	Revision    uint64       `json:"revision"`
-	Sources     []Source     `json:"sources"`
-	Collections []Collection `json:"collections"`
-	Templates   []Template   `json:"templates"`
-	RuleSets    []RuleSet    `json:"rule_sets"`
-	Outputs     []Output     `json:"outputs"`
-	Webhook     string       `json:"webhook,omitempty"`
-	Deliveries  []Delivery   `json:"deliveries,omitempty"`
+	Version          int                            `json:"version"`
+	Revision         uint64                         `json:"revision"`
+	Sources          []Source                       `json:"sources"`
+	Collections      []Collection                   `json:"collections"`
+	Templates        []Template                     `json:"templates"`
+	RuleSets         []RuleSet                      `json:"rule_sets"`
+	Outputs          []Output                       `json:"outputs"`
+	Webhook          string                         `json:"webhook,omitempty"`
+	Deliveries       []Delivery                     `json:"deliveries,omitempty"`
+	AccountDefaults  map[string]AccountExportPolicy `json:"account_defaults,omitempty"`
+	AccountOverrides []AccountExportOverride        `json:"account_overrides,omitempty"`
 }
 
 type Delivery struct {
@@ -141,6 +148,12 @@ func (t Template) Validate() error {
 	if t.Preset != "" && t.Preset != "proxy" && t.Preset != "split" {
 		return errors.New("unknown template preset")
 	}
+	if len(t.Name) > 256 || strings.ContainsAny(t.Name, "\r\n\x00") {
+		return errors.New("invalid template display name")
+	}
+	if (t.Final != "" || t.PrivateNetwork) && t.Mode != "config" {
+		return errors.New("final policy and LAN routing require complete config mode")
+	}
 	if t.TUN && !cap.Features.TUN {
 		return errors.New("TUN parameter is not supported by this client template")
 	}
@@ -189,6 +202,9 @@ func (c Config) Validate() error {
 	if c.Version != SchemaVersion {
 		return errors.New("unsupported subscription schema; use a new configuration")
 	}
+	if err := validateAccountExports(c); err != nil {
+		return err
+	}
 	sources, collections, templates, outputs, rules := map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]bool{}
 	add := func(set map[string]bool, id string) error {
 		if !ValidID(id) || set[id] {
@@ -202,6 +218,25 @@ func (c Config) Validate() error {
 	}
 	contentBytes, ruleCount := 0, 0
 	for _, s := range c.Sources {
+		if len(s.UserAgent) > 256 || strings.ContainsAny(s.UserAgent, "\r\n\x00") || len(s.Headers) > 16 {
+			return errors.New("invalid subscription request headers")
+		}
+		bytes := 0
+		headerNames := map[string]bool{}
+		for key, value := range s.Headers {
+			name := strings.ToLower(key)
+			if headerNames[name] {
+				return errors.New("duplicate subscription request header")
+			}
+			headerNames[name] = true
+			bytes += len(key) + len(value)
+			if !headerNamePattern.MatchString(key) || strings.ContainsAny(value, "\r\n\x00") || slices.Contains([]string{"host", "content-length", "connection", "transfer-encoding", "accept-encoding"}, strings.ToLower(key)) {
+				return errors.New("unsupported subscription request header")
+			}
+		}
+		if bytes > 8192 {
+			return errors.New("subscription request headers exceed limit")
+		}
 		contentBytes += len(s.Content)
 		if contentBytes > MaxBody {
 			return errors.New("combined inline source size limit exceeded")

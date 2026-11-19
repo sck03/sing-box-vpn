@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { validationLabel } from "./validation.js";
 import { table } from "./tables.js";
 import { card } from "./dom.js";
 import { $, el, button, row, help, badge, date } from "./dom.js";
@@ -166,6 +167,12 @@ function resultDetails(result) {
   if (result.retained === false)
     return [help("任务详情已按保留策略清理，最终结果仍保留。")];
   const sections = [];
+  if (result.artifact_validation)
+    sections.push(
+      help(
+        `输出格式：${validationLabel(result.artifact_validation)}。实际连接引擎见每个节点。`,
+      ),
+    );
   if (result.target_version)
     sections.push(
       help(
@@ -183,6 +190,7 @@ function resultDetails(result) {
       table(
         [
           { key: "name", label: "节点" },
+          { key: "engine", label: "连接引擎" },
           {
             label: "结果",
             value: (n) =>

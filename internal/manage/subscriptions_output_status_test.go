@@ -19,6 +19,7 @@ func TestSubscriptionProjectionsExcludePayloadsAndSecrets(t *testing.T) {
 	next := time.Now().Add(time.Hour).UTC()
 	r := sub.Runtime{Sources: map[string]sub.SourceCache{"remote": {Next: next, Nodes: []sub.Node{{Password: "node-password"}}}}}
 	snapshot := sub.Snapshot{Artifacts: map[string]sub.Artifact{"output": {Data: []byte("private-node-payload")}}, NodeCounts: map[string]int{"output": 2}, Diagnostics: map[string][]sub.Diagnostic{"output": {{Stage: "validation", Message: "core-check"}}}}
+	snapshot.Validations = map[string]sub.Validation{"output": {State: "passed", Engine: "sing-box", Scope: "core-config"}}
 	schedule, outputs := subscriptionDeadlines(c, r), outputStatus(c, snapshot)
 	for _, projection := range []any{schedule, outputs} {
 		data, err := json.Marshal(projection)
@@ -31,7 +32,7 @@ func TestSubscriptionProjectionsExcludePayloadsAndSecrets(t *testing.T) {
 			}
 		}
 	}
-	if len(outputs) != 1 || outputs[0].Nodes != 2 || !outputs[0].Available || outputs[0].Validation != "core-check" {
+	if len(outputs) != 1 || outputs[0].Nodes != 2 || !outputs[0].Available || outputs[0].Validation.State != "passed" || outputs[0].Validation.Engine != "sing-box" {
 		t.Fatal(outputs)
 	}
 	root := t.TempDir()

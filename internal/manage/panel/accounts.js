@@ -1,6 +1,6 @@
 import { api } from "./api.js";
 import { createAccountShare } from "./sharing.js";
-import { clientCatalog, clientOptions } from "./clients.js";
+import { accountClientDialog } from "./account-clients.js";
 import { showExport } from "./export-results.js";
 import { showRecords } from "./details.js";
 import { disclosure } from "./sections.js";
@@ -449,38 +449,28 @@ export async function accounts(ctx) {
                   "danger",
                 ),
                 button("导出 / 二维码", async () =>
-                  formDialog(
-                    "账户专属导出",
-                    [
-                      {
-                        key: "scope",
-                        label: "实例",
-                        type: "select",
-                        options: ["normal", "vpngate", ""],
-                      },
-                      {
-                        key: "client",
-                        label: "格式",
-                        type: "select",
-                        options: clientOptions(
-                          await clientCatalog(ctx.workflowRequest || api),
-                        ),
-                      },
+                  accountClientDialog({
+                    accounts: [item],
+                    ctx,
+                    title: "账户专属导出",
+                    fields: [
                       {
                         key: "tuic_port",
                         label: "指定 TUIC 端口（0 使用主端口）",
                         type: "number",
                       },
                     ],
-                    { scope: "normal", client: "uri", tuic_port: 0 },
-                    async (v) => {
+                    defaults: { scope: "", tuic_port: 0 },
+                    save: async (v) => {
                       const result = await api("/api/accounts/export", {
                         id: item.id,
-                        ...v,
+                        scope: v.scope,
+                        client: v.client,
+                        tuic_port: v.tuic_port,
                       });
                       showExport(result, v.client);
                     },
-                  ),
+                  }),
                 ),
               ]
             : []),

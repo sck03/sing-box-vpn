@@ -125,7 +125,10 @@ func matchesETag(header, tag string) bool {
 }
 
 func subscriptionHandler(root string, stores ...*accounting.Store) http.Handler {
-	view := &subscriptionView{}
+	return subscriptionHandlerView(root, &subscriptionView{}, stores...)
+}
+
+func subscriptionHandlerView(root string, view *subscriptionView, stores ...*accounting.Store) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet && request.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")

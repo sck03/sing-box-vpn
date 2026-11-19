@@ -1,19 +1,24 @@
 {
   "id": "mihomo-split",
+  "name": "桌面国内直连",
   "version": 1,
   "client": "mihomo",
   "mode": "config",
   "preset": "split",
+  "private_network": true,
+  "final": "AutoSelect",
   "groups": [
     {
       "id": "AutoSelect",
+      "name": "自动选择",
       "type": "urltest",
       "scope": "normal",
-      "interval_seconds": 300,
-      "tolerance": 50
+      "interval_seconds": 900,
+      "tolerance": 80
     },
     {
       "id": "Media",
+      "name": "流媒体",
       "type": "select",
       "scope": "normal",
       "members": ["AutoSelect"]

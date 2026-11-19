@@ -16,18 +16,7 @@ import (
 
 const subscriptionsConfig = "subscriptions/config.json"
 const subscriptionsRuntime = "subscriptions/runtime.json"
-const subscriptionsLocal = "subscriptions/local.json"
 const subscriptionsSnapshot = "subscriptions/published.json"
-
-func loadSubscriptions(root string) (sub.Config, sub.Runtime, map[string][]sub.Node, error) {
-	c, r, err := loadSubscriptionState(root)
-	if err != nil {
-		return c, r, nil, err
-	}
-	local := map[string][]sub.Node{}
-	_, err = ReadJSON(filepath.Join(root, subscriptionsLocal), &local)
-	return c, r, local, err
-}
 
 func loadSubscriptionState(root string) (sub.Config, sub.Runtime, error) {
 	var c sub.Config
@@ -163,24 +152,18 @@ func compilePreparedSubscriptions(ctx context.Context, root, core string, c sub.
 	}
 	// This is only a validation cache. A broken projection is rebuilt, never
 	// allowed to prevent recovery of the database-owned configuration.
-	templates := map[string]sub.Template{}
-	effective, err := sub.ResolveResources(c, r.Resources)
-	if err != nil {
-		return nil, snapshot, previews, err
-	}
-	for _, t := range effective.Templates {
-		templates[t.ID] = t
-	}
+	templates := snapshot.Templates
 	for _, output := range c.Outputs {
 		artifact, exists := snapshot.Artifacts[output.ID]
 		if !exists {
 			continue
 		}
-		if old, exists := previous.Artifacts[output.ID]; exists && templates[output.Template].Client == "sing-box" && previous.CoreIdentity == snapshot.CoreIdentity && old.ETag == artifact.ETag {
-			snapshot.Diagnostics[output.ID] = append(snapshot.Diagnostics[output.ID], sub.Diagnostic{Stage: "validation", Message: "sing-box core-check; unchanged validated artifact"})
+		if old, exists := previous.Artifacts[output.ID]; exists && templates[output.Template].Client == "sing-box" && previous.Validations[output.ID].State == "passed" && previous.CoreIdentity == snapshot.CoreIdentity && old.ETag == artifact.ETag {
+			snapshot.Validations[output.ID] = sub.Validation{State: "passed", Engine: "sing-box", Scope: "core-config", Cached: true}
 			continue
 		}
 		verification, err := validateSubscriptionArtifact(ctx, root, core, templates[output.Template], artifact)
+		snapshot.Validations[output.ID] = verification
 		if err != nil {
 			if mode == sub.Available {
 				delete(snapshot.Artifacts, output.ID)
@@ -189,10 +172,9 @@ func compilePreparedSubscriptions(ctx context.Context, root, core string, c sub.
 			}
 			return nil, snapshot, previews, fmt.Errorf("subscription %s: %w", output.ID, err)
 		}
-		snapshot.Diagnostics[output.ID] = append(snapshot.Diagnostics[output.ID], sub.Diagnostic{Stage: "validation", Message: verification})
 	}
 	files := fileBundle{}
-	for name, value := range map[string]any{subscriptionsConfig: c, subscriptionsRuntime: r, subscriptionsLocal: local, subscriptionsSnapshot: snapshot, subscriptionsSchedule: subscriptionDeadlines(c, r), subscriptionsOutputStatus: outputStatus(c, snapshot)} {
+	for name, value := range map[string]any{subscriptionsConfig: c, subscriptionsRuntime: r, subscriptionsSnapshot: snapshot, subscriptionsSchedule: subscriptionDeadlines(c, r), subscriptionsOutputStatus: outputStatus(c, snapshot)} {
 		if err := files.json(name, value); err != nil {
 			return nil, snapshot, previews, err
 		}

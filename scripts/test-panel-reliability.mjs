@@ -234,7 +234,16 @@ globalThis.fetch = async (url) => {
       state: "active",
       quota_bytes: null,
       charged_bytes: 0,
-      clients: ["mihomo"],
+      clients: [
+        {
+          client: "mihomo",
+          label: "Mihomo",
+          available: true,
+          nodes: 1,
+          input_nodes: 1,
+          skipped: 0,
+        },
+      ],
       downloads: 0,
     }),
   };

@@ -17,9 +17,8 @@ dom.window.HTMLDialogElement.prototype.showModal = function () {
 dom.window.HTMLDialogElement.prototype.close = function () {
   this.open = false;
 };
-const { table, badge, formDialog, remoteTable } = await import(
-  "../internal/manage/panel/ui.js"
-);
+const { table, badge, formDialog, remoteTable } =
+  await import("../internal/manage/panel/ui.js");
 const host = document.querySelector("#content");
 document.querySelector("#shell").hidden = false;
 const list = table(
@@ -171,9 +170,8 @@ assert.equal(
   false,
 );
 
-const { createAccountShare } = await import(
-  "../internal/manage/panel/sharing.js"
-);
+const { createAccountShare } =
+  await import("../internal/manage/panel/sharing.js");
 let createdShare;
 await createAccountShare(
   [
@@ -186,7 +184,17 @@ await createAccountShare(
   ],
   {
     workflowRequest: async (path, body) => {
-      if (path === "/api/clients") return { uri: { label: "URI" } };
+      if (path.startsWith("/api/accounts/clients?"))
+        return [
+          {
+            client: "uri",
+            label: "URI",
+            available: true,
+            nodes: 1,
+            input_nodes: 1,
+            skipped: 0,
+          },
+        ];
       createdShare = body;
       return { user_url: "https://example.com/user#test" };
     },

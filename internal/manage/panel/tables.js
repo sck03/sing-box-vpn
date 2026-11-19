@@ -1,6 +1,7 @@
 import { el, button, help, setDisabled, actionGroup } from "./dom.js";
 
 export function table(columns, items, actions, options = {}) {
+  const pageSize = options.pageSize || 20;
   const wrapper = el("div", { class: "data-table" }),
     search = el("input", {
       class: "search",
@@ -135,7 +136,13 @@ export function table(columns, items, actions, options = {}) {
     const visible = columns
       .map((c, i) => ({ c, i }))
       .filter(({ i }) => !preference.hidden.includes(i));
-    const pages = Math.max(1, Math.ceil(data.length / (options.controls === false ? Math.max(1,data.length) : 20)));
+    const pages = Math.max(
+      1,
+      Math.ceil(
+        data.length /
+          (options.controls === false ? Math.max(1, data.length) : pageSize),
+      ),
+    );
     page = Math.min(page, pages - 1);
     const t = el("table"),
       head = el("tr");
@@ -171,7 +178,9 @@ export function table(columns, items, actions, options = {}) {
     if (actions) head.append(el("th", {}, "操作"));
     t.append(el("thead", {}, head));
     const tbody = el("tbody");
-    for (const item of options.controls === false ? data : data.slice(page * 20, (page + 1) * 20)) {
+    for (const item of options.controls === false
+      ? data
+      : data.slice(page * pageSize, (page + 1) * pageSize)) {
       const tr = el("tr");
       tr.rowItem = item;
       tr.rowKey = rowKey(item);
@@ -233,7 +242,8 @@ export function table(columns, items, actions, options = {}) {
     page = 0;
     render();
   });
-  if (options.controls === false) wrapper.append(body); else wrapper.append(controls, body, pager);
+  if (options.controls === false) wrapper.append(body);
+  else wrapper.append(controls, body, pager);
   wrapper.updateItems = (next) => {
     const serialized = JSON.stringify(next);
     items = next;
@@ -366,7 +376,12 @@ export async function remoteTable(columns, load, actions, options = {}) {
       }
       errors.replaceChildren();
       view.updateItems(page.items);
-      wrapper.classList.toggle("show-onboarding", page.total === 0 && !search.value && (!options.filter || options.filter.value === "current"));
+      wrapper.classList.toggle(
+        "show-onboarding",
+        page.total === 0 &&
+          !search.value &&
+          (!options.filter || options.filter.value === "current"),
+      );
       setDisabled(previous, offset === 0);
       setDisabled(next, offset + 20 >= page.total);
       count.textContent = `${Math.floor(offset / 20) + 1} / ${Math.max(1, Math.ceil(page.total / 20))} · ${page.total} 项`;

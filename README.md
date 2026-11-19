@@ -56,7 +56,7 @@ ssh -L 2096:127.0.0.1:2096 root@VPS
 - 凭据新增/轮换要重启受影响实例载入，影响该实例其他连接；失败后按持久版本自动补发布，不重复轮换。旧凭据撤销立即写入账本，运行时授权缓存最长 250 ms，另受调度、数据库响应和在途 I/O 影响。
 - 独立恢复定时器重试 failed 服务，手动停止保持停止；运行概览分别展示配置、凭据发布/加载版本和进程心跳。权益与授权支持服务端分页，订阅失败使用缓存时明确显示降级。
 - 第三方订阅只能管理下载；客户端直连第三方时，本项目无法执行其流量额度。
-- 订阅 schema=3：自动识别 URI/Base64、原生核心及 Surge/Loon/Quantumult X 节点输入，支持结构化筛选、稳定重命名、gRPC/HTTPUpgrade 与 Hysteria2 混淆。完整模板可编辑策略组、规则 Provider 和 DNS，显示实际验证与诊断；实验客户端仍需应用导入验收。参考和示例见[订阅与分享](docs/subscriptions.md)。
+- 订阅 schema=4：修正 Hysteria2 认证/默认端口与 Trojan 传输，支持受控 SIP003、WS early-data、gRPC 参数及 VLESS XHTTP。按实际账户节点显示客户端可用性，账户与高级输出共用可编辑模板；提供七种预设、脱敏配置预览、节点变化与独立验证结果。实验客户端仍需应用导入验收。参考和示例见[订阅与分享](docs/subscriptions.md)。
 
 依赖优先采用免费开源的最新稳定版；核心适配依赖按经过验证的版本组合固定。当前 sing-box 1.14.4、lego 5.6.0、SQLite 1.62.0、YAML 3.0.6、x/crypto 0.59.0。版本及许可证见 [go.mod](go.mod)、[NOTICE.md](NOTICE.md)、[第三方声明](third_party/modules/README.md)。
 

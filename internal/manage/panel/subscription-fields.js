@@ -55,7 +55,7 @@ export function templateResources(templates, catalog, change) {
       "VPNGate",
       "DIRECT",
       "REJECT",
-      ...groups.map((g) => g.id),
+      ...groups.map((g) => [g.id, g.name || g.id]),
     ];
     body.replaceChildren(
       resourceEditor({
@@ -63,7 +63,8 @@ export function templateResources(templates, catalog, change) {
         items: groups,
         change: save,
         fields: [
-          { key: "id", label: "组名称", required: true },
+          { key: "id", label: "稳定 ID", required: true, advanced: true },
+          { key: "name", label: "组名称" },
           {
             key: "type",
             label: "策略",
@@ -84,6 +85,7 @@ export function templateResources(templates, catalog, change) {
             ],
           },
           { key: "include", label: "名称筛选（正则）" },
+          { key: "optional", label: "没有匹配节点时省略此组", type: "bool" },
           {
             key: "members",
             label: "引用其他策略组",
@@ -112,7 +114,8 @@ export function templateResources(templates, catalog, change) {
           },
         ],
         defaults: {
-          id: "",
+          id: "group-" + crypto.randomUUID().replaceAll("-", "").slice(0, 12),
+          name: "",
           type: "urltest",
           scope: "normal",
           members: [],
@@ -121,7 +124,7 @@ export function templateResources(templates, catalog, change) {
           tolerance: 50,
         },
         columns: [
-          { key: "id", label: "组名称" },
+          { label: "组名称", value: (g) => g.name || g.id },
           { key: "type", label: "策略" },
           { key: "scope", label: "范围" },
         ],

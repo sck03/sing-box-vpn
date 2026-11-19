@@ -45,7 +45,7 @@ func singBoxTemplate(nodes []Node, native []Object, t Template) Object {
 		native = append(native, entry)
 		if g.Scope != "vpngate" && len(normal) > 0 {
 			normal = append(normal, g.ID)
-		} else if g.Scope == "vpngate" && len(gateway) > 0 {
+		} else if len(gateway) > 0 {
 			gateway = append(gateway, g.ID)
 		}
 	}
@@ -58,7 +58,7 @@ func singBoxTemplate(nodes []Node, native []Object, t Template) Object {
 	if len(normal) > 0 {
 		native = append(native, Object{"type": "direct", "tag": "DIRECT"})
 	}
-	final := finalGroup(nodes)
+	final := templateFinal(nodes, t)
 	rules := []Object{{"port": 53, "action": "hijack-dns"}}
 	for _, rule := range t.Rules {
 		r := Object{rule.Type: []string{rule.Value}, "action": "route", "outbound": rule.Target}
@@ -94,6 +94,10 @@ func singBoxTemplate(nodes []Node, native []Object, t Template) Object {
 		}
 		route["rules"] = append(rules, rule)
 	}
+	if t.PrivateNetwork {
+		current, _ := route["rules"].([]Object)
+		route["rules"] = append(current, Object{"ip_is_private": true, "action": "route", "outbound": "DIRECT"}, Object{"domain_suffix": []string{"lan", "local"}, "action": "route", "outbound": "DIRECT"})
+	}
 	if t.Preset == "split" {
 		current, _ := route["rules"].([]Object)
 		route["rules"] = append(current, Object{"rule_set": []string{"cn-domains", "cn-ips"}, "action": "route", "outbound": "DIRECT"})
@@ -103,8 +107,15 @@ func singBoxTemplate(nodes []Node, native []Object, t Template) Object {
 	}
 	p := dnsPolicy(t)
 	dns := Object{"servers": []Object{singDNS(p.Bootstrap[0], "bootstrap", ""), singDNS(p.Remote[0], "remote", final), singDNS(p.Local[0], "local", "")}, "final": "remote"}
+	dnsRules := []Object{}
+	if t.PrivateNetwork {
+		dnsRules = append(dnsRules, Object{"domain_suffix": []string{"lan", "local"}, "action": "route", "server": "local"})
+	}
 	if t.Preset == "split" {
-		dns["rules"] = []Object{{"rule_set": "cn-domains", "action": "route", "server": "local"}}
+		dnsRules = append(dnsRules, Object{"rule_set": "cn-domains", "action": "route", "server": "local"})
+	}
+	if len(dnsRules) > 0 {
+		dns["rules"] = dnsRules
 	}
 	return applyNativeTemplate(t.Native, Object{"log": Object{"level": "warn"}, "inbounds": inbounds, "outbounds": native, "route": route, "dns": dns})
 }
@@ -136,7 +147,7 @@ func clashTemplate(nodes []Node, native []Object, t Template) Object {
 		if g.Scope != "vpngate" && len(normal) > 0 {
 			members := group[0]["proxies"].([]string)
 			group[0]["proxies"] = append([]string{g.ID}, members...)
-		} else if g.Scope == "vpngate" && len(gateway) > 0 {
+		} else if len(gateway) > 0 {
 			index := 0
 			if len(normal) > 0 {
 				index = 1
@@ -149,7 +160,7 @@ func clashTemplate(nodes []Node, native []Object, t Template) Object {
 	for _, r := range t.Rules {
 		target := r.Target
 		if target == "PROXY" {
-			target = finalGroup(nodes)
+			target = templateFinal(nodes, t)
 		}
 		rules = append(rules, textRule(r, target))
 	}
@@ -158,9 +169,15 @@ func clashTemplate(nodes []Node, native []Object, t Template) Object {
 		providers[p.ID] = Object{"type": "http", "behavior": strings.ReplaceAll(p.Type, "ip_cidr", "ipcidr"), "format": p.Format, "url": p.URL, "path": "./rules/" + p.ID + "." + p.Format, "interval": 86400}
 		target := p.Target
 		if target == "PROXY" {
-			target = finalGroup(nodes)
+			target = templateFinal(nodes, t)
 		}
 		rules = append(rules, "RULE-SET,"+p.ID+","+target)
+	}
+	if t.PrivateNetwork {
+		for _, cidr := range privateCIDRs {
+			rules = append(rules, textRule(Rule{Type: "ip_cidr", Value: cidr}, "DIRECT")+",no-resolve")
+		}
+		rules = append(rules, "DOMAIN-SUFFIX,lan,DIRECT", "DOMAIN-SUFFIX,local,DIRECT")
 	}
 	if t.Preset == "split" {
 		for _, kind := range []string{"domains", "ips"} {
@@ -172,7 +189,7 @@ func clashTemplate(nodes []Node, native []Object, t Template) Object {
 			rules = append(rules, "RULE-SET,"+id+",DIRECT")
 		}
 	}
-	rules = append(rules, "MATCH,"+finalGroup(nodes))
+	rules = append(rules, "MATCH,"+templateFinal(nodes, t))
 	p := dnsPolicy(t)
 	mode := "redir-host"
 	if p.FakeIP {
@@ -182,8 +199,15 @@ func clashTemplate(nodes []Node, native []Object, t Template) Object {
 	if p.FakeIP {
 		dns["fake-ip-filter"] = p.FakeIPFilter
 	}
+	policy := Object{}
 	if t.Preset == "split" {
-		dns["nameserver-policy"] = Object{"rule-set:cn-domains": p.Local}
+		policy["rule-set:cn-domains"] = p.Local
+	}
+	if t.PrivateNetwork {
+		policy["+.lan"], policy["+.local"] = p.Local, p.Local
+	}
+	if len(policy) > 0 {
+		dns["nameserver-policy"] = policy
 	}
 	result := Object{"mixed-port": 7890, "allow-lan": false, "mode": "rule", "log-level": "warning", "proxies": native, "proxy-groups": group, "rules": rules, "dns": dns}
 	if len(providers) > 0 {
@@ -289,15 +313,20 @@ func egernTemplate(nodes []Node, native []Object, t Template) Object {
 	for _, r := range t.Rules {
 		target := r.Target
 		if target == "PROXY" {
-			target = finalGroup(nodes)
+			target = templateFinal(nodes, t)
 		}
 		key := map[string]string{"domain": "domain", "domain_suffix": "domain_suffix", "ip_cidr": "ip_cidr"}[r.Type]
 		rules = append(rules, Object{key: Object{"match": r.Value, "policy": target}})
 	}
+	if t.PrivateNetwork {
+		for _, cidr := range privateCIDRs {
+			rules = append(rules, Object{"ip_cidr": Object{"match": cidr, "policy": "DIRECT"}})
+		}
+	}
 	if t.Preset == "split" {
 		rules = append(rules, Object{"geoip": Object{"match": "CN", "policy": "DIRECT"}})
 	}
-	rules = append(rules, Object{"default": Object{"policy": finalGroup(nodes)}})
+	rules = append(rules, Object{"default": Object{"policy": templateFinal(nodes, t)}})
 	return applyNativeTemplate(t.Native, Object{"proxies": native, "policy_groups": policy, "rules": rules})
 }
 

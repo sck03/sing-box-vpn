@@ -1,4 +1,5 @@
 import { api, download } from "./api.js";
+import { validationLabel } from "./validation.js";
 import { $, el, button, row, help } from "./dom.js";
 
 export function showExport(result, client) {
@@ -20,7 +21,7 @@ export function showExport(result, client) {
     button("下载文件", () =>
       download(
         new Blob([content], { type: result.mime || "text/plain" }),
-        `account-${client}.${client === "sing-box" ? "json" : ["mihomo", "openclash", "stash"].includes(client) ? "yaml" : "txt"}`,
+        `account-${client}.${result.extension}`,
       ),
     ),
   );
@@ -60,6 +61,12 @@ export function showExport(result, client) {
   dialog.replaceChildren(
     el("h2", {}, "账户专属配置"),
     help("配置包含代理凭据，请仅交给获授权的使用者。"),
+    result.client
+      ? help(
+          `${result.client.nodes}/${result.client.input_nodes} 个节点 · ${result.client.template_name || result.client.template}${result.client.skipped ? ` · 已跳过 ${result.client.skipped} 个不兼容节点` : ""}`,
+        )
+      : null,
+    help(validationLabel(result.validation)),
     controls,
     output,
     qr,

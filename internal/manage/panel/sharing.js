@@ -1,6 +1,6 @@
 import { api } from "./api.js";
-import { clientCatalog, clientOptions } from "./clients.js";
-import { $, el, button, row, help, formDialog, notice } from "./ui.js";
+import { accountClientDialog } from "./account-clients.js";
+import { $, el, button, row, help, notice } from "./ui.js";
 
 // Ordinary account shares inherit time and quota from the entitlement.
 export async function createAccountShare(accounts, ctx) {
@@ -9,43 +9,12 @@ export async function createAccountShare(accounts, ctx) {
   );
   if (!accounts.length) throw new Error("请先创建权益并绑定入站。");
   const request = ctx.workflowRequest || api;
-  const catalog = await clientCatalog(request);
-  formDialog(
-    "创建账户分享",
-    [
-      {
-        key: "account_id",
-        label: "使用权益",
-        type: "select",
-        options: accounts.map((a) => [a.id, a.name]),
-        readonly: accounts.length === 1,
-      },
-      {
-        key: "scope",
-        label: "运行实例",
-        type: "select",
-        options: (v) =>
-          [
-            ["", "所有已绑定实例"],
-            ["normal", "普通"],
-            ["vpngate", "VPNGate"],
-          ].filter(
-            ([scope]) =>
-              !scope ||
-              accounts
-                .find((a) => a.id === v.account_id)
-                ?.download_scopes.includes(scope),
-          ),
-      },
-      {
-        key: "clients",
-        label: "允许客户端格式（可多选）",
-        type: "multiselect",
-        options: clientOptions(catalog),
-        required: true,
-      },
-    ],
-    {
+  await accountClientDialog({
+    accounts,
+    ctx,
+    title: "创建账户分享",
+    multiple: true,
+    defaults: {
       id: "share-" + crypto.randomUUID().replaceAll("-", ""),
       account_id: accounts[0].id,
       scope: "",
@@ -53,7 +22,7 @@ export async function createAccountShare(accounts, ctx) {
       expires_at: null,
       max_downloads: null,
     },
-    async (value) => {
+    save: async (value) => {
       const result = await request("/api/grants", value);
       const dialog = $("#dialog");
       const address = el("input", { "aria-label": "分享地址", readonly: true });
@@ -90,5 +59,5 @@ export async function createAccountShare(accounts, ctx) {
       dialog.showModal();
       ctx.render();
     },
-  );
+  });
 }

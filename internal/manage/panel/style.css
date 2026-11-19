@@ -113,7 +113,7 @@ h1 {
   line-height: 1.25;
 }
 h2 {
-  margin: 0 0 18px;
+  margin: 0 0 14px;
   font-size: 17px;
   font-weight: 650;
 }
@@ -282,15 +282,15 @@ main {
   min-width: 0;
   max-width: 1580px;
   margin-inline: auto;
-  padding: 34px clamp(22px, 3vw, 50px);
+  padding: 26px clamp(22px, 3vw, 50px);
 }
 header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  padding-bottom: 25px;
-  margin-bottom: 26px;
+  gap: 14px;
+  padding-bottom: 18px;
+  margin-bottom: 20px;
   border-bottom: 1px solid var(--line);
 }
 .eyebrow {
@@ -318,8 +318,8 @@ footer {
 /* Content and status */
 .card {
   min-width: 0;
-  margin-bottom: 20px;
-  padding: 24px;
+  margin-bottom: 16px;
+  padding: 20px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -536,7 +536,7 @@ footer {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin-top: 18px;
+  margin-top: 12px;
 }
 .table-tools .search {
   max-width: 300px;
@@ -656,7 +656,7 @@ th[aria-sort="descending"] .column-sort::after {
   color: var(--muted);
 }
 .empty {
-  padding: 38px 20px;
+  padding: 20px;
   text-align: center;
 }
 .empty strong {
@@ -902,7 +902,7 @@ progress {
   display: grid;
   grid-template-columns: 1fr;
   align-content: start;
-  gap: 14px;
+  gap: 10px;
   min-width: 0;
   padding: 20px;
   border: 1px solid var(--line);
@@ -915,7 +915,19 @@ progress {
   font-size: 16px;
 }
 .client-download small {
-  min-height: 36px;
+  min-height: 0;
+}
+.client-download p {
+  margin: 0;
+  font-size: 12px;
+}
+.client-compatibility {
+  border-left: 3px solid var(--accent);
+  padding-left: 12px;
+  margin-bottom: 16px;
+}
+.client-compatibility:empty {
+  display: none;
 }
 .client-download input {
   min-width: 0;
@@ -986,11 +998,12 @@ progress {
     padding: 9px 12px;
   }
   main {
-    padding: 25px 17px;
+    padding: 18px 17px;
   }
   header {
     flex-wrap: wrap;
-    margin-bottom: 22px;
+    margin-bottom: 16px;
+    padding-bottom: 14px;
   }
   .draft {
     flex-direction: column;
@@ -998,7 +1011,7 @@ progress {
     top: 4px;
   }
   .card {
-    padding: 19px;
+    padding: 16px;
   }
   dialog {
     padding: 21px;
@@ -1015,6 +1028,28 @@ progress {
   }
 }
 @media (max-width: 600px) {
+  header {
+    gap: 10px;
+  }
+  header .eyebrow {
+    display: none;
+  }
+  .remote-table > .table-tools {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .remote-table > .table-tools .search {
+    order: -1;
+    grid-column: 1 / -1;
+    width: 100%;
+    max-width: none;
+  }
+  .remote-table > .table-tools select {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 8px;
+  }
   h1 {
     font-size: 25px;
   }

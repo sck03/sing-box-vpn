@@ -243,21 +243,12 @@ func FromSingBox(m Object) (Node, error) {
 	if n.Protocol == "shadowsocks" {
 		n.Protocol, n.Cipher = "ss", str(m["method"])
 	}
-	for _, key := range []string{"detour", "multiplex", "plugin", "packet_encoding", "bind_interface", "routing_mark", "udp_over_tcp"} {
-		if v, ok := m[key]; ok && v != nil {
-			return n, fmt.Errorf("unsupported sing-box field %s", key)
-		}
-	}
 	t := obj(m["tls"])
 	reality := obj(t["reality"])
 	n.TLS = TLS{Enabled: boolean(t["enabled"]), ServerName: str(t["server_name"]), Insecure: boolean(t["insecure"]), ALPN: stringList(t["alpn"]), PublicKeyPins: stringList(t["certificate_public_key_sha256"]), Fingerprint: str(obj(t["utls"])["fingerprint"]), RealityKey: str(reality["public_key"]), RealityShortID: str(reality["short_id"])}
-	for _, key := range []string{"certificate_path", "certificate", "client_certificate", "client_key", "ech"} {
-		if _, exists := t[key]; exists {
-			return n, fmt.Errorf("unsupported TLS field %s", key)
-		}
-	}
 	transport := obj(m["transport"])
 	n.Transport = Transport{Type: str(transport["type"]), Path: str(transport["path"]), Host: str(obj(transport["headers"])["Host"])}
+	n.Transport.EarlyData, n.Transport.EarlyDataHeader = integer(transport["max_early_data"]), str(transport["early_data_header_name"])
 	if n.Transport.Type == "grpc" {
 		n.Transport.ServiceName = str(transport["service_name"])
 	}
@@ -265,6 +256,15 @@ func FromSingBox(m Object) (Node, error) {
 		n.Transport.Host = str(transport["host"])
 	}
 	n.Obfs, n.ObfsPassword = str(obj(m["obfs"])["type"]), str(obj(m["obfs"])["password"])
+	if plugin := str(m["plugin"]); plugin != "" {
+		var err error
+		n.Plugin, err = parsePlugin(plugin + ";" + str(m["plugin_opts"]))
+		if err != nil {
+			return n, err
+		}
+	} else if str(m["plugin_opts"]) != "" {
+		return n, errors.New("plugin options require a plugin")
+	}
 	n = normalizeNode(n)
 	return n, n.Validate()
 }
@@ -274,11 +274,6 @@ func fromMihomo(m Object) (Node, error) {
 		return Node{}, err
 	}
 	n := Node{Name: str(m["name"]), Protocol: str(m["type"]), Server: str(m["server"]), Port: integer(m["port"]), UUID: str(m["uuid"]), Password: str(m["password"]), Cipher: str(m["cipher"]), Flow: str(m["flow"]), Congestion: str(m["congestion-controller"]), UDPRelay: str(m["udp-relay-mode"])}
-	for _, key := range []string{"plugin", "dialer-proxy", "smux", "reality-opts-extra", "client-certificate", "client-key"} {
-		if _, exists := m[key]; exists {
-			return n, fmt.Errorf("unsupported Mihomo field %s", key)
-		}
-	}
 	if integer(m["alterId"]) != 0 {
 		return n, errors.New("legacy VMess alterId is unsupported")
 	}
@@ -286,11 +281,27 @@ func fromMihomo(m Object) (Node, error) {
 	n.TLS = TLS{Enabled: boolean(m["tls"]) || n.Protocol == "hysteria2" || n.Protocol == "tuic" || n.Protocol == "anytls" || n.Protocol == "trojan", ServerName: fallback(str(m["servername"]), str(m["sni"])), Insecure: boolean(m["skip-cert-verify"]), ALPN: stringList(m["alpn"]), CertificateHash: str(m["fingerprint"]), Fingerprint: str(m["client-fingerprint"]), RealityKey: str(r["public-key"]), RealityShortID: str(r["short-id"])}
 	w := obj(m["ws-opts"])
 	n.Transport = Transport{Type: str(m["network"]), Path: str(w["path"]), Host: str(obj(w["headers"])["Host"])}
+	n.Transport.EarlyData, n.Transport.EarlyDataHeader = integer(w["max-early-data"]), str(w["early-data-header-name"])
 	if boolean(w["v2ray-http-upgrade"]) {
 		n.Transport.Type = "httpupgrade"
 	}
 	if n.Transport.Type == "grpc" {
 		n.Transport.ServiceName = str(obj(m["grpc-opts"])["grpc-service-name"])
+	}
+	if n.Transport.Type == "xhttp" {
+		x := obj(m["xhttp-opts"])
+		n.Transport.Path, n.Transport.Host, n.Transport.Mode = str(x["path"]), str(x["host"]), str(x["mode"])
+		var err error
+		n.Transport.XHTTP, err = xhttpFromNative(x)
+		if err != nil {
+			return n, err
+		}
+	}
+	if plugin := str(m["plugin"]); plugin != "" {
+		p := obj(m["plugin-opts"])
+		n.Plugin = &Plugin{Type: plugin, Mode: str(p["mode"]), Host: str(p["host"]), Path: str(p["path"]), TLS: boolean(p["tls"]), Mux: boolean(p["mux"])}
+	} else if len(obj(m["plugin-opts"])) > 0 {
+		return n, errors.New("plugin options require a plugin")
 	}
 	n.Obfs, n.ObfsPassword = str(m["obfs"]), str(m["obfs-password"])
 	if ports := str(m["ports"]); ports != "" {
@@ -301,6 +312,10 @@ func fromMihomo(m Object) (Node, error) {
 }
 
 func ParseURI(line string) (Node, error) {
+	line, hopping, err := normalizeURIAddress(line)
+	if err != nil {
+		return Node{}, err
+	}
 	if strings.HasPrefix(line, "vmess://") {
 		data, err := decodeBase64(strings.TrimPrefix(line, "vmess://"))
 		if err != nil {
@@ -310,7 +325,7 @@ func ParseURI(line string) (Node, error) {
 		if err := json.Unmarshal(data, &m); err != nil {
 			return Node{}, err
 		}
-		if err := nativeFields(m, "v ps add id scy net type host path tls sni fp alpn", "port aid", "", "", ""); err != nil {
+		if err := nativeFields(m, "v ps add id scy net type host path tls sni fp alpn eh", "port aid ed", "", "", ""); err != nil {
 			// The widely used VMess insecure flag is a string in exported JSON.
 			copy := Object{}
 			for key, value := range m {
@@ -318,7 +333,7 @@ func ParseURI(line string) (Node, error) {
 					copy[key] = value
 				}
 			}
-			if err := nativeFields(copy, "v ps add id scy net type host path tls sni fp alpn", "port aid", "", "", ""); err != nil {
+			if err := nativeFields(copy, "v ps add id scy net type host path tls sni fp alpn eh", "port aid ed", "", "", ""); err != nil {
 				return Node{}, err
 			}
 			if value := m["insecure"]; value != "1" && value != "0" && value != true && value != false {
@@ -336,6 +351,7 @@ func ParseURI(line string) (Node, error) {
 		}
 		n := Node{Name: fallback(str(m["ps"]), str(m["add"])), Protocol: "vmess", Server: str(m["add"]), Port: integer(m["port"]), UUID: str(m["id"]), Cipher: fallback(str(m["scy"]), "auto"), Transport: Transport{Type: str(m["net"]), Host: str(m["host"]), Path: str(m["path"])}, TLS: TLS{Enabled: str(m["tls"]) == "tls", ServerName: str(m["sni"]), Insecure: str(m["insecure"]) == "1" || boolean(m["insecure"])}}
 		n.TLS.Fingerprint = str(m["fp"])
+		n.Transport.EarlyData, n.Transport.EarlyDataHeader = integer(m["ed"]), str(m["eh"])
 		if n.Transport.Type == "grpc" {
 			n.Transport.ServiceName, n.Transport.Path = n.Transport.Path, ""
 		}
@@ -364,11 +380,14 @@ func ParseURI(line string) (Node, error) {
 		kind = "hysteria2"
 	}
 	n := Node{Name: fallback(u.Fragment, u.Hostname()), Protocol: kind, Server: u.Hostname(), Port: integer(u.Port()), Flow: q.Get("flow"), Congestion: q.Get("congestion_control"), UDPRelay: q.Get("udp_relay_mode"), Transport: Transport{Type: q.Get("type"), Path: q.Get("path"), Host: q.Get("host")}}
+	if kind == "hysteria2" && u.Port() == "" {
+		n.Port = 443
+	}
 	for key := range q {
 		if len(q[key]) != 1 {
 			return n, errors.New("duplicate URI parameter")
 		}
-		if !strings.Contains("|sni|peer|flow|security|encryption|fp|pbk|sid|type|path|host|serviceName|service_name|alpn|insecure|allow_insecure|allowInsecure|pinSHA256|mport|congestion_control|udp_relay_mode|obfs|obfs-password|", "|"+key+"|") {
+		if !strings.Contains("|sni|peer|flow|security|encryption|fp|pbk|sid|type|path|host|serviceName|service_name|alpn|insecure|allow_insecure|allowInsecure|pinSHA256|mport|congestion_control|udp_relay_mode|obfs|obfs-password|mode|authority|ed|eh|extra|plugin|headerType|", "|"+key+"|") {
 			return n, fmt.Errorf("unsupported URI parameter %s", key)
 		}
 	}
@@ -399,10 +418,41 @@ func ParseURI(line string) (Node, error) {
 	if ports := q.Get("mport"); ports != "" {
 		n.Ports = strings.Split(ports, ",")
 	}
+	if len(hopping) > 0 {
+		if len(n.Ports) > 0 {
+			return n, errors.New("hopping ports supplied in both address and query")
+		}
+		n.Ports = hopping
+	}
 	n.Transport.ServiceName = fallback(q.Get("serviceName"), q.Get("service_name"))
+	n.Transport.Mode, n.Transport.Authority = q.Get("mode"), q.Get("authority")
+	if q.Has("ed") {
+		n.Transport.EarlyData = integer(q.Get("ed"))
+		n.Transport.EarlyDataHeader = fallback(q.Get("eh"), "Sec-WebSocket-Protocol")
+	} else if q.Has("eh") {
+		return n, errors.New("early-data header requires an early-data limit")
+	}
+	if extra := q.Get("extra"); extra != "" {
+		n.Transport.XHTTP, err = decodeXHTTP([]byte(extra))
+		if err != nil {
+			return n, err
+		}
+	}
+	if plugin := q.Get("plugin"); plugin != "" {
+		n.Plugin, err = parsePlugin(plugin)
+		if err != nil {
+			return n, err
+		}
+	}
+	if header := q.Get("headerType"); header != "" && header != "none" {
+		return n, errors.New("unsupported transport disguise")
+	}
 	n.Obfs, n.ObfsPassword = q.Get("obfs"), q.Get("obfs-password")
 	switch kind {
 	case "vless":
+		if _, present := u.User.Password(); present {
+			return n, errors.New("VLESS URI credentials must contain only a UUID")
+		}
 		n.UUID = u.User.Username()
 	case "tuic":
 		n.UUID = u.User.Username()
@@ -423,6 +473,9 @@ func ParseURI(line string) (Node, error) {
 		}
 	default:
 		n.Password = u.User.Username()
+		if password, present := u.User.Password(); present {
+			n.Password += ":" + password
+		}
 	}
 	n = normalizeNode(n)
 	return n, n.Validate()

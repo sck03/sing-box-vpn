@@ -30,6 +30,25 @@ func (s *PlatformService) serveConfiguration(w http.ResponseWriter, r *http.Requ
 		}
 		return true
 	}
+	if path == "/api/config/preview-output" && r.Method == "POST" {
+		if !require(admin) {
+			return true
+		}
+		var input struct {
+			Config PlatformConfig `json:"config"`
+			ID     string         `json:"id"`
+		}
+		if err = decodeRequest(w, r, &input, 16<<20); err == nil {
+			var preview Object
+			preview, err = s.PreviewOutput(ctx, input.Config, input.ID)
+			if err == nil {
+				jsonResponse(w, preview)
+				return true
+			}
+		}
+		platformError(w, err)
+		return true
+	}
 	if path == "/api/config/preview" && r.Method == "POST" {
 		if !require(admin) {
 			return true
@@ -44,6 +63,18 @@ func (s *PlatformService) serveConfiguration(w http.ResponseWriter, r *http.Requ
 			}
 		}
 		platformError(w, err)
+		return true
+	}
+	if path == "/api/outbound-options" && r.Method == "GET" {
+		if !require(admin) {
+			return true
+		}
+		options, e := s.OutboundOptions(ctx)
+		if e != nil {
+			platformError(w, e)
+		} else {
+			jsonResponse(w, options)
+		}
 		return true
 	}
 	if path == "/api/server" && r.Method == "POST" {

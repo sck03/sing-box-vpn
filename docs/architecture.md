@@ -1,18 +1,24 @@
 # 架构与维护
 
-`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 13；平台配置 schema=4、节点文档 schema=2、订阅配置 schema=3 是各自独立的格式版本。面向空目录，不提供旧数据库、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责，不允许旧 CLI 修改配置投影。
+`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 13；平台配置 schema=4、节点文档 schema=2、订阅配置 schema=4、模板 version=1 是各自独立的格式版本。只接受当前配置，不提供旧数据库、订阅内容、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责。
 
 公网传输由 `internal/publicaccess` 管理，共用 `internal/tlsconfig`；服务登记位于 `internal/servicecatalog`。主机操作按 service/deployment/units/gateway/network/journal 分文件，日志系统适配位于 `internal/hostservice`。任务保留策略与执行终态分离；面板访问重启由独立助手和持久收据完成。账户服务不再回退读取旧 JSON 配置，调用者必须注入配置/控制仓库，或读取当前数据库。
 
 ## 模块边界
 
-订阅流水线为 Source → ParseResult（节点/诊断）→ normalize/Process → Select（客户端能力）→ renderer → Snapshot。纯解析、策略组/DNS/Provider 规则与编码器位于 internal/subscription；HTTP、网络刷新、核心校验与发布位于 manage，客户端目录位于 clientprofile。新增客户端先登记能力，再实现参数映射与拒绝边界，补充往返和核心/应用验收。
+订阅流水线为 Source → ParseResult → normalize/Process → PreparedOutput → renderer → Snapshot。纯解析、连接模型、账户模板策略与声明式模板位于 `internal/subscription`；`renderers.go` 显式登记编码器，sing-box、Mihomo、URI 的字段映射各自独立。`internal/clientprofile` 描述客户端、协议、传输、加密和插件范围。新增客户端必须登记编码器和能力，补充字段往返及核心/应用验收，不使用隐式文本回退。
 
 编译缓存以 SchemaVersion、CompilerVersion、选定节点和有效模板的摘要为键，复用前验证产物 ETag/正文摘要。连接、证书、模板或规则变化会失效；来源/能力/路由安全仍每次检查。改变解析或渲染语义时递增 CompilerVersion，数据结构变化时再递增 SchemaVersion。sing-box 核心校验另以核心身份和产物 ETag 缓存。
 
 subscriptions/schedule.json 是截止时间与权益修订的小型投影，不包含节点、远端凭据或内联正文；运行缓存与调度投影通过同一发布日志提交。常规空闲调度只读此文件，缺失时可从当前配置/运行元信息恢复。subscriptions/output-status.json 记录输出节点数量、实际验证和最多 20 条诊断，避免状态查询解码整个已发布节点正文。这些文件都可重建，配置权威仍为数据库。
 
-认证后的 GET /api/subscription-capabilities 返回 schema_version、formats 和 protocols；GET /api/clients 返回客户端目录。管理员 GET /api/subscriptions/actions 只提供已应用输出/分发 ID、revision、pending，用于立即检测/分发，草稿 ID 不进入运行操作。GET /api/subscriptions/status 增加 outputs；账户用量接口增加 client_profiles，用户页按友好名称和验证范围展示下载卡片。
+认证后的 `/api/subscription-capabilities` 返回 schema、格式和协议，`/api/clients` 返回详细字段范围，`/api/subscription-presets` 返回用途预设。`/api/accounts/clients` 按账户和实例生成实际可下载范围；用量接口的 clients 是对象数组。`account_exports.go` 共用同一配置快照、凭据、账户模板和 PreparedOutput，供分享验证、可用性、直接导出及公开下载使用。`account_defaults` / `account_overrides` 仍由统一配置管理。
+
+管理员 `/api/subscriptions/actions`、`/api/outbound-options` 只提供已应用对象。完整预览返回节点数量、变化和结构化 Validation；`POST /api/config/preview-output` 按 `{id,config}` 返回最多 64 KiB 的脱敏产物。公开 API 不返回原始凭据。Validation 分开记录状态、引擎、检查范围与缓存命中，不从英文消息推断结果。
+
+`subscriptions_publication.go` 隔离抓取/编译与发布：锁外运行编码器及核心检查，锁内重新检查配置、账户节点/修订和核心身份，再合并最新运行记录并原子提交。新资源失败时用旧资源重新构建健康输出。单输出检测只展开其来源图，不二次校验同一产物。Mihomo/OpenClash 和 XHTTP 使用相应连接引擎，每个节点记录实际引擎。
+
+`subscriptions/local.json` 已移除；账户节点从权威配置与凭据构造，内联节点来自当前来源。Snapshot 保存有效模板、节点指纹与校验结果；没有第二套本地节点真源。重名后缀计数按原名推进，策略组复用稳定名称分配；嵌套组检查范围和展开预算。
 
 主机服务单元由 internal/hostservice 的纯 PlatformUnits 函数生成，manage/platform_units_install.go 负责所有权检查、写入与 systemctl。恢复测试直接检查生产生成器及运行恢复边界，不再维护一份过时 shell 单元夹具。
 
@@ -114,7 +120,7 @@ lego 的账户私钥、登记与签发结果保存于 `acme/lego/`，以 0600 �
 
 已结束任务默认保留最近 200 条/30 天，详细结果默认预算 8 MiB，支持策略配置、删除和处理标记；超出部分保留明确的结果已回收标记。执行状态与业务 outcome 分别展示：passed、partial、failed、cached。刷新报告包含检查数、成功数、输出数、失败来源和最后成功时间；没有可用输出时不会标记为缓存成功。账户与下载授权 GET 接口使用分页 envelope；账户只推进当前页账期，显示订阅者停用的有效状态。空任务队列只读探测，不先取得 SQLite 写锁。批量绑定通过唯一表达式索引检查认证身份，每批只回收一次事件历史。
 
-HTTP 统一完成 Host/Origin、会话与 CSRF 检查后分发给 `platform_http_accounts.go`、`platform_http_subscriptions.go`、`platform_http_config.go`、`platform_http_tasks.go`。各业务保留显式角色和审计检查。新增接口必须通过同一入口，不能直接暴露内部 handler。
+HTTP 统一完成 Host/Origin、会话与 CSRF 检查后分发给 `platform_http_accounts.go`、`platform_http_subscriptions.go`、`platform_http_config.go`、`platform_http_tasks.go`。新增接口经过同一入口。连接限额包装原始 TCP，TLS 由标准 ServeTLS 建立，保留 request.TLS 和 HTTP/2；独立下载服务另有请求准入，不能用 HTTP/2 多路复用绕过资源边界。
 
 公开首页、用户页、静态资源和能力元数据允许跨站 GET 导航，带令牌下载支持 GET/HEAD；Host 和代理来源检查仍执行。管理 API 和所有写请求继续校验 Origin/CSRF。`GET /api/capabilities` 仅返回发行级约束，不携带安装状态或秘密。
 
@@ -153,6 +159,8 @@ VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IP
 新增维护、出站或订阅标签时，在目录登记稳定的 section ID、标题、关键词和可选角色，在页面传给 `workspace` 的对象中提供同名内容工厂。搜索、路由和标签取同一份可见列表。URL 是选中状态的唯一来源；同页切换只通知当前工作区，不重载模块或表单。跨页和登出取消旧视图读取；工作区首次打开某个标签才启动其加载器，失败可重试。
 
 `sections.js` 统一可选内容的延迟创建、并发合并、页面内复用、取消和失败重试，`workspace.js` 管理可键盘操作的标签。权益页只先读取分页权益，用户分组展开时读取，客户端目录在导出时读取；出站、维护、订阅按标签创建内容。查看省略可选字段的订阅配置不会改写草稿。`capabilities.js` 缓存公开约束，`outbound-fields.js` 维护协议字段规则。订阅表单、分享和直接导出使用同一客户端目录。账户操作按策略 revision 判断是否过时，单纯流量变化不会禁用按钮。SSE 在会话建立后启动，内容不变时只发送小型 tick；权益页至少间隔 5 秒刷新用量并合并并发刷新，概览不重复重绘。
+
+来源、集合、输出、分发编辑通过 resourceEditor.updateItems 局部更新，保留搜索、排序和分页；workspace 使其他标签按需失效，避免旧选项残留。分享与导出使用 account-clients.js，实例切换取消旧检查并隔离迟到响应。subscription-wizard.js 先生成完整候选、预览，再核对草稿后加入；template-settings.js 负责预设、全局默认及账户覆盖。前端仍为原生 ES modules。
 
 服务单元先全量检查归属再写入，符号链接和非项目单元拒绝覆盖。安装失败和卸载只停用、删除确认为本项目所有的单元。旧配置/凭据/端口写入辅助函数及旧预览适配器只存在于测试夹具，协议实测通过现行账户导出 API 取得材料。
 

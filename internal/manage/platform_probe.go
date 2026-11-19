@@ -8,6 +8,26 @@ import (
 	"time"
 )
 
+func (s *PlatformService) OutboundOptions(ctx context.Context) (Object, error) {
+	state, err := s.Store.State(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c, err := decodePlatform(state.Applied)
+	if err != nil {
+		return nil, err
+	}
+	config, err := serverForApp(c.App)
+	if err != nil {
+		return nil, err
+	}
+	items := []Object{}
+	for _, item := range append(objects(config["outbounds"]), objects(config["endpoints"])...) {
+		items = append(items, Object{"id": text(item["tag"]), "type": text(item["type"])})
+	}
+	return Object{"items": items, "revision": state.AppliedRevision, "pending": state.Revision != state.AppliedRevision}, nil
+}
+
 func (s *PlatformService) probeOutbound(ctx context.Context, task int64, id, endpoint string) error {
 	if err := sub.HTTPURL(endpoint); err != nil {
 		return err

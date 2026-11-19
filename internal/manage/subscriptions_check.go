@@ -24,6 +24,7 @@ type subscriptionCheck struct {
 	Milliseconds int64  `json:"milliseconds"`
 	Error        string `json:"error,omitempty"`
 	State        string `json:"state"`
+	Engine       string `json:"engine"`
 }
 
 // A probe starts an isolated core for one node and makes a real HTTP request
@@ -36,7 +37,27 @@ func probeSubscriptionNode(ctx context.Context, root, core, endpoint string, nod
 	return probeCoreConfig(ctx, root, core, endpoint, config)
 }
 
+func probeNodeWithEngine(ctx context.Context, root, core, endpoint, engine string, node sub.Node) error {
+	if engine == "sing-box" {
+		return probeSubscriptionNode(ctx, root, core, endpoint, node)
+	}
+	binary := mihomoBinary()
+	if binary == "" {
+		return errors.New("Mihomo connectivity engine is unavailable")
+	}
+	if _, _, err := sub.Render([]sub.Node{node}, sub.Template{Client: "mihomo", Version: 1, Mode: "nodes"}, false); err != nil {
+		return err
+	}
+	node.Name = "probe-target"
+	config := Object{"log-level": "silent", "mode": "rule", "allow-lan": false, "bind-address": "127.0.0.1", "proxies": []Object{node.Mihomo()}, "rules": []string{"MATCH," + node.Name}}
+	return probeCoreConfigUsing(ctx, root, binary, endpoint, config, "mihomo")
+}
+
 func probeCoreConfig(ctx context.Context, root, core, endpoint string, config Object) error {
+	return probeCoreConfigUsing(ctx, root, core, endpoint, config, "sing-box")
+}
+
+func probeCoreConfigUsing(ctx context.Context, root, core, endpoint string, config Object, engine string) error {
 	child, cancel := context.WithTimeout(ctx, application.ProbeTimeout)
 	defer cancel()
 	stage, err := os.MkdirTemp(root, ".probe-")
@@ -48,12 +69,20 @@ func probeCoreConfig(ctx context.Context, root, core, endpoint string, config Ob
 	if err != nil {
 		return err
 	}
-	config["inbounds"] = []Object{{"type": "mixed", "listen": "127.0.0.1", "listen_port": port}}
+	if engine == "mihomo" {
+		config["mixed-port"] = port
+	} else {
+		config["inbounds"] = []Object{{"type": "mixed", "listen": "127.0.0.1", "listen_port": port}}
+	}
 	path := filepath.Join(stage, "probe.json")
 	if err := AtomicJSON(path, config); err != nil {
 		return err
 	}
-	cmd := exec.CommandContext(child, core, "run", "-c", path)
+	args := []string{"run", "-c", path}
+	if engine == "mihomo" {
+		args = []string{"-d", stage, "-f", path}
+	}
+	cmd := exec.CommandContext(child, core, args...)
 	cmd.Dir, cmd.Stdout, cmd.Stderr = stage, io.Discard, io.Discard
 	if err := cmd.Start(); err != nil {
 		return errors.New("probe core could not start")
@@ -103,14 +132,19 @@ func checkSubscriptionOutput(ctx context.Context, root, core, id, endpoint strin
 		return err
 	}
 	var nodes []sub.Node
-	var target, verification string
+	var target string
+	var verification sub.Validation
 	var diagnostics []sub.Diagnostic
 	var c sub.Config
 	var r sub.Runtime
 	var local map[string][]sub.Node
 	if err := withStartupLock(ctx, root, func() error {
 		var err error
-		c, r, local, err = loadSubscriptions(root)
+		c, r, err = loadSubscriptionState(root)
+		if err != nil {
+			return err
+		}
+		c, err = c.OnlyOutput(id)
 		if err != nil {
 			return err
 		}
@@ -143,10 +177,8 @@ func checkSubscriptionOutput(ctx context.Context, root, core, id, endpoint strin
 					if err != nil {
 						return err
 					}
-					verification, err = validateSubscriptionArtifact(ctx, root, core, template, artifact)
-					if err != nil {
-						return err
-					}
+					_ = artifact
+					verification = snapshot.Validations[id]
 				}
 			}
 		}
@@ -169,8 +201,12 @@ func checkSubscriptionOutput(ctx context.Context, root, core, id, endpoint strin
 			workers.Go(func() {
 				for i := range jobs {
 					start := time.Now()
-					err := probeSubscriptionNode(ctx, root, core, endpoint, nodes[i])
-					result := subscriptionCheck{NodeID: nodes[i].ID, Name: nodes[i].Name, Success: err == nil, State: "passed", Milliseconds: time.Since(start).Milliseconds()}
+					engine := "sing-box"
+					if target == "mihomo" || target == "openclash" || nodes[i].Transport.Type == "xhttp" {
+						engine = "mihomo"
+					}
+					err := probeNodeWithEngine(ctx, root, core, endpoint, engine, nodes[i])
+					result := subscriptionCheck{NodeID: nodes[i].ID, Name: nodes[i].Name, Success: err == nil, State: "passed", Engine: engine, Milliseconds: time.Since(start).Milliseconds()}
 					if err != nil {
 						result.Error = err.Error()
 						result.State = "failed"
@@ -215,7 +251,20 @@ func checkSubscriptionOutput(ctx context.Context, root, core, id, endpoint strin
 		} else if passed < len(results) {
 			outcome = "partial"
 		}
-		if err := jsonEncoder(output).Encode(Object{"outcome": outcome, "interrupted": ctx.Err() != nil, "endpoint": endpoint, "client": target, "artifact_validation": verification, "connectivity_engine": "sing-box", "diagnostics": diagnostics, "passed": passed, "total": len(results), "nodes": results}); err != nil {
+		engines := map[string]bool{}
+		for _, result := range results {
+			if result.Engine != "" {
+				engines[result.Engine] = true
+			}
+		}
+		engine := "not_run"
+		for value := range engines {
+			engine = value
+		}
+		if len(engines) > 1 {
+			engine = "mixed"
+		}
+		if err := jsonEncoder(output).Encode(Object{"outcome": outcome, "interrupted": ctx.Err() != nil, "endpoint": endpoint, "client": target, "artifact_validation": verification, "connectivity_engine": engine, "diagnostics": diagnostics, "passed": passed, "total": len(results), "nodes": results}); err != nil {
 			return err
 		}
 		return errors.Join(ctx.Err(), recordErr)

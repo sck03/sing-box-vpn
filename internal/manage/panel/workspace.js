@@ -13,7 +13,9 @@ export function workspace(key, contentById, ctx) {
   const tabs = [],
     panels = [],
     loaders = [];
+  let selected = 0;
   function choose(index) {
+    selected = index;
     tabs.forEach((tab, i) => {
       tab.setAttribute("aria-selected", String(i === index));
       tab.tabIndex = i === index ? 0 : -1;
@@ -64,6 +66,10 @@ export function workspace(key, contentById, ctx) {
         sections.findIndex(([key]) => key === id),
       ),
     );
+  ctx.invalidateSections = () =>
+    loaders.forEach((load, index) => {
+      if (index !== selected) load?.invalidate();
+    });
   ctx.showSection(ctx.section);
   return root;
 }

@@ -40,6 +40,7 @@ type PlatformService struct {
 	panelMu             sync.RWMutex
 	activePanel         *PanelOptions
 	workerReady         atomic.Bool
+	exportView          subscriptionView
 }
 type PlatformAction struct {
 	Operation    string                          `json:"operation"`

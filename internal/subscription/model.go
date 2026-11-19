@@ -17,10 +17,10 @@ import (
 )
 
 const (
-	SchemaVersion = 3
+	SchemaVersion = 4
 	// Increment whenever parser or renderer semantics change, independently of
 	// the persisted configuration schema, to invalidate derived artifacts.
-	CompilerVersion = 1
+	CompilerVersion = 2
 	MaxNodes        = 4096
 	MaxBody         = 8 << 20
 	MaxObjects      = 128
@@ -39,10 +39,15 @@ type TLS struct {
 }
 
 type Transport struct {
-	Type        string `json:"type,omitempty"`
-	Path        string `json:"path,omitempty"`
-	Host        string `json:"host,omitempty"`
-	ServiceName string `json:"service_name,omitempty"`
+	Type            string        `json:"type,omitempty"`
+	Path            string        `json:"path,omitempty"`
+	Host            string        `json:"host,omitempty"`
+	ServiceName     string        `json:"service_name,omitempty"`
+	Mode            string        `json:"mode,omitempty"`
+	Authority       string        `json:"authority,omitempty"`
+	EarlyData       int           `json:"early_data,omitempty"`
+	EarlyDataHeader string        `json:"early_data_header,omitempty"`
+	XHTTP           *XHTTPOptions `json:"xhttp,omitempty"`
 }
 
 // Node is the only representation used between parsing, processing and adapters.
@@ -67,6 +72,7 @@ type Node struct {
 	UDPRelay     string    `json:"udp_relay,omitempty"`
 	Obfs         string    `json:"obfs,omitempty"`
 	ObfsPassword string    `json:"obfs_password,omitempty"`
+	Plugin       *Plugin   `json:"plugin,omitempty"`
 }
 
 var idPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
@@ -109,13 +115,13 @@ func (n Node) Validate() error {
 	if len(n.Password) > 4096 || strings.ContainsAny(n.Password, "\r\n\x00") {
 		return errors.New("invalid password")
 	}
-	if !slices.Contains([]string{"", "tcp", "ws", "grpc", "httpupgrade"}, n.Transport.Type) {
+	if !slices.Contains([]string{"", "tcp", "ws", "grpc", "httpupgrade", "xhttp"}, n.Transport.Type) {
 		return errors.New("unsupported transport")
 	}
-	if (n.Transport.Type == "ws" || n.Transport.Type == "httpupgrade") && (!strings.HasPrefix(n.Transport.Path, "/") || strings.ContainsAny(n.Transport.Path+n.Transport.Host, "\r\n\x00")) {
+	if slices.Contains([]string{"ws", "httpupgrade", "xhttp"}, n.Transport.Type) && (!strings.HasPrefix(n.Transport.Path, "/") || strings.ContainsAny(n.Transport.Path+n.Transport.Host, "\r\n\x00")) {
 		return errors.New("invalid WebSocket transport")
 	}
-	if n.Transport.Type != "ws" && n.Transport.Type != "httpupgrade" && (n.Transport.Path != "" || n.Transport.Host != "") {
+	if !slices.Contains([]string{"ws", "httpupgrade", "xhttp"}, n.Transport.Type) && (n.Transport.Path != "" || n.Transport.Host != "") {
 		return errors.New("path and host require WebSocket or HTTPUpgrade")
 	}
 	if n.Flow != "" && (n.Protocol != "vless" || n.Flow != "xtls-rprx-vision") {
@@ -204,7 +210,7 @@ func (n Node) Validate() error {
 	if n.Protocol == "ss" && !slices.Contains([]string{"aes-128-gcm", "aes-256-gcm", "chacha20-ietf-poly1305", "2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm", "2022-blake3-chacha20-poly1305"}, n.Cipher) {
 		return errors.New("unsupported Shadowsocks cipher")
 	}
-	return nil
+	return validateConnectionOptions(n)
 }
 
 var portRangePattern = regexp.MustCompile(`^[0-9]{1,5}([:-][0-9]{1,5})?$`)
@@ -261,7 +267,7 @@ func Process(nodes []Node, p Processor) (Preview, error) {
 			patterns[i] = r
 		}
 	}
-	seen, names := map[string]bool{}, map[string]bool{}
+	seen, names := map[string]bool{}, newNodeNames()
 	for _, original := range nodes {
 		n := normalizeNode(original)
 		if err := n.Validate(); err != nil {
@@ -298,14 +304,13 @@ func Process(nodes []Node, p Processor) (Preview, error) {
 			n.Name = patterns[2].ReplaceAllString(n.Name, p.RenameReplacement)
 		}
 		n.Name = p.Prefix + n.Name
-		n.Name = uniqueNodeName(n.Name, names)
+		n.Name = names.unique(n.Name)
 		if n.Name != original.Name {
 			result.Diagnostics = append(result.Diagnostics, Diagnostic{n.ID, original.Name, "rename", n.Name})
 		}
 		if err := n.Validate(); err != nil {
 			return result, err
 		}
-		names[n.Name] = true
 		result.Nodes = append(result.Nodes, n)
 	}
 	if p.Sort {

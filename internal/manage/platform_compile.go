@@ -61,11 +61,39 @@ func (s *PlatformService) PreviewConfiguration(ctx context.Context, c PlatformCo
 	}
 	redactPlatform(server)
 	outputs := []Object{}
+	var previous sub.Snapshot
+	_, _ = ReadJSON(filepath.Join(s.Root, subscriptionsSnapshot), &previous)
 	for _, output := range c.Subscriptions.Outputs {
 		artifact, available := snapshot.Artifacts[output.ID]
-		outputs = append(outputs, Object{"id": output.ID, "name": output.Name, "available": available, "bytes": len(artifact.Data), "diagnostics": snapshot.Diagnostics[output.ID]})
+		outputs = append(outputs, Object{"id": output.ID, "name": output.Name, "available": available, "bytes": len(artifact.Data), "diagnostics": snapshot.Diagnostics[output.ID], "input_nodes": snapshot.InputCounts[output.ID], "nodes": snapshot.NodeCounts[output.ID], "delta": sub.CompareSelection(previous.NodeKeys[output.ID], snapshot.NodeKeys[output.ID]), "validation": snapshot.Validations[output.ID]})
 	}
 	return Object{"valid": true, "ordinary_server": server, "outputs": outputs, "diagnostics": snapshot.Diagnostics}, nil
+}
+
+func (s *PlatformService) PreviewOutput(ctx context.Context, c PlatformConfig, id string) (Object, error) {
+	var err error
+	c.Subscriptions, err = c.Subscriptions.OnlyOutput(id)
+	if err != nil {
+		return nil, err
+	}
+	files, _, err := s.prepareBuild(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	var snapshot sub.Snapshot
+	if err = json.Unmarshal(files[subscriptionsSnapshot], &snapshot); err != nil {
+		return nil, err
+	}
+	artifact, found := snapshot.Artifacts[id]
+	if !found {
+		return nil, errors.New("selected output is unavailable")
+	}
+	template := snapshot.Templates[c.Subscriptions.Outputs[0].Template]
+	preview, err := sub.PreviewArtifact(artifact, template.Client, 64<<10)
+	if err != nil {
+		return nil, err
+	}
+	return Object{"id": id, "name": artifact.Name, "mime": artifact.MIME, "preview": preview, "nodes": snapshot.NodeCounts[id], "diagnostics": snapshot.Diagnostics[id]}, nil
 }
 
 func (s *PlatformService) buildConfig(ctx context.Context, c PlatformConfig, mode sub.BuildMode, prepared map[string]sub.SourceCache) (fileBundle, error) {

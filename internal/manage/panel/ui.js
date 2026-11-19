@@ -110,7 +110,7 @@ export function formDialog(title, fields, value, save, preserve = false) {
                 ? "datetime-local"
                 : field.type || "text",
       });
-      if (field.type === "bool") input.checked = !!current;
+      if (field.type === "bool") input.checked = !!(current ?? field.default);
       else if (field.type === "date") {
         if (current) {
           const d = new Date(current);
@@ -306,18 +306,34 @@ export function formDialog(title, fields, value, save, preserve = false) {
   );
   dialog.replaceChildren(el("h2", {}, title), form);
   dialog.showModal();
+  return {
+    form,
+    dialog,
+    value: formValue,
+    refresh: refreshFields,
+    input: (key) => inputs.find(([field]) => field.key === key)?.[1],
+    active: () => dialog.open && dialog.contains(form),
+  };
 }
 export function resourceEditor({
   title,
   items,
   fields,
   defaults,
-  change,
+  change: publishChange,
   columns,
   normalize = (v) => v,
   preserve = false,
   extraActions = () => [],
+  local = false,
+  rowKey,
+  pageSize,
 }) {
+  let view;
+  const change = () => {
+    if (local) view.updateItems(items);
+    publishChange(local ? { local: true } : undefined);
+  };
   return card(
     title,
     row(
@@ -338,7 +354,7 @@ export function resourceEditor({
         }),
       ),
     ),
-    table(
+    (view = table(
       columns || [
         { key: "id", label: "ID" },
         { key: "name", label: "名称" },
@@ -390,6 +406,7 @@ export function resourceEditor({
           "danger",
         ),
       ],
-    ),
+      { key: `resource:${title}`, rowKey, pageSize },
+    )),
   );
 }

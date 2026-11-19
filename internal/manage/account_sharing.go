@@ -3,6 +3,7 @@ package manage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -97,6 +98,19 @@ func (s *PlatformService) validateShare(ctx context.Context, g accounting.Grant)
 	}
 	if reason != "" {
 		return errors.New(reason)
+	}
+	options, err := s.accountService().ClientOptions(ctx, g.AccountID, g.Scope)
+	if err != nil {
+		return err
+	}
+	available := map[string]bool{}
+	for _, option := range options {
+		available[option.Client] = option.Available
+	}
+	for _, client := range g.Clients {
+		if !available[client] {
+			return fmt.Errorf("%s 没有可导出的兼容节点，请调整绑定或下载模板", client)
+		}
 	}
 	return nil
 }

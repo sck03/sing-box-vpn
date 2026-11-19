@@ -20,9 +20,6 @@ func TestSubscriptionScheduleReadsOnlyDeadlines(t *testing.T) {
 	if err := AtomicJSON(filepath.Join(root, subscriptionsRuntime), runtime); err != nil {
 		t.Fatal(err)
 	}
-	if err := AtomicBytes(filepath.Join(root, subscriptionsLocal), []byte("unused"), 0600); err != nil {
-		t.Fatal(err)
-	}
 	_, schedule, err := loadSubscriptionSchedule(root)
 	if err != nil || !schedule.Sources["remote"].Next.Equal(next) || !schedule.Resources["template:t"].Next.Equal(next) {
 		t.Fatal(schedule, err)
@@ -40,7 +37,6 @@ func BenchmarkSubscriptionScheduleRead(b *testing.B) {
 	for path, data := range map[string]any{
 		subscriptionsConfig:  config,
 		subscriptionsRuntime: sub.Runtime{Sources: map[string]sub.SourceCache{"remote": {Nodes: nodes, Next: time.Now().Add(time.Hour)}}},
-		subscriptionsLocal:   map[string][]sub.Node{"local": nodes},
 	} {
 		if err := AtomicJSON(filepath.Join(root, path), data); err != nil {
 			b.Fatal(err)
@@ -50,7 +46,7 @@ func BenchmarkSubscriptionScheduleRead(b *testing.B) {
 		// Baseline includes the complete node-bearing projections.
 		b.ReportAllocs()
 		for b.Loop() {
-			if _, _, _, err := loadSubscriptions(root); err != nil {
+			if _, _, err := loadSubscriptionState(root); err != nil {
 				b.Fatal(err)
 			}
 		}

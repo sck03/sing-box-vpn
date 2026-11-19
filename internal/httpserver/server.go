@@ -23,6 +23,17 @@ func (g Gate) Enter(w http.ResponseWriter) (func(), bool) {
 	}
 }
 
+func (g Gate) Handler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		release, ok := g.Enter(w)
+		if !ok {
+			return
+		}
+		defer release()
+		next.ServeHTTP(w, r)
+	})
+}
+
 type listener struct {
 	net.Listener
 	slots chan struct{}
@@ -65,7 +76,14 @@ func Serve(ctx context.Context, socket net.Listener, server *http.Server, connec
 	defer server.Close()
 	stop := context.AfterFunc(ctx, func() { server.Close() })
 	defer stop()
-	err := server.Serve(limited)
+	var err error
+	if server.TLSConfig != nil {
+		// TLS must wrap the limited raw connection, so net/http receives a
+		// *tls.Conn and retains request TLS state and HTTP/2 negotiation.
+		err = server.ServeTLS(limited, "", "")
+	} else {
+		err = server.Serve(limited)
+	}
 	if errors.Is(err, http.ErrServerClosed) || ctx.Err() != nil {
 		return nil
 	}

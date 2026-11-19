@@ -1,6 +1,6 @@
 # 开发与发布
 
-当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载六组。数据库使用 schema 13，所有旧数据库及其备份明确拒绝。
+当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载七组。数据库使用 schema 13，所有旧数据库及其备份明确拒绝。
 
 `scripts/test-panel-navigation.mjs` 覆盖角色过滤、搜索定位、空/非法路由、同页标签的前进/返回与表单复用、延迟读取合并与取消、错误重试、权益初始读取预算、稀疏订阅草稿和 SSE 启动。`TestPanelEphemeralDevelopmentListener` 实际启动回环随机端口、请求能力接口并关闭服务，同时拒绝公网随机端口；设置校验仍拒绝保存端口 0。`TestPanelHealthSurvivesSaturatedRequests` 验证 32 个业务请求占满限额时，本机健康检查仍能准确判断 worker 就绪状态。
 
@@ -59,7 +59,7 @@ shellcheck --severity=warning sb.sh install.sh lib/*.sh scripts/*.sh
 
 Linux root 专项通过 `RUN_NETNS_TESTS=1`、`RUN_FIREWALL_TESTS=1`、`RUN_SERVICE_TESTS=1`、`RUN_STORAGE_TESTS=1` 启用，测试定义明确需要的二进制环境变量。仅使用专门 VM，真实 systemd/firewall 测试会创建系统资源。
 
-`npm test` 执行六组回归，覆盖重复提交、客户端字段联动、短暂断网、用户页路径前缀、状态搜索、焦点保留、单位换算、授权分页与导航加载。Mihomo 分流使用域名/IP MRS，不依赖 Country.mmdb。CI 设置 `SBVPN_REQUIRE_CLIENT_CHECK=1`，缺少验证核心直接失败。原生核心校验与 sing-box 节点连通性检查分别报告，不以其中之一代替商业客户端验收。
+`npm test` 执行七组回归，覆盖重复提交、客户端字段联动、短暂断网、用户页路径前缀、状态搜索、焦点保留、单位换算、授权分页与导航加载。Mihomo 分流使用域名/IP MRS，不依赖 Country.mmdb。CI 设置 `SBVPN_REQUIRE_CLIENT_CHECK=1`，缺少验证核心直接失败。原生核心校验与 sing-box 节点连通性检查分别报告，不以其中之一代替商业客户端验收。
 
 本地面板使用独立目录：manager `panel --root <空目录> --core <官方核心> --runtime <受管核心> --address 127.0.0.1 --no-system init`，stdin 为 username/password JSON；随后同样参数 `recover`、`serve`。仅在 `serve` 命令之前加 `--listen 127.0.0.1:0` 自动分配开发端口，日志返回实际 URL；`init` 和 `configure` 保存的端口必须为 1–65535。`--no-system` 仅用于开发，系统动作明确拒绝。Windows 的 Unix socket 测试需要较短的 TEMP/TMP 路径，例如项目下 `.test/tmp`。
 
@@ -75,7 +75,13 @@ Windows 先加载 `scripts/dev-env.ps1`，将 `GATEWAY_BINARY` 和 `MANAGED_CORE
 
 可对该独立面板运行真实 HTTP 工作流：设置 `PANEL_TEST_URL`、`PANEL_TEST_USERNAME`（默认 reviewadmin）和 `PANEL_TEST_PASSWORD`，执行 `node scripts/test-panel-api.mjs`。脚本只接受回环 URL，并在创建数据前确认服务均处于 no-system 状态。验证绑定/导出、下载次数、跨站分享、完整候选预览和任务应用；不能指向真实安装。
 
-配置预览统一为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回 `valid`、普通服务端脱敏配置、输出列表与诊断。旧 `/api/subscriptions/preview` 已删除。公开 `/api/capabilities` 提供协议、网关范围与密码字节范围。节点文档 schema=2、订阅 schema=3、平台 schema=4；备份容器格式仍为 7，但只接受 schema 13 数据库。
+配置预览为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回普通服务端脱敏配置、输出节点数/变化及结构化验证。`POST /api/config/preview-output` 接受 `{id,config}`，只编译目标图并返回有界脱敏内容。旧 `/api/subscriptions/preview` 不恢复。节点文档 schema=2、订阅 schema=4、CompilerVersion=2、模板 version=1、平台 schema=4；备份容器仍为 7，数据库仍为 13，旧订阅内容明确拒绝。
+
+新增回归 `compiler_regression_test.go`、`preview_test.go` 覆盖 URI 认证/端口、SIP003、WS early-data、gRPC/XHTTP、名称和策略组范围、脱敏与真实核心检查。`TestImportedTrojanTransportsWithMihomo` 使用真实 sing-box 服务端和 Mihomo 客户端验证 WS/gRPC，错误路径或服务名必须失败。`TestRefreshValidationDoesNotHoldPublicationLock` 覆盖锁外编译与过期配置拒绝，`TestLimitedServerPreservesTLSAndHTTP2` 覆盖 TLS 状态及协议协商。
+
+`test-panel-subscriptions.mjs` 是第七组前端回归，覆盖默认 DNS 与显式关闭、动态客户端范围、迟到响应、候选向导和局部列表更新。真实 API 套件检查 schema=4、账户模板覆盖、可用性、扩展名、下载元信息和脱敏预览；浏览器套件沿用隔离目录与真实事件。
+
+`GET /api/accounts/clients?id=…&scope=…` 和用户用量的 clients 对象数组共用实际导出计划；`GET /api/outbound-options` 返回已应用出站。新字段与契约直接更新，不增加旧数组或旧接口适配器。完整订阅说明见 [订阅](subscriptions.md)。
 
 当前数据库 schema 13、备份格式 7。不复用早期开发目录或旧数据库；应用配置 schema 与数据库版本分别维护。对外 CLI 保留 panel、核心 prepare/check、firewall、下载监听和网关运行模式，旧 config/accounts/subscriptions/asset/remote 命令不再暴露。
 

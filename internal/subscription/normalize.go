@@ -25,15 +25,28 @@ func normalizeNode(n Node) Node {
 	if n.Transport.Type == "websocket" {
 		n.Transport.Type = "ws"
 	}
-	if (n.Transport.Type == "ws" || n.Transport.Type == "httpupgrade") && n.Transport.Path == "" {
+	if n.Transport.Type == "grpc" && n.Transport.Mode == "gun" || n.Transport.Type == "xhttp" && n.Transport.Mode == "auto" {
+		n.Transport.Mode = ""
+	}
+	if (n.Transport.Type == "ws" || n.Transport.Type == "httpupgrade" || n.Transport.Type == "xhttp") && n.Transport.Path == "" {
 		n.Transport.Path = "/"
 	}
+	n.Transport = normalizeWebSocketPath(n.Transport)
 	return n
 }
 
-func uniqueNodeName(base string, used map[string]bool) string {
+type nodeNames struct {
+	used map[string]bool
+	next map[string]int
+}
+
+func newNodeNames() *nodeNames {
+	return &nodeNames{used: map[string]bool{}, next: map[string]int{}}
+}
+
+func (n *nodeNames) unique(base string) string {
 	name := base
-	for i := 2; used[name] || reservedName(name); i++ {
+	for i := max(2, n.next[base]); n.used[name] || reservedName(name); i++ {
 		suffix := " · " + strconv.Itoa(i)
 		prefix := base
 		for len(prefix)+len(suffix) > 256 {
@@ -41,7 +54,9 @@ func uniqueNodeName(base string, used map[string]bool) string {
 			prefix = prefix[:len(prefix)-size]
 		}
 		name = prefix + suffix
+		n.next[base] = i + 1
 	}
+	n.used[name] = true
 	return name
 }
 

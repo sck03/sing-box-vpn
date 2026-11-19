@@ -6,10 +6,13 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/clientprofile"
 	"regexp"
 	"slices"
+	"strings"
 )
 
 type PolicyGroup struct {
 	ID              string   `json:"id"`
+	Name            string   `json:"name,omitempty"`
+	Optional        bool     `json:"optional,omitempty"`
 	Type            string   `json:"type"`
 	Scope           string   `json:"scope,omitempty"`
 	Include         string   `json:"include,omitempty"`
@@ -39,10 +42,16 @@ func validateTemplateExtensions(t Template) error {
 		return errors.New("target adapter cannot preserve template extensions")
 	}
 	groups := map[string]PolicyGroup{}
+	names := map[string]bool{}
 	for _, g := range t.Groups {
 		if !ValidID(g.ID) || reservedName(g.ID) || g.ID == "cn-domains" || g.ID == "cn-ips" {
 			return errors.New("invalid policy group ID")
 		}
+		name := fallback(g.Name, g.ID)
+		if len(name) > 256 || names[name] || reservedName(name) || strings.ContainsAny(name, ",\"=\r\n\x00|[]") {
+			return errors.New("invalid or duplicate policy display name")
+		}
+		names[name] = true
 		if _, exists := groups[g.ID]; exists {
 			return errors.New("duplicate policy group")
 		}
@@ -103,6 +112,13 @@ func validateTemplateExtensions(t Template) error {
 	for _, rule := range t.Rules {
 		if err := checkTarget(rule.Target); err != nil {
 			return err
+		}
+	}
+	if t.Final != "" {
+		if !slices.Contains([]string{"PROXY", "VPNGate"}, t.Final) {
+			if _, exists := groups[t.Final]; !exists {
+				return errors.New("final policy must reference a selector or policy group")
+			}
 		}
 	}
 	seen := map[string]bool{}
@@ -173,4 +189,53 @@ func applyNativeTemplate(base Object, generated Object) Object {
 		result[key] = value
 	}
 	return result
+}
+
+// Resolve display names only after validating stable IDs and references.
+func policyDisplayNames(t Template, nodes []Node) map[string]string {
+	names := map[string]string{}
+	used := newNodeNames()
+	for _, node := range nodes {
+		used.used[node.Name] = true
+	}
+	for _, g := range t.Groups {
+		names[g.ID] = used.unique(fallback(g.Name, g.ID))
+	}
+	return names
+}
+
+func renderedTemplate(t Template, nodes []Node) Template {
+	if len(t.Groups) == 0 {
+		return t
+	}
+	names := policyDisplayNames(t, nodes)
+	reference := func(id string) string {
+		if name := names[id]; name != "" {
+			return name
+		}
+		return id
+	}
+	groups := make([]PolicyGroup, 0, len(t.Groups))
+	for _, g := range t.Groups {
+		if g.Optional && len(policyMembers(g, nodes)) == 0 {
+			continue
+		}
+		g.ID = reference(g.ID)
+		g.Members = append([]string(nil), g.Members...)
+		for i, id := range g.Members {
+			g.Members[i] = reference(id)
+		}
+		groups = append(groups, g)
+	}
+	t.Groups = groups
+	t.Rules = append([]Rule(nil), t.Rules...)
+	for i := range t.Rules {
+		t.Rules[i].Target = reference(t.Rules[i].Target)
+	}
+	t.Providers = append([]RuleProvider(nil), t.Providers...)
+	for i := range t.Providers {
+		t.Providers[i].Target = reference(t.Providers[i].Target)
+	}
+	t.Final = reference(t.Final)
+	return t
 }

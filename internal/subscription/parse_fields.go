@@ -4,17 +4,26 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 )
+
+var fieldSchemas sync.Map
 
 // Reject unrepresented connection options rather than silently producing a
 // different connection. Full configuration sections outside nodes are ignored.
 func nativeFields(m Object, stringsKeys, integers, booleans, objects, lists string) error {
-	kinds := map[string]byte{}
-	for kind, fields := range map[byte]string{'s': stringsKeys, 'i': integers, 'b': booleans, 'o': objects, 'a': lists} {
-		for _, key := range strings.Fields(fields) {
-			kinds[key] = kind
+	key := strings.Join([]string{stringsKeys, integers, booleans, objects, lists}, "\x00")
+	stored, exists := fieldSchemas.Load(key)
+	if !exists {
+		kinds := map[string]byte{}
+		for kind, fields := range map[byte]string{'s': stringsKeys, 'i': integers, 'b': booleans, 'o': objects, 'a': lists} {
+			for _, name := range strings.Fields(fields) {
+				kinds[name] = kind
+			}
 		}
+		stored, _ = fieldSchemas.LoadOrStore(key, kinds)
 	}
+	kinds := stored.(map[string]byte)
 	for key, value := range m {
 		valid := false
 		switch kinds[key] {
@@ -54,7 +63,7 @@ func nativeFields(m Object, stringsKeys, integers, booleans, objects, lists stri
 }
 
 func singBoxFields(m Object) error {
-	if err := nativeFields(m, "type tag server uuid password flow security method congestion_control udp_relay_mode heartbeat idle_session_check_interval idle_session_timeout", "server_port alter_id min_idle_session", "zero_rtt_handshake", "tls transport obfs", "server_ports"); err != nil {
+	if err := nativeFields(m, "type tag server uuid password flow security method congestion_control udp_relay_mode heartbeat idle_session_check_interval idle_session_timeout plugin plugin_opts", "server_port alter_id min_idle_session", "zero_rtt_handshake", "tls transport obfs", "server_ports"); err != nil {
 		return err
 	}
 	if integer(m["alter_id"]) != 0 || boolean(m["zero_rtt_handshake"]) {
@@ -85,7 +94,7 @@ func singBoxFields(m Object) error {
 		return errors.New("disabled Reality options are unsupported")
 	}
 	w := obj(m["transport"])
-	if err := nativeFields(w, "type path host service_name", "", "", "headers", ""); err != nil {
+	if err := nativeFields(w, "type path host service_name early_data_header_name", "max_early_data", "", "headers", ""); err != nil {
 		return err
 	}
 	if err := nativeFields(obj(w["headers"]), "Host", "", "", "", ""); err != nil {
@@ -98,7 +107,7 @@ func singBoxFields(m Object) error {
 }
 
 func mihomoFields(m Object) error {
-	if err := nativeFields(m, "name type server uuid password cipher flow congestion-controller udp-relay-mode servername sni fingerprint client-fingerprint network ports obfs obfs-password", "port alterId idle-session-check-interval idle-session-timeout min-idle-session", "tls skip-cert-verify udp", "reality-opts ws-opts grpc-opts", "alpn"); err != nil {
+	if err := nativeFields(m, "name type server uuid password cipher flow congestion-controller udp-relay-mode servername sni fingerprint client-fingerprint network ports obfs obfs-password plugin", "port alterId idle-session-check-interval idle-session-timeout min-idle-session", "tls skip-cert-verify udp", "reality-opts ws-opts grpc-opts plugin-opts xhttp-opts", "alpn"); err != nil {
 		return err
 	}
 	if value, ok := m["udp"]; ok && !boolean(value) {
@@ -116,11 +125,21 @@ func mihomoFields(m Object) error {
 	if len(w) > 0 && str(m["network"]) != "ws" && str(m["network"]) != "websocket" || len(obj(m["grpc-opts"])) > 0 && str(m["network"]) != "grpc" {
 		return errors.New("transport options do not match network")
 	}
-	if err := nativeFields(w, "path", "", "v2ray-http-upgrade", "headers", ""); err != nil {
+	if err := nativeFields(w, "path early-data-header-name", "max-early-data", "v2ray-http-upgrade", "headers", ""); err != nil {
 		return err
 	}
 	if err := nativeFields(obj(w["headers"]), "Host", "", "", "", ""); err != nil {
 		return err
 	}
-	return nativeFields(obj(m["grpc-opts"]), "grpc-service-name", "", "", "", "")
+	if err := nativeFields(obj(m["grpc-opts"]), "grpc-service-name", "", "", "", ""); err != nil {
+		return err
+	}
+	if err := nativeFields(obj(m["plugin-opts"]), "mode host path", "", "tls mux", "", ""); err != nil {
+		return err
+	}
+	if len(obj(m["xhttp-opts"])) > 0 && str(m["network"]) != "xhttp" {
+		return errors.New("XHTTP options require XHTTP network")
+	}
+	_, err := xhttpFromNative(obj(m["xhttp-opts"]))
+	return err
 }

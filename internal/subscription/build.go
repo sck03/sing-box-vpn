@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
+
+	"github.com/sck03/sing-box-vpn/internal/clientprofile"
 )
 
 type Usage struct {
@@ -89,6 +92,10 @@ type Snapshot struct {
 	CoreIdentity string                  `json:"core_identity,omitempty"`
 	InputDigests map[string]string       `json:"input_digests,omitempty"`
 	NodeCounts   map[string]int          `json:"node_counts,omitempty"`
+	Templates    map[string]Template     `json:"templates,omitempty"`
+	InputCounts  map[string]int          `json:"input_counts,omitempty"`
+	NodeKeys     map[string][]string     `json:"node_keys,omitempty"`
+	Validations  map[string]Validation   `json:"validations,omitempty"`
 }
 
 func SourceHash(source Source) string { data, _ := json.Marshal(source); return Digest(data) }
@@ -104,6 +111,18 @@ func DefaultConfig() Config {
 			}
 			c.Templates = append(c.Templates, Template{ID: id, Version: 1, Client: target.client, Mode: target.mode, Preset: preset, TUN: target.client == "sing-box"})
 		}
+	}
+	c.AccountDefaults = map[string]AccountExportPolicy{}
+	clients := make([]string, 0, len(clientprofile.All()))
+	for client := range clientprofile.All() {
+		clients = append(clients, client)
+	}
+	slices.Sort(clients)
+	for _, client := range clients {
+		profile, _ := clientprofile.Lookup(client)
+		id := "account-" + client
+		c.Templates = append(c.Templates, Template{ID: id, Name: profile.Label + " · 账户默认", Version: 1, Client: client, Mode: profile.AccountMode, Preset: "proxy"})
+		c.AccountDefaults[client] = AccountExportPolicy{Template: id, SkipUnsupported: true}
 	}
 	return c
 }
@@ -154,6 +173,9 @@ func buildCached(c Config, runtime Runtime, local map[string][]Node, now time.Ti
 	previews := map[string]Preview{}
 	result.InputDigests = map[string]string{}
 	result.NodeCounts = map[string]int{}
+	result.InputCounts = map[string]int{}
+	result.NodeKeys = map[string][]string{}
+	result.Validations = map[string]Validation{}
 	if err := c.Validate(); err != nil {
 		return result, previews, err
 	}
@@ -231,21 +253,12 @@ func buildCached(c Config, runtime Runtime, local map[string][]Node, now time.Ti
 		}
 		previews[collection.ID] = preview
 	}
-	templates := map[string]Template{}
-	ruleSets := map[string][]Rule{}
-	for _, r := range c.RuleSets {
-		ruleSets[r.ID] = r.Rules
-	}
-	for _, t := range c.Templates {
-		t.Rules = append([]Rule(nil), t.Rules...)
-		for _, id := range t.RuleSets {
-			t.Rules = append(t.Rules, ruleSets[id]...)
-		}
-		templates[t.ID] = t
-	}
+	templates := EffectiveTemplates(c)
+	result.Templates = templates
 	total := 0
 	for _, output := range c.Outputs {
 		preview := previews[output.Collection]
+		result.InputCounts[output.ID] = len(preview.Nodes)
 		expanded += len(preview.Nodes)
 		if expanded > MaxNodes*8 {
 			return result, previews, errors.New("combined rendered node budget exceeded")
@@ -287,6 +300,11 @@ func buildCached(c Config, runtime Runtime, local map[string][]Node, now time.Ti
 		}
 		artifact.Name = output.Name
 		result.NodeCounts[output.ID] = len(selected)
+		keys := make([]string, len(selected))
+		for i, node := range selected {
+			keys[i] = Digest([]byte(node.Identity() + "\n" + node.Name))[:24]
+		}
+		result.NodeKeys[output.ID] = keys
 		result.Artifacts[output.ID] = artifact
 		total += len(artifact.Data)
 		if total > MaxBody {

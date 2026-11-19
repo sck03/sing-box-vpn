@@ -2,7 +2,6 @@ package manage
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"flag"
 	"github.com/sck03/sing-box-vpn/internal/publicaccess"
@@ -75,10 +74,11 @@ func RunSubscription(ctx context.Context, args []string, output io.Writer) error
 	}
 	defer control.Close()
 	options := settings.accessOptions()
+	handler := options.Protect(unifiedDownloadHandler(AccountService{Root: *root, Core: filepath.Join(*root, "sing-box"), Store: store, Control: control}))
+	server := &http.Server{Handler: make(httpserver.Gate, 32).Handler(handler), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 15 * time.Second, MaxHeaderBytes: 16 << 10}
 	if settings.Certificate != "" {
-		listener = tls.NewListener(listener, options.TLS())
+		server.TLSConfig = options.TLS()
 	}
-	server := &http.Server{Handler: options.Protect(unifiedDownloadHandler(AccountService{Root: *root, Store: store, Control: control})), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 15 * time.Second, MaxHeaderBytes: 16 << 10}
 	err = httpserver.Serve(child, listener, server, 32)
 	cancel()
 	return err

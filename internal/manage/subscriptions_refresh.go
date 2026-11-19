@@ -21,6 +21,10 @@ import (
 )
 
 func fetchSubscription(ctx context.Context, client *http.Client, endpoint, etag string) ([]byte, http.Header, bool, error) {
+	return fetchSubscriptionRequest(ctx, client, endpoint, etag, nil)
+}
+
+func fetchSubscriptionRequest(ctx context.Context, client *http.Client, endpoint, etag string, headers http.Header) ([]byte, http.Header, bool, error) {
 	if err := sub.HTTPURL(endpoint); err != nil {
 		return nil, nil, false, err
 	}
@@ -29,10 +33,26 @@ func fetchSubscription(ctx context.Context, client *http.Client, endpoint, etag 
 		return nil, nil, false, errors.New("invalid source URL")
 	}
 	req.Header.Set("User-Agent", "sing-box-vpn/subscriptions")
+	for key, values := range headers {
+		req.Header[key] = append([]string(nil), values...)
+	}
 	if etag != "" {
 		req.Header.Set("If-None-Match", etag)
 	}
-	response, err := client.Do(req)
+	requestClient := *client
+	if len(headers) > 0 {
+		originalRedirect := client.CheckRedirect
+		requestClient.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+			if len(via) >= 3 || next.URL.Scheme != req.URL.Scheme || next.URL.Host != req.URL.Host {
+				return errors.New("custom subscription headers require same-origin redirects")
+			}
+			if originalRedirect != nil {
+				return originalRedirect(next, via)
+			}
+			return nil
+		}
+	}
+	response, err := requestClient.Do(req)
 	if err != nil {
 		return nil, nil, false, errors.New("subscription request failed or timed out")
 	}
@@ -126,7 +146,14 @@ func refreshSource(ctx context.Context, client *http.Client, source sub.Source, 
 		old = sub.SourceCache{SourceHash: sub.SourceHash(source)}
 	}
 	old.Checked = now
-	data, headers, unchanged, err := fetchSubscription(ctx, client, source.URL, old.ETag)
+	requestHeaders := http.Header{}
+	if source.UserAgent != "" {
+		requestHeaders.Set("User-Agent", source.UserAgent)
+	}
+	for key, value := range source.Headers {
+		requestHeaders.Set(key, value)
+	}
+	data, headers, unchanged, err := fetchSubscriptionRequest(ctx, client, source.URL, old.ETag, requestHeaders)
 	if err == nil && unchanged && len(old.Nodes) == 0 {
 		err = errors.New("upstream returned 304 without a cached result")
 	}
@@ -292,67 +319,7 @@ func refreshSubscriptionsResult(ctx context.Context, root, core string, force bo
 		}
 	}
 	sort.Slice(report.Failures, func(i, j int) bool { return report.Failures[i].ID < report.Failures[j].ID })
-	err = withLock(root, func() error {
-		current, state, local, err := loadSubscriptions(root)
-		if err != nil {
-			return err
-		}
-		if err := validateSubscriptionsRevision(current, config); err != nil {
-			return err
-		}
-		if state.Sources == nil {
-			state.Sources = map[string]sub.SourceCache{}
-		}
-		if state.Resources == nil {
-			state.Resources = map[string]sub.ResourceCache{}
-		}
-		for id, value := range resources {
-			state.Resources[id] = value
-		}
-		for _, event := range events {
-			state.Record(event.Operation, event.ObjectID, event.Message, now)
-		}
-		for id, value := range results {
-			old := state.Sources[id]
-			if expiry := value.Usage.Expire; expiry != nil && *expiry > 0 && *expiry <= now.Add(72*time.Hour).Unix() && value.NotifiedExpiry != *expiry {
-				value.NotifiedExpiry = *expiry
-				events = append(events, sub.Run{Time: now, Operation: "expiry", ObjectID: id, Message: "source expires at " + time.Unix(*expiry, 0).UTC().Format(time.RFC3339)})
-			}
-			state.Sources[id] = value
-			message := "refresh succeeded"
-			if value.Error != "" {
-				message = value.Error
-			}
-			state.Record("refresh", id, message, now)
-			if old.Error != value.Error && (old.Error != "" || value.Error != "") {
-				events = append(events, sub.Run{Time: now, Operation: "refresh", ObjectID: id, Message: message})
-			}
-		}
-		mode := sub.Available
-		if resourceChanged {
-			mode = sub.Strict
-		}
-		files, snapshot, _, buildErr := compileSubscriptions(ctx, root, core, current, state, local, mode)
-		report.Outputs, report.ExpectedOutputs = len(snapshot.Artifacts), len(current.Outputs)
-		if buildErr != nil {
-			// A rejected resource update must be fetched again; do not retain its ETag.
-			for id := range resources {
-				previous := runtime.Resources[id]
-				previous.URL = resources[id].URL
-				previous.Checked = now
-				previous.Error = "resource update rejected by output validation"
-				previous.Failures = min(previous.Failures+1, 10)
-				previous.Next = now.Add(time.Duration(min(60*(1<<(previous.Failures-1)), 21600)) * time.Second)
-				state.Resources[id] = previous
-			}
-			state.Record("publish", "", buildErr.Error(), now)
-			if err := writeSubscriptionRuntime(root, current, state); err != nil {
-				return errors.Join(buildErr, err)
-			}
-			return buildErr
-		}
-		return publish(root, files)
-	})
+	events, err = publishSubscriptionRefresh(ctx, root, core, config, results, resources, events, now, resourceChanged, report, compilePreparedSubscriptions)
 	report.Complete()
 	for _, event := range events {
 		notifySubscriptionEvent(ctx, client, root, config, event)

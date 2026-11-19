@@ -57,13 +57,26 @@ assert.equal(
 let state = ok(await call("/api/config"));
 const config = state.config;
 assert.equal(config.app.schema, 2);
-assert.equal(config.subscriptions.version, 3);
+assert.equal(config.subscriptions.version, 4);
 const subscriptionCapabilities = ok(
   await call("/api/subscription-capabilities"),
 );
-assert.equal(subscriptionCapabilities.schema_version, 3);
+assert.equal(subscriptionCapabilities.schema_version, 4);
 assert(subscriptionCapabilities.formats.includes("auto"));
 assert(subscriptionCapabilities.formats.includes("loon"));
+const clients = ok(await call("/api/clients"));
+assert(clients.mihomo.connections.trojan.transports.includes("grpc"));
+assert.equal(clients.mihomo.extension, "yaml");
+assert(
+  ok(await call("/api/subscription-presets")).some(
+    (preset) => preset.id === "regional",
+  ),
+);
+assert(
+  ok(await call("/api/outbound-options")).items.every(
+    (item) => item.id && item.type,
+  ),
+);
 const subscriptionActions = ok(await call("/api/subscriptions/actions"));
 assert.deepEqual(subscriptionActions.outputs, []);
 assert.deepEqual(subscriptionActions.deliveries, []);
@@ -173,8 +186,16 @@ ok(
     Origin: "https://external.example",
   }),
 );
-ok(await call("/u/" + grant.token + "/usage"));
-ok(await call("/u/" + grant.token + "/uri"));
+const usage = ok(await call("/u/" + grant.token + "/usage"));
+assert(
+  usage.clients.every(
+    (client) => typeof client.available === "boolean" && client.client,
+  ),
+);
+const download = await call("/u/" + grant.token + "/uri");
+ok(download);
+assert(download.headers.get("subscription-userinfo").includes("total="));
+assert.equal(download.headers.get("profile-update-interval"), "1");
 assert.equal((await call("/u/" + grant.token + "/uri")).status, 403);
 assert.equal(ok(await call("/u/" + grant.token + "/usage")).downloads, 1);
 assert.equal(
@@ -195,8 +216,24 @@ config.subscriptions.sources = [
 config.subscriptions.collections = [
   { id: "collection", sources: ["account-source"], processor: {} },
 ];
-config.subscriptions.templates = [
+config.subscriptions.templates.push(
   { id: "template", client: "uri", version: 1, mode: "nodes" },
+  {
+    id: "account-custom",
+    name: "账户自定义",
+    client: "mihomo",
+    version: 1,
+    mode: "config",
+    dns_policy: { fake_ip: false },
+  },
+);
+config.subscriptions.account_overrides = [
+  {
+    account_id: account,
+    client: "mihomo",
+    template: "account-custom",
+    skip_unsupported: true,
+  },
 ];
 config.subscriptions.outputs = [
   {
@@ -210,6 +247,18 @@ assert.equal(
   ok(await call("/api/config/preview", config)).outputs[0].available,
   true,
 );
+const previewBody = ok(
+  await call("/api/config/preview-output", { id: "output", config }),
+);
+for (const line of previewBody.preview.content.trim().split("\n")) {
+  const text = line.startsWith("vmess://")
+    ? Buffer.from(line.slice(8), "base64").toString("utf8")
+    : decodeURIComponent(line);
+  assert(
+    text.includes("REDACTED") ||
+      text.includes("00000000-0000-4000-8000-000000000000"),
+  );
+}
 const apply = ok(
   await call("/api/config", { revision: state.revision, config }),
 );
@@ -218,6 +267,26 @@ assert.equal(result.result.outcome, "passed");
 assert.equal(result.result.outputs, 1);
 const saved = ok(await call("/api/config"));
 assert.equal(saved.revision, saved.applied_revision);
+const availableClients = ok(
+  await call(`/api/accounts/clients?id=${account}&scope=normal`),
+);
+assert.equal(
+  availableClients.find((client) => client.client === "mihomo").template,
+  "account-custom",
+);
+const accountExport = ok(
+  await call("/api/accounts/export", {
+    id: account,
+    scope: "normal",
+    client: "mihomo",
+  }),
+);
+assert.equal(accountExport.extension, "yaml");
+assert.equal(
+  JSON.parse(accountExport.content).dns["enhanced-mode"],
+  "redir-host",
+);
+assert.equal(accountExport.validation.state, "passed");
 
 const options = ok(await call("/api/grant-options"));
 assert.equal(options.pending, false);

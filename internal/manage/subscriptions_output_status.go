@@ -13,7 +13,7 @@ type subscriptionOutputStatus struct {
 	Client          string           `json:"client"`
 	Nodes           int              `json:"nodes"`
 	Available       bool             `json:"available"`
-	Validation      string           `json:"validation"`
+	Validation      sub.Validation   `json:"validation"`
 	DiagnosticCount int              `json:"diagnostic_count"`
 	Diagnostics     []sub.Diagnostic `json:"diagnostics"`
 }
@@ -29,10 +29,8 @@ func outputStatus(c sub.Config, snapshot sub.Snapshot) []subscriptionOutputStatu
 		_, available := snapshot.Artifacts[output.ID]
 		diagnostics := snapshot.Diagnostics[output.ID]
 		row := subscriptionOutputStatus{ID: output.ID, Name: output.Name, Client: clients[output.Template], Nodes: snapshot.NodeCounts[output.ID], Available: available, DiagnosticCount: len(diagnostics)}
+		row.Validation = snapshot.Validations[output.ID]
 		for _, d := range diagnostics {
-			if d.Stage == "validation" {
-				row.Validation = d.Message
-			}
 			if len(row.Diagnostics) < 20 {
 				row.Diagnostics = append(row.Diagnostics, d)
 			}

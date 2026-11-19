@@ -6,6 +6,13 @@ import { subscriptionStatus } from "./subscription-status.js";
 import { clientCatalog, templateFields, normalizeTemplate } from "./clients.js";
 import { processorFields, templateResources } from "./subscription-fields.js";
 import {
+  presetTools,
+  accountTemplateSettings,
+  resourceID,
+} from "./template-settings.js";
+import { subscriptionWizard } from "./subscription-wizard.js";
+import { showClientCapabilities } from "./client-capabilities.js";
+import {
   el,
   card,
   row,
@@ -35,22 +42,29 @@ export async function subscriptions(ctx) {
     s[key] ??= [];
   const request = ctx.request || api;
   let clients;
+  let presets;
+  const getPresets = () =>
+    (presets ??= request("/api/subscription-presets").catch((error) => {
+      presets = null;
+      throw error;
+    }));
   const getClients = () =>
     (clients ??= clientCatalog(request).catch((error) => {
       clients = null;
       throw error;
     }));
-  const change = () => {
+  const change = ({ local = false } = {}) => {
     c.subscriptions = s;
     ctx.changed();
-    ctx.render();
+    if (local) ctx.invalidateSections?.();
+    else ctx.render();
   };
   const views = {
     introduction: () =>
       card(
         "订阅编译与分发",
         help(
-          "本机用户在「权益与用量」绑定入站后点击分享即可，无需配置来源、集合和输出。下面的高级工作区用于组合第三方节点、自定义模板和自动分发。第三方节点的流量由其服务商控制。",
+          "组合订阅来源，选择客户端与模板，预览后发布。本机用户可在「权益与用量」直接创建分享。",
         ),
         disclosure(
           "客户端适配与验证范围",
@@ -61,25 +75,46 @@ export async function subscriptions(ctx) {
             table(
               [
                 { key: "label", label: "客户端" },
+                {
+                  label: "平台",
+                  value: (p) => (p.platforms || []).join(" / "),
+                },
                 { label: "支持输出", value: (p) => p.modes.join(" / ") },
                 {
                   label: "验证",
                   value: (p) =>
                     p.tested_version
-                      ? p.verification + " · " + p.tested_version
-                      : p.verification,
+                      ? "参考核心 " + p.tested_version
+                      : p.experimental
+                        ? "实验适配"
+                        : "通用格式",
                 },
               ],
               Object.values(await getClients()),
+              (profile) => [
+                button("字段范围", () => showClientCapabilities(profile)),
+              ],
             ),
           ],
           ctx.signal,
         ),
         row(
           button(
-            "预览",
-            async () => showConfiguration(await api("/api/config/preview", c)),
+            "快速创建订阅",
+            async () =>
+              subscriptionWizard(
+                ctx,
+                c,
+                await getClients(),
+                await getPresets(),
+              ),
             "primary",
+          ),
+          button("预览", async () =>
+            showConfiguration(await api("/api/config/preview", c), [], {
+              loadOutput: (id) =>
+                api("/api/config/preview-output", { id, config: c }),
+            }),
           ),
           button("刷新来源", () =>
             ctx.task({
@@ -119,6 +154,7 @@ export async function subscriptions(ctx) {
       const capabilities = await request("/api/subscription-capabilities");
       return resourceEditor({
         title: "订阅来源",
+        local: true,
         items: s.sources,
         fields: [
           ...common,
@@ -157,6 +193,22 @@ export async function subscriptions(ctx) {
             type: "select",
             options: capabilities.formats,
             visible: (v) => v.kind !== "account",
+          },
+          {
+            key: "user_agent",
+            label: "订阅 User-Agent",
+            advanced: true,
+            visible: (v) => v.kind === "remote",
+          },
+          {
+            key: "headers",
+            label: "请求头 JSON",
+            type: "json",
+            default: {},
+            wide: true,
+            advanced: true,
+            visible: (v) => v.kind === "remote",
+            help: "支持需要认证的来源；携带自定义头时仅跟随同源跳转。",
           },
           {
             key: "content",
@@ -204,12 +256,26 @@ export async function subscriptions(ctx) {
           { key: "kind", label: "类型" },
           { key: "name", label: "名称" },
         ],
+        normalize: (v) => {
+          if (v.kind !== "remote") {
+            delete v.url;
+            delete v.user_agent;
+            delete v.headers;
+          }
+          if (v.kind !== "inline") delete v.content;
+          if (v.kind !== "account") {
+            delete v.account_id;
+            delete v.scope;
+          }
+          return v;
+        },
         change,
       });
     },
     collections: () =>
       resourceEditor({
         title: "节点集合",
+        local: true,
         items: s.collections,
         fields: [
           ...common,
@@ -233,12 +299,14 @@ export async function subscriptions(ctx) {
       const catalog = await getClients();
       return resourceEditor({
         title: "客户端模板",
+        pageSize: 10,
         items: s.templates,
         fields: templateFields(catalog),
         normalize: (v) => normalizeTemplate(v, catalog),
         preserve: true,
         defaults: {
-          id: "",
+          id: resourceID("template"),
+          name: "",
           version: 1,
           client: "sing-box",
           mode: "config",
@@ -246,7 +314,7 @@ export async function subscriptions(ctx) {
           rules: [],
         },
         columns: [
-          { key: "id", label: "ID" },
+          { label: "模板", value: (t) => t.name || t.id },
           { key: "client", label: "客户端" },
           { key: "mode", label: "模式" },
         ],
@@ -272,6 +340,7 @@ export async function subscriptions(ctx) {
     outputs: () =>
       resourceEditor({
         title: "订阅输出",
+        local: true,
         items: s.outputs,
         fields: [
           ...common,
@@ -309,6 +378,7 @@ export async function subscriptions(ctx) {
     deliveries: () =>
       resourceEditor({
         title: "分发目的地",
+        local: true,
         items: s.deliveries,
         fields: [
           { key: "id", label: "ID", required: true },
@@ -470,9 +540,11 @@ export async function subscriptions(ctx) {
         sources: views.sources,
         collections: views.collections,
         templates: async () => [
+          presetTools(s, await getClients(), await getPresets(), change),
           await views.templates(),
           templateResources(s.templates, await getClients(), change),
           views.rules(),
+          accountTemplateSettings(s, await getClients(), ctx, change),
         ],
         outputs: async () => [views.outputs(), await views.sharing()],
         deliveries: async () => [views.deliveries(), await views.diagnostics()],
