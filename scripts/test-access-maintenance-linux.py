@@ -135,7 +135,9 @@ try:
     api("/api/tasks/acknowledge", {"id": identifier})
     assert api("/api/tasks/detail?id=" + str(identifier))["acknowledged"] is True
     api("/api/tasks/delete", {"id": identifier})
-    api("/api/tasks/detail?id=" + str(identifier), expected=400)
+    missing = api("/api/tasks/detail?id=" + str(identifier), expected=404)
+    assert missing["error"]["code"] == "not_found", missing
+    assert missing["error"]["retryable"] is False, missing
     policy = {"count": 20, "days": 1, "result_bytes": 262144}
     api("/api/tasks/history", policy)
     api("/api/tasks/history/prune", {})

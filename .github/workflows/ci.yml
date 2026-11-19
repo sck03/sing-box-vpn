@@ -160,6 +160,7 @@ jobs:
         uses: actions/upload-artifact@v7.0.2
         with:
           name: acceptance-diagnostics
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
           path: |

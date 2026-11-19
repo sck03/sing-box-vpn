@@ -256,7 +256,15 @@
       "systemd startup recovery",
       "amd64/arm64 release builds",
       "fresh install and panel rollback"
-    ]
+    ],
+    "follow_up": {
+      "date": "2026-11-20",
+      "run_id": 44560264067,
+      "commit": "679ece31c127068c765d3b2352934716f57be1f0",
+      "result": "Linux race, protocol/runtime tests, browser, namespace/firewall/storage/systemd recovery and both architecture builds passed. Final maintenance acceptance retained an old expected HTTP 400 for deleted tasks; the API correctly returned 404/not_found.",
+      "correction": "Align the maintenance script with the structured 404 contract and assert acknowledgment/deletion in the earlier live API suite. Include hidden .test screenshots in failure diagnostics.",
+      "local_recheck": "Passed the real loopback HTTP API suite against the current built manager/runtime, including task acknowledgment, deletion, HTTP 404, not_found and retryable=false; Python/JavaScript syntax and diff checks passed."
+    }
   },
   "screenshots": [
     "../images/mobile-accounts.png",

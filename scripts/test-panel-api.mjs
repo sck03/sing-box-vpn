@@ -163,6 +163,16 @@ async function finished(id) {
   throw new Error("Test task did not finish");
 }
 await finished(queued.task_id);
+ok(await call("/api/tasks/acknowledge", { id: queued.task_id }));
+assert.equal(
+  ok(await call("/api/tasks/detail?id=" + queued.task_id)).acknowledged,
+  true,
+);
+ok(await call("/api/tasks/delete", { id: queued.task_id }));
+const deletedTask = await call("/api/tasks/detail?id=" + queued.task_id);
+assert.equal(deletedTask.status, 404);
+assert.equal(deletedTask.value.error.code, "not_found");
+assert.equal(deletedTask.value.error.retryable, false);
 assert.equal(
   (
     await call("/api/grants", {
@@ -421,5 +431,5 @@ assert(
 assert.equal((await call(`/u/${denied.token}/usage`)).status, 404);
 
 console.log(
-  "Live panel API passed: shared constraints, current schemas, account binding/export, cross-site sharing, download limits, candidate preview and durable apply.",
+  "Live panel API passed: shared constraints, current schemas, account binding/export, cross-site sharing, download limits, candidate preview, durable apply and deleted-task error contracts.",
 );
