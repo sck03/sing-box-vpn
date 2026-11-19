@@ -12,6 +12,7 @@
   },
   "include": [
     "internal/manage/panel/*.js",
-    "internal/manage/panel/contracts.d.ts"
+    "internal/manage/panel/contracts.d.ts",
+    "scripts/task-contracts.ts"
   ]
 }

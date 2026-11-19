@@ -42,11 +42,11 @@ export interface AccountClientOption {
 
 export interface AccountCommand {
   operation: string;
-  id: string;
+  id?: string;
   account_ids?: Array<string> | null;
-  scope: string;
-  client: string;
-  generation: number;
+  scope?: string;
+  client?: string;
+  generation?: number;
   inbound_ids?: Array<string> | null;
   tuic_port?: number;
   uuid?: string;
@@ -437,7 +437,7 @@ export interface TaskAudience {
 }
 
 export type TaskCommand =
-  | { operation: "account"; service?: never; id?: never; value?: never; config?: never; account: AccountCommand & { operation: "bind" | "rotate" | "unbind" }; subscription?: never }
+  | { operation: "account"; service?: never; id?: never; value?: never; config?: never; account: AccountCommand & { operation: "bind" | "rotate" | "unbind"; client?: never; tuic_port?: never }; subscription?: never }
   | { operation: "bbr"; service?: never; id?: never; value: "enable" | "restore"; config?: never; account?: never; subscription?: never }
   | { operation: "certificate-renew"; service?: never; id: string; value?: never; config?: never; account?: never; subscription?: never }
   | { operation: "gateway"; service?: never; id?: never; value?: never; config: { op: "start" | "stop" | "swap" | "refresh" }; account?: never; subscription?: never }

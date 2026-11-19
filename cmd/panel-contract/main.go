@@ -95,7 +95,7 @@ func main() {
 							fieldType = `"enable" | "restore"`
 						}
 						if key == "account" && operation == "account" {
-							fieldType += ` & { operation: "bind" | "rotate" | "unbind" }`
+							fieldType += ` & { operation: "bind" | "rotate" | "unbind"; client?: never; tuic_port?: never }`
 						}
 						if key == "subscription" && operation == "subscription" {
 							fieldType += ` & { operation: "refresh" | "check" | "deliver" }`

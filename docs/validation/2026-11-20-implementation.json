@@ -38,116 +38,210 @@
     "remaining": "Stopped the duplicate emulated management/protocol run after preserving three passing package results; final revision is validated by GitHub CI on native Linux. No local pass claimed for the interrupted packages."
   },
   "benchmark": {
-    "environment": "Windows amd64, Intel i5-9400F, Go 1.27.3, 500ms x3; concurrent QEMU validation affects timing",
-    "meter_samples": [
+    "environment": "Windows amd64, Intel i5-9400F, Go 1.27.3, 500ms x3; final samples taken after QEMU shutdown and local regression completion",
+    "interpretation": "Version-only reads allocate about 1,391 B / 35 allocations vs full 100-credential snapshots about 90,722 B / 800 allocations (98.5% fewer allocated bytes). Cached meter median 122.7ns with zero allocations; authorization100 median 0.540ms; durable64KiB median 1.187ms. Baseline and final meter costs are comparable, no production throughput improvement claim. Earlier noisy samples retained explicitly under concurrent_vm_samples.",
+    "concurrent_vm_samples": {
+      "meter": [
+        {
+          "name": "BenchmarkMeterTakeComplete-6",
+          "iterations": 2283241,
+          "ns_per_op": 240.3,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "BenchmarkMeterTakeComplete-6",
+          "iterations": 2631914,
+          "ns_per_op": 222.2,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "BenchmarkMeterTakeComplete-6",
+          "iterations": 2769090,
+          "ns_per_op": 222.7,
+          "bytes_per_op": 0,
+          "allocs_per_op": 0
+        },
+        {
+          "name": "BenchmarkActiveAuthorization100-6",
+          "iterations": 303,
+          "ns_per_op": 1809267.0,
+          "bytes_per_op": 87051,
+          "allocs_per_op": 979
+        },
+        {
+          "name": "BenchmarkActiveAuthorization100-6",
+          "iterations": 516,
+          "ns_per_op": 1245824.0,
+          "bytes_per_op": 87026,
+          "allocs_per_op": 980
+        },
+        {
+          "name": "BenchmarkActiveAuthorization100-6",
+          "iterations": 514,
+          "ns_per_op": 1222547.0,
+          "bytes_per_op": 87055,
+          "allocs_per_op": 980
+        },
+        {
+          "name": "BenchmarkDurableMeter64KiB-6",
+          "iterations": 280,
+          "ns_per_op": 1828437.0,
+          "bytes_per_op": 10415,
+          "allocs_per_op": 249
+        },
+        {
+          "name": "BenchmarkDurableMeter64KiB-6",
+          "iterations": 318,
+          "ns_per_op": 1650935.0,
+          "bytes_per_op": 10472,
+          "allocs_per_op": 249
+        },
+        {
+          "name": "BenchmarkDurableMeter64KiB-6",
+          "iterations": 379,
+          "ns_per_op": 1574249.0,
+          "bytes_per_op": 10562,
+          "allocs_per_op": 249
+        }
+      ],
+      "polling": [
+        {
+          "name": "BenchmarkCredentialPolling100/Version-6",
+          "ns_per_op": 34328.0,
+          "bytes_per_op": 1403,
+          "allocs_per_op": 35
+        },
+        {
+          "name": "BenchmarkCredentialPolling100/Version-6",
+          "ns_per_op": 37121.0,
+          "bytes_per_op": 1402,
+          "allocs_per_op": 35
+        },
+        {
+          "name": "BenchmarkCredentialPolling100/Version-6",
+          "ns_per_op": 36695.0,
+          "bytes_per_op": 1400,
+          "allocs_per_op": 35
+        },
+        {
+          "name": "BenchmarkCredentialPolling100/Snapshot-6",
+          "ns_per_op": 483900.0,
+          "bytes_per_op": 90715,
+          "allocs_per_op": 800
+        },
+        {
+          "name": "BenchmarkCredentialPolling100/Snapshot-6",
+          "ns_per_op": 482346.0,
+          "bytes_per_op": 90734,
+          "allocs_per_op": 800
+        },
+        {
+          "name": "BenchmarkCredentialPolling100/Snapshot-6",
+          "ns_per_op": 1451272.0,
+          "bytes_per_op": 90743,
+          "allocs_per_op": 801
+        }
+      ]
+    },
+    "final_samples": [
       {
         "name": "BenchmarkMeterTakeComplete-6",
-        "iterations": 2283241,
-        "ns_per_op": 240.3,
+        "ns_per_op": 123.9,
         "bytes_per_op": 0,
         "allocs_per_op": 0
       },
       {
         "name": "BenchmarkMeterTakeComplete-6",
-        "iterations": 2631914,
-        "ns_per_op": 222.2,
+        "ns_per_op": 122.7,
         "bytes_per_op": 0,
         "allocs_per_op": 0
       },
       {
         "name": "BenchmarkMeterTakeComplete-6",
-        "iterations": 2769090,
-        "ns_per_op": 222.7,
+        "ns_per_op": 121.0,
         "bytes_per_op": 0,
         "allocs_per_op": 0
       },
       {
         "name": "BenchmarkActiveAuthorization100-6",
-        "iterations": 303,
-        "ns_per_op": 1809267.0,
-        "bytes_per_op": 87051,
-        "allocs_per_op": 979
+        "ns_per_op": 549454.0,
+        "bytes_per_op": 87052,
+        "allocs_per_op": 980
       },
       {
         "name": "BenchmarkActiveAuthorization100-6",
-        "iterations": 516,
-        "ns_per_op": 1245824.0,
+        "ns_per_op": 539273.0,
         "bytes_per_op": 87026,
         "allocs_per_op": 980
       },
       {
         "name": "BenchmarkActiveAuthorization100-6",
-        "iterations": 514,
-        "ns_per_op": 1222547.0,
-        "bytes_per_op": 87055,
+        "ns_per_op": 539600.0,
+        "bytes_per_op": 87042,
         "allocs_per_op": 980
       },
       {
         "name": "BenchmarkDurableMeter64KiB-6",
-        "iterations": 280,
-        "ns_per_op": 1828437.0,
-        "bytes_per_op": 10415,
+        "ns_per_op": 1183342.0,
+        "bytes_per_op": 10573,
         "allocs_per_op": 249
       },
       {
         "name": "BenchmarkDurableMeter64KiB-6",
-        "iterations": 318,
-        "ns_per_op": 1650935.0,
-        "bytes_per_op": 10472,
+        "ns_per_op": 1197909.0,
+        "bytes_per_op": 10563,
         "allocs_per_op": 249
       },
       {
         "name": "BenchmarkDurableMeter64KiB-6",
-        "iterations": 379,
-        "ns_per_op": 1574249.0,
-        "bytes_per_op": 10562,
+        "ns_per_op": 1187347.0,
+        "bytes_per_op": 10584,
         "allocs_per_op": 249
-      }
-    ],
-    "polling_samples": [
+      },
       {
         "name": "BenchmarkCredentialPolling100/Version-6",
-        "ns_per_op": 34328.0,
-        "bytes_per_op": 1403,
+        "ns_per_op": 24719.0,
+        "bytes_per_op": 1391,
         "allocs_per_op": 35
       },
       {
         "name": "BenchmarkCredentialPolling100/Version-6",
-        "ns_per_op": 37121.0,
-        "bytes_per_op": 1402,
+        "ns_per_op": 24630.0,
+        "bytes_per_op": 1395,
         "allocs_per_op": 35
       },
       {
         "name": "BenchmarkCredentialPolling100/Version-6",
-        "ns_per_op": 36695.0,
-        "bytes_per_op": 1400,
+        "ns_per_op": 24517.0,
+        "bytes_per_op": 1389,
         "allocs_per_op": 35
       },
       {
         "name": "BenchmarkCredentialPolling100/Snapshot-6",
-        "ns_per_op": 483900.0,
-        "bytes_per_op": 90715,
+        "ns_per_op": 320171.0,
+        "bytes_per_op": 90722,
         "allocs_per_op": 800
       },
       {
         "name": "BenchmarkCredentialPolling100/Snapshot-6",
-        "ns_per_op": 482346.0,
-        "bytes_per_op": 90734,
+        "ns_per_op": 317983.0,
+        "bytes_per_op": 90724,
         "allocs_per_op": 800
       },
       {
         "name": "BenchmarkCredentialPolling100/Snapshot-6",
-        "ns_per_op": 1451272.0,
-        "bytes_per_op": 90743,
-        "allocs_per_op": 801
+        "ns_per_op": 323199.0,
+        "bytes_per_op": 90713,
+        "allocs_per_op": 800
       }
-    ],
-    "interpretation": "Version-only reads avoid decoding 100 credential objects: approximately 98.5% lower allocated bytes than a full snapshot. This compares polling strategies, not old/new proxy throughput. Cached meter remains allocation-free. Initial benchmark fixture violated credential binding uniqueness; fixed to one credential per inbound and reran the polling benchmark successfully."
+    ]
   },
   "cleanup": {
     "manual_directory": ".cleanup-manual/2026-11-20-review",
-    "moved_items": 9,
-    "reason": "Earlier automatic approval rejected deletion; moved obsolete review binaries, failed panel directories, old screenshots and temporary patch into the user-requested single folder. Toolchains, reusable caches, VM assets, historical validation evidence and license files retained."
+    "moved_items": 14,
+    "reason": "Earlier automatic approval rejected deletion; moved obsolete review and final verification binaries, failed panel directories, old screenshots and temporary patch/source archive into the user-requested single folder. Toolchains, reusable caches, VM assets, historical validation evidence, current screenshots and license files retained."
   },
   "limits": [
     "Affected inbound connections can be interrupted; no per-user seamless update claim.",
