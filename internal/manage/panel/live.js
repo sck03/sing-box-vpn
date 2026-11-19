@@ -9,6 +9,7 @@ export function overviewStream({
 }) {
   let source,
     timer,
+    sessionCheck,
     generation = 0,
     active = false,
     delay = 1000;
@@ -16,6 +17,8 @@ export function overviewStream({
     generation++;
     clearTimeout(timer);
     timer = null;
+    sessionCheck?.abort();
+    sessionCheck = null;
     source?.close();
     source = null;
   }
@@ -50,8 +53,12 @@ export function overviewStream({
       timer = setTimeout(async () => {
         timer = null;
         if (!active || generation !== attempt) return;
+        const check = new AbortController();
+        sessionCheck = check;
         try {
-          await request("/api/auth/session");
+          await request("/api/auth/session", undefined, {
+            signal: check.signal,
+          });
         } catch (error) {
           if (generation !== attempt) return;
           if (error.status === 401) {
@@ -60,6 +67,8 @@ export function overviewStream({
             unauthorized();
             return;
           }
+        } finally {
+          if (sessionCheck === check) sessionCheck = null;
         }
         if (active && generation === attempt) connect();
       }, wait);

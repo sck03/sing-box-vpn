@@ -87,15 +87,6 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 	loginSlots := make(chan struct{}, 2)
 	requests, streams := make(httpserver.Gate, 32), make(httpserver.Gate, 32)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gate := requests
-		if r.URL.Path == "/api/events" {
-			gate = streams
-		}
-		release, ok := gate.Enter(w)
-		if !ok {
-			return
-		}
-		defer release()
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
@@ -116,6 +107,17 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 			}
 			return
 		}
+		// Local readiness performs no database or expensive work and remains
+		// available while application requests occupy their concurrency budget.
+		gate := requests
+		if r.URL.Path == "/api/events" {
+			gate = streams
+		}
+		release, ok := gate.Enter(w)
+		if !ok {
+			return
+		}
+		defer release()
 		if len(proxy) > 0 {
 			ip, err := netip.ParseAddr(peer)
 			if err != nil || !slices.ContainsFunc(proxy, func(p netip.Prefix) bool { return p.Contains(ip) }) || r.Header.Get("X-Forwarded-Proto") != "https" {

@@ -176,6 +176,41 @@ sources.at(-1).onerror();
 await retry();
 assert.equal(document.querySelector("#shell").hidden, true);
 clearTimeout(notice.timer);
+
+// Hiding a page cancels a pending reconnect check, including its network I/O.
+const { overviewStream } = await import("../internal/manage/panel/live.js");
+let reconnectSignal;
+const stream = overviewStream({
+  request: async (_path, _body, { signal }) => {
+    reconnectSignal = signal;
+    return new Promise((_resolve, reject) =>
+      signal.addEventListener("abort", () => reject(signal.reason), {
+        once: true,
+      }),
+    );
+  },
+  snapshot() {},
+  unauthorized() {
+    assert.fail("a cancelled check invalidated the session");
+  },
+});
+stream.setActive(true);
+sources.at(-1).onerror();
+const pendingCheck = retry();
+await tick();
+assert.equal(reconnectSignal.aborted, false);
+const opened = sources.length;
+stream.setActive(false);
+assert.equal(reconnectSignal.aborted, true);
+await pendingCheck;
+assert.equal(
+  sources.length,
+  opened,
+  "hidden page reconnected after cancellation",
+);
+stream.setActive(true);
+assert.equal(sources.length, opened + 1);
+stream.stop();
 globalThis.setTimeout = realTimeout;
 dom.window.close();
 

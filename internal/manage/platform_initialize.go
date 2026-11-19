@@ -30,18 +30,19 @@ func (s *PlatformService) initialize(ctx context.Context, address, name, admin, 
 	return withStartupLock(ctx, s.Root, func() error {
 		marker := filepath.Join(s.Root, initializationMarker)
 		_, pending := os.Stat(marker)
-		state, err := s.Store.State(ctx)
+		applied, err := s.Store.AppliedConfig(ctx)
+		fresh := errors.Is(err, sql.ErrNoRows)
 		var config PlatformConfig
 		if err == nil {
 			if pending != nil {
 				return errors.New("platform is already initialized")
 			}
-			config, err = decodePlatform(state.Applied)
+			config, err = decodePlatform(applied)
 			if err != nil {
 				return err
 			}
 		} else {
-			if !errors.Is(err, sql.ErrNoRows) {
+			if !fresh {
 				return err
 			}
 			for _, name := range []string{"app.json", "sb.json"} {
@@ -57,13 +58,17 @@ func (s *PlatformService) initialize(ctx context.Context, address, name, admin, 
 			}
 			subscriptions := sub.DefaultConfig()
 			config = PlatformConfig{Schema: 4, App: app, VPN: VPNSettings{ProxyPort: 7928, Profiles: map[string]Profile{}}, VPNSecrets: map[string]Secrets{}, Gateway: Object{}, Subscriptions: subscriptions, Certificates: []CertificateAsset{}, Argo: TunnelSettings{Mode: "off"}, Listener: subscriptionSettings{Listen: "127.0.0.1", Port: 2097}}
-			if err := panelPortAvailable(config, options.port()); err != nil {
-				return err
-			}
-			// Validate/build before committing intent. No app.json is published yet.
-			if _, err = s.build(ctx, config); err != nil {
-				return err
-			}
+		}
+		if err := panelPortAvailable(config, options.port()); err != nil {
+			return err
+		}
+		files, err := s.build(ctx, config)
+		if err != nil {
+			return err
+		}
+		// Reuse the validated projection after committing initial intent. Retrying
+		// a failed publication rebuilds from the durable applied configuration.
+		if fresh {
 			data, err := encodePlatform(config)
 			if err != nil {
 				return err
@@ -74,13 +79,6 @@ func (s *PlatformService) initialize(ctx context.Context, address, name, admin, 
 			if err = s.Store.InitializeWith(ctx, data, func(tx *sql.Tx) error { return install(ctx, tx) }); err != nil {
 				return err
 			}
-		}
-		if err := panelPortAvailable(config, options.port()); err != nil {
-			return err
-		}
-		files, err := s.build(ctx, config)
-		if err != nil {
-			return err
 		}
 		if err := files.json("panel.json", options); err != nil {
 			return err

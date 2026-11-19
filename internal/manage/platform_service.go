@@ -90,11 +90,11 @@ func (s *PlatformService) signal() {
 }
 
 func (s *PlatformService) State(ctx context.Context, secret bool) (Object, error) {
-	state, err := s.Store.State(ctx)
+	state, err := s.Store.DesiredState(ctx)
 	if err != nil {
 		return nil, err
 	}
-	c, err := decodePlatform(state.Desired)
+	c, err := decodePlatform(state.Config)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +140,7 @@ func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revi
 	if err := s.validateConfiguredPanelPort(c); err != nil {
 		return 0, err
 	}
-	state, err := s.Store.State(ctx)
+	state, err := s.Store.Revisions(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -158,7 +158,7 @@ func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revi
 	// execution validates again against then-current credentials and material.
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	state, err = s.Store.State(ctx)
+	state, err = s.Store.Revisions(ctx)
 	if err != nil {
 		return 0, err
 	}

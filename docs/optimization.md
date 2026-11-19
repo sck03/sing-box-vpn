@@ -4,6 +4,16 @@
 
 ## 当前优化
 
+### CI 启动与按需读取（2026-11-19）
+
+- 初始化复用已校验产物，避免再次构建相同配置；失败重试从已提交配置重新构建。
+- 配置页面仅查询 desired 与 revision，候选保存的两次版本核对仅查询 revision，避免复制无关的大配置字段；保持单次 SQL 快照一致性。
+- HTML/JS/CSS 直接读取 embed 数据；现有 JS/CSS 的 ETag 只在首次访问计算，不缓存不存在的路径。
+- 本机健康检查不占业务请求并发额度；隐藏或退出页面时取消 SSE 重连的在途会话读取。
+- CI 使用独立启动器执行真实 `init`/`serve` 和 `/healthz`，成功停止进程并清理目录，失败保留数据和有界日志。
+
+`BenchmarkConfigurationRead` 在同一个 SQLite 数据库中比较完整状态、desired 和版本查询，desired 与 applied 各约 1 MiB。三次样本中位数的分配字节分别为 4,253,224 B、2,114,895 B 和 1,092 B；只读 desired 的单次分配约减少 50%。该结果仅衡量数据库读取，未作为代理吞吐或整机 RSS 提升结论。复现：`go test ./internal/controlstore -run '^$' -bench '^BenchmarkConfigurationRead$' -benchmem -count=3`。本轮并行运行其他本地验证，耗时样本仅供诊断，详细数据见 [启动与读取验证记录](validation/2026-11-19-ci-startup.json)。
+
 ### 前后端一致性重构（2026-11-19）
 
 - 权益页、分享创建和公开用量共用 `account_sharing` 的入口可用性判断；绑定摘要只查询实例/入站/协议，不读取密码或 UUID。未绑定时提供绑定操作，解绑后的旧链接显示原因。

@@ -101,6 +101,19 @@ func (s *Store) AppliedConfig(ctx context.Context) (data json.RawMessage, err er
 	err = s.db.QueryRowContext(ctx, `SELECT applied FROM control_state WHERE id=1`).Scan(&data)
 	return
 }
+
+// DesiredState reads the editable configuration and its revisions atomically,
+// without copying the potentially large applied configuration into memory.
+type DesiredState struct {
+	Revisions
+	Config json.RawMessage
+}
+
+func (s *Store) DesiredState(ctx context.Context) (v DesiredState, err error) {
+	err = s.db.QueryRowContext(ctx, `SELECT revision,applied_revision,desired FROM control_state WHERE id=1`).Scan(&v.Revision, &v.AppliedRevision, &v.Config)
+	return
+}
+
 func (s *Store) State(ctx context.Context) (v State, err error) {
 	err = s.db.QueryRowContext(ctx, `SELECT revision,applied_revision,desired,applied FROM control_state WHERE id=1`).Scan(&v.Revision, &v.AppliedRevision, &v.Desired, &v.Applied)
 	return
