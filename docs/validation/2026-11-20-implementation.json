@@ -1,0 +1,159 @@
+{
+  "date": "2026-11-20",
+  "baseline": "6f6314fe314fc26aa8bd7524ab529b3bdef1d649",
+  "runtime": "1.14.4+sbvpn.5",
+  "format_versions": {
+    "database": 15,
+    "platform": 5,
+    "managed_nodes": 4,
+    "backup": 8
+  },
+  "compatibility": "Current contracts only; no old data/API migration or compatibility shims added.",
+  "changes": [
+    "Public application.TaskCommand excludes scheduling metadata; operation fields validated; private scheduled envelope accepts only refresh/deliver.",
+    "Frontend discriminated task union and named overview/task contracts generated from Go.",
+    "Full attention counts include old failed, partial and cached outcomes; task first-page coalesced refresh, historical-page notice, cancellable detail polling with visibility/focus preservation.",
+    "Credential publication reloads only changed inbounds using independent sing-box scopes; failed start restores old listeners; failed rollback terminates core; three consecutive reload failures terminate core.",
+    "Configuration publish/activate/confirm/recover orchestration extracted into application.Deployment; manager adapters separated by responsibility.",
+    "Mobile secondary fields expand on demand and keep expansion on live updates; coherent alert colors; five-row overview task preview; localized service states.",
+    "Removed test-only production Export/Tasks/TaskSummaries wrappers and moved random fixture helpers into test files; updated current documentation and mobile screenshot."
+  ],
+  "windows_validation": {
+    "go_test_all_with_managed_runtime": "passed (full-final.log)",
+    "go_vet": "passed",
+    "generated_contract_check": "passed",
+    "tagged_runtime_tests": "passed; unchanged inbound isolation, unchanged users no-op, construction/start recovery, multi-inbound rollback, reference preservation, shutdown serialization",
+    "real_five_protocol_reload": "passed: VLESS, VMess, Hysteria2, TUIC, AnyTLS; old generation blocked, new generation connects, other inbound TCP streams preserved, core started timestamp unchanged",
+    "targeted_task_boundary_and_publication": "passed",
+    "frontend_eight_suites": "passed",
+    "frontend_typecheck": "passed",
+    "real_api_and_chrome_desktop_mobile": "passed; public automatic/scope/irrelevant fields rejected",
+    "linux_amd64_cross_build": "passed"
+  },
+  "linux_local_validation": {
+    "environment": "Dedicated QEMU TCG Ubuntu 24.04.5 VM, 2 vCPU, 2 GiB RAM",
+    "application_race": "passed",
+    "controlstore_race": "passed",
+    "accounting_race": "passed",
+    "remaining": "Management, tagged runtime and real protocol race validation in progress at implementation commit; final outcome recorded in follow-up validation."
+  },
+  "benchmark": {
+    "environment": "Windows amd64, Intel i5-9400F, Go 1.27.3, 500ms x3; concurrent QEMU validation affects timing",
+    "meter_samples": [
+      {
+        "name": "BenchmarkMeterTakeComplete-6",
+        "iterations": 2283241,
+        "ns_per_op": 240.3,
+        "bytes_per_op": 0,
+        "allocs_per_op": 0
+      },
+      {
+        "name": "BenchmarkMeterTakeComplete-6",
+        "iterations": 2631914,
+        "ns_per_op": 222.2,
+        "bytes_per_op": 0,
+        "allocs_per_op": 0
+      },
+      {
+        "name": "BenchmarkMeterTakeComplete-6",
+        "iterations": 2769090,
+        "ns_per_op": 222.7,
+        "bytes_per_op": 0,
+        "allocs_per_op": 0
+      },
+      {
+        "name": "BenchmarkActiveAuthorization100-6",
+        "iterations": 303,
+        "ns_per_op": 1809267.0,
+        "bytes_per_op": 87051,
+        "allocs_per_op": 979
+      },
+      {
+        "name": "BenchmarkActiveAuthorization100-6",
+        "iterations": 516,
+        "ns_per_op": 1245824.0,
+        "bytes_per_op": 87026,
+        "allocs_per_op": 980
+      },
+      {
+        "name": "BenchmarkActiveAuthorization100-6",
+        "iterations": 514,
+        "ns_per_op": 1222547.0,
+        "bytes_per_op": 87055,
+        "allocs_per_op": 980
+      },
+      {
+        "name": "BenchmarkDurableMeter64KiB-6",
+        "iterations": 280,
+        "ns_per_op": 1828437.0,
+        "bytes_per_op": 10415,
+        "allocs_per_op": 249
+      },
+      {
+        "name": "BenchmarkDurableMeter64KiB-6",
+        "iterations": 318,
+        "ns_per_op": 1650935.0,
+        "bytes_per_op": 10472,
+        "allocs_per_op": 249
+      },
+      {
+        "name": "BenchmarkDurableMeter64KiB-6",
+        "iterations": 379,
+        "ns_per_op": 1574249.0,
+        "bytes_per_op": 10562,
+        "allocs_per_op": 249
+      }
+    ],
+    "polling_samples": [
+      {
+        "name": "BenchmarkCredentialPolling100/Version-6",
+        "ns_per_op": 34328.0,
+        "bytes_per_op": 1403,
+        "allocs_per_op": 35
+      },
+      {
+        "name": "BenchmarkCredentialPolling100/Version-6",
+        "ns_per_op": 37121.0,
+        "bytes_per_op": 1402,
+        "allocs_per_op": 35
+      },
+      {
+        "name": "BenchmarkCredentialPolling100/Version-6",
+        "ns_per_op": 36695.0,
+        "bytes_per_op": 1400,
+        "allocs_per_op": 35
+      },
+      {
+        "name": "BenchmarkCredentialPolling100/Snapshot-6",
+        "ns_per_op": 483900.0,
+        "bytes_per_op": 90715,
+        "allocs_per_op": 800
+      },
+      {
+        "name": "BenchmarkCredentialPolling100/Snapshot-6",
+        "ns_per_op": 482346.0,
+        "bytes_per_op": 90734,
+        "allocs_per_op": 800
+      },
+      {
+        "name": "BenchmarkCredentialPolling100/Snapshot-6",
+        "ns_per_op": 1451272.0,
+        "bytes_per_op": 90743,
+        "allocs_per_op": 801
+      }
+    ],
+    "interpretation": "Version-only reads avoid decoding 100 credential objects: approximately 98.5% lower allocated bytes than a full snapshot. This compares polling strategies, not old/new proxy throughput. Cached meter remains allocation-free. Initial benchmark fixture violated credential binding uniqueness; fixed to one credential per inbound and reran the polling benchmark successfully."
+  },
+  "cleanup": {
+    "manual_directory": ".cleanup-manual/2026-11-20-review",
+    "moved_items": 8,
+    "reason": "Earlier automatic approval rejected deletion; moved obsolete review binaries, failed panel directories, old screenshots and temporary patch into the user-requested single folder. Toolchains, reusable caches, VM assets, historical validation evidence and license files retained."
+  },
+  "limits": [
+    "Affected inbound connections can be interrupted; no per-user seamless update claim.",
+    "Full configuration/topology changes still use normal service apply/recovery.",
+    "Frontend JS remains checkJs with strict=false for dynamic extension boundaries.",
+    "Microbenchmarks are not production throughput or long-duration load validation.",
+    "Official upstream protocol constructors are used; no copied s-ui protocol forks."
+  ]
+}

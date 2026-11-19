@@ -83,6 +83,7 @@ const ctx = {
         "服务器已有新的配置版本，请核对草稿后重新载入。";
     }
   },
+  /** @param {import("./contracts.js").TaskCommand} command */
   async task(command) {
     const response = await submitTask(command);
     notice("任务 #" + response.task_id + " 已排队", false, { label: "查看结果", action: () => openTask(response.task_id) });
@@ -192,22 +193,15 @@ const stream = overviewStream({
   snapshot(data) {
     ctx.overview = data;
     ctx.observeRevision(ctx.overview.revision);
-    const active = ctx.overview.tasks.filter((task) =>
-      ["queued", "running"].includes(task.state),
-    );
-    const failed = ctx.overview.tasks.filter(
-      (task) =>
-        !task.acknowledged && (task.state === "failed" ||
-        ["partial", "cached", "failed"].includes(task.outcome)),
-    );
+    const { active, attention } = ctx.overview.task_counts;
     const status = $("#task-status");
-    status.hidden = active.length === 0 && failed.length === 0;
+    status.hidden = active === 0 && attention === 0;
     status.href =
       ctx.session.role === "viewer" ? "#overview" : "#maintenance/logs";
-    status.textContent = active.length
-      ? `${active.length} 个任务正在处理 · 查看进度`
-      : `${failed.length} 个任务需要关注 · 查看详情`;
-    status.classList.toggle("error", !active.length && failed.length > 0);
+    status.textContent = active
+      ? `${active} 个任务正在处理${attention ? ` · ${attention} 个需要关注` : ""} · 查看进度`
+      : `${attention} 个任务需要关注 · 查看详情`;
+    status.classList.toggle("error", attention > 0);
     ctx.updateOverview?.(ctx.overview);
   },
 });

@@ -109,6 +109,7 @@ const snapshot = {
   services: [],
   runtimes: [],
   tasks: [],
+  task_counts: { active: 0, failed: 7, attention: 7 },
 };
 globalThis.fetch = async (path) => {
   requests.push(path);
@@ -308,13 +309,16 @@ globalThis.EventSource = class {
   constructor() {
     streams.push(this);
   }
-  addEventListener() {}
+  addEventListener(name, callback) { this[name] = callback; }
   close() {}
 };
 await import("../internal/manage/panel/app.js");
 await tick();
 await tick();
 assert.equal(streams.length, 1);
+streams[0].overview({ data: JSON.stringify(snapshot) });
+assert.equal(document.querySelector("#task-status").hidden, false);
+assert.match(document.querySelector("#task-status").textContent, /7 个任务需要关注/);
 const networkReads = () =>
   requests.filter((path) => path === "/api/server").length;
 const beforeArgo = networkReads();

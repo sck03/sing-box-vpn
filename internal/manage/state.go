@@ -13,7 +13,6 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
-	"fmt"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	"math/big"
 	"os"
@@ -93,12 +92,6 @@ func randomBytes(size int) []byte {
 		panic(err) // crypto/rand terminates on entropy failure in supported Go.
 	}
 	return b
-}
-func randomSecret() string { return base64.RawURLEncoding.EncodeToString(randomBytes(32)) }
-func randomUUID() string {
-	b := randomBytes(16)
-	b[6], b[8] = (b[6]&15)|64, (b[8]&63)|128
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 func EnsureCertificate(certPath, keyPath, domain string) error {
 	_, certErr := os.Stat(certPath)

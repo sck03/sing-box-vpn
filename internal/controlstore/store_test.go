@@ -95,7 +95,7 @@ func TestTaskRecoveryAndConfigurationRevisions(t *testing.T) {
 	if e = s.Recover(ctx); e != nil {
 		t.Fatal(e)
 	}
-	tasks, e := s.Tasks(ctx)
+	tasks, e := s.RecentTaskSummaries(ctx)
 	if e != nil || len(tasks) == 0 {
 		t.Fatal(tasks, e)
 	}

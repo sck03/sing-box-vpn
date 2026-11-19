@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 const dom = new JSDOM(
   '<main id="content"></main><dialog id="dialog"></dialog><div id="notice"></div>',
-  { url: "http://localhost/" },
+  { url: "http://localhost/", pretendToBeVisual: true },
 );
 for (const name of ["window", "document", "Node", "Event", "FormData"])
   globalThis[name] = dom.window[name];
@@ -13,7 +13,7 @@ dom.window.HTMLDialogElement.prototype.close = function () {
   this.open = false;
   this.dispatchEvent(new Event("close"));
 };
-const { tasksCard, taskHistory } = await import("../internal/manage/panel/tasks.js");
+const { tasksCard, taskHistory, openTask } = await import("../internal/manage/panel/tasks.js");
 const { api, RequestError } = await import("../internal/manage/panel/api.js");
 const { templateResources } =
   await import("../internal/manage/panel/subscription-fields.js");
@@ -175,6 +175,15 @@ pageReads.shift().resolve({ items: [{ id: 100, state: "succeeded" }], next_befor
 const history = await historyPromise;
 document.querySelector("main").replaceChildren(history);
 const historyButton = (label) => [...history.querySelectorAll("button")].find((item) => item.textContent === label);
+pageContext.updateOverview({ tasks: [{id:101, state:"running"}], task_counts:{active:1,attention:0} });
+assert.equal(pageReads.length, 1);
+pageContext.updateOverview({ tasks: [{id:101, state:"succeeded"}], task_counts:{active:0,attention:0} });
+assert.equal(pageReads.length, 1, "snapshot requests were not coalesced");
+pageReads.shift().resolve({items:[{id:101,state:"running"},{id:100,state:"succeeded"}],next_before:100});
+await tick();
+pageReads.shift().resolve({items:[{id:101,state:"succeeded"},{id:100,state:"succeeded"}],next_before:100});
+await tick();
+assert(history.textContent.includes("101"), "new task never entered first page");
 historyButton("较早记录").click();
 pageReads.shift().reject(new Error("temporary page failure"));
 await tick();
@@ -194,6 +203,22 @@ assert(pageReads[0].path.includes("before=100"));
 pageReads.shift().resolve({ items: [{ id: 80, state: "succeeded" }], next_before: 80 });
 await tick();
 assert(history.textContent.includes("第 2 页"));
+pageContext.updateOverview({tasks:[{id:102,state:"running"}],task_counts:{active:1,attention:0}});
+assert.equal(pageReads.length,0,"live update replaced a historical page");
+assert(history.textContent.includes("当前历史页保持不变"));
+let detailReads = 0;
+globalThis.fetch = async () => ({ok:true,json:async()=>({id:103,kind:"service",state:++detailReads===1?"running":"succeeded",phase:detailReads===1?"executing":"succeeded"})});
+await openTask(103);
+dialog.querySelector("details").open = true;
+const closeControl = [...dialog.querySelectorAll("button")].find(b=>b.textContent==="关闭");
+closeControl.focus();
+await new Promise(resolve=>setTimeout(resolve,1650));
+assert(dialog.textContent.includes("已完成"),"running task detail never refreshed");
+assert(dialog.querySelector("details").open,"refresh collapsed diagnostics");
+assert.equal(document.activeElement,closeControl,"refresh stole close-button focus");
+dialog.close();
+await new Promise(resolve=>setTimeout(resolve,1550));
+assert.equal(detailReads,2,"terminal or closed task kept polling");
 dom.window.close();
 console.log(
   "Panel lifecycle checks passed: navigation abort, competing dialogs, typed errors and contextual resource editors.",

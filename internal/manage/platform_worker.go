@@ -116,7 +116,7 @@ func (s *PlatformService) runTask(ctx context.Context, task controlstore.Task) e
 	s.invalidateOverview()
 	budget := application.ControlTaskTimeout
 	if task.Kind == "subscription" {
-		var action PlatformAction
+		var action taskInput
 		if json.Unmarshal(task.Input, &action) == nil && action.Subscription.Operation == "check" {
 			budget = application.ProbeTaskTimeout
 		}
@@ -132,7 +132,7 @@ func (s *PlatformService) runTask(ctx context.Context, task controlstore.Task) e
 			err = withServiceLock(child, s.Root, func() error { return s.apply(child, task.ID, input) })
 		}
 	} else {
-		var action PlatformAction
+		var action taskInput
 		err = json.Unmarshal(task.Input, &action)
 		if err == nil {
 			if action.Operation == "outbound-probe" || action.Operation == "program-upgrade" || action.Operation == "subscription" {
@@ -171,10 +171,13 @@ func (s *PlatformService) runAccountBatch(ctx context.Context, tasks []controlst
 	lockErr := withServiceLock(child, s.Root, func() error {
 		changed := false
 		for i, task := range tasks {
-			var action PlatformAction
+			var action taskInput
 			failures[i] = json.Unmarshal(task.Input, &action)
-			if failures[i] == nil && action.Operation != "account" {
+			if failures[i] == nil && (action.Operation != "account" || action.Automatic) {
 				failures[i] = errors.New("invalid account task")
+			}
+			if failures[i] == nil {
+				failures[i] = action.Validate()
 			}
 			if failures[i] == nil {
 				failures[i] = s.mutateAccount(child, task.ID, action.Account)

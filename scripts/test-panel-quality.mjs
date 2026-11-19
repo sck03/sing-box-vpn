@@ -262,6 +262,7 @@ host.replaceChildren(...(await maintenance(maintenanceContext)));
 assert.match(host.textContent, /执行中/);
 maintenanceContext.updateOverview({
   tasks: [{ id: 42, kind: "service", state: "succeeded", phase: "succeeded" }],
+  task_counts: { active: 0, failed: 0, attention: 0 },
 });
 assert.match(host.textContent, /已完成/);
 assert.doesNotMatch(host.textContent, /执行中/);
@@ -315,6 +316,13 @@ controller.abort();
 await new Promise((resolve) => setTimeout(resolve, 220));
 await paged.refresh();
 assert.equal(pageCalls, beforeAbort, "aborted page kept polling");
+const compactRow = table([{key:"name",label:"名称"},{key:"expires",label:"到期",secondary:true}], [{id:1,name:"A",expires:"tomorrow"}]);
+host.replaceChildren(compactRow);
+compactRow.querySelector(".mobile-row-expand").click();
+assert(compactRow.querySelector("tr.expanded"));
+compactRow.querySelector("input").focus();
+compactRow.updateItems([{id:1,name:"B",expires:"tomorrow"}]);
+assert.equal(compactRow.querySelector(".mobile-row-expand").getAttribute("aria-expanded"),"true","live update collapsed mobile details");
 console.log(
   "Panel quality checks passed: task updates, sorting, pagination, focus retention, abort cleanup, status and unit conversion.",
 );

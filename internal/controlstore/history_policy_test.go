@@ -105,7 +105,7 @@ func TestHistoryAlwaysIncludesOldActiveTask(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	tasks, err := s.TaskSummaries(t.Context())
+	tasks, err := s.RecentTaskSummaries(t.Context())
 	if err != nil || len(tasks) == 0 || tasks[0].ID != active {
 		t.Fatal(tasks, err)
 	}

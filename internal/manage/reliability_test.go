@@ -175,7 +175,7 @@ func TestQueuedTaskImmediatelyInvalidatesOverview(t *testing.T) {
 	if _, err := s.overviewSnapshot(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	id, err := s.Queue(t.Context(), PlatformAction{Operation: "service", Service: "sb-core", Value: "stop"}, "admin")
+	id, err := s.Queue(t.Context(), application.TaskCommand{Operation: "service", Service: "sb-core", Value: "stop"}, "admin")
 	if err != nil {
 		t.Fatal(err)
 	}

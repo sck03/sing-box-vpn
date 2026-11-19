@@ -18,7 +18,8 @@ import (
 
 type guardedRouter struct {
 	adapter.Router
-	meter *accounting.Meter
+	meter    *accounting.Meter
+	lifetime context.Context
 }
 
 func (r *guardedRouter) RouteConnectionEx(ctx context.Context, c net.Conn, m adapter.InboundContext, onClose N.CloseHandlerFunc) {
@@ -30,7 +31,10 @@ func (r *guardedRouter) RouteConnectionEx(ctx context.Context, c net.Conn, m ada
 		}
 		return
 	}
-	r.Router.RouteConnectionEx(ctx, &stream{Conn: c, handle: h}, m, func(err error) {
+	wrapped := &stream{Conn: c, handle: h}
+	stop := r.watch(ctx, wrapped)
+	r.Router.RouteConnectionEx(ctx, wrapped, m, func(err error) {
+		stop()
 		h.Close()
 		if onClose != nil {
 			onClose(err)
@@ -46,7 +50,10 @@ func (r *guardedRouter) RoutePacketConnectionEx(ctx context.Context, c N.PacketC
 		}
 		return
 	}
-	r.Router.RoutePacketConnectionEx(ctx, &packets{PacketConn: c, handle: h}, m, func(err error) {
+	wrapped := &packets{PacketConn: c, handle: h}
+	stop := r.watch(ctx, wrapped)
+	r.Router.RoutePacketConnectionEx(ctx, wrapped, m, func(err error) {
+		stop()
 		h.Close()
 		if onClose != nil {
 			onClose(err)
@@ -59,7 +66,10 @@ func (r *guardedRouter) RouteConnection(ctx context.Context, c net.Conn, m adapt
 		c.Close()
 		return err
 	}
-	return r.Router.RouteConnection(ctx, &stream{Conn: c, handle: h}, m)
+	wrapped := &stream{Conn: c, handle: h}
+	defer r.watch(ctx, wrapped)()
+	defer h.Close()
+	return r.Router.RouteConnection(ctx, wrapped, m)
 }
 func (r *guardedRouter) RoutePacketConnection(ctx context.Context, c N.PacketConn, m adapter.InboundContext) error {
 	h, err := r.meter.Open(ctx, m.User, m.Inbound, c)
@@ -67,7 +77,17 @@ func (r *guardedRouter) RoutePacketConnection(ctx context.Context, c N.PacketCon
 		c.Close()
 		return err
 	}
-	return r.Router.RoutePacketConnection(ctx, &packets{PacketConn: c, handle: h}, m)
+	wrapped := &packets{PacketConn: c, handle: h}
+	defer r.watch(ctx, wrapped)()
+	defer h.Close()
+	return r.Router.RoutePacketConnection(ctx, wrapped, m)
+}
+
+func (r *guardedRouter) watch(ctx context.Context, connection io.Closer) func() bool {
+	if r.lifetime != nil {
+		ctx = r.lifetime
+	}
+	return context.AfterFunc(ctx, func() { _ = connection.Close() })
 }
 
 // Do not expose Upstream, ReaderFrom, WriterTo or replaceability interfaces:

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
@@ -96,11 +97,32 @@ func (s *PlatformService) reconcileCredentials(ctx context.Context) error {
 	}
 	for _, v := range versions {
 		if v.Loaded < v.Revision && slices.Contains(active, scopeService(v.Runtime)) {
-			if err = s.service(ctx, scopeService(v.Runtime), "restart"); err != nil {
+			if err = s.awaitCredentialLoad(ctx, v.Runtime, v.Revision); err != nil {
 				return err
 			}
 		}
 	}
 	s.invalidateOverview()
 	return nil
+}
+
+func (s *PlatformService) awaitCredentialLoad(ctx context.Context, scope string, revision int64) error {
+	child, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		v, err := s.Accounts.CredentialPublication(child, scope)
+		if err != nil {
+			return err
+		}
+		if v.Loaded >= revision {
+			return nil
+		}
+		select {
+		case <-child.Done():
+			return fmt.Errorf("%s credential revision %d is published but not loaded: %w", scope, revision, child.Err())
+		case <-ticker.C:
+		}
+	}
 }

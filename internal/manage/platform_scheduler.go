@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sck03/sing-box-vpn/internal/application"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
@@ -127,13 +126,13 @@ func (s *PlatformService) scheduleSubscriptions(ctx context.Context) error {
 		}
 	}
 	if refresh {
-		if _, err = s.Queue(ctx, PlatformAction{Operation: "subscription", Automatic: true, Subscription: application.SubscriptionCommand{Operation: "refresh"}}, "scheduler"); err != nil {
+		if _, err = s.queueAutomaticSubscription(ctx, "refresh"); err != nil {
 			return err
 		}
 	}
 	for _, d := range c.Deliveries {
 		if d.Automatic && !now.Before(r.Deliveries[d.ID].Next) {
-			_, err = s.Queue(ctx, PlatformAction{Operation: "subscription", Automatic: true, Subscription: application.SubscriptionCommand{Operation: "deliver"}}, "scheduler")
+			_, err = s.queueAutomaticSubscription(ctx, "deliver")
 			return err
 		}
 	}

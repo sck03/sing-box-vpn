@@ -274,29 +274,13 @@ func (s *Store) Cancel(ctx context.Context, id int64) error {
 	}
 	return err
 }
-func (s *Store) Tasks(ctx context.Context) ([]Task, error) {
-	return s.tasks(ctx, "CAST(result AS BLOB)", 0)
-}
-func (s *Store) TaskSummaries(ctx context.Context) ([]Task, error) {
-	return s.tasks(ctx, "CAST('{}' AS BLOB)", 0)
-}
 func (s *Store) RecentTaskSummaries(ctx context.Context) ([]Task, error) {
-	return s.tasks(ctx, "CAST('{}' AS BLOB)", 12)
+	return s.queryTasks(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,CAST('{}' AS BLOB),outcome,acknowledged FROM control_tasks ORDER BY state IN ('queued','running') DESC,id DESC LIMIT 12`)
 }
 func (s *Store) Task(ctx context.Context, id int64) (t Task, err error) {
 	err = s.db.QueryRowContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,CAST(result AS BLOB),outcome,acknowledged FROM control_tasks WHERE id=?`, id).Scan(&t.ID, &t.Kind, &t.Actor, &t.State, &t.Phase, &t.Error, &t.Created, &t.Updated, &t.Result, &t.Outcome, &t.Acknowledged)
 	t.Details = application.TaskDetails(t.Kind, t.Actor)
 	return
-}
-func (s *Store) tasks(ctx context.Context, result string, limit int) ([]Task, error) {
-	if limit == 0 {
-		policy, err := s.HistoryPolicy(ctx)
-		if err != nil {
-			return nil, err
-		}
-		limit = policy.Count + 32
-	}
-	return s.queryTasks(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,`+result+`,outcome,acknowledged FROM control_tasks ORDER BY state IN ('queued','running') DESC,id DESC LIMIT ?`, limit)
 }
 
 func (s *Store) queryTasks(ctx context.Context, query string, args ...any) ([]Task, error) {

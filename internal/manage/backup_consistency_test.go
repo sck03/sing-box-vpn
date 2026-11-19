@@ -89,7 +89,7 @@ func TestRestoredCertificateQueuesRegistration(t *testing.T) {
 	if err = s.scheduleCertificates(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	tasks, err := s.Store.TaskSummaries(t.Context())
+	tasks, err := s.Store.RecentTaskSummaries(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestRestoredCertificateQueuesRegistration(t *testing.T) {
 	if err = s.scheduleCertificates(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	next, err := s.Store.TaskSummaries(t.Context())
+	next, err := s.Store.RecentTaskSummaries(t.Context())
 	if err != nil || len(next) != len(tasks) {
 		t.Fatal("registration retry storm", err)
 	}

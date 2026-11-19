@@ -112,7 +112,7 @@ func TestDisabledSubscriberBlocksCustomOutputAndExport(t *testing.T) {
 	if err := checkOutputAccounts(ctx, root, c, "custom", s.Accounts); err == nil {
 		t.Fatal("disabled subscriber authorized")
 	}
-	if _, err := (s.accountService()).Export(ctx, application.AccountCommand{ID: "a", Client: "uri"}); err == nil {
+	if _, err := (s.accountService()).ExportDetailed(ctx, application.AccountCommand{ID: "a", Client: "uri"}); err == nil {
 		t.Fatal("disabled subscriber exported")
 	}
 }
@@ -181,7 +181,7 @@ func TestGatewayStateUsesDurableConfiguration(t *testing.T) {
 	if err = s.Store.Finish(ctx, id, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.Queue(ctx, PlatformAction{Operation: "gateway", Config: json.RawMessage(`{"op":"stop"}`)}, "operator"); err != nil {
+	if _, err = s.Queue(ctx, application.TaskCommand{Operation: "gateway", Config: json.RawMessage(`{"op":"stop"}`)}, "operator"); err != nil {
 		t.Fatal(err)
 	}
 	state, err = s.Store.State(ctx)
@@ -192,7 +192,7 @@ func TestGatewayStateUsesDurableConfiguration(t *testing.T) {
 	if err != nil || desired.Gateway["enabled"] != false || state.Revision != 3 || state.AppliedRevision != 2 {
 		t.Fatal(state.Revision, desired.Gateway, err)
 	}
-	if _, err = s.Queue(ctx, PlatformAction{Operation: "gateway", Config: json.RawMessage(`{"op":"start"}`)}, "operator"); err == nil {
+	if _, err = s.Queue(ctx, application.TaskCommand{Operation: "gateway", Config: json.RawMessage(`{"op":"start"}`)}, "operator"); err == nil {
 		t.Fatal("pending configuration was overwritten")
 	}
 	// A fresh process reads the durable desired state instead of the projection.

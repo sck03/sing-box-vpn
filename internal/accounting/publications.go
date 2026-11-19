@@ -19,6 +19,13 @@ type CredentialPublication struct {
 	Loaded    int64  `json:"loaded"`
 }
 
+// CredentialPublication is the small polling read; credential secrets are only
+// decoded after the published revision changes.
+func (s *Store) CredentialPublication(ctx context.Context, scope string) (v CredentialPublication, err error) {
+	err = s.db.QueryRowContext(ctx, `SELECT runtime,revision,published,loaded FROM credential_publications WHERE runtime=?`, scope).Scan(&v.Runtime, &v.Revision, &v.Published, &v.Loaded)
+	return
+}
+
 func advanceCredentials(ctx context.Context, tx *sql.Tx, scope string) error {
 	_, err := tx.ExecContext(ctx, `UPDATE credential_publications SET revision=revision+1 WHERE runtime=?`, scope)
 	return err

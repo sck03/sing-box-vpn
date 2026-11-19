@@ -96,6 +96,7 @@ func run() error {
 	result := make(chan error, 1)
 	go func() { result <- meter.Run(ctx) }()
 	running := true
+	reloadFailures := 0
 	for running {
 		select {
 		case <-ctx.Done():
@@ -104,6 +105,19 @@ func run() error {
 			stop()
 			running = false
 		case <-ticker.C:
+			loaded, reloadErr := runtime.RefreshCredentials(ctx, store, core, *instance, credentialRevision)
+			if reloadErr != nil {
+				reloadFailures++
+				fmt.Fprintln(os.Stderr, "credential reload:", reloadErr)
+				if errors.Is(reloadErr, runtime.ErrReloadUnrecoverable) || reloadFailures >= 3 {
+					err = reloadErr
+					stop()
+					running = false
+					continue
+				}
+			} else {
+				credentialRevision, reloadFailures = loaded, 0
+			}
 			if err = control.Heartbeat(ctx, *instance, runtime.Version, revision, started); err != nil {
 				stop()
 				running = false

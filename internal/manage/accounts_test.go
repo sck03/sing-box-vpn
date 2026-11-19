@@ -30,14 +30,14 @@ func TestAccountCommandsAndExportsKeepIndependentCredentials(t *testing.T) {
 		if err := service.Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: id, Scope: "normal"}, new(bytes.Buffer)); err != nil {
 			t.Fatal(err)
 		}
-		output, err := service.Export(t.Context(), application.AccountCommand{ID: id, Scope: "normal", Client: "sing-box"})
+		output, err := service.ExportDetailed(t.Context(), application.AccountCommand{ID: id, Scope: "normal", Client: "sing-box"})
 		if err != nil {
 			t.Fatal(err)
 		}
 		var config struct {
 			Outbounds []Object `json:"outbounds"`
 		}
-		if err := json.Unmarshal(output.Data, &config); err != nil {
+		if err := json.Unmarshal(output.Artifact.Data, &config); err != nil {
 			t.Fatal(err)
 		}
 		for _, node := range config.Outbounds {

@@ -1,6 +1,7 @@
 package manage
 
 import (
+	"github.com/sck03/sing-box-vpn/internal/application"
 	"net/http"
 	"strconv"
 )
@@ -59,7 +60,7 @@ func (s *PlatformService) serveTasks(w http.ResponseWriter, r *http.Request, acc
 		return true
 	}
 	if path == "/api/tasks" && r.Method == "POST" {
-		var a PlatformAction
+		var a application.TaskCommand
 		if err = decodeRequest(w, r, &a, 1<<20); err != nil {
 			platformError(w, err)
 			return true

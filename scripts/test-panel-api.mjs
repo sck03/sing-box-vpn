@@ -46,6 +46,12 @@ const login = await call("/api/auth/login", {
 csrf = ok(login).csrf;
 cookie = login.headers.get("set-cookie").split(";")[0];
 const overview = ok(await call("/api/overview"));
+assert.equal(typeof overview.task_counts.attention, "number");
+for (const invalid of [
+  { operation: "subscription", automatic: true, subscription: { operation: "check", id: "missing" } },
+  { operation: "service", service: "sb-core", value: "stop", scope: "normal" },
+  { operation: "service", service: "sb-core", value: "stop", id: "ignored" },
+]) assert.equal((await call("/api/tasks", invalid)).status, 400, "public task accepted internal or irrelevant fields");
 assert(
   overview.services.every((s) => s.state === "unavailable"),
   "Only --no-system test installations are supported",

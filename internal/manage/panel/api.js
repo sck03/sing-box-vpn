@@ -88,9 +88,18 @@ export async function api(
 /** @param {import("./contracts.js").ConfigurationSave} input
  * @returns {Promise<import("./contracts.js").QueuedTask>} */
 export const saveConfiguration = (input) => api("/api/config", input);
-/** @param {import("./contracts.js").PlatformAction} input
+/** @param {import("./contracts.js").TaskCommand} input
  * @returns {Promise<import("./contracts.js").QueuedTask>} */
 export const submitTask = (input) => api("/api/tasks", input);
+/** @param {number} id @param {AbortSignal} [signal]
+ * @returns {Promise<import("./contracts.js").Task>} */
+export const getTask = (id, signal) => api("/api/tasks/detail?id=" + id, undefined, { signal });
+/** @param {number} [before] @param {AbortSignal} [signal]
+ * @returns {Promise<import("./contracts.js").TaskPage>} */
+export const getTasks = (before = 0, signal) => api("/api/tasks?before=" + before + "&limit=50", undefined, { signal });
+/** @param {AbortSignal} [signal]
+ * @returns {Promise<import("./contracts.js").OverviewSnapshot>} */
+export const getOverview = (signal) => api("/api/overview", undefined, { signal });
 /** @param {Blob} blob @param {string} name */
 export function download(blob, name) {
   const url = URL.createObjectURL(blob),

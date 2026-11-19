@@ -246,7 +246,7 @@ export async function accounts(ctx) {
     session.replace(
       el("h2", {}, "凭据绑定 · " + item.name),
       help(
-        "轮换和解除绑定会立即撤销旧代次；加载新凭据需要重启该实例，影响该实例其他连接。",
+        "轮换和解除绑定会立即撤销旧代次；新凭据发布后自动重载对应入站，该入站连接可能短暂中断，其他入站继续运行。",
       ),
       table(
         [
@@ -258,7 +258,7 @@ export async function accounts(ctx) {
         all,
         (c) => [
           button("轮换", async () => {
-            if (confirm("立即撤销旧凭据并重启受影响实例？")) {
+            if (confirm("立即撤销旧凭据并重载对应入站？")) {
               await ctx.task({
                 operation: "account",
                 account: {
@@ -414,8 +414,8 @@ export async function accounts(ctx) {
                   ? states[a.state] || "不可分享"
                   : "可分享",
           },
-          { label: "代理到期", value: (a) => date(a.effective_expires_at) },
-          { label: "下次重置", value: (a) => date(a.next_reset) },
+          { label: "代理到期", secondary: true, value: (a) => date(a.effective_expires_at) },
+          { label: "下次重置", secondary: true, value: (a) => date(a.next_reset) },
         ],
         (params) =>
           request(

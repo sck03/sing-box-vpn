@@ -4,9 +4,6 @@ import (
 	"context"
 	"errors"
 	"slices"
-
-	"github.com/sck03/sing-box-vpn/internal/application"
-	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
 type CredentialSummary struct {
@@ -40,8 +37,3 @@ func (s AccountService) Credentials(ctx context.Context, id, scope string) ([]Cr
 }
 
 var errNoBoundInbound = errors.New("所选实例没有可用入站")
-
-func (s AccountService) Export(ctx context.Context, c application.AccountCommand) (sub.Artifact, error) {
-	result, err := s.ExportDetailed(ctx, c)
-	return result.Artifact, err
-}

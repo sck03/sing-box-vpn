@@ -8,12 +8,13 @@ type TaskPage struct {
 }
 
 type TaskCounts struct {
-	Failed int `json:"failed"`
-	Active int `json:"active"`
+	Failed    int `json:"failed"`
+	Active    int `json:"active"`
+	Attention int `json:"attention"`
 }
 
 func (s *Store) TaskCounts(ctx context.Context) (v TaskCounts, err error) {
-	err = s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(state='failed' AND acknowledged=0),0),COALESCE(SUM(state IN ('queued','running')),0) FROM control_tasks`).Scan(&v.Failed, &v.Active)
+	err = s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(state='failed' AND acknowledged=0),0),COALESCE(SUM(state IN ('queued','running')),0),COALESCE(SUM(acknowledged=0 AND (state='failed' OR outcome IN ('partial','cached','failed'))),0) FROM control_tasks`).Scan(&v.Failed, &v.Active, &v.Attention)
 	return
 }
 

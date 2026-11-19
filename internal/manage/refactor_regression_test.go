@@ -29,7 +29,7 @@ func TestCredentialPublicationRetryDoesNotRepeatRotation(t *testing.T) {
 		t.Fatal(err)
 	}
 	command := application.AccountCommand{Operation: "rotate", ID: c.ID, Generation: 1, Scope: "normal"}
-	id, err := s.Queue(ctx, PlatformAction{Operation: "account", Account: command}, "test")
+	id, err := s.Queue(ctx, application.TaskCommand{Operation: "account", Account: command}, "test")
 	if err != nil {
 		t.Fatal(err)
 	}

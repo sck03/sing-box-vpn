@@ -30,7 +30,7 @@ func NormalizeCredentialInput(c AccountCommand) (AccountCommand, error) {
 }
 
 // MutateCredential contains identity policy only; the platform adapter owns
-// task persistence, publication and restarting the affected runtime.
+// task persistence and publication; the runtime owns listener reloads.
 func MutateCredential(ctx context.Context, repository CredentialRepository, c AccountCommand) error {
 	var err error
 	c, err = NormalizeCredentialInput(c)

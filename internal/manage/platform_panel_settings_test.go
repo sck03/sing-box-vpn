@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/sck03/sing-box-vpn/internal/application"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -213,7 +214,7 @@ func TestServiceCatalogNamesAndWorkspaces(t *testing.T) {
 		t.Fatal("gateway and metered runtime identities conflated")
 	}
 	for _, old := range []string{"sing-box-vpngate", "yg-vpngate", "subscription", "argo", "vpngate", "vpngate-core", "sing-box", "user"} {
-		if _, err := s.Queue(t.Context(), PlatformAction{Operation: "service", Service: old, Value: "start"}, "test"); err == nil {
+		if _, err := s.Queue(t.Context(), application.TaskCommand{Operation: "service", Service: old, Value: "start"}, "test"); err == nil {
 			t.Fatal("old service accepted", old)
 		}
 	}

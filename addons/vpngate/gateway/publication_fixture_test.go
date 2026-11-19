@@ -88,11 +88,12 @@ func publishProtocolFixture(t *testing.T, root, core string, app *manage.App) {
 		subscriptions.Sources = append(subscriptions.Sources, sub.Source{ID: scope, Kind: "inline", Format: "nodes", Content: "[]"})
 		subscriptions.Collections = append(subscriptions.Collections, sub.Collection{ID: scope, Sources: []string{scope}})
 		for _, target := range []struct{ client, suffix, file string }{{"sing-box", "sing-box", "sbox.json"}, {"mihomo", "mihomo", "clmi.yaml"}, {"openclash", "provider", "proxies.yaml"}, {"uri", "uri", "jhsub.txt"}, {"base64", "base64", "jhsub-base64.txt"}} {
-			artifact, err := service.Export(t.Context(), application.AccountCommand{ID: "export-fixture", Scope: scope, Client: target.client})
+			result, err := service.ExportDetailed(t.Context(), application.AccountCommand{ID: "export-fixture", Scope: scope, Client: target.client})
 			if err != nil {
 				t.Fatal(err)
 			}
 			id := scope + "-" + target.suffix
+			artifact := result.Artifact
 			snapshot.Artifacts[id] = artifact
 			subscriptions.Outputs = append(subscriptions.Outputs, sub.Output{ID: id, Collection: scope, Template: id})
 			directory := root

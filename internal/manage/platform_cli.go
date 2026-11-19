@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"github.com/sck03/sing-box-vpn/internal/application"
 	"io"
 	"os"
 	"path/filepath"
@@ -179,7 +180,7 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 		}
 		return s.awaitRuntime(ctx, v.Instance, v.Started)
 	case "command":
-		var v PlatformAction
+		var v application.TaskCommand
 		if err = decode(&v); err != nil {
 			return err
 		}

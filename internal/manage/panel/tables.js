@@ -21,6 +21,7 @@ export function table(columns, items, actions, options = {}) {
     item.instance ??
     item.runtime ??
     item.name;
+  const expandedRows = new Set();
   const collator = new Intl.Collator(undefined, { numeric: true });
   const preferenceKey =
     "table:" + (options.key || columns.map((c) => c.key || c.label).join("|"));
@@ -187,10 +188,11 @@ export function table(columns, items, actions, options = {}) {
       const tr = el("tr");
       tr.rowItem = item;
       tr.rowKey = rowKey(item);
+      tr.classList.toggle("expanded", expandedRows.has(tr.rowKey));
       tr.addEventListener(
         "click",
         (event) => {
-          if (tr.stale && event.target.closest("button")) {
+          if (tr.stale && event.target.closest("button:not(.mobile-row-expand)")) {
             event.preventDefault();
             event.stopImmediatePropagation();
           }
@@ -203,7 +205,19 @@ export function table(columns, items, actions, options = {}) {
           : c.value
             ? c.value(item)
             : item[c.key];
-        tr.append(el("td", { "data-label": c.label }, value ?? "—"));
+        tr.append(el("td", { "data-label": c.label, class: c.secondary ? "secondary-cell" : "" }, value ?? "—"));
+      }
+      if (visible.some(({ c }) => c.secondary)) {
+        const expand = button("展开详细信息", () => {
+          const expanded = tr.classList.toggle("expanded");
+          if (expanded) expandedRows.add(tr.rowKey);
+          else expandedRows.delete(tr.rowKey);
+          expand.setAttribute("aria-expanded", String(expanded));
+          expand.textContent = expanded ? "收起详细信息" : "展开详细信息";
+        }, "mobile-row-expand");
+        expand.setAttribute("aria-expanded", String(tr.classList.contains("expanded")));
+        if (tr.classList.contains("expanded")) expand.textContent = "收起详细信息";
+        tr.append(el("td", { class: "mobile-details-toggle" }, expand));
       }
       if (actions)
         tr.append(
@@ -250,6 +264,8 @@ export function table(columns, items, actions, options = {}) {
   wrapper.updateItems = (next) => {
     const serialized = JSON.stringify(next);
     items = next;
+    const keys = new Set(next.map(rowKey));
+    for (const key of expandedRows) if (!keys.has(key)) expandedRows.delete(key);
     if (serialized === signature) return;
     // Patch visible data immediately, preserving active controls and row order.
     // Reorder/filter and replace action closures once focus leaves the table.
@@ -265,7 +281,7 @@ export function table(columns, items, actions, options = {}) {
             JSON.stringify(actionVersion(tr.rowItem));
         tr.stale ||= changed;
         if (changed)
-          tr.querySelectorAll("button").forEach((control) => {
+          tr.querySelectorAll("button:not(.mobile-row-expand)").forEach((control) => {
             control.setAttribute("aria-disabled", "true");
             control.title = "数据已更新，请移开焦点以刷新操作";
           });

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	"net/mail"
 	"os"
@@ -45,7 +46,7 @@ func (s *PlatformService) scheduleCertificates(ctx context.Context) error {
 			acmeRegistrationReady(s.Root, asset, material) {
 			continue
 		}
-		if _, err = s.Queue(ctx, PlatformAction{Operation: "certificate-renew", ID: asset.ID}, "scheduler"); err != nil {
+		if _, err = s.Queue(ctx, application.TaskCommand{Operation: "certificate-renew", ID: asset.ID}, "scheduler"); err != nil {
 			return err
 		}
 		return s.Store.Observe(ctx, "certificate-attempt/"+asset.ID, strconv.FormatInt(time.Now().Unix(), 10))

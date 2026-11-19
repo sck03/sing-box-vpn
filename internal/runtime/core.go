@@ -34,21 +34,25 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/runtimeconfig"
 )
 
-const Version = "1.14.4+sbvpn.4"
+const Version = "1.14.4+sbvpn.5"
 
 func guarded[T any](meter *accounting.Meter, constructor inbound.ConstructorFunc[T]) inbound.ConstructorFunc[T] {
 	return func(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options T) (adapter.Inbound, error) {
-		return constructor(ctx, &guardedRouter{Router: router, meter: meter}, logger, tag, options)
+		return constructor(ctx, &guardedRouter{Router: router, meter: meter, lifetime: ctx}, logger, tag, options)
 	}
 }
 
 func Context(ctx context.Context, meter *accounting.Meter) context.Context {
+	return coreContext(ctx, meter, nil)
+}
+
+func coreContext(ctx context.Context, meter *accounting.Meter, entries map[string]*reloadableInbound) context.Context {
 	registry := inbound.NewRegistry()
-	inbound.Register(registry, "vless", guarded(meter, vless.NewInbound))
-	inbound.Register(registry, "vmess", guarded(meter, vmess.NewInbound))
-	inbound.Register(registry, "hysteria2", guarded(meter, hysteria2.NewInbound))
-	inbound.Register(registry, "tuic", guarded(meter, tuic.NewInbound))
-	inbound.Register(registry, "anytls", guarded(meter, anytls.NewInbound))
+	inbound.Register(registry, "vless", reloadable(entries, guarded(meter, vless.NewInbound)))
+	inbound.Register(registry, "vmess", reloadable(entries, guarded(meter, vmess.NewInbound)))
+	inbound.Register(registry, "hysteria2", reloadable(entries, guarded(meter, hysteria2.NewInbound)))
+	inbound.Register(registry, "tuic", reloadable(entries, guarded(meter, tuic.NewInbound)))
+	inbound.Register(registry, "anytls", reloadable(entries, guarded(meter, anytls.NewInbound)))
 	outbounds := outbound.NewRegistry()
 	direct.RegisterOutbound(outbounds)
 	socks.RegisterOutbound(outbounds)
@@ -170,15 +174,24 @@ func BindUsers(raw []byte, credentials []domain.Credential) ([]byte, error) {
 	return json.Marshal(config)
 }
 
-func New(ctx context.Context, raw []byte, credentials []domain.Credential, meter *accounting.Meter) (*box.Box, error) {
+func New(ctx context.Context, raw []byte, credentials []domain.Credential, meter *accounting.Meter) (*Core, error) {
+	core := &Core{raw: append([]byte(nil), raw...), inbounds: make(map[string]*reloadableInbound)}
 	raw, err := BindUsers(raw, credentials)
 	if err != nil {
 		return nil, err
 	}
-	ctx = Context(ctx, meter)
+	ctx = coreContext(ctx, meter, core.inbounds)
+	core.ctx = ctx
 	options, err := sjson.UnmarshalExtendedContext[option.Options](ctx, raw)
 	if err != nil {
 		return nil, err
 	}
-	return box.New(box.Options{Options: options, Context: ctx})
+	core.Box, err = box.New(box.Options{Options: options, Context: ctx})
+	if err != nil {
+		for _, entry := range core.inbounds {
+			_ = entry.close()
+		}
+		return nil, err
+	}
+	return core, nil
 }

@@ -81,6 +81,7 @@ globalThis.fetch = async (path) => ({
               services: [],
               runtimes: [],
               tasks: [],
+              task_counts: { active: 0, failed: 0, attention: 0 },
             }
           : String(path).startsWith("/api/grants") ||
               String(path).startsWith("/api/accounts?")

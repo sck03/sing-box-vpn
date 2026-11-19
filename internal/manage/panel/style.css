@@ -462,6 +462,16 @@ footer {
 .form-error {
   color: var(--danger);
 }
+.task-status.error {
+  background: color-mix(in srgb, var(--danger) 8%, var(--panel));
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
+}
+.mobile-details-toggle { display: none; }
+@media (max-width: 600px) {
+  .data-table tbody tr:not(.expanded) .secondary-cell { display: none; }
+  .data-table tbody .mobile-details-toggle { display: block; }
+  .mobile-row-expand { width: 100%; font-size: 12px; padding: 6px 10px; }
+}
 .workspace-tabs {
   display: flex;
   gap: 6px;

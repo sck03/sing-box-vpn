@@ -1,5 +1,9 @@
 # 开发与发布
 
+任务 API 使用当前 `application.TaskCommand`，不接受调度器 `automatic` 或无关字段。增加操作时同步 `CommandFields`、校验和执行器，再运行 `go run ./cmd/panel-contract`；不要手工修改生成类型。调度器只通过私有入口发起自动刷新/投递。
+
+按入站重载的回归入口为 `TestManagedCredentialReload`（真实五协议、跨入站长连接、核心启动标识），`internal/runtime/reload_test.go` 还覆盖构造/启动恢复和失败关闭。修改凭据生命周期必须同时运行带四个发布标签的 runtime 竞态测试；单独 `go test ./...` 不替代该检查。
+
 当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载、订阅模板与预览、弹窗生命周期八组。数据库使用 schema 15，所有旧数据库及其备份明确拒绝。
 
 `scripts/test-panel-navigation.mjs` 覆盖角色过滤、搜索定位、空/非法路由、同页标签的前进/返回与表单复用、延迟读取合并与取消、错误重试、权益初始读取预算、稀疏订阅草稿和 SSE 启动。`TestPanelEphemeralDevelopmentListener` 实际启动回环随机端口、请求能力接口并关闭服务，同时拒绝公网随机端口；设置校验仍拒绝保存端口 0。`TestPanelHealthSurvivesSaturatedRequests` 验证 32 个业务请求占满限额时，本机健康检查仍能准确判断 worker 就绪状态。
@@ -50,7 +54,7 @@ Windows 开发先 `. ./scripts/dev-env.ps1`。真实链路设置 `SING_BOX_BINAR
 
 ```bash
 RUN_UDP_IDLE_TESTS=1 go test -race -timeout=25m -count=1 ./...
-MANAGED_CORE_BINARY="$PWD/.build/managed-core" go test -race -count=1 -run '^(TestManagedAccountIsolation|TestRealFiveProtocolsTCPUDP)$' ./addons/vpngate/gateway
+MANAGED_CORE_BINARY="$PWD/.build/managed-core" go test -race -count=1 -run '^(TestManagedAccountIsolation|TestManagedCredentialReload|TestRealFiveProtocolsTCPUDP)$' ./addons/vpngate/gateway
 MANAGED_CORE_BINARY="$PWD/.build/managed-core" go test -race -count=1 -run '^TestCredentialPublicationRetryDoesNotRepeatRotation$' ./internal/manage
 bash scripts/test-program-upgrade.sh
 bash scripts/test-installer.sh
@@ -187,6 +191,6 @@ go vet ./...
 
 生成器展开 Go 的嵌入结构、时间和 RawMessage，覆盖配置、凭据、账户、授权、任务、会话与能力响应；`contracts.d.ts` 不编入二进制。前端全模块 `checkJs` 使用非严格模式，类型化请求边界与运行时 HTTP 回归共同验证接口，不能把它描述为完全严格 TypeScript。
 
-任务历史新增 `GET /api/tasks?before=<id>&limit=50`，响应 `{items,next_before}`，`limit` 为 1–100；0 的 `next_before` 表示没有下一页。概览任务数量固定上界，`task_counts.failed` 是未标记处理的失败总数，`active` 是排队/运行中总数。任务详情权限独立检查。
+任务历史新增 `GET /api/tasks?before=<id>&limit=50`，响应 `{items,next_before}`，`limit` 为 1–100；0 的 `next_before` 表示没有下一页。概览任务数量固定上界，`task_counts.failed` 是未标记处理的失败总数，`attention` 是未处理失败或 partial/cached/failed 业务结果总数，`active` 是排队/运行中总数。顶部告警与概览统计使用聚合值，不依赖最近 12 条摘要。任务详情权限独立检查。
 
 备份读取返回私有暂存文件路径，调用者必须 `Close` 释放；失败读取自动清理。不要重新把所有条目读回一个内存集合，也不要在密文认证完成前信任数据库。当前备份格式 8、数据库 15、平台 5、节点 4，需新初始化目录。

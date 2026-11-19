@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 
@@ -67,6 +68,52 @@ func main() {
 				return n
 			}
 			types[n] = ""
+			if t == reflect.TypeFor[application.TaskCommand]() {
+				operations := make([]string, 0, len(application.CommandFields))
+				for operation := range application.CommandFields {
+					operations = append(operations, operation)
+				}
+				sort.Strings(operations)
+				var variants []string
+				for _, operation := range operations {
+					fields := []string{fmt.Sprintf("operation: %q", operation)}
+					for i := 1; i < t.NumField(); i++ {
+						f := t.Field(i)
+						key := strings.Split(f.Tag.Get("json"), ",")[0]
+						allowed := slices.Contains(application.CommandFields[operation], key)
+						fieldType := "never"
+						if allowed {
+							fieldType = describe(f.Type)
+						}
+						if key == "config" && operation == "gateway" {
+							fieldType = `{ op: "start" | "stop" | "swap" | "refresh" }`
+						}
+						if key == "value" && operation == "service" {
+							fieldType = `"start" | "stop" | "restart" | "enable" | "disable"`
+						}
+						if key == "value" && operation == "bbr" {
+							fieldType = `"enable" | "restore"`
+						}
+						if key == "account" && operation == "account" {
+							fieldType += ` & { operation: "bind" | "rotate" | "unbind" }`
+						}
+						if key == "subscription" && operation == "subscription" {
+							fieldType += ` & { operation: "refresh" | "check" | "deliver" }`
+						}
+						optional := "?"
+						if allowed && key != "value" {
+							optional = ""
+						}
+						if (operation == "service" || operation == "bbr") && key == "value" {
+							optional = ""
+						}
+						fields = append(fields, key+optional+": "+fieldType)
+					}
+					variants = append(variants, "{ "+strings.Join(fields, "; ")+" }")
+				}
+				types[n] = "export type TaskCommand =\n  | " + strings.Join(variants, "\n  | ") + ";\n"
+				return n
+			}
 			var body strings.Builder
 			parents := []string{}
 			for i := 0; i < t.NumField(); i++ {
@@ -114,8 +161,9 @@ func main() {
 		}
 	}
 	for _, t := range []reflect.Type{
+		reflect.TypeFor[manage.OverviewSnapshot](),
 		reflect.TypeFor[manage.ManagedNode](), reflect.TypeFor[manage.App](), reflect.TypeFor[manage.APIError](), reflect.TypeFor[manage.AccountClientOption](),
-		reflect.TypeFor[manage.PlatformConfig](), reflect.TypeFor[manage.ConfigurationSave](), reflect.TypeFor[manage.ConfigurationState](), reflect.TypeFor[manage.QueuedTask](), reflect.TypeFor[manage.PlatformAction](),
+		reflect.TypeFor[manage.PlatformConfig](), reflect.TypeFor[manage.ConfigurationSave](), reflect.TypeFor[manage.ConfigurationState](), reflect.TypeFor[manage.QueuedTask](), reflect.TypeFor[application.TaskCommand](),
 		reflect.TypeFor[domain.Account](), reflect.TypeFor[domain.Credential](), reflect.TypeFor[accounting.Usage](), reflect.TypeFor[accounting.Grant](),
 		reflect.TypeFor[application.AccountCommand](), reflect.TypeFor[application.SubscriptionCommand](), reflect.TypeFor[controlstore.Task](), reflect.TypeFor[adminauth.Session](), reflect.TypeFor[runtimeconfig.Capabilities](),
 		reflect.TypeFor[manage.CredentialSummary](), reflect.TypeFor[accounting.CredentialPublication](), reflect.TypeFor[controlstore.TaskPage](), reflect.TypeFor[controlstore.TaskCounts](),

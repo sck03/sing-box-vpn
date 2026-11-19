@@ -1,8 +1,10 @@
-import { api } from "./api.js";
+import { api, getOverview } from "./api.js";
 import { capabilities } from "./capabilities.js";
 import { tasksCard } from "./tasks.js";
 import { canView, pageFor, sectionsFor, routeFor } from "./page-catalog.js";
 import { el, card, help, table, badge, button } from "./ui.js";
+
+const serviceState = (value) => ({ active: "运行中", inactive: "已停止", activating: "启动中", deactivating: "停止中", failed: "失败", unavailable: "环境不可用", unknown: "未知", loaded: "已安装", "not-found": "未安装", enabled: "已启用", disabled: "已关闭", static: "静态单元", masked: "已屏蔽" })[value] || value || "—";
 
 function configurationStatus(snapshot) {
   if (snapshot.revision === snapshot.applied_revision)
@@ -15,7 +17,7 @@ function configurationStatus(snapshot) {
 }
 export async function overview(ctx) {
   const metadata = await capabilities();
-  const data = ctx.overview || (await (ctx.request || api)("/api/overview"));
+  const data = ctx.overview || (await (ctx.request ? ctx.request("/api/overview") : getOverview(ctx.signal)));
   ctx.observeRevision(data.revision);
   const health = el("div", { class: "health-summary", role: "status" });
   function updateHealth(next) {
@@ -70,9 +72,9 @@ export async function overview(ctx) {
     ...[
       [configurationStatus(data), "配置状态"],
       [data.runtimes.filter((v) => v.recent).length, "近期在线实例"],
-      [data.task_counts?.failed ?? data.tasks.filter((v) => v.state === "failed").length, "待处理失败"],
+      [data.task_counts.attention, "需要关注"],
       [
-        data.task_counts?.active ?? data.tasks.filter((t) => ["queued", "running"].includes(t.state)).length,
+        data.task_counts.active,
         "进行中任务",
       ],
     ].map(([value, label]) =>
@@ -150,17 +152,17 @@ export async function overview(ctx) {
                 : el("span", {}, "请联系管理员配置");
             },
           },
-          { label: "安装", value: (v) => v.LoadState || "本地开发" },
+          { label: "安装", value: (v) => serviceState(v.LoadState) },
           {
             label: "运行",
-            value: (v) => v.ActiveState || v.state || "unknown",
+            value: (v) => serviceState(v.ActiveState || v.state || "unknown"),
             render: (v) =>
               badge(
-                v.ActiveState || v.state || "unknown",
+                serviceState(v.ActiveState || v.state || "unknown"),
                 v.ActiveState === "active" ? "good" : "warn",
               ),
           },
-          { key: "UnitFileState", label: "开机启动" },
+          { label: "开机启动", value: (v) => serviceState(v.UnitFileState) },
         ],
         data.services,
         ctx.session.role !== "viewer"
@@ -186,7 +188,7 @@ export async function overview(ctx) {
         { controls: false },
       ),
     ),
-    tasksCard(data.tasks, ctx),
+    tasksCard(data.tasks.slice(0, 5), ctx, { compact: true }),
     card(
       "凭据发布",
       table(
@@ -209,13 +211,13 @@ export async function overview(ctx) {
     const values = [
       configurationStatus(next),
       next.runtimes.filter((v) => v.recent).length,
-      next.task_counts?.failed ?? next.tasks.filter((v) => v.state === "failed").length,
-      next.task_counts?.active ?? next.tasks.filter((t) => ["queued", "running"].includes(t.state)).length,
+      next.task_counts.attention,
+      next.task_counts.active,
     ];
     stats.querySelectorAll("strong").forEach((node, i) => {
       node.textContent = values[i];
     });
-    [next.runtimes, next.services, next.tasks, next.credentials || []].forEach(
+    [next.runtimes, next.services, next.tasks.slice(0, 5), next.credentials || []].forEach(
       (items, i) => tables[i].updateItems(items),
     );
   };

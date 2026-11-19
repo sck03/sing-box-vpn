@@ -166,23 +166,21 @@ export interface ManagedNode {
   transport?: ServerTransport;
 }
 
+export interface OverviewSnapshot {
+  revision: number;
+  applied_revision: number;
+  services: Array<Record<string, unknown> | null> | null;
+  runtimes: Array<Record<string, unknown> | null> | null;
+  tasks: Array<Task> | null;
+  task_counts: TaskCounts;
+  credentials: Array<CredentialPublication> | null;
+}
+
 export interface PeriodPolicy {
   kind: string;
   days?: number;
   day?: number;
   timezone?: string;
-}
-
-export interface PlatformAction {
-  operation: string;
-  service?: string;
-  id?: string;
-  scope?: string;
-  value?: string;
-  config?: unknown;
-  account?: AccountCommand;
-  subscription?: SubscriptionCommand;
-  automatic?: boolean;
 }
 
 export interface PlatformConfig {
@@ -438,9 +436,21 @@ export interface TaskAudience {
   actor?: string;
 }
 
+export type TaskCommand =
+  | { operation: "account"; service?: never; id?: never; value?: never; config?: never; account: AccountCommand & { operation: "bind" | "rotate" | "unbind" }; subscription?: never }
+  | { operation: "bbr"; service?: never; id?: never; value: "enable" | "restore"; config?: never; account?: never; subscription?: never }
+  | { operation: "certificate-renew"; service?: never; id: string; value?: never; config?: never; account?: never; subscription?: never }
+  | { operation: "gateway"; service?: never; id?: never; value?: never; config: { op: "start" | "stop" | "swap" | "refresh" }; account?: never; subscription?: never }
+  | { operation: "outbound-probe"; service?: never; id: string; value?: string; config?: never; account?: never; subscription?: never }
+  | { operation: "program-upgrade"; service?: never; id?: never; value?: string; config?: never; account?: never; subscription?: never }
+  | { operation: "runtime-rollback"; service?: never; id?: never; value?: never; config?: never; account?: never; subscription?: never }
+  | { operation: "service"; service: string; id?: never; value: "start" | "stop" | "restart" | "enable" | "disable"; config?: never; account?: never; subscription?: never }
+  | { operation: "subscription"; service?: never; id?: never; value?: never; config?: never; account?: never; subscription: SubscriptionCommand & { operation: "refresh" | "check" | "deliver" } };
+
 export interface TaskCounts {
   failed: number;
   active: number;
+  attention: number;
 }
 
 export interface TaskPage {
