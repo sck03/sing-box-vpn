@@ -8,7 +8,7 @@
         : "dark";
   } catch {}
   document.addEventListener("click", (event) => {
-    if (!event.target.closest("#theme-toggle")) return;
+    if (!(event.target instanceof document.defaultView.Element) || !event.target.closest("#theme-toggle")) return;
     const theme =
       document.documentElement.dataset.theme === "light" ? "dark" : "light";
     document.documentElement.dataset.theme = theme;

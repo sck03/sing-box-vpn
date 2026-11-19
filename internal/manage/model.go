@@ -7,11 +7,12 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	"github.com/sck03/sing-box-vpn/internal/serverconfig"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
-const AppSchema = 3
+const AppSchema = 4
 
 type ManagedNode serverconfig.Node
 type ManagedTLS = serverconfig.TLS
@@ -70,8 +71,8 @@ func (a *App) UnmarshalJSON(data []byte) error {
 	*a = App(d.document)
 	return nil
 }
-func (n ManagedNode) subscriptionNode(address, name, scope string, ports []string, cache certificateCache) (sub.Node, error) {
-	node := sub.Node{ID: scope + "-" + n.Protocol, SourceID: scope, Name: name, Gateway: scope == vpngateScope, Protocol: n.Protocol, Server: address, Port: n.Port, UUID: n.UUID, Password: n.Password, Flow: n.Flow, Transport: sub.Transport{Type: n.Transport.Type, Path: n.Transport.Path, Host: n.Transport.Host, EarlyData: n.Transport.EarlyData, EarlyDataHeader: n.Transport.EarlyDataHeader}, TLS: sub.TLS{Enabled: n.TLS.Enabled, ServerName: n.TLS.ServerName}}
+func (n ManagedNode) subscriptionNode(address, name, scope string, ports []string, cache certificateCache, credential domain.Credential) (sub.Node, error) {
+	node := sub.Node{ID: scope + "-" + n.Protocol, SourceID: scope, Name: name, Gateway: scope == vpngateScope, Protocol: n.Protocol, Server: address, Port: n.Port, UUID: credential.UUID, Password: credential.Password, Flow: n.Flow, Transport: sub.Transport{Type: n.Transport.Type, Path: n.Transport.Path, Host: n.Transport.Host, EarlyData: n.Transport.EarlyData, EarlyDataHeader: n.Transport.EarlyDataHeader}, TLS: sub.TLS{Enabled: n.TLS.Enabled, ServerName: n.TLS.ServerName}}
 	if n.ID != Tags[n.Protocol] && !strings.HasPrefix(n.ID, "vg-") {
 		node.ID = scope + "-" + n.ID
 	}

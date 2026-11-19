@@ -1,4 +1,4 @@
-import { $, el } from "./dom.js";
+import { $, el, button } from "./dom.js";
 
 // One owner for a dialog and its requests, even when another editor replaces it.
 export function dialogSession(signal) {
@@ -29,12 +29,14 @@ export function dialogSession(signal) {
   dialog.replaceChildren(marker);
   observer.observe(dialog, { childList: true });
   dialog.showModal();
+  const replace = (...children) => {
+    if (active()) dialog.replaceChildren(marker, ...children);
+  };
   return {
     signal: controller.signal,
     active,
-    replace: (...children) => {
-      if (active()) dialog.replaceChildren(marker, ...children);
-    },
+    replace,
+    fail: (error) => replace(el("p", { class: "form-error", role: "alert" }, error.message), button("关闭", abort)),
     close: abort,
   };
 }

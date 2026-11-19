@@ -17,7 +17,7 @@ import time
 if os.environ.get("RUN_ACCESS_MAINTENANCE_TESTS") != "1":
     raise SystemExit("explicit disposable-VM opt-in is required")
 root = pathlib.Path(os.environ["SB_TEST_ROOT"])
-if not root.is_absolute() or not (root / ".platform-v4").is_file():
+if not root.is_absolute() or not (root / ".platform-v5").is_file():
     raise SystemExit("expected an initialized disposable installation")
 exec_start = subprocess.check_output(["systemctl", "show", "sb-panel", "-p", "ExecStart", "--value"], text=True)
 if str(root) not in exec_start:

@@ -96,7 +96,7 @@ grep -q '当前状态：未安装' "$SCRATCH/menu"
 if grep -q 'v4' "$SCRATCH/menu"; then echo 'Uninstalled menu hardcodes v4' >&2; exit 1; fi
 
 mkdir -p "$SB_HOME" "$SB_ROOT"
-touch "$SB_HOME/.managed" "$SB_ROOT/.platform-v4"
+touch "$SB_HOME/.managed" "$SB_ROOT/.platform-v5"
 cp "$SCRATCH/source/sing-box-vpn/sb.sh" "$SB_HOME/sb.sh"
 reset_calls
 # The entry retained from the streamed install must handle future upgrades too.

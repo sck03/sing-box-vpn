@@ -45,13 +45,10 @@ func BindAccounts(ctx context.Context, repository BindingRepository, c AccountCo
 	if len(ids) > 1 && (c.UUID != "" || c.Password != "") {
 		return result, errors.New("batch binding requires independent random credentials")
 	}
-	if c.UUID != "" {
-		if _, err := uuid.Parse(c.UUID); err != nil {
-			return result, errors.New("invalid custom UUID")
-		}
-	}
-	if c.Password != "" && (len(c.Password) < 16 || len(c.Password) > 128) {
-		return result, errors.New("custom password must contain 16–128 bytes")
+	var err error
+	c, err = NormalizeCredentialInput(c)
+	if err != nil {
+		return result, err
 	}
 	available := make(map[string]BindingEntry, len(entries))
 	for _, entry := range entries {

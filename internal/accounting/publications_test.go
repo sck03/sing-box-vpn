@@ -17,7 +17,7 @@ func TestCredentialPublicationSurvivesFailureAndStaleAcknowledgement(t *testing.
 	if err = s.SaveAccount(ctx, domain.Account{ID: "a", Name: "A"}); err != nil {
 		t.Fatal(err)
 	}
-	c := domain.Credential{ID: "c", AccountID: "a", RuntimeID: "normal", InboundID: "in", Protocol: "vless", Generation: 1, UUID: "first"}
+	c := domain.Credential{ID: "c", AccountID: "a", RuntimeID: "normal", InboundID: "in", Protocol: "vless", Generation: 1, UUID: "aabbccdd-1122-4333-8444-5566778899aa"}
 	if err = s.Bind(ctx, c); err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +25,7 @@ func TestCredentialPublicationSurvivesFailureAndStaleAcknowledgement(t *testing.
 	if err != nil || revision != 1 || len(users) != 1 {
 		t.Fatal(users, revision, err)
 	}
-	if err = s.Rotate(ctx, "c", "second", "", 1); err != nil {
+	if err = s.Rotate(ctx, "c", "bbbbccdd-1122-4333-8444-5566778899aa", "", 1); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.CredentialsLoaded(ctx, "normal", revision); err != nil {
@@ -65,7 +65,7 @@ func TestBatchCredentialUniquenessRollsBackPublication(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	first := domain.Credential{ID: "one", AccountID: "a", RuntimeID: "normal", InboundID: "in", Protocol: "anytls", Generation: 1, Password: "same"}
+	first := domain.Credential{ID: "one", AccountID: "a", RuntimeID: "normal", InboundID: "in", Protocol: "anytls", Generation: 1, Password: "same-secure-password"}
 	second := first
 	second.ID = "two"
 	second.AccountID = "b"

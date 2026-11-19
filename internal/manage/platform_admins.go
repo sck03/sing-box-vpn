@@ -29,7 +29,7 @@ func (s *PlatformService) serveAdministrators(w http.ResponseWriter, r *http.Req
 		}
 	}
 	if r.Method != "POST" {
-		http.Error(w, "method not allowed", 405)
+		apiFailure(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", false)
 		return
 	}
 	var v struct {
@@ -60,7 +60,7 @@ func (s *PlatformService) serveAdministrators(w http.ResponseWriter, r *http.Req
 	case "/api/mfa/confirm":
 		err = s.Auth.ConfirmMFA(ctx, actor, v.Code)
 	default:
-		http.NotFound(w, r)
+		apiFailure(w, http.StatusNotFound, "not_found", "not found", false)
 		return
 	}
 	if err != nil {

@@ -12,8 +12,7 @@ func TestTextStatusUsesSeparateVPNPortsAndHidesSecrets(t *testing.T) {
 	profile := Profile{
 		Ports:      map[string]int{"vless": 21001, "vmess": 21002, "hysteria2": 21003, "tuic": 21004, "anytls": 21005},
 		RealitySNI: "www.example.com",
-		Secrets: Secrets{UUID: map[string]string{"vless": "private-uuid", "vmess": "private-vmess"},
-			Passwords: map[string]string{"hysteria2": "private-password"}, Reality: Reality{Private: "private-reality-key"}},
+		Secrets:    Secrets{Reality: Reality{Private: "private-reality-key"}},
 	}
 	app := App{Address: "203.0.113.10", Nodes: MakeNodes(profile, ""), Advanced: CoreSettings{Endpoints: []Object{{"private_key": "private-warp-key", "type": "wireguard", "tag": "warp-out"}}}, Routing: map[string][]string{"warp": {"example.net"}}, Country: profile.Country, Hopping: profile.Hopping, TUICPorts: profile.TUICPorts}
 	vpnProfile := profile

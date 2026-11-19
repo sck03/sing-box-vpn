@@ -82,13 +82,17 @@ jobs:
           gzip -dc .build/core/mihomo.gz > .build/core/mihomo
           chmod +x .build/core/mihomo
           echo "MIHOMO_BINARY=$PWD/.build/core/mihomo" >> "$GITHUB_ENV"
+      - name: Build managed runtime with all advertised capabilities
+        run: |
+          go build -tags with_quic,with_utls,with_wireguard,with_gvisor -o "$GITHUB_WORKSPACE/.build/managed-core" ./cmd/managed-core
+          echo "MANAGED_CORE_BINARY=$PWD/.build/managed-core" >> "$GITHUB_ENV"
       - name: Strict protocol fixture preflight
         run: SBVPN_REQUIRE_CLIENT_CHECK=1 go test -count=1 -run '^TestRealFiveProtocolsTCPUDP$' ./addons/vpngate/gateway
       - name: Go tests, race detection and 72 real subscription TCP/UDP links
         run: SBVPN_REQUIRE_CLIENT_CHECK=1 RUN_UDP_IDLE_TESTS=1 go test -race -timeout=25m -count=1 -v ./...
       - name: Managed runtime account isolation and real TCP/UDP links
         run: |
-          go build -tags with_quic,with_utls,with_wireguard -o "$GITHUB_WORKSPACE/.build/managed-core" ./cmd/managed-core
+          go test -tags with_quic,with_utls,with_wireguard,with_gvisor -count=1 ./internal/runtime
           MANAGED_CORE_BINARY="$GITHUB_WORKSPACE/.build/managed-core" go test -race -count=1 -v -run '^(TestManagedAccountIsolation|TestRealFiveProtocolsTCPUDP)$' ./addons/vpngate/gateway
           MANAGED_CORE_BINARY="$GITHUB_WORKSPACE/.build/managed-core" go test -race -count=1 -v -run '^(TestCredentialPublicationRetryDoesNotRepeatRotation|TestAccountBatchPublishesOnceAndPreservesIndividualResults)$' ./internal/manage
       - name: Formatting, vet and shell checks

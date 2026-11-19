@@ -1,6 +1,6 @@
 import { api } from "./api.js";
 import { capabilities } from "./capabilities.js";
-import { showRecords } from "./details.js";
+import { loadRecords } from "./details.js";
 import {
   card,
   row,
@@ -63,7 +63,7 @@ export async function admins(ctx) {
           "primary",
         ),
         button("审计记录", async () =>
-          showRecords(
+          loadRecords(
             "管理审计",
             [
               { label: "时间", value: (v) => date(v.at) },
@@ -72,7 +72,8 @@ export async function admins(ctx) {
               { key: "target", label: "目标" },
               { key: "result", label: "结果" },
             ],
-            await api("/api/admin/audit"),
+            "/api/admin/audit",
+            ctx.signal,
           ),
         ),
       ),

@@ -27,7 +27,7 @@ func TestWebSocketPathsSharedByBothScopes(t *testing.T) {
 	for _, path := range []string{"/", "/ws-._~", "/普通/日本🚀", "/" + strings.Repeat("x", 254)} {
 		for _, scope := range []string{normalScope, vpngateScope} {
 			t.Run(scope+path, func(t *testing.T) {
-				profile := Profile{Ports: map[string]int{}, WSPath: "/before", Secrets: Secrets{UUID: map[string]string{}, Passwords: map[string]string{}}}
+				profile := Profile{Ports: map[string]int{}, WSPath: "/before"}
 				app := App{Nodes: MakeNodes(profile, ""), Country: profile.Country, Hopping: profile.Hopping, TUICPorts: profile.TUICPorts}
 				settings := VPNSettings{ActiveCountry: "JP", Profiles: map[string]Profile{"JP": profile}}
 				if scope == vpngateScope {

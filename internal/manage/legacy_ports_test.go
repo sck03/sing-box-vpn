@@ -201,7 +201,7 @@ func writeTUICLink(output io.Writer, app App, settings VPNSettings, private map[
 		if err != nil {
 			return err
 		}
-		node, err := managed[0].subscriptionNode(app.Address, name+"-端口-"+strconv.Itoa(port), scope, nil, cache)
+		node, err := managed[0].subscriptionNode(app.Address, name+"-端口-"+strconv.Itoa(port), scope, nil, cache, fixtureCredential(managed[0].Protocol))
 		if err != nil {
 			return err
 		}

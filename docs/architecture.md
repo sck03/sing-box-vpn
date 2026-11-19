@@ -1,8 +1,18 @@
 # 架构与维护
 
-`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 14；平台配置 schema=4、节点文档 schema=3、订阅配置 schema=5、模板 version=1 是各自独立的格式版本。只接受当前配置，不提供旧数据库、订阅内容、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责。
+`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 15；平台配置 schema=5、节点文档 schema=4、订阅配置 schema=5、模板 version=1 是各自独立的格式版本。只接受当前配置，不提供旧数据库、订阅内容、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责。
 
 公网传输由 `internal/publicaccess` 管理，共用 `internal/tlsconfig`；服务登记位于 `internal/servicecatalog`。主机操作按 service/deployment/units/gateway/network/journal 分文件，日志系统适配位于 `internal/hostservice`。任务保留策略与执行终态分离；面板访问重启由独立助手和持久收据完成。账户服务不再回退读取旧 JSON 配置，调用者必须注入配置/控制仓库，或读取当前数据库。
+
+## 身份、能力与运行时投影
+
+`serverconfig.Node` 不含 UUID/密码，VPN profile 也不再生成占位用户秘密。绑定、轮换、导出统一使用账户库的规范化凭据：UUID 解析为非零值后转为标准小写格式，清除协议不使用的字段；库的唯一索引与运行时重复身份防御共同阻止跨账户身份覆盖。
+
+生成的受管服务器 JSON 中 `users` 为空。VLESS 的 `_managed_flow` 是内部策略元数据，受管核心绑定用户时读取并删除；官方核心的配置检查使用去除该元数据的投影。不要直接用官方 sing-box 运行受管服务器文件。用户导出的客户端配置不包含此字段。
+
+`internal/runtimeconfig` 定义受管入站、出站、DNS、端点和服务类型，供管理器、前端 `/api/capabilities.runtime` 与核心共享。实际选项及构建能力由 `runtime_validation.go` 调用发行受管二进制确认，预览/保存/应用使用相同规则。校验诊断限制为 4096 个字符，并移除配置中的秘密值。
+
+`internal/application/credentials.go` 只依赖窄仓储接口，管理器负责任务、配置锁、发布和服务重启。新增协议需要同时补充领域凭据规则、能力登记、核心注册、前端字段与端到端验收。
 
 ## 模块边界
 
@@ -25,8 +35,8 @@ subscriptions/schedule.json 是截止时间与权益修订的小型投影，不�
 | 模块                                                             | 职责                                                                                    |
 | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | internal/domain                                                  | 稳定身份、权益/周期规则，不依赖 HTTP 或 SQLite                                          |
-| internal/application                                             | 类型化命令、账户批量绑定用例、任务详情访问规则与仓储边界；不解析 HTTP 或操作 systemd    |
-| internal/backuparchive                                           | 有界 tar 格式与 age 认证加密；不依赖配置、SQL schema 或证书提供方                       |
+| internal/application                                             | 类型化命令、账户批量绑定及轮换/解绑用例、任务详情访问规则与仓储边界；不解析 HTTP 或操作 systemd    |
+| internal/backuparchive                                           | 有界 tar 格式、age 认证加密与磁盘暂存；不依赖配置、SQL schema 或证书提供方                       |
 | internal/clientprofile                                           | 无存储/HTTP 依赖的客户端、模式与特性目录，统一表单、授权和渲染能力                      |
 | internal/manage/accounts_queries                                 | 返回结构化账户查询、凭据摘要和渲染产物；传输层负责编码                                  |
 | internal/manage/account_sharing                                  | 根据已应用入口、无秘密的绑定摘要和权益状态计算可下载范围；列表、创建授权和用量共用      |
@@ -174,7 +184,7 @@ VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IP
 
 ## 强类型配置与任务边界（2026-11-19）
 
-`internal/serverconfig` 独立定义托管 Node、TLS、WebSocket 传输和字段约束，不依赖 HTTP、SQLite 或主机服务。`App.Nodes` 是内存与数据库中的唯一节点来源，正常节点不再保存 Profile / 动态 Inbounds 副本。`App.Inbounds()` 返回独立核心投影；VPNGate Profile 在初始化边界经 `MakeNodes` 转为同一节点契约。节点文档 schema=3，数据库 schema=14，旧数据直接拒绝。
+`internal/serverconfig` 独立定义托管 Node、TLS、WebSocket 传输和字段约束，不依赖 HTTP、SQLite 或主机服务。`App.Nodes` 是内存与数据库中的唯一节点来源，正常节点不再保存 Profile / 动态 Inbounds 副本。`App.Inbounds()` 返回独立核心投影；VPNGate Profile 在初始化边界经 `MakeNodes` 转为同一节点契约。节点文档 schema=4，数据库 schema=15，旧数据直接拒绝。
 
 托管 VMess 只接受 WS，支持 path/host/early_data/early_data_header；不支持的传输与未知字段明确拒绝，不能接受后丢弃。新节点默认关闭 early-data，用户开启后按真实目标客户端能力判断。关闭时核心投影显式选择 WS 请求头模式，避免上游按编码后的 RequestURI 比较中文路径；开启 early-data 且路径含非 ASCII 字符时必须指定请求头。Reality 私钥、short ID、flow 与握手信息可通过表单编辑。订阅导入模型仍单独支持更广的协议与传输，不与受管服务端模型混用。
 

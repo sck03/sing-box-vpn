@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -10,7 +11,13 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/sck03/sing-box-vpn/internal/accounting"
+	"github.com/sck03/sing-box-vpn/internal/adminauth"
+	"github.com/sck03/sing-box-vpn/internal/application"
+	"github.com/sck03/sing-box-vpn/internal/controlstore"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	"github.com/sck03/sing-box-vpn/internal/manage"
+	"github.com/sck03/sing-box-vpn/internal/runtimeconfig"
 )
 
 func main() {
@@ -30,6 +37,9 @@ func main() {
 		return n
 	}
 	describe = func(t reflect.Type) string {
+		if t == reflect.TypeFor[json.RawMessage]() {
+			return "unknown"
+		}
 		switch t.Kind() {
 		case reflect.Pointer:
 			return describe(t.Elem()) + " | null"
@@ -44,6 +54,9 @@ func main() {
 		case reflect.Map:
 			return "Record<string, " + describe(t.Elem()) + "> | null"
 		case reflect.Slice, reflect.Array:
+			if t.Elem().Kind() == reflect.Uint8 {
+				return "string"
+			}
 			return "Array<" + describe(t.Elem()) + "> | null"
 		case reflect.Struct:
 			if t.PkgPath() == "time" && t.Name() == "Time" {
@@ -55,13 +68,24 @@ func main() {
 			}
 			types[n] = ""
 			var body strings.Builder
-			fmt.Fprintf(&body, "export interface %s {\n", n)
+			parents := []string{}
+			for i := 0; i < t.NumField(); i++ {
+				f := t.Field(i)
+				if f.Anonymous && f.Type.Kind() == reflect.Struct {
+					parents = append(parents, describe(f.Type))
+				}
+			}
+			extends := ""
+			if len(parents) > 0 {
+				extends = " extends " + strings.Join(parents, ", ")
+			}
+			fmt.Fprintf(&body, "export interface %s%s {\n", n, extends)
 			if t == reflect.TypeFor[manage.App]() {
 				fmt.Fprintf(&body, "  schema: %d;\n", manage.AppSchema)
 			}
 			for i := 0; i < t.NumField(); i++ {
 				f := t.Field(i)
-				if !f.IsExported() {
+				if !f.IsExported() || f.Anonymous {
 					continue
 				}
 				tag := strings.Split(f.Tag.Get("json"), ",")
@@ -76,7 +100,11 @@ func main() {
 				if len(tag) > 1 {
 					optional = "?"
 				}
-				fmt.Fprintf(&body, "  %s%s: %s;\n", key, optional, describe(f.Type))
+				valueType := describe(f.Type)
+				if t == reflect.TypeFor[manage.PlatformConfig]() && f.Name == "Schema" {
+					valueType = fmt.Sprint(manage.PlatformSchema)
+				}
+				fmt.Fprintf(&body, "  %s%s: %s;\n", key, optional, valueType)
 			}
 			body.WriteString("}\n")
 			types[n] = body.String()
@@ -85,7 +113,13 @@ func main() {
 			panic("unsupported contract type: " + t.String())
 		}
 	}
-	for _, t := range []reflect.Type{reflect.TypeFor[manage.ManagedNode](), reflect.TypeFor[manage.App](), reflect.TypeFor[manage.APIError](), reflect.TypeFor[manage.AccountClientOption]()} {
+	for _, t := range []reflect.Type{
+		reflect.TypeFor[manage.ManagedNode](), reflect.TypeFor[manage.App](), reflect.TypeFor[manage.APIError](), reflect.TypeFor[manage.AccountClientOption](),
+		reflect.TypeFor[manage.PlatformConfig](), reflect.TypeFor[manage.ConfigurationSave](), reflect.TypeFor[manage.ConfigurationState](), reflect.TypeFor[manage.QueuedTask](), reflect.TypeFor[manage.PlatformAction](),
+		reflect.TypeFor[domain.Account](), reflect.TypeFor[domain.Credential](), reflect.TypeFor[accounting.Usage](), reflect.TypeFor[accounting.Grant](),
+		reflect.TypeFor[application.AccountCommand](), reflect.TypeFor[application.SubscriptionCommand](), reflect.TypeFor[controlstore.Task](), reflect.TypeFor[adminauth.Session](), reflect.TypeFor[runtimeconfig.Capabilities](),
+		reflect.TypeFor[manage.CredentialSummary](), reflect.TypeFor[accounting.CredentialPublication](), reflect.TypeFor[controlstore.TaskPage](), reflect.TypeFor[controlstore.TaskCounts](),
+	} {
 		describe(t)
 	}
 	var data bytes.Buffer

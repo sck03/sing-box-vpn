@@ -23,7 +23,7 @@ HELP
 installer_installed() {
     # This is a persistent platform-format marker, not a release major version.
     [[ -f "${SB_HOME:-/opt/sing-box-vpn}/.managed" &&
-       -f "${SB_ROOT:-/etc/s-box}/.platform-v4" ]]
+       -f "${SB_ROOT:-/etc/s-box}/.platform-v5" ]]
 }
 installer_arch() {
     case $(uname -m) in

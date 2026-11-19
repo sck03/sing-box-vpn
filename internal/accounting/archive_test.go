@@ -118,7 +118,7 @@ func TestArchiveCapacityRevocationAndSettlement(t *testing.T) {
 	if _, err = s.CreateGrant(ctx, grant); !errors.Is(err, ErrDenied) {
 		t.Fatal("new grant", err)
 	}
-	cred := domain.Credential{ID: "fresh", AccountID: "alice", RuntimeID: "normal", InboundID: "in", Protocol: "vless", Generation: 1, UUID: "uuid"}
+	cred := domain.Credential{ID: "fresh", AccountID: "alice", RuntimeID: "normal", InboundID: "in", Protocol: "vless", Generation: 1, UUID: "aabbccdd-1122-4333-8444-5566778899aa"}
 	if err = s.Bind(ctx, cred); !errors.Is(err, ErrDenied) {
 		t.Fatal("archived binding", err)
 	}

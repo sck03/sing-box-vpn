@@ -83,15 +83,14 @@ export function accessOptions(v, certificates) {
 export function wireAccessMode() {
   const form = document.querySelector("#dialog form");
   form.addEventListener("change", (event) => {
-    if (event.target.getAttribute("aria-label") !== "访问方式") return;
-    const listen = form.querySelector('[aria-label="监听地址"]'),
+    const target = /** @type {HTMLSelectElement} */ (event.target);
+    if (target.getAttribute("aria-label") !== "访问方式") return;
+    const listen = /** @type {HTMLInputElement} */ (form.querySelector('[aria-label="监听地址"]')),
       port = listen.value.match(/:(\d+)$/)?.[1] || "2096";
     listen.value =
-      (event.target.value === "tls" ? "0.0.0.0:" : "127.0.0.1:") + port;
-    const proxy = form.querySelector(
-      '[aria-label="可信 HTTPS 代理 CIDR（逗号分隔）"]',
-    );
-    if (event.target.value === "proxy" && !proxy.value)
+      (target.value === "tls" ? "0.0.0.0:" : "127.0.0.1:") + port;
+    const proxy = /** @type {HTMLInputElement} */ (form.querySelector('[aria-label="可信 HTTPS 代理 CIDR（逗号分隔）"]'));
+    if (target.value === "proxy" && !proxy.value)
       proxy.value = "127.0.0.1/32";
   });
 }

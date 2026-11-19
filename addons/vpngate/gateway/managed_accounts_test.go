@@ -35,11 +35,9 @@ func startManagedCore(t *testing.T, root, name, instance string, config manage.O
 			}
 		}
 		for _, entry := range entries {
-			users := entry["users"].([]manage.Object)
 			kind := entry["type"].(string)
 			c := domain.Credential{ID: instance + "-" + id + "-" + kind, AccountID: id, RuntimeID: instance, InboundID: entry["tag"].(string), Protocol: kind, Generation: 1}
-			c.UUID, _ = users[0]["uuid"].(string)
-			c.Password, _ = users[0]["password"].(string)
+			c.UUID, c.Password = protocolSecrets(instance, kind)
 			if id == "bob" {
 				c.UUID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 				c.Password = "bob-independent-password"
@@ -75,7 +73,7 @@ func TestManagedAccountIsolation(t *testing.T) {
 	// handshake, which the existing real-protocol matrix exercises separately.
 	entries := manage.MakeInbounds(p, "")
 	delete(entries[0], "tls")
-	entries[0]["users"].([]manage.Object)[0]["flow"] = ""
+	delete(entries[0], "_managed_flow")
 	app := manage.App{Name: "accounts", Address: "127.0.0.1", Nodes: manage.MakeNodes(p, ""), SocksPort: 40000}
 	publishProtocolFixture(t, root, binary, &app)
 	var exported struct {

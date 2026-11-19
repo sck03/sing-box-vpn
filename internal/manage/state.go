@@ -35,11 +35,9 @@ type Reality struct {
 	ShortID string `json:"short_id"`
 }
 type Secrets struct {
-	UUID      map[string]string `json:"uuid"`
-	Passwords map[string]string `json:"passwords"`
-	Reality   Reality           `json:"reality"`
-	SocksUser string            `json:"socks_user,omitempty"`
-	SocksPass string            `json:"socks_pass,omitempty"`
+	Reality   Reality `json:"reality"`
+	SocksUser string  `json:"socks_user,omitempty"`
+	SocksPass string  `json:"socks_pass,omitempty"`
 }
 type Profile struct {
 	Ports         map[string]int `json:"ports"`

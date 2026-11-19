@@ -17,7 +17,8 @@ export const groups = [
     pages: ["vpngate", "routing", "outbounds", "subscriptions"],
   },
 ];
-export const pages = [
+/** @type {Array<[id: string, title: string, description: string, keywords: string, module: string, name: string, roles?: string[]]>} */
+const definitions = [
   [
     "overview",
     "运行概览",
@@ -118,7 +119,8 @@ export const pages = [
     "./subscriptions.js",
     "subscriptions",
   ],
-].map(
+];
+export const pages = definitions.map(
   ([id, title, description, keywords, module, name, roles = ["admin"]]) => ({
     id,
     title,

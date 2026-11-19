@@ -145,7 +145,7 @@ func TestVPNSettingsAreIndependent(t *testing.T) {
 	if err := EnsureCertificate(cert, key, "vpn.example.com"); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"port", "tuic", strconv.Itoa(port)}, {"reset", "tuic"}, {"sni", "www.bing.com"}, {"ws", "/private-vpn"}, {"tls", "all", cert, key, "vpn.example.com"}} {
+	for _, args := range [][]string{{"port", "tuic", strconv.Itoa(port)}, {"sni", "www.bing.com"}, {"ws", "/private-vpn"}, {"tls", "all", cert, key, "vpn.example.com"}} {
 		if err := run(args...); err != nil {
 			t.Fatal(args[0], err)
 		}
@@ -162,9 +162,10 @@ func TestVPNSettingsAreIndependent(t *testing.T) {
 		t.Fatal("VPNGate menu settings were not saved")
 	}
 	next := secrets["JP"]
-	if next.UUID["tuic"] == old.UUID["tuic"] || next.Passwords["tuic"] == old.Passwords["tuic"] || next.UUID["vless"] != old.UUID["vless"] || next.SocksPass != old.SocksPass {
-		t.Fatal("credential reset changed the wrong protocol or internal gateway authentication")
+	if next.SocksPass != old.SocksPass {
+		t.Fatal("gateway authentication changed")
 	}
+
 	gateway = readObject(t, gatewayPath)
 	if gateway["enabled"] != false || gateway["data_dir"] != "/custom/data" || gateway["run_dir"] != "/custom/run" {
 		t.Fatal("editing an entry resumed or relocated the tunnel")

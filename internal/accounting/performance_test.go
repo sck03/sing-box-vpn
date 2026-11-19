@@ -33,7 +33,7 @@ func benchmarkMeter(b *testing.B, accounts int) (*Store, *Meter, []*Handle) {
 		if err = s.SaveAccount(b.Context(), domain.Account{ID: id, Name: id}); err != nil {
 			b.Fatal(err)
 		}
-		if err = s.Bind(b.Context(), domain.Credential{ID: id, AccountID: id, RuntimeID: "normal", InboundID: "in", Protocol: "vless", Generation: 1, UUID: id}); err != nil {
+		if err = s.Bind(b.Context(), domain.Credential{ID: id, AccountID: id, RuntimeID: "normal", InboundID: "in", Protocol: "vless", Generation: 1, UUID: fmt.Sprintf("aabbccdd-1122-4333-8444-%012d", i)}); err != nil {
 			b.Fatal(err)
 		}
 		h, e := m.Open(b.Context(), id+".1", "in", &closedCounter{})

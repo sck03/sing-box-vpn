@@ -1,6 +1,6 @@
 # 开发与发布
 
-当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载、订阅模板与预览、弹窗生命周期八组。数据库使用 schema 14，所有旧数据库及其备份明确拒绝。
+当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载、订阅模板与预览、弹窗生命周期八组。数据库使用 schema 15，所有旧数据库及其备份明确拒绝。
 
 `scripts/test-panel-navigation.mjs` 覆盖角色过滤、搜索定位、空/非法路由、同页标签的前进/返回与表单复用、延迟读取合并与取消、错误重试、权益初始读取预算、稀疏订阅草稿和 SSE 启动。`TestPanelEphemeralDevelopmentListener` 实际启动回环随机端口、请求能力接口并关闭服务，同时拒绝公网随机端口；设置校验仍拒绝保存端口 0。`TestPanelHealthSurvivesSaturatedRequests` 验证 32 个业务请求占满限额时，本机健康检查仍能准确判断 worker 就绪状态。
 
@@ -21,7 +21,7 @@ go mod download
 go test ./...
 go vet ./...
 npm ci && npm test
-go build -tags with_quic,with_utls,with_wireguard -o .build/managed-core ./cmd/managed-core
+go build -tags with_quic,with_utls,with_wireguard,with_gvisor -o .build/managed-core ./cmd/managed-core
 go run ./cmd/release
 ```
 
@@ -38,7 +38,7 @@ sudo bash install.sh --local
 
 正式发行需包含完整压缩包及 `SHA256SUMS`。安装器验证唯一校验值、归档路径/类型，以及当前架构的管理器、受管核心和维护脚本；本地包安装也检查同一内容约定。数据格式继续由平台验证，不提供旧数据迁移。无参数打开菜单，`install`/`upgrade` 可直接执行，`uninstall --yes` 用于显式无交互卸载。`SB_ADDRESS` 和 `SB_ADMIN_JSON_FILE` 保留自动化安装支持；JSON 文件须由管理员以 0600 权限保护并在使用后删除。
 
-菜单从管理器 `--version` 读取已安装版本，并限制版本查询等待时间。在线安装将当前入口的函数与固定仓库地址保存到解压目录，再交由发行包安装；不会从已消费的管道重新读取脚本，也不会把管理员输入或环境中的秘密写进入口。`.platform-v4` 和 systemd 所有权标记标识平台格式，与 Release 主版本无关。
+菜单从管理器 `--version` 读取已安装版本，并限制版本查询等待时间。在线安装将当前入口的函数与固定仓库地址保存到解压目录，再交由发行包安装；不会从已消费的管道重新读取脚本，也不会把管理员输入或环境中的秘密写进入口。`.platform-v5` 和 systemd 所有权标记标识平台格式，与 Release 主版本无关。
 
 交互管理员输入通过 `panel --admin-stdin init/reset-admin` 读取两个 NUL 分隔字段，账号密码不经命令参数、环境变量或 Python 转义。默认 CLI 仍接受原来的 stdin JSON。
 
@@ -75,7 +75,7 @@ Windows 先加载 `scripts/dev-env.ps1`，将 `GATEWAY_BINARY` 和 `MANAGED_CORE
 
 可对该独立面板运行真实 HTTP 工作流：设置 `PANEL_TEST_URL`、`PANEL_TEST_USERNAME`（默认 reviewadmin）和 `PANEL_TEST_PASSWORD`，执行 `node scripts/test-panel-api.mjs`。脚本只接受回环 URL，并在创建数据前确认服务均处于 no-system 状态。验证绑定/导出、下载次数、跨站分享、完整候选预览和任务应用；不能指向真实安装。
 
-配置预览为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回普通服务端脱敏配置、输出节点数/变化及结构化验证。`POST /api/config/preview-output` 接受 `{id,config}`，只编译目标图并返回有界脱敏内容。旧 `/api/subscriptions/preview` 不恢复。节点文档 schema=3、订阅 schema=5、CompilerVersion=3、模板 version=1、平台 schema=4；备份容器仍为 7，数据库为 14，旧订阅内容明确拒绝。
+配置预览为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回普通服务端脱敏配置、输出节点数/变化及结构化验证。`POST /api/config/preview-output` 接受 `{id,config}`，只编译目标图并返回有界脱敏内容。旧 `/api/subscriptions/preview` 不恢复。节点文档 schema=4、订阅 schema=5、CompilerVersion=3、模板 version=1、平台 schema=5；备份容器为 8，数据库为 15，旧订阅内容明确拒绝。
 
 新增回归 `compiler_regression_test.go`、`preview_test.go` 覆盖 URI 认证/端口、SIP003、WS early-data、gRPC/XHTTP、名称和策略组范围、脱敏与真实核心检查。`TestImportedTrojanTransportsWithMihomo` 使用真实 sing-box 服务端和 Mihomo 客户端验证 WS/gRPC，错误路径或服务名必须失败。`TestRefreshValidationDoesNotHoldPublicationLock` 覆盖锁外编译与过期配置拒绝，`TestLimitedServerPreservesTLSAndHTTP2` 覆盖 TLS 状态及协议协商。
 
@@ -85,7 +85,7 @@ Windows 先加载 `scripts/dev-env.ps1`，将 `GATEWAY_BINARY` 和 `MANAGED_CORE
 
 `GET /api/accounts/clients?id=…&scope=…` 和用户用量的 clients 对象数组共用实际导出计划；`GET /api/outbound-options` 返回已应用出站。新字段与契约直接更新，不增加旧数组或旧接口适配器。完整订阅说明见 [订阅](subscriptions.md)。
 
-当前数据库 schema 14、备份格式 7。不复用早期开发目录或旧数据库；应用配置 schema 与数据库版本分别维护。对外 CLI 保留 panel、核心 prepare/check、firewall、下载监听和网关运行模式，旧 config/accounts/subscriptions/asset/remote 命令不再暴露。
+当前数据库 schema 15、备份格式 8。不复用早期开发目录或旧数据库；应用配置 schema 与数据库版本分别维护。对外 CLI 保留 panel、核心 prepare/check、firewall、下载监听和网关运行模式，旧 config/accounts/subscriptions/asset/remote 命令不再暴露。
 
 账户策略存储为独立字段，备份结构校验随 schema 更新；所有旧 schema 数据库及其备份明确拒绝。新增回归覆盖配置快照、纯账户订阅自动恢复、模板省略字段、Argo 日志滚动、BBR 部分失败重试、任务详情权限、分页边界、日期精度及分享结果窗口。`Task.details` 是服务端生成的详情访问描述，前端不再维护任务类型白名单。
 
@@ -97,7 +97,7 @@ Windows 先加载 `scripts/dev-env.ps1`，将 `GATEWAY_BINARY` 和 `MANAGED_CORE
 
 重构回归：`go test ./internal/manage -run 'TestUpgradeReceipt|TestShareReadiness|TestInvalidPanelInitialization|TestPanelHealth|TestSubscriptionSchedule|TestSubscriptionHTTPS|TestPanelAdvanced|TestRestorePreviewUsesArchived'`，TLS 缓存和传输策略单独运行 `go test ./internal/tlsconfig ./internal/publicaccess`。`BenchmarkSubscriptionScheduleRead` 对照完整投影读取与调度元数据读取；`npm test` 覆盖 gRPC/未知传输保留、共用 TLS 字段、任务清理与保留详情提示。真实浏览器覆盖鼠标、键盘、触屏、权益编辑、独立服务链接和访问方式。
 
-`internal/backuparchive` 单独负责格式 7（8 字节项目标记 + age 流 + tar），使用 scrypt 工作因子 16 并限制解密工作因子。禁止恢复前使用尚未完成认证的条目。新增测试覆盖密文损坏、截断、路径限制、并发发布锁、授权生命周期、任务预算、状态搜索与分页。
+`internal/backuparchive` 单独负责格式 8（8 字节项目标记 + age 流 + tar），使用 scrypt 工作因子 16 并限制解密工作因子。禁止恢复前使用尚未完成认证的条目。新增测试覆盖密文损坏、截断、路径限制、并发发布锁、授权生命周期、任务预算、状态搜索与分页。
 
 计量缓存基准（与 race、虚拟机启动和构建分开运行）：
 
@@ -168,6 +168,25 @@ PANEL_BROWSER_TEST=1 PYTHON_BINARY=python3 GATEWAY_BINARY=... MANAGED_CORE_BINAR
 
 前端共八组回归，新增跨页面任务详情、并发弹窗归属、错误契约和按需资源编辑器检查。CI 先运行严格协议夹具预检，再运行完整 race/协议矩阵；实际 API 与桌面/手机浏览器验收均启用。浏览器只属于开发/CI 依赖，VPS 运行不安装 Node、TypeScript、Playwright 或 Python。
 
-更改 Go 面板边界模型后运行 `go run ./cmd/panel-contract`，同时提交生成类型。`tsconfig.json` 当前只检查 API 客户端边界，不声称全量 UI 已迁移到 TypeScript。边界测试夹具与已移除的旧 CLI 回归辅助函数只编译进 `_test.go`，生产程序没有旧接口兼容层。
+更改 Go 面板边界模型后运行 `go run ./cmd/panel-contract`，同时提交生成类型。`tsconfig.json` 检查全部前端 JS 模块，采用非严格 `checkJs`，不声称 UI 已迁移到严格 TypeScript。边界测试夹具与已移除的旧 CLI 回归辅助函数只编译进 `_test.go`，生产程序没有旧接口兼容层。
 
 性能对照可用 `go test ./internal/manage -run '^$' -bench '^BenchmarkAccountCompilation$' -benchtime=500ms -count=3 -benchmem` 及 accounting 的 ActiveAuthorization100 基准。避免与发行构建、race 或 VM 测试同时计时。
+
+## 2026-11-20 的验证要求
+
+平台集成测试需要 `SING_BOX_BINARY` 与 `MANAGED_CORE_BINARY`，运行前先构建受管核心；CI 已将这一步移到全套测试之前。受管核心使用 `with_quic,with_utls,with_wireguard,with_gvisor` 四个标签，缺少 gVisor 的构建不能校验默认用户态 WireGuard endpoint。
+
+```sh
+go run ./cmd/panel-contract -check
+npm run typecheck
+npm test
+go test -tags with_quic,with_utls,with_wireguard,with_gvisor ./internal/runtime
+go test ./...
+go vet ./...
+```
+
+生成器展开 Go 的嵌入结构、时间和 RawMessage，覆盖配置、凭据、账户、授权、任务、会话与能力响应；`contracts.d.ts` 不编入二进制。前端全模块 `checkJs` 使用非严格模式，类型化请求边界与运行时 HTTP 回归共同验证接口，不能把它描述为完全严格 TypeScript。
+
+任务历史新增 `GET /api/tasks?before=<id>&limit=50`，响应 `{items,next_before}`，`limit` 为 1–100；0 的 `next_before` 表示没有下一页。概览任务数量固定上界，`task_counts.failed` 是未标记处理的失败总数，`active` 是排队/运行中总数。任务详情权限独立检查。
+
+备份读取返回私有暂存文件路径，调用者必须 `Close` 释放；失败读取自动清理。不要重新把所有条目读回一个内存集合，也不要在密文认证完成前信任数据库。当前备份格式 8、数据库 15、平台 5、节点 4，需新初始化目录。

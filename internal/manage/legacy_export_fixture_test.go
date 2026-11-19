@@ -36,7 +36,7 @@ func collectLocalSubscriptionNodes(app App, settings VPNSettings, private map[st
 		if number(in["listen_port"]) == p.Ports["hysteria2"] {
 			hopping = p.Hopping
 		}
-		node, err := managed[0].subscriptionNode(app.Address, name, scope, hopping, cache)
+		node, err := managed[0].subscriptionNode(app.Address, name, scope, hopping, cache, fixtureCredential(managed[0].Protocol))
 		if err != nil {
 			return err
 		}

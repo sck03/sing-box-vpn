@@ -7,12 +7,17 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 )
 
 func platformFixture(t *testing.T, root, core string) (*PlatformService, PlatformConfig, adminauth.Session) {
 	t.Helper()
-	s, e := OpenPlatform(root, core, core, true)
+	runtime := os.Getenv("MANAGED_CORE_BINARY")
+	if runtime == "" {
+		t.Skip("set MANAGED_CORE_BINARY for platform integration tests")
+	}
+	s, e := OpenPlatform(root, core, runtime, true)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -25,7 +30,7 @@ func platformFixture(t *testing.T, root, core string) (*PlatformService, Platfor
 	if e != nil {
 		t.Fatal(e)
 	}
-	c := PlatformConfig{Schema: 4, App: app, Subscriptions: subs, VPN: VPNSettings{ProxyPort: 7928, Profiles: map[string]Profile{}}, VPNSecrets: map[string]Secrets{}, Gateway: Object{}, Listener: subscriptionSettings{Listen: "127.0.0.1", Port: 2097}, Argo: TunnelSettings{Mode: "off"}, Certificates: []CertificateAsset{}}
+	c := PlatformConfig{Schema: PlatformSchema, App: app, Subscriptions: subs, VPN: VPNSettings{ProxyPort: 7928, Profiles: map[string]Profile{}}, VPNSecrets: map[string]Secrets{}, Gateway: Object{}, Listener: subscriptionSettings{Listen: "127.0.0.1", Port: 2097}, Argo: TunnelSettings{Mode: "off"}, Certificates: []CertificateAsset{}}
 	if e = s.Store.Initialize(t.Context(), mustJSON(t, c)); e != nil {
 		t.Fatal(e)
 	}

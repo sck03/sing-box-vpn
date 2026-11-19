@@ -22,7 +22,7 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/manage"
 )
 
-const releaseTags = "with_quic,with_utls,with_wireguard"
+const releaseTags = "with_quic,with_utls,with_wireguard,with_gvisor"
 
 func main() {
 	if err := build(); err != nil {

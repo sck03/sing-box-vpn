@@ -11,6 +11,16 @@ export class RequestError extends Error {
   }
 }
 let csrf = "";
+
+/** @param {RequestError | Error} error */
+export function errorMessage(error) {
+  if (error instanceof RequestError) {
+    if (error.code === "revision_conflict") return "服务器内容已更新。请保留当前修改，重新载入并核对后保存。";
+    if (error.code === "unauthorized") return "登录已失效，请重新登录。";
+    return error.message + (error.retryable ? " 可稍后重试；提交前请先确认上一次操作结果。" : "");
+  }
+  return error.message;
+}
 let sessionGeneration = 0;
 let sessionRequests = new AbortController();
 /** @param {string | null | undefined} value */
@@ -74,6 +84,13 @@ export async function api(
   stale();
   return value;
 }
+
+/** @param {import("./contracts.js").ConfigurationSave} input
+ * @returns {Promise<import("./contracts.js").QueuedTask>} */
+export const saveConfiguration = (input) => api("/api/config", input);
+/** @param {import("./contracts.js").PlatformAction} input
+ * @returns {Promise<import("./contracts.js").QueuedTask>} */
+export const submitTask = (input) => api("/api/tasks", input);
 /** @param {Blob} blob @param {string} name */
 export function download(blob, name) {
   const url = URL.createObjectURL(blob),

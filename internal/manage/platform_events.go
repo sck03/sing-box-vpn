@@ -70,7 +70,11 @@ func (s *PlatformService) collectOverview(ctx context.Context) ([]byte, error) {
 	for _, runtime := range runtimes {
 		delete(runtime, "heartbeat")
 	}
-	tasks, err := s.Store.TaskSummaries(ctx)
+	tasks, err := s.Store.RecentTaskSummaries(ctx)
+	if err != nil {
+		return nil, err
+	}
+	counts, err := s.Store.TaskCounts(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +90,7 @@ func (s *PlatformService) collectOverview(ctx context.Context) ([]byte, error) {
 			tasks[i].Error = "任务失败，请查看任务详情"
 		}
 	}
-	return json.Marshal(Object{"revision": state.Revision, "applied_revision": state.AppliedRevision, "services": services, "runtimes": runtimes, "tasks": tasks, "credentials": publications})
+	return json.Marshal(Object{"revision": state.Revision, "applied_revision": state.AppliedRevision, "services": services, "runtimes": runtimes, "tasks": tasks, "task_counts": counts, "credentials": publications})
 }
 func (s *PlatformService) streamOverview(w http.ResponseWriter, r *http.Request, token string) {
 	controller := http.NewResponseController(w)

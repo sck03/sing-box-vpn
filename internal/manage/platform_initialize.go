@@ -57,7 +57,7 @@ func (s *PlatformService) initialize(ctx context.Context, address, name, admin, 
 				return err
 			}
 			subscriptions := sub.DefaultConfig()
-			config = PlatformConfig{Schema: 4, App: app, VPN: VPNSettings{ProxyPort: 7928, Profiles: map[string]Profile{}}, VPNSecrets: map[string]Secrets{}, Gateway: Object{}, Subscriptions: subscriptions, Certificates: []CertificateAsset{}, Argo: TunnelSettings{Mode: "off"}, Listener: subscriptionSettings{Listen: "127.0.0.1", Port: 2097}}
+			config = PlatformConfig{Schema: PlatformSchema, App: app, VPN: VPNSettings{ProxyPort: 7928, Profiles: map[string]Profile{}}, VPNSecrets: map[string]Secrets{}, Gateway: Object{}, Subscriptions: subscriptions, Certificates: []CertificateAsset{}, Argo: TunnelSettings{Mode: "off"}, Listener: subscriptionSettings{Listen: "127.0.0.1", Port: 2097}}
 		}
 		if err := panelPortAvailable(config, options.port()); err != nil {
 			return err
@@ -83,7 +83,7 @@ func (s *PlatformService) initialize(ctx context.Context, address, name, admin, 
 		if err := files.json("panel.json", options); err != nil {
 			return err
 		}
-		files[".platform-v4"] = []byte("control.db owns configuration; JSON files are generated\n")
+		files[".platform-v5"] = []byte("control.db owns configuration; JSON files are generated\n")
 		if err = files.json("runtime-revision.json", int64(1)); err != nil {
 			return err
 		}

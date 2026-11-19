@@ -256,14 +256,6 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 	// configuration publisher before making real TCP/UDP connections.
 	profile.WSPath = "/普通/连接-._~"
 	vpnProfile.WSPath = "/VPNGate/日本-._~"
-	for _, kind := range manage.Protocols {
-		profile.Secrets.UUID[kind] = "01234567-89ab-4cde-8f01-23456789abcd"
-		profile.Secrets.Passwords[kind] = "01234567-89ab-4cde-8f01-23456789abcd"
-		vpnProfile.Secrets.UUID[kind] = "12345678-9abc-4def-8012-3456789abcde"
-		vpnProfile.Secrets.Passwords[kind] = "12345678-9abc-4def-8012-3456789abcde"
-	}
-	vpnProfile.Secrets.UUID["tuic"] = "23456789-abcd-4ef0-8123-456789abcdef"
-	vpnProfile.Secrets.Passwords["tuic"] = "independent TUIC @:/?# password"
 	app := manage.App{Name: "protocol-test", Address: "127.0.0.1", Nodes: manage.MakeNodes(profile, ""), SocksPort: 40000}
 	vpnProfile.Country = "JP"
 	secret := vpnProfile.Secrets
@@ -329,13 +321,13 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 	if os.Getenv("MANAGED_CORE_BINARY") != "" {
 		startManagedCore(t, root, "ordinary", "normal", server, inbounds)
 	} else {
-		protocolCore(t, root, "ordinary", binary, server, inbounds[0]["listen_port"].(int))
+		protocolCore(t, root, "ordinary", binary, boundProtocolServer(t, "normal", server), inbounds[0]["listen_port"].(int))
 	}
 	vpnServer := manage.Object{"inbounds": vpnInbounds, "outbounds": []manage.Object{{"type": "socks", "tag": "gateway", "server": "127.0.0.1", "server_port": pp, "username": cfg.ProxyUser, "password": cfg.ProxyPass, "version": "5"}}, "route": manage.Object{"final": "gateway"}}
 	if os.Getenv("MANAGED_CORE_BINARY") != "" {
 		startManagedCore(t, root, "gateway", "vpngate", vpnServer, vpnInbounds)
 	} else {
-		protocolCore(t, root, "gateway", binary, vpnServer, vpnInbounds[0]["listen_port"].(int))
+		protocolCore(t, root, "gateway", binary, boundProtocolServer(t, "vpngate", vpnServer), vpnInbounds[0]["listen_port"].(int))
 	}
 	for _, group := range []struct {
 		label   string

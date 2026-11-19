@@ -189,3 +189,13 @@ func fingerprintFile(path string) (string, error) {
 	}
 	return hex.EncodeToString(digest.Sum(nil)), nil
 }
+
+// atomicCopy publishes staged material without allocating a file-sized buffer.
+func atomicCopy(destination, source string) error {
+	file, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	return atomicWrite(destination, 0600, func(w io.Writer) error { _, err := copyFileContent(w, file); return err })
+}

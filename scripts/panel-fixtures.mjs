@@ -1,4 +1,10 @@
 export const capabilitiesFixture = {
+  runtime: {
+    inbounds: ["vless", "vmess", "hysteria2", "tuic", "anytls"],
+    outbounds: ["direct", "socks", "selector", "urltest", "vless", "vmess", "hysteria2", "tuic", "anytls"],
+    dns: ["tcp", "udp", "tls", "https", "local", "resolved"],
+    endpoints: ["wireguard"], services: ["resolved"],
+  },
   protocols: ["vless", "vmess", "hysteria2", "tuic", "anytls"],
   countries: { JP: "日本", US: "美国" },
   password_bytes: { min: 8, max: 72 },

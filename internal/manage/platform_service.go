@@ -16,7 +16,6 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/adminauth"
 	"github.com/sck03/sing-box-vpn/internal/application"
-	"github.com/sck03/sing-box-vpn/internal/command"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	"github.com/sck03/sing-box-vpn/internal/database"
 	"github.com/sck03/sing-box-vpn/internal/domain"
@@ -116,7 +115,7 @@ func redactPlatform(v any) {
 	switch x := v.(type) {
 	case map[string]any:
 		for k, value := range x {
-			if slices.Contains([]string{"uuid", "password", "passwords", "private_key", "reality_private", "private", "token", "token_hash", "key", "secret", "authorization", "headers", "vpn_secrets", "proxy_pass", "socks_pass", "url", "webhook", "content", "client_secret", "pre_shared_key"}, k) {
+			if secretField(k) {
 				x[k] = "[redacted]"
 			} else {
 				redactPlatform(value)
@@ -370,39 +369,6 @@ func (s *PlatformService) apply(ctx context.Context, id int64, input applyInput)
 		}
 		_ = s.Store.Phase(recovery, id, phase)
 		return errors.Join(err, e)
-	}
-	return nil
-}
-
-func (s *PlatformService) checkRuntime(ctx context.Context, files fileBundle) error {
-	if s.Runtime == "" {
-		return errors.New("managed runtime binary is required")
-	}
-	for _, scope := range []string{"normal", "vpngate"} {
-		name := "sb.json"
-		if scope == "vpngate" {
-			name = "vpngate/server.json"
-		}
-		data := files[name]
-		if len(data) == 0 {
-			continue
-		}
-		f, err := os.CreateTemp(s.Root, ".runtime-check-*.json")
-		if err != nil {
-			return err
-		}
-		path := f.Name()
-		if err = f.Chmod(0600); err == nil {
-			_, err = f.Write(data)
-		}
-		err = errors.Join(err, f.Close())
-		if err == nil {
-			_, err = command.Output(ctx, nil, s.Runtime, "--check", "--config", path, "--database", filepath.Join(s.Root, database.Filename), "--instance", scope)
-		}
-		_ = os.Remove(path)
-		if err != nil {
-			return fmt.Errorf("managed %s configuration rejected: %w", scope, err)
-		}
 	}
 	return nil
 }

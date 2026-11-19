@@ -2,15 +2,16 @@
   "compilerOptions": {
     "allowJs": true,
     "checkJs": true,
+    "strict": false,
     "noEmit": true,
     "target": "ES2024",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2024", "DOM"],
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "skipLibCheck": false
   },
-  "files": [
-    "internal/manage/panel/api.js",
+  "include": [
+    "internal/manage/panel/*.js",
     "internal/manage/panel/contracts.d.ts"
   ]
 }

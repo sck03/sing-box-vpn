@@ -18,7 +18,7 @@ import (
 func TestExportIgnoresUnconfirmedAndBrokenProjections(t *testing.T) {
 	root, core, _ := appFixture(t)
 	s, confirmed, _ := platformFixture(t, root, core)
-	if err := os.WriteFile(filepath.Join(root, ".platform-v4"), nil, 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".platform-v5"), nil, 0600); err != nil {
 		t.Fatal(err)
 	}
 	service := s.accountService()
@@ -62,7 +62,7 @@ func TestAccountSubscriptionRecoversWithoutRemoteSources(t *testing.T) {
 		t.Run(cause, func(t *testing.T) {
 			root, core, _ := appFixture(t)
 			s, c, _ := platformFixture(t, root, core)
-			if err := os.WriteFile(filepath.Join(root, ".platform-v4"), nil, 0600); err != nil {
+			if err := os.WriteFile(filepath.Join(root, ".platform-v5"), nil, 0600); err != nil {
 				t.Fatal(err)
 			}
 			ctx := t.Context()

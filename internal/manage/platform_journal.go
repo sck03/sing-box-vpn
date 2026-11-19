@@ -15,11 +15,11 @@ func (s *PlatformService) serveJournal(w http.ResponseWriter, r *http.Request, a
 		return true
 	}
 	if s.NoSystem {
-		http.Error(w, "系统日志需要 Linux systemd", 400)
+		apiFailure(w, http.StatusBadRequest, "system_unavailable", "系统日志需要 Linux systemd", false)
 		return true
 	}
 	if path == "/api/logs/clear" && r.Method != "POST" {
-		http.NotFound(w, r)
+		apiFailure(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", false)
 		return true
 	}
 	if path == "/api/logs/clear" && r.Method == "POST" {
@@ -34,7 +34,7 @@ func (s *PlatformService) serveJournal(w http.ResponseWriter, r *http.Request, a
 		return true
 	}
 	if r.Method != "GET" {
-		http.NotFound(w, r)
+		apiFailure(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", false)
 		return true
 	}
 	if !access.audit("journal-read", r.URL.Query().Get("service")) {

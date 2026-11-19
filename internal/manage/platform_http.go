@@ -21,6 +21,7 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	"github.com/sck03/sing-box-vpn/internal/httpserver"
 	"github.com/sck03/sing-box-vpn/internal/publicaccess"
+	"github.com/sck03/sing-box-vpn/internal/runtimeconfig"
 	"github.com/sck03/sing-box-vpn/internal/serverconfig"
 )
 
@@ -94,6 +95,21 @@ func platformError(w http.ResponseWriter, err error) {
 		detail.Code = "invalid_field"
 		detail.Field = "app.nodes[" + field.Node + "]." + field.Field
 	}
+	var capability *runtimeconfig.FieldError
+	if errors.As(err, &capability) {
+		detail.Code, detail.Field = "invalid_field", "app.advanced."+capability.Field
+	}
+	apiFailure(w, status, detail.Code, detail.Message, detail.Retryable, detail.Field)
+}
+
+func apiFailure(w http.ResponseWriter, status int, code, message string, retryable bool, field ...string) {
+	detail := APIError{Code: code, Message: message, Retryable: retryable}
+	if len(field) > 0 {
+		detail.Field = field[0]
+	}
+	if retryable && w.Header().Get("Retry-After") == "" {
+		w.Header().Set("Retry-After", "5")
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(struct {
@@ -125,12 +141,12 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 		}
 		peer, _, _ := net.SplitHostPort(r.RemoteAddr)
 		if base == nil || r.Host != base.Host {
-			http.Error(w, "unexpected Host", 400)
+			apiFailure(w, 400, "invalid_host", "unexpected Host", false)
 			return
 		}
 		if r.URL.Path == "/healthz" && r.Method == "GET" && localPanelPeer(r, peer) {
 			if !s.workerReady.Load() {
-				http.Error(w, "worker is starting", http.StatusServiceUnavailable)
+				apiFailure(w, 503, "temporarily_unavailable", "worker is starting", true)
 			} else {
 				jsonResponse(w, Object{"ready": true})
 			}
@@ -142,8 +158,9 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 		if r.URL.Path == "/api/events" {
 			gate = streams
 		}
-		release, ok := gate.Enter(w)
+		release, ok := gate.TryEnter()
 		if !ok {
+			apiFailure(w, 503, "temporarily_unavailable", "service busy; retry shortly", true)
 			return
 		}
 		defer release()
@@ -151,18 +168,18 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 			var err error
 			peer, err = proxy.Peer(r)
 			if err != nil {
-				http.Error(w, err.Error(), 403)
+				apiFailure(w, 403, "forbidden", err.Error(), false)
 				return
 			}
 		}
 		path := r.URL.Path
 		publicRead := (r.Method == "GET" || r.Method == "HEAD") && (path == "/" || path == "/user" || path == "/api/capabilities" || strings.HasPrefix(path, "/panel/") || strings.HasPrefix(path, "/u/") || strings.HasPrefix(path, "/s/"))
 		if origin := r.Header.Get("Origin"); !publicRead && origin != "" && origin != options.PublicURL {
-			http.Error(w, "cross-origin request rejected", 403)
+			apiFailure(w, 403, "forbidden", "cross-origin request rejected", false)
 			return
 		}
 		if !publicRead && r.Header.Get("Sec-Fetch-Site") == "cross-site" {
-			http.Error(w, "cross-site request rejected", 403)
+			apiFailure(w, 403, "forbidden", "cross-site request rejected", false)
 			return
 		}
 		if path == "/api/capabilities" && r.Method == "GET" {
@@ -188,7 +205,7 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 			case loginSlots <- struct{}{}:
 				defer func() { <-loginSlots }()
 			default:
-				http.Error(w, "login service busy", 429)
+				apiFailure(w, 429, "rate_limited", "login service busy", true)
 				return
 			}
 			var v struct {
@@ -224,13 +241,13 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 		operator := admin || session.Role == "operator"
 		require := func(allowed bool) bool {
 			if !allowed {
-				http.Error(w, "permission denied", 403)
+				apiFailure(w, 403, "forbidden", "permission denied", false)
 			}
 			return allowed
 		}
 		audit := func(action, target string) bool {
 			if e := s.Auth.Audit(r.Context(), session.ID, action, target, "requested"); e != nil {
-				http.Error(w, "audit storage unavailable", 503)
+				apiFailure(w, 503, "temporarily_unavailable", "audit storage unavailable", true)
 				return false
 			}
 			return true
@@ -286,7 +303,7 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 			s.servePlatformBackup(w, r, session.ID)
 			return
 		}
-		http.NotFound(w, r)
+		apiFailure(w, 404, "not_found", "API route or method not found", false)
 	})
 }
 

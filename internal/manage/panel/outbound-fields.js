@@ -14,7 +14,7 @@ export function outboundFields(protocols, tags, resolvers) {
       key: "type",
       label: "类型",
       type: "select",
-      options: ["direct", "socks", ...groups, ...protocols],
+      options: protocols,
     },
     { key: "server", label: "服务器地址", required: true, visible: isRemote },
     {

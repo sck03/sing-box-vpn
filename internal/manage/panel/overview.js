@@ -70,10 +70,9 @@ export async function overview(ctx) {
     ...[
       [configurationStatus(data), "配置状态"],
       [data.runtimes.filter((v) => v.recent).length, "近期在线实例"],
-      [data.tasks.filter((v) => v.state === "failed").length, "失败任务"],
+      [data.task_counts?.failed ?? data.tasks.filter((v) => v.state === "failed").length, "待处理失败"],
       [
-        data.tasks.filter((t) => ["queued", "running"].includes(t.state))
-          .length,
+        data.task_counts?.active ?? data.tasks.filter((t) => ["queued", "running"].includes(t.state)).length,
         "进行中任务",
       ],
     ].map(([value, label]) =>
@@ -210,8 +209,8 @@ export async function overview(ctx) {
     const values = [
       configurationStatus(next),
       next.runtimes.filter((v) => v.recent).length,
-      next.tasks.filter((v) => v.state === "failed").length,
-      next.tasks.filter((t) => ["queued", "running"].includes(t.state)).length,
+      next.task_counts?.failed ?? next.tasks.filter((v) => v.state === "failed").length,
+      next.task_counts?.active ?? next.tasks.filter((t) => ["queued", "running"].includes(t.state)).length,
     ];
     stats.querySelectorAll("strong").forEach((node, i) => {
       node.textContent = values[i];

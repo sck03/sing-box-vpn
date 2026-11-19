@@ -105,7 +105,7 @@ export async function outbounds(ctx) {
       ),
     );
   const proxy = async () => {
-    const [effective, { protocols }] = await Promise.all([
+    const [effective, { runtime }] = await Promise.all([
       networkModel(),
       capabilities(),
     ]);
@@ -117,7 +117,7 @@ export async function outbounds(ctx) {
         preserve: true,
         items: a.outbounds,
         fields: outboundFields(
-          protocols,
+          runtime.outbounds,
           [...a.outbounds, ...a.endpoints].map((v) => v.tag),
           (effective.dns?.servers || []).map((v) => v.tag),
         ),
@@ -161,7 +161,7 @@ export async function outbounds(ctx) {
       change: changed,
       extraActions: (endpoint) => [
         button("管理对端", () => {
-          const dialog = document.querySelector("#dialog");
+          const dialog = /** @type {HTMLDialogElement} */ (document.querySelector("#dialog"));
           const draft = structuredClone(endpoint.peers || []);
           const render = () => {
             dialog.replaceChildren(

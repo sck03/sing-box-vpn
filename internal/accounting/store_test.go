@@ -101,14 +101,14 @@ func TestReplayCrashAndCleanClose(t *testing.T) {
 func TestExpiryDisableRevisionAndGeneration(t *testing.T) {
 	s, _ := fixture(t, 100000)
 	ctx := context.Background()
-	c := domain.Credential{ID: "c1", AccountID: "alice", RuntimeID: "normal", InboundID: "vless", Protocol: "vless", Generation: 1, UUID: "uuid"}
+	c := domain.Credential{ID: "c1", AccountID: "alice", RuntimeID: "normal", InboundID: "vless", Protocol: "vless", Generation: 1, UUID: "aabbccdd-1122-4333-8444-5566778899aa"}
 	if err := s.Bind(ctx, c); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Authorized(ctx, "c1", 1, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Rotate(ctx, "c1", "new", "", 1); err != nil {
+	if err := s.Rotate(ctx, "c1", "bbbbccdd-1122-4333-8444-5566778899aa", "", 1); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Authorized(ctx, "c1", 1, time.Now()); !errors.Is(err, ErrDenied) {

@@ -27,7 +27,7 @@ func (s *PlatformService) serveTaskMaintenance(w http.ResponseWriter, r *http.Re
 		return true
 	}
 	if r.Method != "POST" {
-		http.NotFound(w, r)
+		apiFailure(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", false)
 		return true
 	}
 	if !access.audit("task-history", path) {
@@ -56,7 +56,7 @@ func (s *PlatformService) serveTaskMaintenance(w http.ResponseWriter, r *http.Re
 		}
 		if err = decodeRequest(w, r, &v, 1024); err == nil {
 			if v.ID < 1 {
-				http.Error(w, "invalid task ID", 400)
+				apiFailure(w, http.StatusBadRequest, "invalid_field", "invalid task ID", false, "id")
 				return true
 			}
 			if path == "/api/tasks/delete" {

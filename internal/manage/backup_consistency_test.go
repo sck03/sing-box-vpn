@@ -29,17 +29,14 @@ func TestBackupWaitsForPublicationAndPreservesRenewal(t *testing.T) {
 	}
 	asset := CertificateAsset{ID: "managed", Provider: "acme", Domain: "example.com", Email: "test@example.com", Certificate: c.App.fixtureProfile().Certificate, Key: c.App.fixtureProfile().Key}
 	c.Certificates = append(c.Certificates, asset)
-	b := platformBackup{Files: map[string][]byte{}}
+	b := platformBackup{Files: map[string]string{}}
 	b.Root = root
 	for _, path := range certificatePaths(c) {
 		rel, e := filepath.Rel(root, path)
 		if e != nil {
 			t.Fatal(e)
 		}
-		b.Files[filepath.ToSlash(rel)], e = os.ReadFile(path)
-		if e != nil {
-			t.Fatal(e)
-		}
+		b.Files[filepath.ToSlash(rel)] = path
 	}
 	keyRel, err := filepath.Rel(root, c.App.fixtureProfile().Key)
 	if err != nil {
@@ -47,7 +44,11 @@ func TestBackupWaitsForPublicationAndPreservesRenewal(t *testing.T) {
 	}
 	keyName := filepath.ToSlash(keyRel)
 	originalKey := b.Files[keyName]
-	b.Files[keyName] = []byte("invalid private key")
+	badKey := filepath.Join(t.TempDir(), "invalid.key")
+	if err = os.WriteFile(badKey, []byte("invalid private key"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	b.Files[keyName] = badKey
 	if err = validateArchivedPairs(c, b); err == nil {
 		t.Fatal("invalid restored pair accepted")
 	}

@@ -20,7 +20,8 @@ import (
 )
 
 const (
-	Magic       = "SBVPNV07"
+	Schema      = 8
+	Magic       = "SBVPNV08"
 	MaxArchive  = 96 << 20
 	MaxDatabase = 80 << 20
 	MaxFiles    = 2048
@@ -36,8 +37,17 @@ type Manifest struct {
 
 type Archive struct {
 	Manifest
-	Database []byte
-	Files    map[string][]byte
+	Database  string
+	Files     map[string]string
+	directory string
+}
+
+// Close discards authenticated staging material after inspection or publication.
+func (a Archive) Close() error {
+	if a.directory == "" {
+		return nil
+	}
+	return os.RemoveAll(a.directory)
 }
 
 func validFile(name string) bool {
@@ -68,7 +78,7 @@ func Write(ctx context.Context, dst io.Writer, password []byte, manifest Manifes
 	if len(password) < 12 || len(password) > 1024 || len(files) > MaxFiles {
 		return errors.New("invalid backup password or file count")
 	}
-	manifest.Version = 7
+	manifest.Version = Schema
 	recipient, err := age.NewScryptRecipient(string(password))
 	if err != nil {
 		return err
@@ -141,15 +151,16 @@ func Read(data, password []byte) (Archive, error) {
 	return ReadFrom(bytes.NewReader(data), password)
 }
 
-// ReadFrom bounds ciphertext and plaintext separately. Callers may spool the
-// encrypted upload to disk without keeping another archive-sized memory copy.
+// ReadFrom streams each bounded entry into a private staging directory. No
+// material is returned until the entire encrypted stream is authenticated.
+// Callers must Close a successful archive; failed reads remove their staging.
 func ReadFrom(source io.Reader, password []byte) (Archive, error) {
-	result := Archive{Files: map[string][]byte{}}
+	result := Archive{Files: map[string]string{}}
 	ciphertext := &io.LimitedReader{R: source, N: MaxArchive + 1}
 	var magic [8]byte
 	_, headerErr := io.ReadFull(ciphertext, magic[:])
 	if len(password) < 12 || len(password) > 1024 || headerErr != nil || string(magic[:]) != Magic {
-		return result, errors.New("invalid format-7 encrypted backup")
+		return result, errors.New("invalid format-8 encrypted backup")
 	}
 	identity, err := age.NewScryptIdentity(string(password))
 	if err != nil {
@@ -160,6 +171,16 @@ func ReadFrom(source io.Reader, password []byte) (Archive, error) {
 	if err != nil {
 		return result, errors.New("backup password incorrect or archive damaged")
 	}
+	result.directory, err = os.MkdirTemp("", "sbvpn-decrypted-")
+	if err != nil {
+		return result, err
+	}
+	complete := false
+	defer func() {
+		if !complete {
+			_ = result.Close()
+		}
+	}()
 	bounded := &io.LimitedReader{R: decrypted, N: MaxArchive + 1}
 	tr := tar.NewReader(bounded)
 	seen := map[string]bool{}
@@ -189,20 +210,35 @@ func ReadFrom(source io.Reader, password []byte) (Archive, error) {
 		if h.Size < 0 || h.Size > limit {
 			return result, errors.New("backup entry exceeds budget")
 		}
-		value := make([]byte, int(h.Size))
-		_, e = io.ReadFull(tr, value)
-		if e != nil {
-			return result, e
-		}
-		switch h.Name {
-		case "manifest.json":
+		if h.Name == "manifest.json" {
+			value := make([]byte, int(h.Size))
+			if _, e = io.ReadFull(tr, value); e != nil {
+				return result, e
+			}
 			if e = strict.JSON(value, &result.Manifest, 4096); e != nil {
 				return result, e
 			}
-		case "control.db":
-			result.Database = value
-		default:
-			result.Files[strings.TrimPrefix(h.Name, "files/")] = value
+			continue
+		}
+		file, e := os.CreateTemp(result.directory, "entry-")
+		if e != nil {
+			return result, e
+		}
+		_, e = io.CopyN(file, tr, h.Size)
+		if e == nil {
+			e = file.Sync()
+		}
+		e = errors.Join(e, file.Close())
+		if e != nil {
+			return result, e
+		}
+		if h.Name == "control.db" {
+			if h.Size == 0 {
+				return result, errors.New("empty backup database")
+			}
+			result.Database = file.Name()
+		} else {
+			result.Files[strings.TrimPrefix(h.Name, "files/")] = file.Name()
 		}
 	}
 	// tar EOF is not encrypted EOF: consume the authentication trailer before
@@ -210,8 +246,9 @@ func ReadFrom(source io.Reader, password []byte) (Archive, error) {
 	if _, err = io.Copy(io.Discard, bounded); err != nil {
 		return result, err
 	}
-	if ciphertext.N <= 0 || bounded.N <= 0 || !seen["manifest.json"] || len(result.Database) == 0 || result.Version != 7 || result.Root == "" {
+	if ciphertext.N <= 0 || bounded.N <= 0 || !seen["manifest.json"] || result.Database == "" || result.Version != Schema || result.Root == "" {
 		return result, errors.New("unsupported or incomplete backup")
 	}
+	complete = true
 	return result, nil
 }

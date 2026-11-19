@@ -119,10 +119,7 @@ func (s *PlatformService) serveConfiguration(w http.ResponseWriter, r *http.Requ
 			return true
 		}
 		if r.Method == "POST" {
-			var v struct {
-				Revision int64          `json:"revision"`
-				Config   PlatformConfig `json:"config"`
-			}
+			var v ConfigurationSave
 			if err = decodeRequest(w, r, &v, 16<<20); err == nil {
 				if !audit("configuration-save", "") {
 					return true
@@ -130,7 +127,7 @@ func (s *PlatformService) serveConfiguration(w http.ResponseWriter, r *http.Requ
 				var id int64
 				id, err = s.QueueApply(ctx, v.Config, v.Revision, access.actor)
 				if err == nil {
-					jsonResponse(w, Object{"task_id": id})
+					jsonResponse(w, QueuedTask{TaskID: id})
 					return true
 				}
 			}

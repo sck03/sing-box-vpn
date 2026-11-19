@@ -13,12 +13,20 @@ import (
 type Gate chan struct{}
 
 func (g Gate) Enter(w http.ResponseWriter) (func(), bool) {
+	release, ok := g.TryEnter()
+	if !ok {
+		w.Header().Set("Retry-After", "5")
+		http.Error(w, "service busy; retry shortly", http.StatusServiceUnavailable)
+	}
+	return release, ok
+}
+
+// TryEnter lets transports select their own busy response envelope.
+func (g Gate) TryEnter() (func(), bool) {
 	select {
 	case g <- struct{}{}:
 		return func() { <-g }, true
 	default:
-		w.Header().Set("Retry-After", "5")
-		http.Error(w, "service busy; retry shortly", http.StatusServiceUnavailable)
 		return nil, false
 	}
 }

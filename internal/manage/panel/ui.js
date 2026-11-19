@@ -12,6 +12,7 @@ import {
   setPath,
 } from "./dom.js";
 import { table } from "./tables.js";
+import { errorMessage } from "./api.js";
 
 export function jsonDialog(title, value, save) {
   const dialog = $("#dialog"),
@@ -233,6 +234,7 @@ export function formDialog(title, fields, value, save, preserve = false) {
       event.preventDefault();
       const errorNode = form.querySelector(".form-error");
       errorNode.hidden = true;
+      for (const [, input] of inputs) input.removeAttribute("aria-invalid");
       try {
         const result = structuredClone(value);
         for (const [field, input, initial] of inputs) {
@@ -304,8 +306,16 @@ export function formDialog(title, fields, value, save, preserve = false) {
         }
         await save(result);
       } catch (error) {
-        errorNode.textContent = error.message;
+        errorNode.textContent = errorMessage(error);
         errorNode.hidden = false;
+        const match = inputs.find(([field]) => error.field === field.key || error.field?.endsWith("." + field.key));
+        if (match) {
+          const input = match[1];
+          input.setAttribute("aria-invalid", "true");
+          for (let parent = input.parentElement; parent && parent !== form; parent = parent.parentElement)
+            if (parent.tagName === "DETAILS") parent.open = true;
+          input.focus();
+        }
         return;
       }
       if (dialog.contains(form)) dialog.close();
@@ -328,13 +338,13 @@ export function resourceEditor({
   fields,
   defaults,
   change: publishChange,
-  columns,
-  normalize = (v) => v,
+  columns = undefined,
+  normalize = (v, previous = undefined) => v,
   preserve = false,
-  extraActions = () => [],
+  extraActions = (item = undefined) => [],
   local = false,
-  rowKey,
-  pageSize,
+  rowKey = undefined,
+  pageSize = undefined,
   compact = true,
 }) {
   let view;

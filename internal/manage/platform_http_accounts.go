@@ -59,7 +59,7 @@ func (s *PlatformService) serveAccounts(w http.ResponseWriter, r *http.Request, 
 			return true
 		}
 		if len(v.Content) > 2048 {
-			http.Error(w, "QR content exceeds 2048 bytes", 400)
+			apiFailure(w, 400, "invalid_field", "QR content exceeds 2048 bytes", false, "content")
 			return true
 		}
 		png, e := qrcode.Encode(v.Content, qrcode.Medium, 320)

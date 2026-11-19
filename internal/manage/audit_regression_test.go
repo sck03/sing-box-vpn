@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -137,8 +138,13 @@ func TestLargePlatformBackupRoundTrip(t *testing.T) {
 		t.Fatal("fixture does not cover large binary archive")
 	}
 	backup, err := decodePlatformBackup(data, password)
-	if err != nil || len(backup.Database) <= 7<<20 {
-		t.Fatal(len(backup.Database), err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backup.Close()
+	info, err := os.Stat(backup.Database)
+	if err != nil || info.Size() <= 7<<20 {
+		t.Fatal(info, err)
 	}
 	if response := restoreRequest(t, data, map[string]string{"password": string(password)}); response.Code != 200 {
 		t.Fatal("binary upload rejected", response.Code)

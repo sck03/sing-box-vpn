@@ -94,16 +94,23 @@ func probeCoreConfigUsing(ctx context.Context, root, core, endpoint string, conf
 	transport := &http.Transport{Proxy: http.ProxyURL(proxy), DisableKeepAlives: true}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 8 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	return probeHTTP(child, client, endpoint, done)
+}
+
+// A newly listening proxy may briefly return a gateway error before its
+// outbound is ready. Retry those responses twice within the caller's budget.
+func probeHTTP(ctx context.Context, client *http.Client, endpoint string, exited <-chan struct{}) error {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
+	transient := 0
 	for {
 		select {
-		case <-child.Done():
+		case <-ctx.Done():
 			return errors.New("protocol probe timed out or was cancelled")
-		case <-done:
+		case <-exited:
 			return errors.New("probe core exited; check node configuration")
 		case <-ticker.C:
-			req, err := http.NewRequestWithContext(child, http.MethodGet, endpoint, nil)
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 			if err != nil {
 				return err
 			}
@@ -115,6 +122,12 @@ func probeCoreConfigUsing(ctx context.Context, root, core, endpoint string, conf
 			response.Body.Close()
 			if readErr != nil || n > 1<<20 {
 				return errors.New("probe response interrupted or oversized")
+			}
+			if response.StatusCode == 502 || response.StatusCode == 503 || response.StatusCode == 504 {
+				transient++
+				if transient < 3 {
+					continue
+				}
 			}
 			if response.StatusCode < 200 || response.StatusCode >= 400 {
 				return fmt.Errorf("probe endpoint HTTP %d", response.StatusCode)

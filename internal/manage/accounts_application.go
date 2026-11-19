@@ -3,8 +3,6 @@ package manage
 import (
 	"context"
 	"errors"
-	"fmt"
-	"github.com/google/uuid"
 	"io"
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
@@ -42,14 +40,6 @@ func (s AccountService) requireStore() (*accounting.Store, error) {
 }
 
 func (s AccountService) Execute(ctx context.Context, c application.AccountCommand, out io.Writer) error {
-	if c.UUID != "" {
-		if _, err := uuid.Parse(c.UUID); err != nil {
-			return errors.New("invalid custom UUID")
-		}
-	}
-	if c.Password != "" && (len(c.Password) < 16 || len(c.Password) > 128) {
-		return errors.New("custom password must contain 16–128 bytes")
-	}
 	store, err := s.requireStore()
 	if err != nil {
 		return err
@@ -72,19 +62,10 @@ func (s AccountService) Execute(ctx context.Context, c application.AccountComman
 			}
 			return jsonEncoder(out).Encode(result)
 		})
-	case "rotate":
-		if c.UUID == "" {
-			c.UUID = randomUUID()
-		}
-		if c.Password == "" {
-			c.Password = randomSecret()
-		}
-		return store.Rotate(ctx, c.ID, c.UUID, c.Password, c.Generation)
-	case "unbind":
-		return store.Unbind(ctx, c.ID, c.Generation)
 	default:
-		return fmt.Errorf("unknown account command %q", c.Operation)
+		return application.MutateCredential(ctx, store, c)
 	}
+
 }
 
 func (s AccountService) accountEntries(ctx context.Context, scope string) ([]ManagedNode, error) {

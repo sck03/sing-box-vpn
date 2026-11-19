@@ -13,6 +13,8 @@ import (
 	"strings"
 )
 
+const PlatformSchema = 5
+
 // PlatformConfig is the single authoritative aggregate stored in control.db.
 // JSON files consumed by the gateway and compiler are generated projections.
 type PlatformConfig struct {
@@ -42,8 +44,8 @@ type TunnelSettings struct {
 }
 
 func (c PlatformConfig) Validate() error {
-	if c.Schema != 4 {
-		return errors.New("platform schema must be 4; old data cannot be imported")
+	if c.Schema != PlatformSchema {
+		return fmt.Errorf("platform schema must be %d; old data cannot be imported", PlatformSchema)
 	}
 	if net.ParseIP(c.App.Address) == nil {
 		if err := validateDomain(c.App.Address); err != nil {

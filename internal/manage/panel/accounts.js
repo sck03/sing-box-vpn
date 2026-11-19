@@ -2,7 +2,8 @@ import { api } from "./api.js";
 import { createAccountShare } from "./sharing.js";
 import { accountClientDialog } from "./account-clients.js";
 import { showExport } from "./export-results.js";
-import { showRecords } from "./details.js";
+import { loadRecords } from "./details.js";
+import { dialogSession } from "./dialog-session.js";
 import { disclosure } from "./sections.js";
 import {
   el,
@@ -161,7 +162,7 @@ export async function accounts(ctx) {
         notice("权益已保存，相关订阅会自动更新");
         ctx.render();
         if (!item.revision) {
-          const dialog = document.querySelector("#dialog");
+          const dialog = /** @type {HTMLDialogElement} */ (document.querySelector("#dialog"));
           dialog.replaceChildren(
             el("h2", {}, "权益已创建"),
             help("接下来绑定可用入站，再创建分享地址。"),
@@ -226,17 +227,23 @@ export async function accounts(ctx) {
         }),
     );
   const credentials = async (item) => {
-    const all = (
+    const session = dialogSession(ctx.signal);
+    session.replace(el("h2", {}, "凭据绑定 · " + item.name), help("正在加载…"));
+    let all;
+    try {
+      all = (
       await Promise.all(
         ["normal", "vpngate"].map((scope) =>
           api(
             `/api/credentials?id=${encodeURIComponent(item.id)}&scope=${scope}`,
+            undefined,
+            { signal: session.signal },
           ),
         ),
       )
     ).flat();
-    const dialog = document.querySelector("#dialog");
-    dialog.replaceChildren(
+    } catch (error) { session.fail(error); return; }
+    session.replace(
       el("h2", {}, "凭据绑定 · " + item.name),
       help(
         "轮换和解除绑定会立即撤销旧代次；加载新凭据需要重启该实例，影响该实例其他连接。",
@@ -261,7 +268,7 @@ export async function accounts(ctx) {
                   scope: c.runtime_id,
                 },
               });
-              dialog.close();
+              session.close();
             }
           }),
           button(
@@ -277,16 +284,15 @@ export async function accounts(ctx) {
                     scope: c.runtime_id,
                   },
                 });
-                dialog.close();
+                session.close();
               }
             },
             "danger",
           ),
         ],
       ),
-      button("关闭", () => dialog.close()),
+      button("关闭", () => session.close()),
     );
-    dialog.showModal();
   };
   const lifecycle = el(
     "select",
@@ -368,8 +374,12 @@ export async function accounts(ctx) {
         : null,
       await remoteTable(
         [
-          { key: "name", label: "名称" },
-          { key: "id", label: "权益 ID" },
+          {
+            key: "name", label: "权益",
+            render: (a) => el("div", { class: "account-identity" },
+              el("strong", {}, a.name),
+              ...(a.name !== a.id ? [el("small", { class: "help" }, a.id)] : [])),
+          },
           {
             label: "状态",
             value: (a) => states[a.state] || a.state,
@@ -386,6 +396,14 @@ export async function accounts(ctx) {
           {
             label: "用量 / 额度",
             value: (a) => `${bytes(a.charged_bytes)} / ${bytes(a.quota_bytes)}`,
+            render: (a) => el("div", { class: "quota-cell" },
+              el("span", {}, `${bytes(a.charged_bytes)} / ${bytes(a.quota_bytes)}`),
+              ...(a.quota_bytes !== null ? [el("progress", {
+                max: 100,
+                value: a.quota_bytes > 0 ? Math.min(100, 100 * a.charged_bytes / a.quota_bytes) : 100,
+                "aria-label": a.name + " 已用额度",
+                class: a.state === "exhausted" ? "exhausted" : "",
+              })] : [])),
           },
           {
             label: "分享状态",
@@ -475,7 +493,7 @@ export async function accounts(ctx) {
               ]
             : []),
           button("历史", async () =>
-            showRecords(
+            loadRecords(
               "历史账期",
               [
                 { label: "周期开始", value: (p) => date(p.period_id) },
@@ -483,7 +501,8 @@ export async function accounts(ctx) {
                 { label: "上传", value: (p) => bytes(p.upload_bytes) },
                 { label: "下载", value: (p) => bytes(p.download_bytes) },
               ],
-              await api("/api/history?id=" + encodeURIComponent(item.id)),
+              "/api/history?id=" + encodeURIComponent(item.id),
+              ctx.signal,
             ),
           ),
         ],

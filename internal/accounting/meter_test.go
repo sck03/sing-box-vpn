@@ -16,7 +16,7 @@ func (c *closedCounter) Close() error { c.count.Add(1); return nil }
 func meterFixture(t *testing.T, quota int64) (*Store, *Meter, *Handle, *closedCounter) {
 	t.Helper()
 	s, _ := fixture(t, quota)
-	if err := s.Bind(t.Context(), domain.Credential{ID: "credential", AccountID: "alice", RuntimeID: "normal", InboundID: "in", Protocol: "vless", Generation: 1, UUID: "uuid"}); err != nil {
+	if err := s.Bind(t.Context(), domain.Credential{ID: "credential", AccountID: "alice", RuntimeID: "normal", InboundID: "in", Protocol: "vless", Generation: 1, UUID: "aabbccdd-1122-4333-8444-5566778899aa"}); err != nil {
 		t.Fatal(err)
 	}
 	m := NewMeter(s, "normal")

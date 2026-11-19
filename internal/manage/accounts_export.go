@@ -65,18 +65,11 @@ func accountNodes(ctx context.Context, store *accounting.Store, config PlatformC
 			if profile.Ports["hysteria2"] == entry.Port {
 				ports = profile.Hopping
 			}
-			node, err := entry.subscriptionNode(app.Address, usage.Name+"-"+entry.ID, runtime, ports, certificates)
+			node, err := entry.subscriptionNode(app.Address, usage.Name+"-"+entry.ID, runtime, ports, certificates, credential)
 			if err != nil {
 				return nil, err
 			}
-			node.UUID, node.Password = credential.UUID, credential.Password
 			node.ID = runtime + "-" + credential.ID
-			if node.Protocol == "vless" || node.Protocol == "vmess" {
-				node.Password = ""
-			}
-			if node.Protocol == "hysteria2" || node.Protocol == "anytls" {
-				node.UUID = ""
-			}
 			if node.Protocol == "tuic" && tuicPort != 0 {
 				ranges, err := parsePortRanges(profile.TUICPorts)
 				if err != nil {

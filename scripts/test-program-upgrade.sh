@@ -14,7 +14,7 @@ for scenario in stopped active fail; do
     mkdir -p "$APP_HOME" "$SB_ROOT" "$SCRIPT_ROOT/.bin/linux-amd64"
     mkdir -p "$SCRIPT_ROOT/lib"
     cp "$ROOT/lib/restart-panel.sh" "$SCRIPT_ROOT/lib/restart-panel.sh"
-    touch "$APP_HOME/.managed" "$SB_ROOT/.platform-v4" "$TEST_LOG"
+    touch "$APP_HOME/.managed" "$SB_ROOT/.platform-v5" "$TEST_LOG"
     printf 'old\n' > "$APP_HOME/version"
     printf '#!/bin/sh\necho old\n' > "$MANAGER"
     printf 'new\n' > "$SCRIPT_ROOT/version"

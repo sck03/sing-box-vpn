@@ -2,6 +2,7 @@ package accounting
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"time"
 )
@@ -75,7 +76,7 @@ func (s *Store) authorizationSnapshot(ctx context.Context, runtime string, now t
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT c.id,c.generation,a.id,a.name,a.disabled,a.expires,a.quota,a.revision,a.created,a.charged,a.upload,a.download,a.subscriber,a.start_mode,a.starts,a.duration,a.period_kind,a.period_days,a.period_day,a.timezone,a.started,a.period,a.archived
+	rows, err := s.db.QueryContext(ctx, `SELECT c.id,c.generation,a.id,a.disabled,a.expires,a.quota,a.charged,a.duration,a.period_kind,a.period_days,a.period_day,a.timezone,a.started,a.period,a.archived
  FROM credentials c JOIN accounts a ON a.id=c.account
  WHERE c.runtime=? AND c.id IN (SELECT value FROM json_each(?)) AND NOT EXISTS (SELECT 1 FROM subscribers s WHERE s.id=a.subscriber AND s.disabled=1) LIMIT 10001`, runtime, string(selected))
 	if err != nil {
@@ -83,17 +84,28 @@ func (s *Store) authorizationSnapshot(ctx context.Context, runtime string, now t
 	}
 	result := make(map[authorizationKey]Usage, len(wanted))
 	var key authorizationKey
-	scanValues := make([]any, 2, 25)
-	scan := scanFunc(func(values ...any) error {
-		scanValues[0], scanValues[1] = &key.id, &key.generation
-		scanValues = append(scanValues[:2], values...)
-		return rows.Scan(scanValues...)
-	})
+	// Only authorization and period fields enter this hot path. advanceUsage
+	// rereads the full account under its write transaction if rollover is due.
+	var expires, quota, started sql.NullInt64
+	var u Usage
 	for rows.Next() {
-		u, e := readAccount(scan)
+		u = Usage{}
+		e := rows.Scan(&key.id, &key.generation, &u.ID, &u.Disabled, &expires, &quota, &u.Charged, &u.DurationSeconds, &u.Period.Kind, &u.Period.Days, &u.Period.Day, &u.Period.Timezone, &started, &u.PeriodID, &u.Archived)
 		if e != nil {
 			rows.Close()
 			return nil, e
+		}
+		if expires.Valid {
+			v := time.Unix(expires.Int64, 0).UTC()
+			u.ExpiresAt = &v
+		}
+		if quota.Valid {
+			v := quota.Int64
+			u.QuotaBytes = &v
+		}
+		if started.Valid {
+			v := time.Unix(started.Int64, 0).UTC()
+			u.StartedAt = &v
 		}
 		if wanted[key] {
 			result[key] = u

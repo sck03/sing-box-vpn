@@ -93,7 +93,7 @@ func TestAccountBatchBindingIsIndependentAndAtomic(t *testing.T) {
 		t.Fatal(err)
 	}
 	credentials, err = store.Credentials(t.Context(), "normal")
-	if err != nil || len(credentials) != 2 || credentials[0].UUID == credentials[1].UUID || credentials[0].Password == credentials[1].Password {
+	if err != nil || len(credentials) != 2 || credentials[0].Identity() == credentials[1].Identity() {
 		t.Fatal("batch did not create independent credentials", err)
 	}
 	one := credentials[0]

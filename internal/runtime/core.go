@@ -31,9 +31,10 @@ import (
 	sjson "github.com/sagernet/sing/common/json"
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/domain"
+	"github.com/sck03/sing-box-vpn/internal/runtimeconfig"
 )
 
-const Version = "1.14.4+sbvpn.3"
+const Version = "1.14.4+sbvpn.4"
 
 func guarded[T any](meter *accounting.Meter, constructor inbound.ConstructorFunc[T]) inbound.ConstructorFunc[T] {
 	return func(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options T) (adapter.Inbound, error) {
@@ -72,9 +73,12 @@ func Context(ctx context.Context, meter *accounting.Meter) context.Context {
 	return box.Context(ctx, registry, outbounds, endpoints, dnsTransports, services, certificate.NewRegistry())
 }
 
-// BindUsers replaces every protocol user list, even when no account is bound.
-// Generated profile secrets can never become an unmetered fallback identity.
+// BindUsers replaces every protocol user list with canonical account identities.
+// Unbound listeners stay empty and cannot gain an unmetered fallback user.
 func BindUsers(raw []byte, credentials []domain.Credential) ([]byte, error) {
+	if err := runtimeconfig.ValidateTypes(raw); err != nil {
+		return nil, err
+	}
 	var config map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &config); err != nil {
 		return nil, err
@@ -88,7 +92,17 @@ func BindUsers(raw []byte, credentials []domain.Credential) ([]byte, error) {
 	}
 	tags := map[string]bool{}
 	byInbound := make(map[string][]domain.Credential)
+	identities := make(map[[2]string]bool, len(credentials))
 	for _, credential := range credentials {
+		credential, err := credential.Normalize()
+		if err != nil {
+			return nil, fmt.Errorf("invalid credential %s: %w", credential.ID, err)
+		}
+		key := [2]string{credential.InboundID, credential.Identity()}
+		if identities[key] {
+			return nil, fmt.Errorf("duplicate authentication identity on inbound %s", credential.InboundID)
+		}
+		identities[key] = true
 		byInbound[credential.InboundID] = append(byInbound[credential.InboundID], credential)
 	}
 	for _, node := range nodes {
@@ -109,13 +123,15 @@ func BindUsers(raw []byte, credentials []domain.Credential) ([]byte, error) {
 			return nil, fmt.Errorf("unmetered inbound type %q is not supported", kind)
 		}
 		users := []map[string]any{}
-		var originalUsers []map[string]any
-		if err := json.Unmarshal(node["users"], &originalUsers); err != nil {
-			return nil, err
-		}
 		flow := ""
-		if len(originalUsers) > 0 {
-			flow, _ = originalUsers[0]["flow"].(string)
+		if value := node["_managed_flow"]; value != nil {
+			if err := json.Unmarshal(value, &flow); err != nil {
+				return nil, err
+			}
+		}
+		delete(node, "_managed_flow")
+		if flow != "" && (kind != "vless" || flow != "xtls-rprx-vision") {
+			return nil, errors.New("invalid managed flow")
 		}
 		for _, c := range byInbound[tag] {
 			if c.Protocol != kind {

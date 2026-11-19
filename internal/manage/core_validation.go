@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/sck03/sing-box-vpn/internal/runtimeconfig"
 	"maps"
 	"os"
 	"path/filepath"
@@ -148,7 +149,11 @@ func validateConfigs(ctx context.Context, root, candidate string, check func(con
 			return err
 		}
 		path := filepath.Join(stage, fmt.Sprintf("%d.json", i))
-		if err := AtomicBytes(path, configs[name], 0600); err != nil {
+		projection, err := runtimeconfig.CoreProjection(configs[name])
+		if err != nil {
+			return err
+		}
+		if err := AtomicBytes(path, projection, 0600); err != nil {
 			return err
 		}
 		if _, err := check(ctx, candidate, "check", "-D", root, "-c", path); err != nil {

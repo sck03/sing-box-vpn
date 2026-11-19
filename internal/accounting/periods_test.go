@@ -27,7 +27,7 @@ func periodFixture(t *testing.T, mode string) (*Store, string, domain.Credential
 	if e = s.SaveAccount(t.Context(), a); e != nil {
 		t.Fatal(e)
 	}
-	c := domain.Credential{ID: "cred", AccountID: "alice", RuntimeID: "normal", InboundID: "vmess", Protocol: "vmess", UUID: "uuid", Generation: 1}
+	c := domain.Credential{ID: "cred", AccountID: "alice", RuntimeID: "normal", InboundID: "vmess", Protocol: "vmess", UUID: "aabbccdd-1122-4333-8444-5566778899aa", Generation: 1}
 	if e = s.Bind(t.Context(), c); e != nil {
 		t.Fatal(e)
 	}

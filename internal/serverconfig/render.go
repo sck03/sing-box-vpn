@@ -6,17 +6,12 @@ func (n Node) Inbound() map[string]any {
 	if n.Disabled {
 		in["_disabled"] = true
 	}
-	user := map[string]any{}
-	if n.UUID != "" {
-		user["uuid"] = n.UUID
-	}
-	if n.Password != "" {
-		user["password"] = n.Password
-	}
+	// The listener has no authentication authority. Runtime binding supplies all
+	// users from the account repository and removes this private policy field.
+	in["users"] = []map[string]any{}
 	if n.Flow != "" {
-		user["flow"] = n.Flow
+		in["_managed_flow"] = n.Flow
 	}
-	in["users"] = []map[string]any{user}
 	t := map[string]any{"enabled": n.TLS.Enabled, "server_name": n.TLS.ServerName}
 	in["tls"] = t
 	if n.TLS.RealityPrivate != "" {
@@ -25,7 +20,6 @@ func (n Node) Inbound() map[string]any {
 		t["certificate_path"], t["key_path"] = n.TLS.Certificate, n.TLS.Key
 	}
 	if n.Protocol == "vmess" {
-		user["alterId"] = 0
 		header := n.Transport.EarlyDataHeader
 		// sing-box's empty-header path mode compares RequestURI, which is
 		// percent-encoded for Unicode paths even when early data is disabled.

@@ -1,6 +1,7 @@
 import { api, download, restoreForm } from "./api.js";
+import { loadResult } from "./details.js";
 import { historyControls, journalCard } from "./log-maintenance.js";
-import { tasksCard } from "./tasks.js";
+import { taskHistory } from "./tasks.js";
 import { capabilities } from "./capabilities.js";
 import { workspace } from "./workspace.js";
 import {
@@ -14,17 +15,9 @@ import {
   notice,
 } from "./ui.js";
 export async function maintenance(ctx) {
-  let latest = ctx.overview,
-    taskTable;
-  ctx.updateOverview = (next) => {
-    latest = next;
-    taskTable?.updateItems(next.tasks);
-  };
   async function logsAndTasks() {
     const metadata = await capabilities(ctx.request || api);
-    const data = latest || (await (ctx.request || api)("/api/overview"));
-    const tasks = tasksCard((latest || data).tasks, ctx);
-    taskTable = tasks.querySelector(".data-table");
+    const tasks = await taskHistory(ctx);
     const logs = journalCard(metadata.services || [], ctx);
     const history =
       ctx.session.role === "admin" ? await historyControls(ctx) : null;
@@ -150,7 +143,7 @@ export async function maintenance(ctx) {
       ),
       row(
         button("查看当前值", async () =>
-          showResult("当前内核网络设置", await api("/api/network")),
+          loadResult("当前内核网络设置", "/api/network", ctx.signal),
         ),
         button("启用 BBR + FQ", () =>
           ctx.task({ operation: "bbr", value: "enable" }),

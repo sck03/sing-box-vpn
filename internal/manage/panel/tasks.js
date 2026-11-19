@@ -5,6 +5,46 @@ import { table } from "./tables.js";
 import { card } from "./dom.js";
 import { el, button, row, help, badge, date } from "./dom.js";
 
+export async function openTask(id, signal = undefined) {
+  const session = dialogSession(signal);
+  session.replace(help("正在读取任务详情…"));
+  try {
+    const task = await api("/api/tasks/detail?id=" + id, undefined, { signal: session.signal });
+    if (session.active()) taskDetails(task, session);
+  } catch (error) {
+    if (session.active()) session.replace(el("p", { class: "form-error", role: "alert" }, error.message), button("关闭", session.close));
+  }
+}
+
+export async function taskHistory(ctx) {
+  const root = el("div");
+  let cursors = [0];
+  let loading = false;
+  let items = [];
+  ctx.updateOverview = (snapshot) => {
+    const recent = new Map(snapshot.tasks.map((task) => [task.id, task]));
+    items = items.map((task) => recent.get(task.id) || task);
+    root.querySelector(".data-table")?.updateItems(items);
+  };
+  const load = async (next = cursors) => {
+    if (loading) return;
+    loading = true;
+    try {
+      const page = await (ctx.request || api)("/api/tasks?before=" + next.at(-1) + "&limit=50", undefined, { signal: ctx.signal });
+      ctx.signal?.throwIfAborted();
+      items = page.items;
+      cursors = next;
+      const newer = button("较新记录", () => load(cursors.slice(0, -1)));
+      const older = button("较早记录", () => load([...cursors, page.next_before]));
+      newer.disabled = cursors.length === 1;
+      older.disabled = !page.next_before;
+      root.replaceChildren(tasksCard(page.items, ctx), row(newer, help("第 " + cursors.length + " 页 · 每页最多 50 条"), older));
+    } finally { loading = false; }
+  };
+  await load();
+  return root;
+}
+
 const kinds = {
   apply: "应用配置",
   account: "更新凭据",
@@ -141,28 +181,8 @@ export function tasksCard(tasks, ctx) {
           : []),
         ...(canViewTask(t, ctx.session)
           ? [
-              button("详情", async () => {
-                const session = dialogSession(ctx.signal);
-                session.replace(help("正在读取任务详情…"));
-                try {
-                  const task = await api(
-                    "/api/tasks/detail?id=" + t.id,
-                    undefined,
-                    { signal: session.signal },
-                  );
-                  if (session.active()) taskDetails(task, session);
-                } catch (error) {
-                  if (session.active())
-                    session.replace(
-                      el(
-                        "p",
-                        { class: "form-error", role: "alert" },
-                        error.message,
-                      ),
-                      row(button("关闭", session.close)),
-                    );
-                }
-              }),
+              button("详情", () => openTask(t.id, ctx.signal)),
+
             ]
           : []),
         ...(t.state === "queued" &&

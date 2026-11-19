@@ -92,7 +92,7 @@ install_main() (
 uninstall_main() {
     require_system
     [[ "$APP_HOME" == /opt/sing-box-vpn && ! -L "$APP_HOME" && -f "$APP_HOME/.managed" &&
-       "$SB_ROOT" == /etc/s-box && ! -L "$SB_ROOT" && -f "$SB_ROOT/.platform-v4" ]] || {
+       "$SB_ROOT" == /etc/s-box && ! -L "$SB_ROOT" && -f "$SB_ROOT/.platform-v5" ]] || {
         echo '卸载只接受带本项目标记的默认目录；自定义目录请手动清理' >&2; return 1;
     }
     if [[ "${1:-}" != --yes ]]; then

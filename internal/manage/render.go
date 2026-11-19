@@ -16,7 +16,7 @@ func NewProfile(root string, used map[int]bool, suffix string, excluded ...portR
 	if suffix != "" {
 		directory = filepath.Join(root, "vpngate")
 	}
-	p := Profile{Ports: map[string]int{}, Certificate: filepath.ToSlash(filepath.Join(directory, suffix+"cert.pem")), Key: filepath.ToSlash(filepath.Join(directory, suffix+"private.key")), RealitySNI: "www.apple.com", TLSSNI: "www.bing.com", SelfSigned: true, WSPath: "/" + hex.EncodeToString(randomBytes(16)), Secrets: Secrets{UUID: map[string]string{}, Passwords: map[string]string{}}}
+	p := Profile{Ports: map[string]int{}, Certificate: filepath.ToSlash(filepath.Join(directory, suffix+"cert.pem")), Key: filepath.ToSlash(filepath.Join(directory, suffix+"private.key")), RealitySNI: "www.apple.com", TLSSNI: "www.bing.com", SelfSigned: true, WSPath: "/" + hex.EncodeToString(randomBytes(16))}
 	if err := EnsureCertificate(p.Certificate, p.Key, p.TLSSNI); err != nil {
 		return p, err
 	}
@@ -26,12 +26,6 @@ func NewProfile(root string, used map[int]bool, suffix string, excluded ...portR
 			return p, err
 		}
 		p.Ports[protocol] = port
-	}
-	for _, protocol := range []string{"vless", "vmess", "tuic"} {
-		p.Secrets.UUID[protocol] = randomUUID()
-	}
-	for _, protocol := range []string{"hysteria2", "tuic", "anytls"} {
-		p.Secrets.Passwords[protocol] = randomSecret()
 	}
 	key, err := ecdh.X25519().GenerateKey(rand.Reader)
 	if err != nil {
@@ -61,13 +55,7 @@ func MakeNodes(p Profile, prefix string) []ManagedNode {
 	}
 	nodes := make([]ManagedNode, 0, len(Protocols))
 	for _, kind := range Protocols {
-		n := ManagedNode{ID: prefix + Tags[kind], Protocol: kind, Port: p.Ports[kind], UUID: p.Secrets.UUID[kind], Password: p.Secrets.Passwords[kind], TLS: ManagedTLS{Enabled: true, ServerName: p.TLSSNI, Certificate: p.Certificate, Key: p.Key}}
-		if kind == "vless" || kind == "vmess" {
-			n.Password = ""
-		}
-		if kind == "hysteria2" || kind == "anytls" {
-			n.UUID = ""
-		}
+		n := ManagedNode{ID: prefix + Tags[kind], Protocol: kind, Port: p.Ports[kind], TLS: ManagedTLS{Enabled: true, ServerName: p.TLSSNI, Certificate: p.Certificate, Key: p.Key}}
 		if kind == "vless" {
 			n.Flow = "xtls-rprx-vision"
 			n.TLS = ManagedTLS{Enabled: true, ServerName: p.RealitySNI, RealityPrivate: p.Secrets.Reality.Private, RealityShortID: p.Secrets.Reality.ShortID, HandshakeHost: host, HandshakePort: port}

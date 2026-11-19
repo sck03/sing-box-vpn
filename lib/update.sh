@@ -6,7 +6,7 @@ upgrade_program() (
     local arch stage unit state started switched=0 binaries=0 task=${SB_UPGRADE_TASK_ID:-0} target=${SB_UPGRADE_TARGET_VERSION:-}
     local -a running=()
     arch=$(arch_name)
-    [[ -f "$APP_HOME/.managed" && -f "$SB_ROOT/.platform-v4" && -x "$MANAGER" && -x "$RUNTIME" ]] || {
+    [[ -f "$APP_HOME/.managed" && -f "$SB_ROOT/.platform-v5" && -x "$MANAGER" && -x "$RUNTIME" ]] || {
         echo '升级要求当前平台的完整安装，不支持旧数据格式迁移' >&2; return 1;
     }
     exec 9>"$SB_ROOT/.upgrade.lock"

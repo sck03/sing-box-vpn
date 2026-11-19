@@ -41,7 +41,7 @@ export async function access(ctx) {
         const validated = await api("/api/panel/settings/preview", {
           options: next,
         });
-        const dialog = document.querySelector("#dialog");
+        const dialog = /** @type {HTMLDialogElement} */ (document.querySelector("#dialog"));
         dialog.replaceChildren(
           el("h2", {}, "确认面板访问配置"),
           help(

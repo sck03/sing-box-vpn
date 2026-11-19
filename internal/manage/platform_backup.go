@@ -136,7 +136,7 @@ func validateArchivedPairs(c PlatformConfig, b platformBackup) error {
 		if !ok {
 			return nil, os.ErrNotExist
 		}
-		return data, nil
+		return os.ReadFile(data)
 	})
 }
 
@@ -216,8 +216,8 @@ func certificatePaths(c PlatformConfig) []string {
 	}
 	return paths
 }
-func inspectBackupDatabase(ctx context.Context, path string, data []byte) (PlatformConfig, Object, error) {
-	if err := AtomicBytes(path, data, 0600); err != nil {
+func inspectBackupDatabase(ctx context.Context, path, source string) (PlatformConfig, Object, error) {
+	if err := atomicCopy(path, source); err != nil {
 		return PlatformConfig{}, nil, err
 	}
 	db, err := database.Open(path)
@@ -360,12 +360,12 @@ func relocateBackup(c *PlatformConfig, b platformBackup, destination string) err
 }
 func (s *PlatformService) servePlatformBackup(w http.ResponseWriter, r *http.Request, actor string) {
 	if r.Method != "POST" {
-		http.Error(w, "method not allowed", 405)
+		apiFailure(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", false)
 		return
 	}
 	if !s.backupBusy.CompareAndSwap(false, true) {
 		w.Header().Set("Retry-After", "5")
-		http.Error(w, "another backup or restore is running", http.StatusTooManyRequests)
+		apiFailure(w, http.StatusTooManyRequests, "backup_busy", "another backup or restore is running", true)
 		return
 	}
 	defer s.backupBusy.Store(false)
@@ -397,7 +397,7 @@ func (s *PlatformService) servePlatformBackup(w http.ResponseWriter, r *http.Req
 			return
 		}
 		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Header().Set("Content-Disposition", `attachment; filename="sing-box-vpn-v4.sbvpn"`)
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="sing-box-vpn-v%d.sbvpn"`, backuparchive.Schema))
 		if _, err = file.Seek(0, io.SeekStart); err != nil {
 			platformError(w, err)
 			return
@@ -410,6 +410,7 @@ func (s *PlatformService) servePlatformBackup(w http.ResponseWriter, r *http.Req
 		platformError(w, err)
 		return
 	}
+	defer b.Close()
 	stage, err := os.MkdirTemp(s.Root, ".restore-inspect-")
 	if err != nil {
 		platformError(w, err)
@@ -430,7 +431,7 @@ func (s *PlatformService) servePlatformBackup(w http.ResponseWriter, r *http.Req
 		previewConfig := c
 		if err = relocateBackup(&previewConfig, b, stage); err == nil {
 			for path, data := range b.Files {
-				if err = AtomicBytes(filepath.Join(stage, filepath.FromSlash(path)), data, 0600); err != nil {
+				if err = atomicCopy(filepath.Join(stage, filepath.FromSlash(path)), data); err != nil {
 					break
 				}
 			}
@@ -459,7 +460,7 @@ func (s *PlatformService) servePlatformBackup(w http.ResponseWriter, r *http.Req
 	}
 	if err = relocateBackup(&c, b, destination); err == nil {
 		for path, data := range b.Files {
-			if err = AtomicBytes(filepath.Join(destination, filepath.FromSlash(path)), data, 0600); err != nil {
+			if err = atomicCopy(filepath.Join(destination, filepath.FromSlash(path)), data); err != nil {
 				break
 			}
 		}
@@ -495,6 +496,7 @@ func restoreDisasterFrom(ctx context.Context, root string, source io.Reader, pas
 	if err != nil {
 		return err
 	}
+	defer b.Close()
 	if err = os.MkdirAll(filepath.Dir(root), 0700); err != nil {
 		return err
 	}
@@ -512,7 +514,7 @@ func restoreDisasterFrom(ctx context.Context, root string, source io.Reader, pas
 		return err
 	}
 	for name, value := range b.Files {
-		if err = AtomicBytes(filepath.Join(stage, filepath.FromSlash(name)), value, 0600); err != nil {
+		if err = atomicCopy(filepath.Join(stage, filepath.FromSlash(name)), value); err != nil {
 			return err
 		}
 	}
@@ -546,7 +548,7 @@ func restoreDisasterFrom(ctx context.Context, root string, source io.Reader, pas
 	if err = AtomicJSON(filepath.Join(stage, "panel.json"), PanelOptions{Listen: "127.0.0.1:2096"}); err != nil {
 		return err
 	}
-	if err = AtomicBytes(filepath.Join(stage, ".platform-v4"), []byte("recovered; reconcile disabled entitlements before activation\n"), 0600); err != nil {
+	if err = AtomicBytes(filepath.Join(stage, ".platform-v5"), []byte("recovered; reconcile disabled entitlements before activation\n"), 0600); err != nil {
 		return err
 	}
 	for _, suffix := range []string{"", "-wal", "-shm"} {

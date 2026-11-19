@@ -48,7 +48,7 @@ func TestPlanRejectsConcurrentMutationAfterUnlockedCompile(t *testing.T) {
 }
 
 func TestPreviewSummaryAndHTTPConflict(t *testing.T) {
-	root, core, app := appFixture(t)
+	root, core, _ := appFixture(t)
 	var result bytes.Buffer
 	if err := RunSubscriptions(context.Background(), []string{"--root", root, "--core", core, "preview"}, nil, &result); err != nil {
 		t.Fatal(err)
@@ -56,7 +56,7 @@ func TestPreviewSummaryAndHTTPConflict(t *testing.T) {
 	if strings.Contains(result.String(), `"data"`) || strings.Contains(result.String(), `"nodes"`) {
 		t.Fatal("preview contains full artifacts or credentials")
 	}
-	for _, secret := range app.fixtureProfile().Secrets.UUID {
+	for _, secret := range []string{fixtureCredential("vless").UUID, fixtureCredential("tuic").Password} {
 		if strings.Contains(result.String(), secret) {
 			t.Fatal("preview leaks credential")
 		}

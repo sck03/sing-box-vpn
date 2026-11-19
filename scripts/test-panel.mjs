@@ -74,7 +74,7 @@ globalThis.fetch = async (path) => ({
       ? capabilitiesFixture
       : path === "/api/server"
         ? structuredClone(effective)
-        : path === "/api/overview"
+        : String(path).startsWith("/api/tasks?") ? { items: [], next_before: 0 } : path === "/api/overview"
           ? {
               revision: 1,
               applied_revision: 1,

@@ -9,7 +9,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/google/uuid"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
@@ -22,23 +21,9 @@ func (n Node) Validate() error {
 		return invalid("port", "must be within 1–65535")
 	}
 	switch n.Protocol {
-	case "vless", "vmess", "tuic":
-		if _, err := uuid.Parse(n.UUID); err != nil {
-			return invalid("uuid", "invalid UUID")
-		}
-	case "hysteria2", "anytls":
-		if n.UUID != "" {
-			return invalid("uuid", "not supported by this protocol")
-		}
+	case "vless", "vmess", "tuic", "hysteria2", "anytls":
 	default:
 		return invalid("protocol", "unsupported managed protocol")
-	}
-	if n.Protocol == "tuic" || n.Protocol == "hysteria2" || n.Protocol == "anytls" {
-		if len(n.Password) < 16 || len(n.Password) > 128 || strings.ContainsAny(n.Password, "\r\n\x00") {
-			return invalid("password", "must contain 16–128 bytes without control characters")
-		}
-	} else if n.Password != "" {
-		return invalid("password", "not supported by this protocol")
 	}
 	if n.Protocol != "vmess" && !n.TLS.Enabled {
 		return invalid("tls.enabled", "TLS is required")

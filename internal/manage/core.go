@@ -18,6 +18,7 @@ import (
 
 	project "github.com/sck03/sing-box-vpn"
 	"github.com/sck03/sing-box-vpn/internal/command"
+	"github.com/sck03/sing-box-vpn/internal/runtimeconfig"
 )
 
 var stablePattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
@@ -74,6 +75,14 @@ func CheckCore(ctx context.Context, binary string) (string, error) {
 
 func CheckJSON(ctx context.Context, binary, directory string, value any) error {
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	value, err = runtimeconfig.CoreProjection(raw)
+	if err != nil {
 		return err
 	}
 	key, err := validationKey(binary, value)

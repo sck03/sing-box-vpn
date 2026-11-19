@@ -1,10 +1,13 @@
 package manage
 
 import (
+	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +16,37 @@ import (
 // Only existing immutable embedded assets enter this bounded cache. Readers
 // access the embedded bytes directly instead of allocating a copy per request.
 var panelETags sync.Map
+
+type panelAsset struct {
+	once sync.Once
+	etag string
+	gzip []byte
+	err  error
+}
+
+func acceptsGzip(header string) bool {
+	wildcard := false
+	for _, value := range strings.Split(header, ",") {
+		parts := strings.Split(strings.TrimSpace(value), ";")
+		quality := 1.0
+		for _, option := range parts[1:] {
+			if key, v, ok := strings.Cut(strings.TrimSpace(option), "="); ok && key == "q" {
+				var err error
+				quality, err = strconv.ParseFloat(v, 64)
+				if err != nil || quality < 0 || quality > 1 {
+					quality = 0
+				}
+			}
+		}
+		if strings.EqualFold(parts[0], "gzip") {
+			return quality > 0
+		}
+		if parts[0] == "*" {
+			wildcard = quality > 0
+		}
+	}
+	return wildcard
+}
 
 func servePanelAsset(w http.ResponseWriter, r *http.Request, name string) {
 	file, err := panelAssets.Open(name)
@@ -39,20 +73,37 @@ func servePanelAsset(w http.ResponseWriter, r *http.Request, name string) {
 		// Revalidate the complete module graph after upgrades; unchanged assets
 		// return 304 without transferring a second copy of the file.
 		w.Header().Set("Cache-Control", "public, no-cache")
-		etag, found := panelETags.Load(name)
-		if !found {
-			digest := sha256.New()
-			if _, err = io.Copy(digest, content); err != nil {
-				http.Error(w, "asset unavailable", http.StatusInternalServerError)
+		cached, _ := panelETags.LoadOrStore(name, &panelAsset{})
+		asset := cached.(*panelAsset)
+		asset.once.Do(func() {
+			var raw []byte
+			raw, asset.err = io.ReadAll(content)
+			if asset.err != nil {
 				return
 			}
-			if _, err = content.Seek(0, io.SeekStart); err != nil {
-				http.Error(w, "asset unavailable", http.StatusInternalServerError)
-				return
+			asset.etag = fmt.Sprintf(`"%x"`, sha256.Sum256(raw))
+			var compressed bytes.Buffer
+			writer, _ := gzip.NewWriterLevel(&compressed, gzip.BestCompression)
+			_, asset.err = writer.Write(raw)
+			if err := writer.Close(); asset.err == nil {
+				asset.err = err
 			}
-			etag, _ = panelETags.LoadOrStore(name, fmt.Sprintf(`"%x"`, digest.Sum(nil)))
+			asset.gzip = compressed.Bytes()
+		})
+		if asset.err != nil {
+			http.Error(w, "asset unavailable", http.StatusInternalServerError)
+			return
 		}
-		w.Header().Set("ETag", etag.(string))
+		w.Header().Set("Vary", "Accept-Encoding")
+		w.Header().Set("ETag", asset.etag)
+		if acceptsGzip(r.Header.Get("Accept-Encoding")) && r.Header.Get("Range") == "" {
+			w.Header().Set("Content-Encoding", "gzip")
+			w.Header().Set("ETag", strings.TrimSuffix(asset.etag, `"`)+`-gzip"`)
+			content = bytes.NewReader(asset.gzip)
+		} else if _, err = content.Seek(0, io.SeekStart); err != nil {
+			http.Error(w, "asset unavailable", http.StatusInternalServerError)
+			return
+		}
 	} else {
 		w.Header().Set("Cache-Control", "no-store")
 	}

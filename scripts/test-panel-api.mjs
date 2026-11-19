@@ -56,7 +56,23 @@ assert.equal(
 );
 let state = ok(await call("/api/config"));
 const config = state.config;
-assert.equal(config.app.schema, 3);
+assert.equal(config.app.schema, 4);
+assert.equal(config.schema, 5);
+assert(config.app.nodes.every((node) => !("uuid" in node) && !("password" in node)));
+const unsupportedDNS = structuredClone(config);
+unsupportedDNS.app.advanced.dns = { servers: [
+  { type: "local", tag: "dns-local" },
+  { type: "quic", tag: "dns-audit", server: "1.1.1.1" },
+], final: "dns-audit" };
+for (const [path, body] of [["/api/config/preview", unsupportedDNS], ["/api/config", { revision: state.revision, config: unsupportedDNS }]]) {
+  const rejected = await call(path, body);
+  assert.equal(rejected.status, 400);
+  assert.equal(rejected.value.error.code, "invalid_field");
+  assert.equal(rejected.value.error.field, "app.advanced.dns.servers[1].type");
+}
+const invalidTask = await call("/api/tasks/detail?id=invalid");
+assert.equal(invalidTask.status, 400);
+assert.equal(invalidTask.value.error.field, "id");
 const transportCandidate = structuredClone(config.app);
 const transportNode = transportCandidate.nodes.find(
   (node) => node.protocol === "vmess",
@@ -150,12 +166,12 @@ const queued = ok(
     },
   }),
 );
-async function finished(id) {
+async function finished(id, expected = "succeeded") {
   const deadline = Date.now() + 90000;
   while (Date.now() < deadline) {
     const task = ok(await call("/api/tasks/detail?id=" + id));
     if (!["queued", "running"].includes(task.state)) {
-      assert.equal(task.state, "succeeded", JSON.stringify(task));
+      assert.equal(task.state, expected, JSON.stringify(task));
       return task;
     }
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -163,6 +179,20 @@ async function finished(id) {
   throw new Error("Test task did not finish");
 }
 await finished(queued.task_id);
+const spelling = "AABBCCDD-1122-4333-8444-5566778899AA";
+for (const [index, uuid] of [spelling, spelling.toLowerCase()].entries()) {
+  const id = "identity-" + suffix + "-" + index;
+  ok(await call("/api/accounts", { account: { id, name: id, start_mode: "created", revision: 0 } }));
+  const task = ok(await call("/api/tasks", { operation: "account", account: { operation: "bind", id, scope: "normal", inbound_ids: [inbound.id], uuid } }));
+  await finished(task.task_id, index === 0 ? "succeeded" : "failed");
+  const bindings = ok(await call(`/api/credentials?id=${id}&scope=normal`));
+  assert.equal(bindings.length, index === 0 ? 1 : 0);
+}
+const taskPage = ok(await call("/api/tasks?limit=2"));
+assert.equal(taskPage.items.length, 2);
+assert(taskPage.next_before > 0);
+const olderTasks = ok(await call("/api/tasks?limit=2&before=" + taskPage.next_before));
+assert(olderTasks.items.every((task) => task.id < taskPage.next_before));
 ok(await call("/api/tasks/acknowledge", { id: queued.task_id }));
 assert.equal(
   ok(await call("/api/tasks/detail?id=" + queued.task_id)).acknowledged,

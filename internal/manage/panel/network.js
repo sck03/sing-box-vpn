@@ -1,5 +1,6 @@
 /** @typedef {import("./contracts.js").ManagedNode} ManagedNode */
 import { api } from "./api.js";
+import { loadResult } from "./details.js";
 import { capabilities } from "./capabilities.js";
 import {
   el,
@@ -14,7 +15,8 @@ import {
   badge,
   notice,
 } from "./ui.js";
-const nodeFields = (protocols) => [
+const nodeFields = (protocols, protocol) => {
+ const fields = [
   { key: "id", label: "入站 ID", required: true },
   {
     key: "protocol",
@@ -90,6 +92,13 @@ const nodeFields = (protocols) => [
     visible: (v) => v.protocol === "vmess",
   },
 ];
+ return [
+   { section: "基本设置", matches: (field) => !field.key.includes(".") && field.key !== "flow" },
+   { section: "传输参数", matches: (field) => field.key.startsWith("transport.") },
+   { section: "安全与握手", matches: (field) => field.key.startsWith("tls.") || field.key === "flow" },
+ ].flatMap(({ section, matches }) => fields.filter((field) => matches(field) && (!field.visible || field.visible({ protocol }))).map((field, index) => ({ ...field, ...(index === 0 ? { section } : {}) })));
+};
+
 export async function inbounds(ctx) {
   const c = await ctx.config();
   const { protocols } = await capabilities();
@@ -161,15 +170,14 @@ export async function inbounds(ctx) {
     items,
     (n) => [
       button("关联影响", async () =>
-        showResult(
+        loadResult(
           "入站关联 · " + n.id,
-          await api(
-            "/api/inbounds/impact?scope=normal&id=" + encodeURIComponent(n.id),
-          ),
+          "/api/inbounds/impact?scope=normal&id=" + encodeURIComponent(n.id),
+          ctx.signal,
         ),
       ),
       button("编辑", () =>
-        formDialog("编辑入站", nodeFields(protocols), n, (v) => {
+        formDialog("编辑入站", nodeFields(protocols, n.protocol), n, (v) => {
           items[items.indexOf(n)] = v;
           change();
         }),
@@ -231,6 +239,7 @@ export async function inbounds(ctx) {
         async () => {
           const impact = await api(
             "/api/inbounds/impact?scope=normal&id=" + encodeURIComponent(n.id),
+            undefined, { signal: ctx.signal },
           );
           if (
             confirm(

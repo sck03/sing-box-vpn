@@ -119,7 +119,7 @@ globalThis.fetch = async (path) => {
         ? { id: "admin", role: "admin", csrf: "test" }
         : path === "/api/config"
           ? { config: structuredClone(config), revision: 1 }
-          : path === "/api/overview"
+          : String(path).startsWith("/api/tasks?") ? { items: [], next_before: 0 } : path === "/api/overview"
             ? snapshot
             : String(path).startsWith("/api/accounts?") ||
                 String(path).startsWith("/api/grants?")

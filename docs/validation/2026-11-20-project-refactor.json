@@ -1,0 +1,132 @@
+{
+  "date": "2026-11-20",
+  "timezone": "Asia/Shanghai",
+  "base_commit": "6e04c1f60fc6e4e028a1dc6df3e90e45538634ab",
+  "scope": "Implementation working tree before commit. Full Windows checks are complemented by targeted reruns after final changes. GitHub Actions independently validates the pushed main commit.",
+  "environment": {
+    "development": "Windows amd64, Intel Core i5-9400F, Go 1.27.3, Node 24.18.0",
+    "linux": "Disposable Ubuntu 24.04 amd64 VM under QEMU",
+    "sing_box": "1.14.4",
+    "mihomo": "1.19.33",
+    "browser": "Installed Google Chrome; desktop 1280x900 and touch viewport 390x844"
+  },
+  "schemas": {
+    "database": 15,
+    "platform": 5,
+    "managed_node_document": 4,
+    "subscriptions": 5,
+    "template": 1,
+    "backup": 8,
+    "managed_runtime": "1.14.4+sbvpn.4",
+    "migration": "None; initialize a fresh installation directory."
+  },
+  "changes": [
+    "Canonical UUIDs and per-inbound effective identity uniqueness, with an independent runtime duplicate guard. TUIC can rotate its password while retaining its UUID; unchanged normalized authentication is rejected.",
+    "Node and VPN profile models no longer contain shared UUIDs or passwords. Runtime users and exports obtain authentication exclusively from account credentials.",
+    "Credential commands separated into application use cases; runtimeconfig owns supported component types and official-core projections.",
+    "Preview, save and apply validate the managed binary; advertised capabilities are checked against registered options. Release builds include QUIC, uTLS, WireGuard and gVisor.",
+    "Generated frontend contracts cover configuration, accounts, credentials, grants, tasks and sessions. checkJs includes every frontend module, without claiming strict TypeScript coverage.",
+    "Structured panel API errors, field focus, preserved conflict drafts, task result links and abortable request/dialog ownership.",
+    "Cursor task history with independent failure/active counts, bounded overview summaries and safe concurrent/failed navigation.",
+    "Lazy gzip compression for embedded JS/CSS with encoding-specific strong ETags and correct revalidation/range behavior.",
+    "Authorization snapshots select only required fields and reuse the scanner while retaining durable reservations, period rollover and revocation checks.",
+    "Backup decryption streams database and certificate entries to private staging; complete age authentication precedes publication; all successful owners close staging.",
+    "Responsive account identity/quota displays and grouped node transport/TLS fields. Probe startup gateway errors receive at most two retries within the original timeout.",
+    "Removed obsolete shared-credential test implementations; synchronized current schema, build flags, API and ownership documentation."
+  ],
+  "local_validation": [
+    {
+      "command": "MANAGED_CORE_BINARY=.test/refactor-managed-core.exe go test ./...",
+      "result": "passed",
+      "evidence": ".test/refactor-all-tests5.log",
+      "note": "Real sing-box and Mihomo executables were configured. A previous gRPC startup 502 exposed inconsistent transient-response handling; bounded retries and an HTTP regression were added before this successful run."
+    },
+    {
+      "command": "go test ./internal/accounting; managed-runtime account isolation and credential publication targeted tests",
+      "result": "passed",
+      "evidence": [".test/refactor-rotation-final.log", ".test/refactor-final-targeted.log"],
+      "note": "Rerun after final TUIC password rotation and platform error-message changes."
+    },
+    {
+      "command": "go test -tags with_quic,with_utls,with_wireguard,with_gvisor -count=1 ./internal/runtime",
+      "result": "passed",
+      "evidence": ".test/refactor-runtime-final.log"
+    },
+    {
+      "command": "go vet ./...; go run ./cmd/panel-contract -check; npm run typecheck; npm test",
+      "result": "passed",
+      "scope": "Eight frontend suites, including delayed response cancellation, field focus and failed/competing task history navigation.",
+      "evidence": [".test/refactor-vet-final.log", ".test/refactor-js-final.log"]
+    },
+    {
+      "command": "PANEL_BROWSER_TEST=1 node scripts/test-panel-local.mjs",
+      "result": "passed",
+      "evidence": ".test/refactor-browser-final.log",
+      "scope": "Real HTTP API, account binding/export, equivalent-UUID rejection without partial state, unsupported DNS preview/save rejection, current schema and absent node secrets, desktop/mobile keyboard/pointer/touch workflows.",
+      "visual_review": "Desktop and mobile screenshots inspected; quota exhaustion colors and duplicate identity display corrected and rechecked."
+    },
+    {
+      "command": "go run ./cmd/release",
+      "result": "passed",
+      "scope": "Linux amd64 and arm64 manager/runtime builds with all advertised build flags; actual linked-module license inventory refreshed."
+    }
+  ],
+  "linux_validation": [
+    {
+      "tests": ["TestLinuxDiskFullRecovery", "TestLinuxKilledMeterPreservesReservation"],
+      "result": "passed",
+      "scope": "ENOSPC rejects uncommitted reservations; recovery integrity_check=ok; SIGKILL preserves the complete durable reservation."
+    },
+    {
+      "test": "TestLinuxMultiportFirewall",
+      "result": "passed",
+      "scope": "IPv4/IPv6 forwarding and project-owned rule cleanup."
+    },
+    {
+      "test": "TestLinuxNamespaceIsolation",
+      "result": "passed",
+      "scope": "OpenVPN, tunnel DNS and fail-closed isolated networking."
+    },
+    {
+      "test": "TestLinuxServiceStartupRecovery",
+      "result": "passed",
+      "scope": "Startup journal recovery, firewall restoration, unexpected clean-exit restart and intentional stop preservation."
+    },
+    {
+      "command": "bash -n; shellcheck --severity=warning; scripts/test-program-upgrade.sh; scripts/test-install-ownership.sh; scripts/test-installer.sh",
+      "result": "passed"
+    }
+  ],
+  "benchmarks": {
+    "command": "go test -run ^$ -bench 'Benchmark(ActiveAuthorization100|DurableMeter64KiB)' -benchmem -benchtime=500ms -count=3 ./internal/accounting",
+    "authorization_100_before": {
+      "ns_per_op": [1330814, 1384603, 1999608],
+      "bytes_per_op": [163082, 163081, 163124],
+      "allocations_per_op": [1995, 1995, 1995]
+    },
+    "authorization_100_after": {
+      "ns_per_op": [548537, 528656, 536457],
+      "bytes_per_op": [87032, 87032, 87008],
+      "allocations_per_op": [980, 980, 980]
+    },
+    "durable_64kib_after": {
+      "ns_per_op": [1149935, 1203427, 1195847],
+      "megabytes_per_second": [56.99, 54.46, 54.80],
+      "bytes_per_op": [10525, 10552, 10562],
+      "allocations_per_op": [249, 249, 249]
+    },
+    "interpretation": "Authorization allocation bytes fell about 46.6% and allocation count 50.9%. Baseline timings were affected by concurrent builds and scheduling, so no controlled speedup ratio or production proxy throughput claim is made. WAL/FULL durability remains enabled."
+  },
+  "cleanup": {
+    "deleted_source": ["internal/manage/credentials_test.go", "internal/manage/legacy_credentials_test.go"],
+    "disposable_directory": ".cleanup-manual/project-refactor-2026-11-20",
+    "note": "Superseded audit artifacts and failed panel fixtures were moved into the existing ignored manual-cleanup area after the earlier recursive deletion block. Development tools, dependency caches, VM base/overlay disks and current verification artifacts are retained."
+  },
+  "limits": [
+    "No protocol-level online user hot update: credential publication still uses necessary restarts, persisted retries and fresh-heartbeat confirmation.",
+    "No production-duration soak test or physical OpenWrt/LuCI acceptance in this run.",
+    "ARM64 is cross-built; native execution and host-specific networking still require deployment-platform acceptance.",
+    "Streamed backup staging removes archive-sized byte buffers, but scrypt retains its fixed memory cost.",
+    "Local logs and screenshots are ignored diagnostic artifacts; this document records reproducible commands and their observed scope."
+  ]
+}

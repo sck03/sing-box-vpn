@@ -206,7 +206,31 @@ func TestSubscriptionOnDemandProtocolProbe(t *testing.T) {
 	root, core, app := appFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, core, "run", "-c", filepath.Join(root, "sb.json"))
+	var probeServer Object
+	if _, err := ReadJSON(filepath.Join(root, "sb.json"), &probeServer); err != nil {
+		t.Fatal(err)
+	}
+	for _, inbound := range objects(probeServer["inbounds"]) {
+		kind := text(inbound["type"])
+		credential := fixtureCredential(kind)
+		user := Object{}
+		if credential.UUID != "" {
+			user["uuid"] = credential.UUID
+		}
+		if credential.Password != "" {
+			user["password"] = credential.Password
+		}
+		if flow := inbound["_managed_flow"]; flow != nil {
+			user["flow"] = flow
+		}
+		delete(inbound, "_managed_flow")
+		inbound["users"] = []Object{user}
+	}
+	probePath := filepath.Join(root, "probe-fixture.json")
+	if err := AtomicJSON(probePath, probeServer); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(ctx, core, "run", "-c", probePath)
 	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)

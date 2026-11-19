@@ -304,7 +304,8 @@ func (s *Store) BindBatch(ctx context.Context, credentials []domain.Credential) 
 }
 
 func bindCredential(ctx context.Context, tx *sql.Tx, c domain.Credential) error {
-	if err := c.Validate(); err != nil {
+	c, err := c.Normalize()
+	if err != nil {
 		return err
 	}
 	data, err := json.Marshal(c)
@@ -519,12 +520,19 @@ func (s *Store) Rotate(ctx context.Context, id, uuid, password string, expected 
 	if err = json.Unmarshal(data, &c); err != nil {
 		return err
 	}
-	if (c.Protocol == "hysteria2" || c.Protocol == "anytls") && c.Password == password || (c.Protocol != "hysteria2" && c.Protocol != "anytls") && c.UUID == uuid {
-		return errors.New("rotation must change the authentication secret")
+	if c, err = c.Normalize(); err != nil {
+		return err
 	}
+	previousUUID, previousPassword := c.UUID, c.Password
 	c.Generation++
 	c.UUID = uuid
 	c.Password = password
+	if c, err = c.Normalize(); err != nil {
+		return err
+	}
+	if previousUUID == c.UUID && previousPassword == c.Password {
+		return errors.New("rotation must change the authentication secret")
+	}
 	data, err = json.Marshal(c)
 	if err != nil {
 		return err

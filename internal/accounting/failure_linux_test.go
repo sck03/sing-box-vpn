@@ -114,7 +114,7 @@ func TestLinuxKilledMeterPreservesReservation(t *testing.T) {
 	if err = s.SaveAccount(t.Context(), domain.Account{ID: "a", Name: "crash"}); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.Bind(t.Context(), domain.Credential{ID: "c", AccountID: "a", RuntimeID: "normal", InboundID: "in", Protocol: "vless", Generation: 1, UUID: "test"}); err != nil {
+	if err = s.Bind(t.Context(), domain.Credential{ID: "c", AccountID: "a", RuntimeID: "normal", InboundID: "in", Protocol: "vless", Generation: 1, UUID: "aabbccdd-1122-4333-8444-5566778899aa"}); err != nil {
 		t.Fatal(err)
 	}
 	exe, err := os.Executable()

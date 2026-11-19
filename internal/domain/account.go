@@ -5,7 +5,10 @@ import (
 	"errors"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 var ResourceID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
@@ -69,8 +72,41 @@ func (a Account) Validate() error {
 }
 
 func (c Credential) Validate() error {
+	_, err := c.Normalize()
+	return err
+}
+
+// Normalize is the single boundary for effective protocol identities. UUID
+// spelling must never allow two accounts to authenticate as the same user.
+func (c Credential) Normalize() (Credential, error) {
 	if !ResourceID.MatchString(c.ID) || !ResourceID.MatchString(c.AccountID) || !ResourceID.MatchString(c.InboundID) || !slices.Contains([]string{"normal", "vpngate"}, c.RuntimeID) || !slices.Contains(Protocols, c.Protocol) || c.Generation < 1 {
-		return errors.New("invalid credential binding")
+		return c, errors.New("invalid credential binding")
 	}
-	return nil
+	switch c.Protocol {
+	case "vless", "vmess", "tuic":
+		id, err := uuid.Parse(c.UUID)
+		if err != nil || id == uuid.Nil {
+			return c, errors.New("credential requires a nonzero UUID")
+		}
+		c.UUID = id.String()
+	default:
+		c.UUID = ""
+	}
+	switch c.Protocol {
+	case "hysteria2", "tuic", "anytls":
+		if len(c.Password) < 16 || len(c.Password) > 128 || strings.ContainsAny(c.Password, "\r\n\x00") {
+			return c, errors.New("credential password must contain 16–128 bytes without control characters")
+		}
+	default:
+		c.Password = ""
+	}
+	return c, nil
+}
+
+// Identity is defined on normalized credentials; TUIC dispatches by UUID.
+func (c Credential) Identity() string {
+	if c.Protocol == "anytls" || c.Protocol == "hysteria2" {
+		return c.Password
+	}
+	return c.UUID
 }

@@ -7,6 +7,21 @@ export interface APIError {
   retryable: boolean;
 }
 
+export interface Account {
+  id: string;
+  name: string;
+  disabled: boolean;
+  expires_at: string | null;
+  quota_bytes: number | null;
+  revision: number;
+  created_at: string;
+  subscriber_id: string;
+  start_mode: string;
+  starts_at: string | null;
+  duration_seconds: number;
+  period: PeriodPolicy;
+}
+
 export interface AccountClientOption {
   client: string;
   label: string;
@@ -25,8 +40,29 @@ export interface AccountClientOption {
   diagnostics: Array<SubscriptionDiagnostic> | null;
 }
 
+export interface AccountCommand {
+  operation: string;
+  id: string;
+  account_ids?: Array<string> | null;
+  scope: string;
+  client: string;
+  generation: number;
+  inbound_ids?: Array<string> | null;
+  tuic_port?: number;
+  uuid?: string;
+  password?: string;
+}
+
+export interface Admin {
+  id: string;
+  role: string;
+  disabled: boolean;
+  mfa: boolean;
+  revision: number;
+}
+
 export interface App {
-  schema: 3;
+  schema: 4;
   version: string;
   name: string;
   address: string;
@@ -41,6 +77,35 @@ export interface App {
   advanced: CoreSettings;
 }
 
+export interface Capabilities {
+  inbounds: Array<string> | null;
+  outbounds: Array<string> | null;
+  dns: Array<string> | null;
+  endpoints: Array<string> | null;
+  services: Array<string> | null;
+}
+
+export interface CertificateAsset {
+  id: string;
+  domain: string;
+  certificate: string;
+  key: string;
+  provider: string;
+  email?: string;
+}
+
+export interface ConfigurationSave {
+  revision: number;
+  config: PlatformConfig;
+}
+
+export interface ConfigurationState {
+  revision: number;
+  applied_revision: number;
+  config: PlatformConfig;
+  root: string;
+}
+
 export interface CoreSettings {
   outbounds?: Array<Record<string, unknown> | null> | null;
   route?: Record<string, unknown> | null;
@@ -51,16 +116,118 @@ export interface CoreSettings {
   experimental?: Record<string, unknown> | null;
 }
 
+export interface Credential {
+  id: string;
+  account_id: string;
+  runtime_id: string;
+  inbound_id: string;
+  protocol: string;
+  generation: number;
+  uuid?: string;
+  password?: string;
+}
+
+export interface CredentialPublication {
+  runtime: string;
+  revision: number;
+  published: number;
+  loaded: number;
+}
+
+export interface CredentialSummary {
+  id: string;
+  account_id: string;
+  runtime_id: string;
+  inbound_id: string;
+  protocol: string;
+  generation: number;
+}
+
+export interface Grant {
+  id: string;
+  account_id: string;
+  outputs?: Array<string> | null;
+  scope: string;
+  clients: Array<string> | null;
+  expires_at: string | null;
+  max_downloads: number | null;
+  downloads: number;
+  revoked: boolean;
+  state: string;
+}
+
 export interface ManagedNode {
   id: string;
   protocol: string;
   port: number;
   disabled: boolean;
-  uuid?: string;
-  password?: string;
   flow?: string;
   tls: ServerTLS;
   transport?: ServerTransport;
+}
+
+export interface PeriodPolicy {
+  kind: string;
+  days?: number;
+  day?: number;
+  timezone?: string;
+}
+
+export interface PlatformAction {
+  operation: string;
+  service?: string;
+  id?: string;
+  scope?: string;
+  value?: string;
+  config?: unknown;
+  account?: AccountCommand;
+  subscription?: SubscriptionCommand;
+  automatic?: boolean;
+}
+
+export interface PlatformConfig {
+  schema: 5;
+  app: App;
+  vpn: VPNSettings;
+  vpn_secrets: Record<string, Secrets> | null;
+  gateway: Record<string, unknown> | null;
+  subscriptions: SubscriptionConfig;
+  listener: subscriptionSettings;
+  certificates: Array<CertificateAsset> | null;
+  tunnel: TunnelSettings;
+}
+
+export interface Profile {
+  ports: Record<string, number> | null;
+  certificate: string;
+  key: string;
+  reality_sni: string;
+  tls_sni: string;
+  vmess_tls: boolean;
+  self_signed: boolean;
+  ws_path: string;
+  secrets?: Secrets;
+  country?: string;
+  hopping?: Array<string> | null;
+  tuic_ports?: Array<string> | null;
+  handshake_host?: string;
+  handshake_port?: number;
+}
+
+export interface QueuedTask {
+  task_id: number;
+}
+
+export interface Reality {
+  private_key: string;
+  public_key: string;
+  short_id: string;
+}
+
+export interface Secrets {
+  reality: Reality;
+  socks_user?: string;
+  socks_pass?: string;
 }
 
 export interface ServerTLS {
@@ -82,11 +249,165 @@ export interface ServerTransport {
   early_data_header?: string;
 }
 
+export interface Session extends Admin {
+  csrf: string;
+  expires: string;
+}
+
+export interface SubscriptionAccountExportOverride extends SubscriptionAccountExportPolicy {
+  account_id: string;
+  client: string;
+}
+
+export interface SubscriptionAccountExportPolicy {
+  template: string;
+  skip_unsupported: boolean;
+}
+
+export interface SubscriptionCollection {
+  id: string;
+  name: string;
+  sources: Array<string> | null;
+  processor: SubscriptionProcessor;
+}
+
+export interface SubscriptionCommand {
+  operation: string;
+  id?: string;
+  probe_url?: string;
+}
+
+export interface SubscriptionConfig {
+  version: number;
+  revision: number;
+  sources: Array<SubscriptionSource> | null;
+  collections: Array<SubscriptionCollection> | null;
+  templates: Array<SubscriptionTemplate> | null;
+  rule_sets: Array<SubscriptionRuleSet> | null;
+  outputs: Array<SubscriptionOutput> | null;
+  webhook?: string;
+  deliveries?: Array<SubscriptionDelivery> | null;
+  account_defaults?: Record<string, SubscriptionAccountExportPolicy> | null;
+  account_overrides?: Array<SubscriptionAccountExportOverride> | null;
+}
+
+export interface SubscriptionDNSPolicy {
+  local?: Array<string> | null;
+  remote?: Array<string> | null;
+  bootstrap?: Array<string> | null;
+  fake_ip?: boolean | null;
+  fake_ip_filter?: Array<string> | null;
+  ipv6: boolean;
+}
+
+export interface SubscriptionDelivery {
+  id: string;
+  kind: string;
+  output: string;
+  url: string;
+  username?: string;
+  password?: string;
+  token?: string;
+  filename?: string;
+  automatic?: boolean;
+}
+
 export interface SubscriptionDiagnostic {
   node_id?: string;
   name?: string;
   stage: string;
   message: string;
+}
+
+export interface SubscriptionOutput {
+  id: string;
+  name: string;
+  collection: string;
+  template: string;
+  skip_unsupported?: boolean;
+}
+
+export interface SubscriptionPolicyGroup {
+  id: string;
+  name?: string;
+  optional?: boolean;
+  type: string;
+  scope?: string;
+  include?: string;
+  members?: Array<string> | null;
+  url?: string;
+  interval_seconds?: number;
+  tolerance?: number;
+}
+
+export interface SubscriptionProcessor {
+  protocols?: Array<string> | null;
+  tags?: Array<string> | null;
+  include?: string;
+  exclude?: string;
+  rename_pattern?: string;
+  rename_replacement?: string;
+  prefix?: string;
+  deduplicate?: boolean;
+  sort?: boolean;
+}
+
+export interface SubscriptionRule {
+  type: string;
+  value: string;
+  target: string;
+}
+
+export interface SubscriptionRuleProvider {
+  id: string;
+  url: string;
+  type: string;
+  format: string;
+  target: string;
+}
+
+export interface SubscriptionRuleSet {
+  id: string;
+  url?: string;
+  rules?: Array<SubscriptionRule> | null;
+}
+
+export interface SubscriptionSource {
+  id: string;
+  name: string;
+  kind: string;
+  format?: string;
+  url?: string;
+  content?: string;
+  scope?: string;
+  account_id?: string;
+  required: boolean;
+  interval_seconds?: number;
+  max_stale_seconds?: number;
+  skip_invalid?: boolean;
+  user_agent?: string;
+  headers?: Record<string, string> | null;
+}
+
+export interface SubscriptionTemplate {
+  id: string;
+  name?: string;
+  client: string;
+  version: number;
+  mode: string;
+  preset: string;
+  dns?: Array<string> | null;
+  probe_url?: string;
+  tun?: boolean;
+  rules?: Array<SubscriptionRule> | null;
+  rule_sets?: Array<string> | null;
+  url?: string;
+  groups?: Array<SubscriptionPolicyGroup> | null;
+  providers?: Array<SubscriptionRuleProvider> | null;
+  dns_policy?: SubscriptionDNSPolicy | null;
+  native?: Record<string, unknown> | null;
+  final?: string;
+  private_network?: boolean;
 }
 
 export interface SubscriptionValidation {
@@ -95,4 +416,71 @@ export interface SubscriptionValidation {
   scope: string;
   cached: boolean;
   application_verified: boolean;
+}
+
+export interface Task {
+  id: number;
+  kind: string;
+  actor: string;
+  state: string;
+  phase: string;
+  error?: string;
+  created: number;
+  updated: number;
+  result?: unknown;
+  outcome?: string;
+  acknowledged: boolean;
+  details: TaskAudience;
+}
+
+export interface TaskAudience {
+  operators: boolean;
+  actor?: string;
+}
+
+export interface TaskCounts {
+  failed: number;
+  active: number;
+}
+
+export interface TaskPage {
+  items: Array<Task> | null;
+  next_before: number;
+}
+
+export interface TunnelSettings {
+  mode: string;
+  domain: string;
+  token: string;
+  inbound: string;
+}
+
+export interface Usage extends Account {
+  effective_expires_at: string | null;
+  archived: boolean;
+  charged_bytes: number;
+  upload_bytes: number;
+  download_bytes: number;
+  started_at: string | null;
+  period_id: number;
+  next_reset: string | null;
+  state: string;
+  subscriber_disabled: boolean;
+}
+
+export interface VPNSettings {
+  active_country: string;
+  proxy_port: number;
+  profiles: Record<string, Profile> | null;
+  profile_order?: Array<string> | null;
+}
+
+export interface subscriptionSettings {
+  enabled: boolean;
+  port: number;
+  listen: string;
+  public_base_url?: string;
+  certificate?: string;
+  key?: string;
+  trusted_proxy?: Array<string> | null;
 }

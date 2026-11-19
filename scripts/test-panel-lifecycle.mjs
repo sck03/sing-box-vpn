@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 const dom = new JSDOM(
-  '<main id="content"></main><dialog id="dialog"></dialog><div id="toast"></div>',
+  '<main id="content"></main><dialog id="dialog"></dialog><div id="notice"></div>',
   { url: "http://localhost/" },
 );
 for (const name of ["window", "document", "Node", "Event", "FormData"])
@@ -13,7 +13,7 @@ dom.window.HTMLDialogElement.prototype.close = function () {
   this.open = false;
   this.dispatchEvent(new Event("close"));
 };
-const { tasksCard } = await import("../internal/manage/panel/tasks.js");
+const { tasksCard, taskHistory } = await import("../internal/manage/panel/tasks.js");
 const { api, RequestError } = await import("../internal/manage/panel/api.js");
 const { templateResources } =
   await import("../internal/manage/panel/subscription-fields.js");
@@ -131,6 +131,69 @@ assert.equal(
   resources.querySelector('select[aria-label="编辑模板资源"]').value,
   "t",
 );
+const { accounts } = await import("../internal/manage/panel/accounts.js");
+for (const label of ["凭据", "历史"]) {
+  const navigation = new AbortController();
+  const context = {
+    signal: navigation.signal,
+    session: { role: "admin" }, render() {}, task() {},
+    request: async (path) => path.startsWith("/api/accounts?")
+      ? { items: [{ id: "demo", name: "Demo", state: "active", revision: 1, quota_bytes: null }], total: 1, offset: 0, limit: 20 }
+      : [],
+  };
+  document.querySelector("main").replaceChildren(...await accounts(context));
+  pending = [];
+  globalThis.fetch = (path) => new Promise((resolve) => pending.push({ path, resolve }));
+  [...document.querySelectorAll("main button")].find((button) => button.textContent === label).click();
+  await tick();
+  assert(dialog.open);
+  navigation.abort();
+  dialog.replaceChildren();
+  document.querySelector("main").replaceChildren();
+  pending.forEach(({ resolve }) => resolve({ ok: true, json: async () => [] }));
+  await tick();
+  assert(!dialog.open, label + " reopened after navigation");
+  assert(!dialog.textContent.includes("Demo"));
+}
+
+const { formDialog } = await import("../internal/manage/panel/ui.js");
+formDialog("字段错误", [{ key: "port", label: "端口", type: "number" }], { port: 443 }, async () => {
+  throw new RequestError("端口无效", 400, { code: "invalid_field", message: "端口无效", field: "app.nodes[test].port", retryable: false });
+});
+dialog.querySelector("form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+await tick();
+assert.equal(dialog.querySelector('input[aria-invalid="true"]'), document.activeElement);
+assert(dialog.textContent.includes("端口无效"));
+dialog.close();
+let pageReads = [];
+const pageContext = {
+  ...active,
+  request: (path) => new Promise((resolve, reject) => pageReads.push({ path, resolve, reject })),
+};
+const historyPromise = taskHistory(pageContext);
+pageReads.shift().resolve({ items: [{ id: 100, state: "succeeded" }], next_before: 100 });
+const history = await historyPromise;
+document.querySelector("main").replaceChildren(history);
+const historyButton = (label) => [...history.querySelectorAll("button")].find((item) => item.textContent === label);
+historyButton("较早记录").click();
+pageReads.shift().reject(new Error("temporary page failure"));
+await tick();
+assert(history.textContent.includes("第 1 页"), "failed history request advanced cursor");
+historyButton("较早记录").click();
+assert(pageReads[0].path.includes("before=100"));
+pageReads.shift().resolve({ items: [{ id: 80, state: "succeeded" }], next_before: 80 });
+await tick();
+historyButton("较早记录").click();
+historyButton("较新记录").click();
+assert.equal(pageReads.length, 1, "competing history navigation issued multiple reads");
+pageReads.shift().resolve({ items: [{ id: 60, state: "succeeded" }], next_before: 0 });
+await tick();
+assert(history.textContent.includes("第 3 页"), "competing navigation corrupted cursor");
+historyButton("较新记录").click();
+assert(pageReads[0].path.includes("before=100"));
+pageReads.shift().resolve({ items: [{ id: 80, state: "succeeded" }], next_before: 80 });
+await tick();
+assert(history.textContent.includes("第 2 页"));
 dom.window.close();
 console.log(
   "Panel lifecycle checks passed: navigation abort, competing dialogs, typed errors and contextual resource editors.",

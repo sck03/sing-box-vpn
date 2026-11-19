@@ -15,7 +15,7 @@ import (
 )
 
 func platformOwned(root string) bool {
-	_, err := os.Stat(filepath.Join(root, ".platform-v4"))
+	_, err := os.Stat(filepath.Join(root, ".platform-v5"))
 	return err == nil
 }
 

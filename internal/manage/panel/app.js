@@ -1,4 +1,5 @@
-import { api, setCSRF } from "./api.js";
+import { api, setCSRF, saveConfiguration, submitTask } from "./api.js";
+import { openTask } from "./tasks.js";
 import { overviewStream } from "./live.js";
 import { pageContext } from "./lifecycle.js";
 import { capabilities, validatePassword } from "./capabilities.js";
@@ -22,7 +23,7 @@ $("#menu-toggle").addEventListener("click", () =>
 let page = "overview",
   section = "",
   navigationPage = "",
-  draft = null,
+  draft = /** @type {import("./contracts.js").PlatformConfig | null} */ (null),
   original = null,
   revision = 0,
   draftGeneration = 0,
@@ -83,8 +84,9 @@ const ctx = {
     }
   },
   async task(command) {
-    const response = await api("/api/tasks", command);
-    notice("任务 #" + response.task_id + " 已排队，可在运行概览查看结果");
+    const response = await submitTask(command);
+    notice("任务 #" + response.task_id + " 已排队", false, { label: "查看结果", action: () => openTask(response.task_id) });
+    return response.task_id;
   },
   render: renderPage,
   logoutLocal() {
@@ -333,7 +335,7 @@ $("#save").addEventListener(
     const submitted = structuredClone(draft);
     const submittedRevision = revision;
     const generation = draftGeneration;
-    const response = await api("/api/config", {
+    const response = await saveConfiguration({
       revision: submittedRevision,
       config: submitted,
     });
@@ -347,6 +349,7 @@ $("#save").addEventListener(
       "校验通过，应用任务 #" +
         response.task_id +
         " 已排队。请查看实际应用结果。",
+      false, { label: "查看结果", action: () => openTask(response.task_id) },
     );
   }),
 );

@@ -129,7 +129,7 @@ func (s *PlatformService) servePanelSettings(w http.ResponseWriter, r *http.Requ
 		return true
 	}
 	if r.Method != "POST" {
-		http.NotFound(w, r)
+		apiFailure(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", false)
 		return true
 	}
 	var input struct {

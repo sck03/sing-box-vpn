@@ -63,14 +63,7 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 	}
 	values := options.Args()
 	if *stdin {
-		if operation != "credentials" || len(values) != 1 {
-			return errors.New("--stdin 仅用于 credentials，并需要指定一个协议或 all")
-		}
-		credentials, err := readCredentials(os.Stdin)
-		if err != nil {
-			return err
-		}
-		values = append(values, credentials...)
+		return errors.New("credential stdin commands have been removed")
 	}
 	if tuicRequested && (operation != "links" || *tuicPort < 1 || *tuicPort > 65535) {
 		return errors.New("--tuic-port 仅用于 links，端口须为 1-65535")

@@ -1,7 +1,8 @@
 import { workspace } from "./workspace.js";
 import { api } from "./api.js";
 import { capabilities } from "./capabilities.js";
-import { showFacts, showRecords } from "./details.js";
+import { showFacts, loadRecords } from "./details.js";
+import { dialogSession } from "./dialog-session.js";
 import { vpnProfileFields, gatewayFields } from "./network-fields.js";
 import {
   el,
@@ -25,7 +26,12 @@ export async function vpngate(ctx) {
     row(
       badge(active),
       button("查询出口验证", async () => {
-        const status = await api("/api/gateway?resource=status");
+        const session = dialogSession(ctx.signal);
+        session.replace(help("正在加载出口验证…"));
+        let status;
+        try { status = await api("/api/gateway?resource=status", undefined, { signal: session.signal }); }
+        catch (error) { session.fail(error); return; }
+        if (!session.active()) return;
         showFacts(
           "出口验证",
           [
@@ -41,7 +47,7 @@ export async function vpngate(ctx) {
         );
       }),
       button("候选节点", async () =>
-        showRecords(
+        loadRecords(
           "候选节点",
           [
             { key: "host", label: "节点" },
@@ -54,7 +60,8 @@ export async function vpngate(ctx) {
               value: (n) => (n.speed / 1000000).toFixed(1) + " Mbps",
             },
           ],
-          await api("/api/gateway?resource=nodes"),
+          "/api/gateway?resource=nodes",
+          ctx.signal,
         ),
       ),
     ),

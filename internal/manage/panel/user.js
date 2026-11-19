@@ -23,8 +23,7 @@ async function load(token, signal, current) {
         ? "授权已过期、撤销或权益不可用。"
         : "服务暂时不可用，请稍后刷新。",
     );
-    error.status = response.status;
-    throw error;
+    throw Object.assign(error, { status: response.status });
   }
   const u = await response.json();
   if (!current()) return;
@@ -163,7 +162,7 @@ async function load(token, signal, current) {
 let loading = false,
   generation = 0,
   request;
-const refresh = document.querySelector("#user-refresh"),
+const refresh = /** @type {HTMLButtonElement} */ (document.querySelector("#user-refresh")),
   updated = document.querySelector("#user-updated");
 async function reloadUsage(force = false) {
   if (loading && !force) return;

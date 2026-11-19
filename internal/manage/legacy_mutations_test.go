@@ -144,7 +144,7 @@ func mutateVPN(app App, settings VPNSettings, private map[string]Secrets, operat
 		return errors.New("请先通过菜单 17 安装并选择 VPNGate 国家")
 	}
 	secret, exists := private[cc]
-	if !exists || p.Ports == nil || secret.UUID == nil || secret.Passwords == nil {
+	if !exists || p.Ports == nil {
 		return errors.New("当前 VPNGate 国家缺少独立凭据")
 	}
 	if !slices.Contains([]string{"port", "hopping", "multiport", "credentials", "reset", "sni", "ws", "tls"}, operation) {
@@ -196,8 +196,6 @@ func mutateApp(app *App, settings VPNSettings, operation string, values []string
 	switch operation {
 	case "port", "hopping", "multiport":
 		return changePorts(app, settings, operation, values)
-	case "reset", "credentials":
-		return changeCredentials(app, operation, values)
 	case "route":
 		if len(values) == 0 || !slices.Contains([]string{"socks", "warp", "direct4", "direct6"}, values[0]) {
 			return errors.New("未知分流通道")

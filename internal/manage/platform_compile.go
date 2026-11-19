@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/sck03/sing-box-vpn/internal/runtimeconfig"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 	"path/filepath"
 	"time"
@@ -42,6 +43,9 @@ func (s *PlatformService) prepareBuild(ctx context.Context, c PlatformConfig) (f
 		return nil, nil, err
 	}
 	files, err := s.buildConfig(ctx, c, sub.Candidate, prepared)
+	if err == nil {
+		err = s.checkRuntime(ctx, files)
+	}
 	return files, prepared, err
 }
 
@@ -115,6 +119,13 @@ func (s *PlatformService) buildConfig(ctx context.Context, c PlatformConfig, mod
 		return nil, err
 	}
 	if err = validateEffectiveServer(server); err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(server)
+	if err != nil {
+		return nil, err
+	}
+	if err = runtimeconfig.ValidateTypes(data); err != nil {
 		return nil, err
 	}
 	if err = CheckJSON(ctx, s.Core, s.Root, server); err != nil {

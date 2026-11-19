@@ -12,13 +12,35 @@ func (s *PlatformService) serveTasks(w http.ResponseWriter, r *http.Request, acc
 	ctx, path := r.Context(), r.URL.Path
 	admin, operator, require, audit := access.admin, access.operator, access.require, access.audit
 	var err error
+	if path == "/api/tasks" && r.Method == "GET" {
+		if !require(operator) {
+			return true
+		}
+		before, limit := int64(0), int64(50)
+		for key, target := range map[string]*int64{"before": &before, "limit": &limit} {
+			if value := r.URL.Query().Get(key); value != "" {
+				*target, err = strconv.ParseInt(value, 10, 64)
+				if err != nil || *target < 0 || (key == "limit" && (*target < 1 || *target > 100)) {
+					apiFailure(w, 400, "invalid_field", "invalid task page", false, key)
+					return true
+				}
+			}
+		}
+		page, err := s.Store.TaskPage(ctx, before, int(limit))
+		if err != nil {
+			platformError(w, err)
+		} else {
+			jsonResponse(w, page)
+		}
+		return true
+	}
 	if path == "/api/tasks/detail" && r.Method == "GET" {
 		if !require(operator) {
 			return true
 		}
 		id, e := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
 		if e != nil || id < 1 {
-			http.Error(w, "invalid task ID", 400)
+			apiFailure(w, 400, "invalid_field", "invalid task ID", false, "id")
 			return true
 		}
 		v, e := s.Store.Task(ctx, id)
@@ -52,7 +74,7 @@ func (s *PlatformService) serveTasks(w http.ResponseWriter, r *http.Request, acc
 		if e != nil {
 			platformError(w, e)
 		} else {
-			jsonResponse(w, Object{"task_id": id})
+			jsonResponse(w, QueuedTask{TaskID: id})
 		}
 		return true
 	}

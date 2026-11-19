@@ -255,7 +255,7 @@ const { maintenance } = await import("../internal/manage/panel/maintenance.js");
 const maintenanceContext = {
   session: { role: "operator" },
   request: async () => ({
-    tasks: [{ id: 42, kind: "service", state: "running", phase: "executing" }],
+    items: [{ id: 42, kind: "service", state: "running", phase: "executing" }], next_before: 0,
   }),
 };
 host.replaceChildren(...(await maintenance(maintenanceContext)));

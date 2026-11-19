@@ -14,7 +14,7 @@ import (
 )
 
 const Filename = "control.db"
-const SchemaVersion = 14
+const SchemaVersion = 15
 
 func Open(path string) (*sql.DB, error) {
 	path, err := filepath.Abs(path)

@@ -20,7 +20,12 @@ func TestAuthenticatedRoundTripAndDamage(t *testing.T) {
 		t.Fatal(err)
 	}
 	decoded, err := Read(encrypted.Bytes(), password)
-	if err != nil || !bytes.Equal(data, decoded.Database) || decoded.Root != root {
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer decoded.Close()
+	restored, err := os.ReadFile(decoded.Database)
+	if err != nil || !bytes.Equal(data, restored) || decoded.Root != root {
 		t.Fatal(err)
 	}
 	for _, index := range []int{len(Magic) + 5, encrypted.Len() / 2, encrypted.Len() - 1} {

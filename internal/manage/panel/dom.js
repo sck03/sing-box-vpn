@@ -1,3 +1,4 @@
+import { errorMessage } from "./api.js";
 export const $ = (selector, root = document) => root.querySelector(selector);
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -15,13 +16,15 @@ export function el(tag, attrs = {}, ...children) {
   }
   return node;
 }
-export function notice(message, error = false) {
+let noticeTimer;
+export function notice(message, error = false, link = undefined) {
   const node = $("#notice");
-  node.textContent = message;
+  node.replaceChildren(document.createTextNode(message));
+  if (link) node.append(button(link.label, link.action));
   node.classList.toggle("error", error);
   node.hidden = false;
-  clearTimeout(notice.timer);
-  notice.timer = setTimeout(() => (node.hidden = true), error ? 16000 : 6500);
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => (node.hidden = true), error ? 16000 : 6500);
 }
 const pendingControls = new WeakMap();
 // Business availability remains authoritative while an async action is busy.
@@ -56,7 +59,7 @@ export function action(fn) {
       });
       await fn(event);
     } catch (error) {
-      if (error.name !== "AbortError") notice(error.message, true);
+      if (error.name !== "AbortError") notice(errorMessage(error), true);
     } finally {
       pending = false;
       target?.removeAttribute("aria-busy");

@@ -102,7 +102,7 @@ func TestSubscriptionCertificateRelocation(t *testing.T) {
 	if !certificateUses(c, cert, "sb-subscription") {
 		t.Fatal("renewal omitted subscription")
 	}
-	b := platformBackup{Root: root, Files: map[string][]byte{"cert.pem": readBytes(t, cert), "key.pem": readBytes(t, key)}}
+	b := platformBackup{Root: root, Files: map[string]string{"cert.pem": cert, "key.pem": key}}
 	dest := t.TempDir()
 	if err := relocateBackup(&c, b, dest); err != nil {
 		t.Fatal(err)

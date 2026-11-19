@@ -73,7 +73,7 @@ func TestManagedNodeRejectsUnsupportedFields(t *testing.T) {
 		t.Fatal("unknown transport field accepted")
 	}
 	raw, _ = json.Marshal(app)
-	raw = bytes.Replace(raw, []byte(`"schema":3`), []byte(`"schema":2`), 1)
+	raw = bytes.Replace(raw, []byte(`"schema":4`), []byte(`"schema":3`), 1)
 	if json.Unmarshal(raw, &decoded) == nil {
 		t.Fatal("old node schema accepted")
 	}

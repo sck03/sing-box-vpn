@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { capabilities } from "./capabilities.js";
 import {
   ruleFields,
   cleanRule,
@@ -21,6 +22,7 @@ export async function routing(ctx) {
   const c = await ctx.config(),
     a = structuredClone(c.app.advanced || {});
   const effective = await (ctx.request || api)("/api/server", c.app);
+  const supported = (await capabilities()).runtime;
   const changed = () => {
     c.app.advanced = a;
     ctx.changed();
@@ -128,7 +130,7 @@ export async function routing(ctx) {
         key: "type",
         label: "传输",
         type: "select",
-        options: ["udp", "tcp", "tls", "https", "local", "resolved"],
+        options: supported.dns,
       },
       { key: "server", label: "服务器" },
       { key: "server_port", label: "端口", type: "number" },
