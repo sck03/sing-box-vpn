@@ -61,8 +61,10 @@ type App struct {
 	Version    string              `json:"version"`
 	Name       string              `json:"name"`
 	Address    string              `json:"address"`
-	Profile    Profile             `json:"profile"`
-	Inbounds   []Object            `json:"inbounds"`
+	Nodes      []ManagedNode       `json:"nodes"`
+	Country    string              `json:"country,omitempty"`
+	Hopping    []string            `json:"hopping,omitempty"`
+	TUICPorts  []string            `json:"tuic_ports,omitempty"`
 	Routing    map[string][]string `json:"routing"`
 	SocksPort  int                 `json:"socks_port"`
 	CDNAddress string              `json:"cdn_address,omitempty"`
@@ -134,28 +136,6 @@ func EnsureCertificate(certPath, keyPath, domain string) error {
 	}
 	_, err := tls.LoadX509KeyPair(certPath, keyPath)
 	return err
-}
-
-func validateImportedCertificate(certPath, keyPath, domain string) error {
-	pair, err := tls.LoadX509KeyPair(certPath, keyPath)
-	if err != nil {
-		return err
-	}
-	cert := pair.Leaf
-	if cert == nil {
-		cert, err = x509.ParseCertificate(pair.Certificate[0])
-		if err != nil {
-			return err
-		}
-	}
-	if err := cert.VerifyHostname(domain); err != nil {
-		return fmt.Errorf("证书不包含域名 %s: %w", domain, err)
-	}
-	now := time.Now()
-	if now.Before(cert.NotBefore) || !now.Before(cert.NotAfter) {
-		return errors.New("证书尚未生效或已过期，请先续期")
-	}
-	return nil
 }
 
 type certificateInfo struct {
@@ -236,14 +216,6 @@ func stringsValue(v any) []string {
 		}
 	}
 	return out
-}
-func ensureObject(m Object, key string) Object {
-	if value := object(m[key]); value != nil {
-		return value
-	}
-	value := Object{}
-	m[key] = value
-	return value
 }
 func clone(v any) any {
 	switch value := v.(type) {

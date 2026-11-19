@@ -32,11 +32,11 @@ func BenchmarkCertificateStatus(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	cert, err := os.ReadFile(config.App.Profile.Certificate)
+	cert, err := os.ReadFile(config.App.fixtureProfile().Certificate)
 	if err != nil {
 		b.Fatal(err)
 	}
-	key, err := os.ReadFile(config.App.Profile.Key)
+	key, err := os.ReadFile(config.App.fixtureProfile().Key)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -47,8 +47,8 @@ func BenchmarkCertificateStatus(b *testing.B) {
 		b.Fatal(err)
 	}
 	for i := 0; i < 32; i++ {
-		asset := CertificateAsset{ID: fmt.Sprintf("cert-%02d", i), Provider: "acme", Domain: config.App.Profile.TLSSNI,
-			Email: email, Certificate: config.App.Profile.Certificate, Key: config.App.Profile.Key}
+		asset := CertificateAsset{ID: fmt.Sprintf("cert-%02d", i), Provider: "acme", Domain: config.App.fixtureProfile().TLSSNI,
+			Email: email, Certificate: config.App.fixtureProfile().Certificate, Key: config.App.fixtureProfile().Key}
 		config.Certificates = append(config.Certificates, asset)
 		record := acmeCertificateRecord{Directory: account.Directory, Domain: asset.Domain, Email: email,
 			AccountURL: account.Registration.Location, Certificate: cert, PrivateKey: key}

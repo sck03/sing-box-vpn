@@ -1183,3 +1183,68 @@ progress {
     transition: none;
   }
 }
+
+/* Contextual template editing keeps optional resources out of the main flow. */
+.template-resource-grid {
+  display: grid;
+  gap: 16px;
+}
+.resource-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+.resource-navigation button[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--selected);
+}
+.template-resource-content > .card {
+  margin: 0;
+  box-shadow: none;
+}
+.resource-compact .empty {
+  padding: 18px;
+}
+@media (max-width: 640px) {
+  .resource-navigation {
+    gap: 6px;
+  }
+  .resource-navigation button {
+    flex: 1;
+  }
+}
+
+.template-workspace {
+  display: grid;
+  gap: 18px;
+  align-items: start;
+}
+.template-workspace > .card {
+  margin: 0;
+  min-width: 0;
+}
+@media (min-width: 1280px) {
+  .template-workspace {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  }
+  .template-workspace > .card:last-child {
+    position: sticky;
+    top: 18px;
+  }
+}
+
+.template-list-label {
+  display: grid;
+  gap: 4px;
+}
+.template-list-label strong {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.template-list-label small {
+  color: var(--muted);
+  line-height: 1.4;
+}

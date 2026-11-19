@@ -2,14 +2,17 @@ package manage
 
 import (
 	"context"
+	"database/sql"
 	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -18,9 +21,10 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	"github.com/sck03/sing-box-vpn/internal/httpserver"
 	"github.com/sck03/sing-box-vpn/internal/publicaccess"
+	"github.com/sck03/sing-box-vpn/internal/serverconfig"
 )
 
-//go:embed panel/*
+//go:embed panel/*.js panel/*.css panel/*.html
 var panelAssets embed.FS
 
 type PanelOptions struct {
@@ -36,6 +40,13 @@ func decodeRequest(w http.ResponseWriter, r *http.Request, target any, limit int
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
+		var field *serverconfig.FieldError
+		if errors.As(err, &field) {
+			return field
+		}
+		if strings.Contains(err.Error(), "unknown field") {
+			return fmt.Errorf("invalid JSON request: %w", err)
+		}
 		return errors.New("invalid JSON request")
 	}
 	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
@@ -47,23 +58,47 @@ func jsonResponse(w http.ResponseWriter, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(value)
 }
+
+// APIError is the shared error envelope consumed by all panel workflows.
+type APIError struct {
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+	Field     string `json:"field,omitempty"`
+	Retryable bool   `json:"retryable"`
+}
+
 func platformError(w http.ResponseWriter, err error) {
-	code := 400
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		code = http.StatusServiceUnavailable
+	var storage interface{ Code() int }
+	var pathError *os.PathError
+	status := http.StatusBadRequest
+	detail := APIError{Code: "invalid_request", Message: err.Error()}
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		status, detail.Code = http.StatusNotFound, "not_found"
+	case errors.As(err, &storage), errors.As(err, &pathError):
+		slog.Error("panel storage operation failed", "error", err)
+		status, detail.Code, detail.Message = http.StatusInternalServerError, "storage_error", "存储操作失败，请检查面板服务日志"
+	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
+		status, detail.Code, detail.Retryable = http.StatusServiceUnavailable, "temporarily_unavailable", true
 		w.Header().Set("Retry-After", "1")
-	}
-	if errors.Is(err, controlstore.ErrConflict) || errors.Is(err, accounting.ErrConflict) {
-		code = 409
-	}
-	if errors.Is(err, adminauth.ErrUnauthorized) {
-		code = 401
-	}
-	if errors.Is(err, adminauth.ErrLimited) {
-		code = 429
+	case errors.Is(err, controlstore.ErrConflict), errors.Is(err, accounting.ErrConflict), errors.Is(err, adminauth.ErrConflict):
+		status, detail.Code = http.StatusConflict, "revision_conflict"
+	case errors.Is(err, adminauth.ErrUnauthorized):
+		status, detail.Code = http.StatusUnauthorized, "unauthorized"
+	case errors.Is(err, adminauth.ErrLimited):
+		status, detail.Code, detail.Retryable = http.StatusTooManyRequests, "rate_limited", true
 		w.Header().Set("Retry-After", "900")
 	}
-	http.Error(w, err.Error(), code)
+	var field *serverconfig.FieldError
+	if errors.As(err, &field) {
+		detail.Code = "invalid_field"
+		detail.Field = "app.nodes[" + field.Node + "]." + field.Field
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(struct {
+		Error APIError `json:"error"`
+	}{detail})
 }
 
 func (s *PlatformService) Handler(options PanelOptions) http.Handler {

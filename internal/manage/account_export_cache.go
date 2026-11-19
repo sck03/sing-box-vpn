@@ -26,8 +26,8 @@ type accountCacheEntry struct {
 	bytes   int
 }
 
-// Only immutable compiler results are cached. Authorization, usage and core
-// validation are evaluated for each request, outside this cache.
+// Immutable compiler and parser-validation results share one bounded lifetime.
+// Authorization, usage and binary/file-dependent core checks remain per request.
 type accountExportCache struct {
 	mu      sync.Mutex
 	entries map[string]*list.Element

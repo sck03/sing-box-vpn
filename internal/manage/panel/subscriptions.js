@@ -11,7 +11,10 @@ import {
   resourceID,
 } from "./template-settings.js";
 import { subscriptionWizard } from "./subscription-wizard.js";
-import { showClientCapabilities, verificationLabel } from "./client-capabilities.js";
+import {
+  showClientCapabilities,
+  verificationLabel,
+} from "./client-capabilities.js";
 import {
   el,
   card,
@@ -106,11 +109,19 @@ export async function subscriptions(ctx) {
             "primary",
           ),
           button("预览", async () =>
-            requestConfiguration((signal) => request("/api/config/preview", c, { signal }), [], {
-              signal: ctx.signal,
-              loadOutput: (id, signal) =>
-                request("/api/config/preview-output", { id, config: c }, { signal }),
-            }),
+            requestConfiguration(
+              (signal) => request("/api/config/preview", c, { signal }),
+              [],
+              {
+                signal: ctx.signal,
+                loadOutput: (id, signal) =>
+                  request(
+                    "/api/config/preview-output",
+                    { id, config: c },
+                    { signal },
+                  ),
+              },
+            ),
           ),
           button("刷新来源", () =>
             ctx.task({
@@ -291,11 +302,16 @@ export async function subscriptions(ctx) {
         },
         change,
       }),
-    templates: async () => {
+    templates: async (selectTemplate) => {
       const catalog = await getClients();
       return resourceEditor({
         title: "客户端模板",
-        pageSize: 10,
+        pageSize: 8,
+        extraActions: (template) =>
+          template.mode === "config" &&
+          catalog[template.client]?.features.policy_groups
+            ? [button("策略与规则", () => selectTemplate?.(template.id))]
+            : [],
         items: s.templates,
         fields: templateFields(catalog),
         normalize: (v) => normalizeTemplate(v, catalog),
@@ -310,9 +326,22 @@ export async function subscriptions(ctx) {
           rules: [],
         },
         columns: [
-          { label: "模板", value: (t) => t.name || t.id },
-          { key: "client", label: "客户端" },
-          { key: "mode", label: "模式" },
+          {
+            label: "模板",
+            value: (t) => t.name || t.id,
+            search: (t) => `${t.name || ""} ${t.id} ${t.client} ${t.mode}`,
+            render: (t) =>
+              el(
+                "div",
+                { class: "template-list-label" },
+                el("strong", { title: t.id }, t.name || t.id),
+                el(
+                  "small",
+                  {},
+                  `${catalog[t.client]?.label || t.client} · ${{ config: "完整配置", provider: "节点 Provider", nodes: "节点列表", rules: "规则" }[t.mode] || t.mode}`,
+                ),
+              ),
+          },
         ],
         change,
       });
@@ -535,13 +564,32 @@ export async function subscriptions(ctx) {
       {
         sources: views.sources,
         collections: views.collections,
-        templates: async () => [
-          presetTools(s, await getClients(), await getPresets(), change),
-          await views.templates(),
-          templateResources(s.templates, await getClients(), change),
-          views.rules(),
-          accountTemplateSettings(s, await getClients(), ctx, change),
-        ],
+        templates: async () => {
+          const catalog = await getClients();
+          const resources = templateResources(s.templates, catalog, change);
+          const selectTemplate = (id) => {
+            resources.selectTemplate?.(id);
+            resources.scrollIntoView?.({
+              block: "nearest",
+              behavior: "smooth",
+            });
+          };
+          return [
+            presetTools(s, catalog, await getPresets(), change),
+            el(
+              "div",
+              { class: "template-workspace" },
+              await views.templates(selectTemplate),
+              resources,
+            ),
+            disclosure("共享规则资源", views.rules, ctx.signal),
+            disclosure(
+              "账户默认模板与覆盖",
+              () => accountTemplateSettings(s, catalog, ctx, change),
+              ctx.signal,
+            ),
+          ];
+        },
         outputs: async () => [views.outputs(), await views.sharing()],
         deliveries: async () => [views.deliveries(), await views.diagnostics()],
         status: () => subscriptionStatus(ctx),

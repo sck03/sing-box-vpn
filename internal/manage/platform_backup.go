@@ -141,10 +141,9 @@ func validateArchivedPairs(c PlatformConfig, b platformBackup) error {
 }
 
 func validateCertificatePairs(c PlatformConfig, read func(string) ([]byte, error)) error {
-	pairs := [][2]string{{c.App.Profile.Certificate, c.App.Profile.Key}, {c.Listener.Certificate, c.Listener.Key}}
-	for _, in := range c.App.Inbounds {
-		t := object(in["tls"])
-		pairs = append(pairs, [2]string{text(t["certificate_path"]), text(t["key_path"])})
+	pairs := [][2]string{{c.Listener.Certificate, c.Listener.Key}}
+	for _, n := range c.App.Nodes {
+		pairs = append(pairs, [2]string{n.TLS.Certificate, n.TLS.Key})
 	}
 	for _, p := range c.VPN.Profiles {
 		pairs = append(pairs, [2]string{p.Certificate, p.Key})
@@ -177,9 +176,8 @@ func pendingCertificatePath(c PlatformConfig, path string) bool {
 	if c.Listener.Enabled && (c.Listener.Certificate == path || c.Listener.Key == path) {
 		return false
 	}
-	for _, in := range c.App.Inbounds {
-		tls := object(in["tls"])
-		if text(tls["certificate_path"]) == path || text(tls["key_path"]) == path {
+	for _, n := range c.App.Nodes {
+		if n.TLS.Certificate == path || n.TLS.Key == path {
 			return false
 		}
 	}
@@ -202,14 +200,11 @@ func certificatePaths(c PlatformConfig) []string {
 			paths = append(paths, v)
 		}
 	}
-	add(c.App.Profile.Certificate)
-	add(c.App.Profile.Key)
 	add(c.Listener.Certificate)
 	add(c.Listener.Key)
-	for _, in := range c.App.Inbounds {
-		t := object(in["tls"])
-		add(text(t["certificate_path"]))
-		add(text(t["key_path"]))
+	for _, n := range c.App.Nodes {
+		add(n.TLS.Certificate)
+		add(n.TLS.Key)
 	}
 	for _, p := range c.VPN.Profiles {
 		add(p.Certificate)

@@ -136,11 +136,10 @@ func portReservations(app App, settings VPNSettings) ([]portReservation, error) 
 		return nil
 	}
 	owner := normalScope
-	for _, in := range app.Inbounds {
-		port := number(in["listen_port"])
-		out = append(out, portReservation{portRange{port, port}, owner, text(in["type"])})
+	for _, node := range app.Nodes {
+		out = append(out, portReservation{portRange{node.Port, node.Port}, owner, node.Protocol})
 	}
-	if err := add(app.Profile, owner); err != nil {
+	if err := add(app.profile(), owner); err != nil {
 		return nil, err
 	}
 	for country, profile := range settings.Profiles {

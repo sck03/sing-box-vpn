@@ -474,11 +474,7 @@ func (s *PlatformService) Preset(ctx context.Context, protocol, id string) (Mana
 	if err != nil {
 		return ManagedNode{}, err
 	}
-	nodes, err := managedNodes(App{Profile: p, Inbounds: MakeInbounds(p, "")})
-	if err != nil {
-		return ManagedNode{}, err
-	}
-	for _, n := range nodes {
+	for _, n := range MakeNodes(p, "") {
 		if n.Protocol == protocol {
 			n.ID = id
 			return n, nil

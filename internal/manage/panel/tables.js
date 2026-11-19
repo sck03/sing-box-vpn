@@ -132,6 +132,9 @@ export function table(columns, items, actions, options = {}) {
       });
     }
     const data = entries.map((entry) => entry.item);
+    controls.hidden = !!options.compact && indexed.length <= pageSize && !term;
+    pager.hidden = !!options.compact && data.length <= pageSize;
+    wrapper.classList.toggle("resource-compact", !!options.compact);
     wrapper.classList.toggle("compact", !!preference.compact);
     const visible = columns
       .map((c, i) => ({ c, i }))

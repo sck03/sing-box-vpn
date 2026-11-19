@@ -112,3 +112,15 @@ func mihomoBinary() string {
 	binary, _ := exec.LookPath("mihomo")
 	return binary
 }
+
+// Parser validation depends only on the artifact and parser/compiler versions,
+// which already participate in the account compilation cache key. Runtime core
+// checks retain their binary and external-file dependency validation.
+func parserValidatedClient(client string) bool {
+	switch client {
+	case "uri", "base64", "shadowrocket", "surge", "surge-mac", "surfboard", "loon", "quantumult-x":
+		return true
+	default:
+		return false
+	}
+}

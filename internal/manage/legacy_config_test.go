@@ -122,11 +122,11 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 					ports[kind] = port
 				}
 			} else {
-				for _, in := range app.Inbounds {
+				for _, in := range app.Inbounds() {
 					ports[text(in["type"])] = in["listen_port"]
 				}
 			}
-			profile := app.Profile
+			profile := app.fixtureProfile()
 			if *scope == vpngateScope {
 				profile = settings.Profiles[settings.ActiveCountry]
 			}
@@ -143,7 +143,7 @@ func RunConfig(ctx context.Context, args []string, output io.Writer) error {
 			}
 			return err
 		case "vmess-info":
-			for _, in := range app.Inbounds {
+			for _, in := range app.Inbounds() {
 				if in["type"] == "vmess" {
 					scheme := "http"
 					if object(in["tls"])["enabled"] == true {

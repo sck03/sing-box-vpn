@@ -42,10 +42,10 @@ func initialApp(ctx context.Context, root, core, address, name string) (App, err
 	if err != nil {
 		return App{}, err
 	}
-	app.Profile, err = NewProfile(root, used, "", ranges...)
+	profile, err := NewProfile(root, used, "", ranges...)
 	if err != nil {
 		return App{}, err
 	}
-	app.Inbounds = MakeInbounds(app.Profile, "")
+	app.Nodes = MakeNodes(profile, "")
 	return app, nil
 }

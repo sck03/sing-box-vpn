@@ -56,7 +56,25 @@ assert.equal(
 );
 let state = ok(await call("/api/config"));
 const config = state.config;
-assert.equal(config.app.schema, 2);
+assert.equal(config.app.schema, 3);
+const transportCandidate = structuredClone(config.app);
+const transportNode = transportCandidate.nodes.find(
+  (node) => node.protocol === "vmess",
+);
+transportNode.transport.early_data = 4096;
+transportNode.transport.early_data_header = "X-Client-Early-Data";
+const projected = ok(await call("/api/server", transportCandidate));
+const projectedTransport = projected.inbounds.find(
+  (node) => node.type === "vmess",
+).transport;
+assert.equal(projectedTransport.max_early_data, 4096);
+assert.equal(projectedTransport.early_data_header_name, "X-Client-Early-Data");
+transportNode.transport.type = "grpc";
+const rejectedTransport = await call("/api/server", transportCandidate);
+assert.equal(rejectedTransport.status, 400);
+assert.equal(rejectedTransport.value.error.code, "invalid_field");
+assert(rejectedTransport.value.error.field.endsWith("transport.type"));
+
 assert.equal(config.subscriptions.version, 5);
 const subscriptionCapabilities = ok(
   await call("/api/subscription-capabilities"),

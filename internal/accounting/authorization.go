@@ -82,9 +82,15 @@ func (s *Store) authorizationSnapshot(ctx context.Context, runtime string, now t
 		return nil, err
 	}
 	result := make(map[authorizationKey]Usage, len(wanted))
+	var key authorizationKey
+	scanValues := make([]any, 2, 25)
+	scan := scanFunc(func(values ...any) error {
+		scanValues[0], scanValues[1] = &key.id, &key.generation
+		scanValues = append(scanValues[:2], values...)
+		return rows.Scan(scanValues...)
+	})
 	for rows.Next() {
-		var key authorizationKey
-		u, e := readAccount(scanFunc(func(values ...any) error { return rows.Scan(append([]any{&key.id, &key.generation}, values...)...) }))
+		u, e := readAccount(scan)
 		if e != nil {
 			rows.Close()
 			return nil, e

@@ -33,8 +33,8 @@ func TestExportIgnoresUnconfirmedAndBrokenProjections(t *testing.T) {
 		t.Fatal(err)
 	}
 	candidate.App.Address = "192.0.2.77"
-	for _, in := range candidate.App.Inbounds {
-		in["listen_port"] = number(in["listen_port"]) + 1
+	for i := range candidate.App.Nodes {
+		candidate.App.Nodes[i].Port++
 	}
 	if err = AtomicJSON(filepath.Join(root, "app.json"), candidate.App); err != nil {
 		t.Fatal(err)
@@ -50,7 +50,7 @@ func TestExportIgnoresUnconfirmedAndBrokenProjections(t *testing.T) {
 			t.Fatal(len(nodes), err)
 		}
 		for _, node := range nodes {
-			if node.Server != confirmed.App.Address || node.Port != confirmed.App.Profile.Ports[node.Protocol] {
+			if node.Server != confirmed.App.Address || node.Port != confirmed.App.fixtureProfile().Ports[node.Protocol] {
 				t.Fatal("mixed configuration versions", node)
 			}
 		}

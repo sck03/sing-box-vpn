@@ -1,6 +1,6 @@
 # 架构与维护
 
-`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 13；平台配置 schema=4、节点文档 schema=2、订阅配置 schema=5、模板 version=1 是各自独立的格式版本。只接受当前配置，不提供旧数据库、订阅内容、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责。
+`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 14；平台配置 schema=4、节点文档 schema=3、订阅配置 schema=5、模板 version=1 是各自独立的格式版本。只接受当前配置，不提供旧数据库、订阅内容、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责。
 
 公网传输由 `internal/publicaccess` 管理，共用 `internal/tlsconfig`；服务登记位于 `internal/servicecatalog`。主机操作按 service/deployment/units/gateway/network/journal 分文件，日志系统适配位于 `internal/hostservice`。任务保留策略与执行终态分离；面板访问重启由独立助手和持久收据完成。账户服务不再回退读取旧 JSON 配置，调用者必须注入配置/控制仓库，或读取当前数据库。
 
@@ -171,3 +171,19 @@ VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IP
 新增协议先加入能力登记、领域映射与运行时认证适配，再通过 TCP/UDP、两个账户、禁用/到期/轮换验收。新增客户端扩展 subscription renderer；新增通知实现目的地适配；新增节点应提供 RuntimeID 和独立额度分配策略。当前只支持单机共享 SQLite，不把该模型误称分布式全局严格额度。
 
 高级核心 JSON 局限于适配边界；字段保留、引用和循环检查必须通过。VPNGate 保护路由不被普通高级对象覆盖。未来拆分 manage 时以业务模块为界，不再增加平行配置真源或重复表单业务。
+
+## 强类型配置与任务边界（2026-11-19）
+
+`internal/serverconfig` 独立定义托管 Node、TLS、WebSocket 传输和字段约束，不依赖 HTTP、SQLite 或主机服务。`App.Nodes` 是内存与数据库中的唯一节点来源，正常节点不再保存 Profile / 动态 Inbounds 副本。`App.Inbounds()` 返回独立核心投影；VPNGate Profile 在初始化边界经 `MakeNodes` 转为同一节点契约。节点文档 schema=3，数据库 schema=14，旧数据直接拒绝。
+
+托管 VMess 只接受 WS，支持 path/host/early_data/early_data_header；不支持的传输与未知字段明确拒绝，不能接受后丢弃。新节点默认关闭 early-data，用户开启后按真实目标客户端能力判断。关闭时核心投影显式选择 WS 请求头模式，避免上游按编码后的 RequestURI 比较中文路径；开启 early-data 且路径含非 ASCII 字符时必须指定请求头。Reality 私钥、short ID、flow 与握手信息可通过表单编辑。订阅导入模型仍单独支持更广的协议与传输，不与受管服务端模型混用。
+
+账户服务必须注入账户仓库及配置仓库（或明确的候选快照）；请求路径不再隐式打开数据库。独立刷新/探测在 `openAccountSource` 边界拥有明确的仓库生命周期。生产发布传递 Core 验证器，协议验收夹具使用相同依赖。
+
+控制队列将连续的账户命令合并为最多 16 条的一批，在同一主机服务锁内依次提交，再统一发布凭据；遇到其他控制任务立即停止组批。每条命令保留独立结果和审计，失败不撤销已提交凭据，也不重放非幂等操作。发布失败继续使用持久版本对账。受管核心仍通过重启加载凭据，不声明具备协议热更新。
+
+编译缓存同时保存不可变的解析验证结果，键含 CompilerVersion、ParserVersion、输入摘要与模板；权限、撤销、用量以及依赖核心二进制/证书文件的验证不进入这个缓存。账户授权快照复用 SQL 扫描参数容器，减少按凭据分配；持久预留、WAL/FULL 和额度语义不变。
+
+`go run ./cmd/panel-contract` 从 Go 导出面板边界类型到 `contracts.d.ts`，CI 用 `-check` 拒绝漂移并检查 API 客户端类型。业务错误统一为 `{error:{code,message,field?,retryable}}`；版本冲突为 409，字段错误为 400，存储故障为 500，临时不可用为 503。前端 RequestError 保留状态、代码与字段信息。
+
+任务详情使用页面取消信号及 dialog-session 归属判断，关闭、切页或打开新详情后，旧响应不能覆盖当前对话框。模板资源按策略组/远程规则/本地规则选择展示，非活动编辑器不创建 DOM；空列表与短资源列表隐藏冗余搜索分页。

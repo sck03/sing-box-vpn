@@ -22,11 +22,10 @@ func (s AccountService) Credentials(ctx context.Context, id, scope string) ([]Cr
 	if !slices.Contains([]string{normalScope, vpngateScope}, scope) {
 		return nil, errors.New("invalid runtime scope")
 	}
-	store, closeStore, err := s.openStore()
+	store, err := s.requireStore()
 	if err != nil {
 		return nil, err
 	}
-	defer closeStore()
 	all, err := store.AccountCredentials(ctx, id, scope)
 	if err != nil {
 		return nil, err

@@ -56,7 +56,7 @@ func TestPreviewSummaryAndHTTPConflict(t *testing.T) {
 	if strings.Contains(result.String(), `"data"`) || strings.Contains(result.String(), `"nodes"`) {
 		t.Fatal("preview contains full artifacts or credentials")
 	}
-	for _, secret := range app.Profile.Secrets.UUID {
+	for _, secret := range app.fixtureProfile().Secrets.UUID {
 		if strings.Contains(result.String(), secret) {
 			t.Fatal("preview leaks credential")
 		}

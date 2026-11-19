@@ -149,10 +149,12 @@ export function formDialog(title, fields, value, save, preserve = false) {
         field.type === "bool"
           ? input.checked
           : field.type === "tristate"
-            ? input.value === "" ? undefined : input.value === "true"
-          : field.type === "multiselect"
-            ? [...input.selectedOptions].map((o) => o.value)
-            : input.value,
+            ? input.value === ""
+              ? undefined
+              : input.value === "true"
+            : field.type === "multiselect"
+              ? [...input.selectedOptions].map((o) => o.value)
+              : input.value,
       );
     return current;
   };
@@ -333,6 +335,7 @@ export function resourceEditor({
   local = false,
   rowKey,
   pageSize,
+  compact = true,
 }) {
   let view;
   const change = () => {
@@ -411,7 +414,7 @@ export function resourceEditor({
           "danger",
         ),
       ],
-      { key: `resource:${title}`, rowKey, pageSize },
+      { key: `resource:${title}`, rowKey, pageSize, compact },
     )),
   );
 }

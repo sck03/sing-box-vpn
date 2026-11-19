@@ -59,6 +59,9 @@ func (c PlatformConfig) Validate() error {
 	}
 	ports, tags := map[int]bool{}, map[string]bool{}
 	for _, n := range nodes {
+		if err := n.Validate(); err != nil {
+			return err
+		}
 		if !domain.ResourceID.MatchString(n.ID) || tags[n.ID] || !slices.Contains(Protocols, n.Protocol) {
 			return errors.New("invalid or duplicate inbound ID/protocol")
 		}
@@ -169,7 +172,7 @@ func (c PlatformConfig) Validate() error {
 	if _, _, err := firewallRules(c.App, c.VPN, gateway, c.Listener); err != nil {
 		return err
 	}
-	for _, ranges := range [][]string{c.App.Profile.Hopping, c.App.Profile.TUICPorts} {
+	for _, ranges := range [][]string{c.App.Hopping, c.App.TUICPorts} {
 		parsed, err := parsePortRanges(ranges)
 		if err != nil {
 			return err
@@ -270,8 +273,17 @@ func validateServerResources(c CoreSettings) error {
 }
 
 func serverForApp(app App) (Object, error) {
+	nodes, err := managedNodes(app)
+	if err != nil {
+		return nil, err
+	}
+	for _, node := range nodes {
+		if err := node.Validate(); err != nil {
+			return nil, err
+		}
+	}
 	active := []Object{}
-	for _, in := range app.Inbounds {
+	for _, in := range app.Inbounds() {
 		if in["_disabled"] != true {
 			active = append(active, in)
 		}

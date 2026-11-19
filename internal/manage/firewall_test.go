@@ -25,7 +25,7 @@ func TestFirewallRejectsUnownedChainsWithoutChangingThem(t *testing.T) {
 }
 func TestFirewallUsesProtocolPortsAndSeparateHoppingChain(t *testing.T) {
 	root := t.TempDir()
-	app := App{Inbounds: []Object{{"type": "vmess", "tag": "test-vmess", "listen_port": 20001}, {"type": "hysteria2", "tag": "test-hy2", "listen_port": 20002}}, Profile: Profile{Ports: map[string]int{"hysteria2": 20002}, Hopping: []string{"31000:31100"}}}
+	app := App{Nodes: fixtureNodes([]Object{{"type": "vmess", "tag": "test-vmess", "listen_port": 20001}, {"type": "hysteria2", "tag": "test-hy2", "listen_port": 20002}}), Hopping: []string{"31000:31100"}}
 	if err := AtomicJSON(filepath.Join(root, "app.json"), app); err != nil {
 		t.Fatal(err)
 	}
@@ -71,8 +71,7 @@ func TestFirewallForwardsOnlyTheActiveCountry(t *testing.T) {
 		}
 		return p
 	}
-	app := App{Profile: profile(20000, []string{"31000:31002", "31001", "31010"})}
-	app.Inbounds = MakeInbounds(app.Profile, "")
+	app := fixtureApp(profile(20000, []string{"31000:31002", "31001", "31010"}))
 	settings := VPNSettings{ActiveCountry: "JP", Profiles: map[string]Profile{"JP": profile(22000, []string{"32000"}), "KR": profile(24000, []string{"33000"})}}
 	gateway := Object{"inbounds": MakeInbounds(settings.Profiles["JP"], "vg-JP-")}
 	_, udp, err := firewallRules(app, settings, gateway, subscriptionSettings{})
@@ -86,7 +85,7 @@ func TestFirewallForwardsOnlyTheActiveCountry(t *testing.T) {
 
 func TestInvalidFirewallConfigDoesNotChangeAnyRule(t *testing.T) {
 	root := t.TempDir()
-	if err := AtomicJSON(filepath.Join(root, "app.json"), App{Inbounds: []Object{{"type": "tuic", "listen_port": 0}}}); err != nil {
+	if err := AtomicJSON(filepath.Join(root, "app.json"), App{Nodes: fixtureNodes([]Object{{"type": "tuic", "listen_port": 0}})}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "firewall.owner"), []byte("sck03/sing-box-vpn\n"), 0600); err != nil {
@@ -101,8 +100,7 @@ func TestInvalidFirewallConfigDoesNotChangeAnyRule(t *testing.T) {
 }
 
 func TestFirewallRejectsStaleForwardingTarget(t *testing.T) {
-	app := App{Profile: Profile{Ports: map[string]int{"tuic": 20003}, TUICPorts: []string{"31000"}},
-		Inbounds: []Object{{"type": "tuic", "listen_port": 20004}}}
+	app := App{Nodes: []ManagedNode{{Protocol: "vmess", Port: 20004}}, TUICPorts: []string{"31000"}}
 	if _, _, err := firewallRules(app, VPNSettings{}, nil, subscriptionSettings{}); err == nil {
 		t.Fatal("forwarding targeted a port without its configured listener")
 	}

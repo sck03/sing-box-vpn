@@ -97,7 +97,16 @@ func (s *PlatformService) runLane(ctx context.Context, lane string) error {
 		if err != nil {
 			return err
 		}
-		if err = s.runTask(ctx, task); err != nil {
+		if task.Kind == "account" {
+			followers, claimErr := s.Store.ClaimAccountFollowers(ctx, task.ID)
+			if claimErr != nil {
+				return claimErr
+			}
+			err = s.runAccountBatch(ctx, append([]controlstore.Task{task}, followers...))
+		} else {
+			err = s.runTask(ctx, task)
+		}
+		if err != nil {
 			return err
 		}
 	}
@@ -137,6 +146,10 @@ func (s *PlatformService) runTask(ctx context.Context, task controlstore.Task) e
 	if errors.Is(err, errTaskDeferred) {
 		return nil
 	}
+	return s.finishTask(task, err)
+}
+
+func (s *PlatformService) finishTask(task controlstore.Task, err error) error {
 	finish, stop := context.WithTimeout(context.Background(), 10*time.Second)
 	defer stop()
 	result := "success"
@@ -147,4 +160,38 @@ func (s *PlatformService) runTask(ctx context.Context, task controlstore.Task) e
 	finishErr := s.Store.Finish(finish, task.ID, err)
 	s.invalidateOverview()
 	return finishErr
+}
+
+// Each command commits once. Publication is shared, while individual failures
+// remain visible; interrupted or failed publication never replays mutations.
+func (s *PlatformService) runAccountBatch(ctx context.Context, tasks []controlstore.Task) error {
+	child, cancel := context.WithTimeout(ctx, application.ControlTaskTimeout)
+	defer cancel()
+	failures := make([]error, len(tasks))
+	lockErr := withServiceLock(child, s.Root, func() error {
+		changed := false
+		for i, task := range tasks {
+			var action PlatformAction
+			failures[i] = json.Unmarshal(task.Input, &action)
+			if failures[i] == nil && action.Operation != "account" {
+				failures[i] = errors.New("invalid account task")
+			}
+			if failures[i] == nil {
+				failures[i] = s.mutateAccount(child, task.ID, action.Account)
+			}
+			changed = changed || failures[i] == nil
+		}
+		if changed {
+			return s.reconcileCredentials(child)
+		}
+		return nil
+	})
+	var result error
+	for i, task := range tasks {
+		if failures[i] == nil && lockErr != nil {
+			failures[i] = fmt.Errorf("credential publication incomplete; inspect task and repository before retrying: %w", lockErr)
+		}
+		result = errors.Join(result, s.finishTask(task, failures[i]))
+	}
+	return result
 }

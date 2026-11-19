@@ -22,6 +22,7 @@ export const processorFields = [
 ];
 
 let selectedTemplate;
+let selectedResource = 0;
 export function templateResources(templates, catalog, change) {
   const eligible = templates.filter(
     (t) => t.mode === "config" && catalog[t.client]?.features.policy_groups,
@@ -57,165 +58,189 @@ export function templateResources(templates, catalog, change) {
       "REJECT",
       ...groups.map((g) => [g.id, g.name || g.id]),
     ];
-    body.replaceChildren(
-      resourceEditor({
-        title: "策略组",
-        items: groups,
-        change: save,
-        fields: [
-          { key: "id", label: "稳定 ID", required: true, advanced: true },
-          { key: "name", label: "组名称" },
-          {
-            key: "type",
-            label: "策略",
-            type: "select",
-            options:
-              t.client === "sing-box"
-                ? ["select", "urltest"]
-                : ["select", "urltest", "fallback"],
+    const panes = [
+      () =>
+        resourceEditor({
+          title: "策略组",
+          items: groups,
+          change: save,
+          fields: [
+            { key: "id", label: "稳定 ID", required: true, advanced: true },
+            { key: "name", label: "组名称" },
+            {
+              key: "type",
+              label: "策略",
+              type: "select",
+              options:
+                t.client === "sing-box"
+                  ? ["select", "urltest"]
+                  : ["select", "urltest", "fallback"],
+            },
+            {
+              key: "scope",
+              label: "节点范围",
+              type: "select",
+              options: [
+                ["normal", "普通出口"],
+                ["vpngate", "VPNGate"],
+                ["", "全部"],
+              ],
+            },
+            { key: "include", label: "名称筛选（正则）" },
+            { key: "optional", label: "没有匹配节点时省略此组", type: "bool" },
+            {
+              key: "members",
+              label: "引用其他策略组",
+              type: "csv",
+              help: "填写后使用这些组作为成员；服务端会检查循环引用。",
+            },
+            {
+              key: "url",
+              label: "测速 URL",
+              visible: (v) => v.type !== "select",
+            },
+            {
+              key: "interval_seconds",
+              label: "检测间隔（秒）",
+              type: "number",
+              min: 30,
+              max: 86400,
+              visible: (v) => v.type !== "select",
+            },
+            {
+              key: "tolerance",
+              label: "测速容差（毫秒）",
+              type: "number",
+              min: 0,
+              visible: (v) => v.type === "urltest",
+            },
+          ],
+          defaults: {
+            id: "group-" + crypto.randomUUID().replaceAll("-", "").slice(0, 12),
+            name: "",
+            type: "urltest",
+            scope: "normal",
+            members: [],
+            url: "https://www.gstatic.com/generate_204",
+            interval_seconds: 300,
+            tolerance: 50,
           },
-          {
-            key: "scope",
-            label: "节点范围",
-            type: "select",
-            options: [
-              ["normal", "普通出口"],
-              ["vpngate", "VPNGate"],
-              ["", "全部"],
-            ],
+          columns: [
+            { label: "组名称", value: (g) => g.name || g.id },
+            { key: "type", label: "策略" },
+            { key: "scope", label: "范围" },
+          ],
+        }),
+      () =>
+        resourceEditor({
+          title: "远程规则 Provider",
+          items: providers,
+          change: save,
+          fields: [
+            { key: "id", label: "ID", required: true },
+            {
+              key: "url",
+              label: "规则 URL",
+              type: "url",
+              required: true,
+              wide: true,
+            },
+            {
+              key: "type",
+              label: "规则类型",
+              type: "select",
+              options: ["domain", "ip_cidr", "classical"],
+            },
+            {
+              key: "format",
+              label: "格式",
+              type: "select",
+              options:
+                t.client === "sing-box" ? ["srs", "json"] : ["text", "mrs"],
+            },
+            {
+              key: "target",
+              label: "目标策略",
+              type: "select",
+              options: targets,
+            },
+          ],
+          defaults: {
+            id: "",
+            url: "",
+            type: "domain",
+            format: t.client === "sing-box" ? "srs" : "mrs",
+            target: "PROXY",
           },
-          { key: "include", label: "名称筛选（正则）" },
-          { key: "optional", label: "没有匹配节点时省略此组", type: "bool" },
-          {
-            key: "members",
-            label: "引用其他策略组",
-            type: "csv",
-            help: "填写后使用这些组作为成员；服务端会检查循环引用。",
-          },
-          {
-            key: "url",
-            label: "测速 URL",
-            visible: (v) => v.type !== "select",
-          },
-          {
-            key: "interval_seconds",
-            label: "检测间隔（秒）",
-            type: "number",
-            min: 30,
-            max: 86400,
-            visible: (v) => v.type !== "select",
-          },
-          {
-            key: "tolerance",
-            label: "测速容差（毫秒）",
-            type: "number",
-            min: 0,
-            visible: (v) => v.type === "urltest",
-          },
-        ],
-        defaults: {
-          id: "group-" + crypto.randomUUID().replaceAll("-", "").slice(0, 12),
-          name: "",
-          type: "urltest",
-          scope: "normal",
-          members: [],
-          url: "https://www.gstatic.com/generate_204",
-          interval_seconds: 300,
-          tolerance: 50,
-        },
-        columns: [
-          { label: "组名称", value: (g) => g.name || g.id },
-          { key: "type", label: "策略" },
-          { key: "scope", label: "范围" },
-        ],
-      }),
-      resourceEditor({
-        title: "远程规则 Provider",
-        items: providers,
-        change: save,
-        fields: [
-          { key: "id", label: "ID", required: true },
-          {
-            key: "url",
-            label: "规则 URL",
-            type: "url",
-            required: true,
-            wide: true,
-          },
-          {
-            key: "type",
-            label: "规则类型",
-            type: "select",
-            options: ["domain", "ip_cidr", "classical"],
-          },
-          {
-            key: "format",
-            label: "格式",
-            type: "select",
-            options:
-              t.client === "sing-box" ? ["srs", "json"] : ["text", "mrs"],
-          },
-          {
-            key: "target",
-            label: "目标策略",
-            type: "select",
-            options: targets,
-          },
-        ],
-        defaults: {
-          id: "",
-          url: "",
-          type: "domain",
-          format: t.client === "sing-box" ? "srs" : "mrs",
-          target: "PROXY",
-        },
-        columns: [
-          { key: "id", label: "ID" },
-          { key: "format", label: "格式" },
-          { key: "target", label: "目标" },
-        ],
-      }),
-      resourceEditor({
-        title: "本地有序规则",
-        items: rules,
-        change: save,
-        extraActions: (rule) =>
-          [-1, 1].map((step) =>
-            button(step < 0 ? "↑" : "↓", () => {
-              const index = rules.indexOf(rule),
-                next = index + step;
-              if (next < 0 || next >= rules.length) return;
-              [rules[index], rules[next]] = [rules[next], rules[index]];
-              save();
-            }),
-          ),
-        fields: [
-          {
-            key: "type",
-            label: "匹配",
-            type: "select",
-            options: ["domain", "domain_suffix", "ip_cidr"],
-          },
-          { key: "value", label: "域名或 CIDR", required: true },
-          {
-            key: "target",
-            label: "目标策略",
-            type: "select",
-            options: targets,
-          },
-        ],
-        defaults: { type: "domain_suffix", value: "", target: "PROXY" },
-        columns: [
-          { key: "type", label: "匹配" },
-          { key: "value", label: "值" },
-          { key: "target", label: "目标" },
-        ],
-      }),
+          columns: [
+            { key: "id", label: "ID" },
+            { key: "format", label: "格式" },
+            { key: "target", label: "目标" },
+          ],
+        }),
+      () =>
+        resourceEditor({
+          title: "本地有序规则",
+          items: rules,
+          change: save,
+          extraActions: (rule) =>
+            [-1, 1].map((step) =>
+              button(step < 0 ? "↑" : "↓", () => {
+                const index = rules.indexOf(rule),
+                  next = index + step;
+                if (next < 0 || next >= rules.length) return;
+                [rules[index], rules[next]] = [rules[next], rules[index]];
+                save();
+              }),
+            ),
+          fields: [
+            {
+              key: "type",
+              label: "匹配",
+              type: "select",
+              options: ["domain", "domain_suffix", "ip_cidr"],
+            },
+            { key: "value", label: "域名或 CIDR", required: true },
+            {
+              key: "target",
+              label: "目标策略",
+              type: "select",
+              options: targets,
+            },
+          ],
+          defaults: { type: "domain_suffix", value: "", target: "PROXY" },
+          columns: [
+            { key: "type", label: "匹配" },
+            { key: "value", label: "值" },
+            { key: "target", label: "目标" },
+          ],
+        }),
+    ];
+    const content = el("div", { class: "template-resource-content" });
+    const choices = ["策略组", "远程规则", "本地规则"];
+    const counts = [groups.length, providers.length, rules.length];
+    const navigation = el("div", {
+      class: "resource-navigation",
+      "aria-label": "模板资源分类",
+    });
+    const show = (index) => {
+      selectedResource = index;
+      content.replaceChildren(panes[index]());
+      [...navigation.children].forEach((control, i) =>
+        control.setAttribute("aria-pressed", String(i === index)),
+      );
+    };
+    choices.forEach((label, index) =>
+      navigation.append(
+        button(`${label} · ${counts[index]}`, () => show(index)),
+      ),
     );
+    body.replaceChildren(navigation, content);
+    show(selectedResource);
   }
   select.addEventListener("change", render);
   render();
-  return card(
+  const root = card(
     "模板策略与规则",
     help(
       "本地规则优先于自定义 Provider，国内分流规则随后执行。策略组可以按区域或服务筛选节点。",
@@ -223,4 +248,10 @@ export function templateResources(templates, catalog, change) {
     select,
     body,
   );
+  root.selectTemplate = (id) => {
+    if (!eligible.some((template) => template.id === id)) return;
+    select.value = id;
+    render();
+  };
+  return root;
 }

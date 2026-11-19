@@ -28,7 +28,7 @@ func collectLocalSubscriptionNodes(app App, settings VPNSettings, private map[st
 	local := map[string][]sub.Node{normalScope: {}, vpngateScope: {}}
 	cache := certificateCache{}
 	add := func(in Object, p Profile, name, scope string) error {
-		managed, err := managedNodes(App{Profile: p, Inbounds: []Object{in}})
+		managed, err := managedNodes(App{Nodes: fixtureNodes([]Object{in}), Country: p.Country, Hopping: p.Hopping, TUICPorts: p.TUICPorts})
 		if err != nil {
 			return err
 		}
@@ -46,7 +46,7 @@ func collectLocalSubscriptionNodes(app App, settings VPNSettings, private map[st
 		local[scope] = append(local[scope], node)
 		return nil
 	}
-	for _, in := range app.Inbounds {
+	for _, in := range app.Inbounds() {
 		if in["_disabled"] == true {
 			continue
 		}
@@ -54,7 +54,7 @@ func collectLocalSubscriptionNodes(app App, settings VPNSettings, private map[st
 		if Labels[kind] == "" {
 			return nil, errors.New("未知入口协议")
 		}
-		if err := add(in, app.Profile, Labels[kind]+"-普通-"+app.Name, normalScope); err != nil {
+		if err := add(in, app.fixtureProfile(), Labels[kind]+"-普通-"+app.Name, normalScope); err != nil {
 			return nil, err
 		}
 	}

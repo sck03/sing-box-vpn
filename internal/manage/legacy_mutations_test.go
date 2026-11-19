@@ -21,17 +21,12 @@ func CommitApp(ctx context.Context, root, core string, app *App) error {
 	if len(managed) != len(Protocols) {
 		return errors.New("普通配置必须完整包含五协议")
 	}
-	app.Inbounds = make([]Object, 0, len(managed))
-	for _, node := range managed {
-		app.Inbounds = append(app.Inbounds, node.inbound())
-	}
 	version, err := CheckCore(ctx, core)
 	if err != nil {
 		return err
 	}
 	app.Version = version
-	syncProfileSecrets(&app.Profile, app.Inbounds)
-	server, err := ServerConfig(app.Inbounds, app.Routing, app.Advanced.Endpoints, app.SocksPort)
+	server, err := serverForApp(*app)
 	if err != nil {
 		return err
 	}
@@ -164,7 +159,7 @@ func mutateVPN(app App, settings VPNSettings, private map[string]Secrets, operat
 		}
 	}
 	p.Secrets, p.Country = secret, cc
-	current := App{Profile: p, Inbounds: MakeInbounds(p, "vg-"+cc+"-")}
+	current := App{Nodes: MakeNodes(p, "vg-"+cc+"-"), Country: p.Country, Hopping: p.Hopping, TUICPorts: p.TUICPorts}
 	var err error
 	if slices.Contains([]string{"port", "hopping", "multiport"}, operation) {
 		protocol, ranges, _ := portMutation(operation, values)
@@ -175,9 +170,10 @@ func mutateVPN(app App, settings VPNSettings, private map[string]Secrets, operat
 	if err != nil {
 		return err
 	}
-	p = current.Profile
+	p = current.fixtureProfile()
+	p.Secrets.SocksUser, p.Secrets.SocksPass = secret.SocksUser, secret.SocksPass
 	secret = p.Secrets
-	for _, in := range current.Inbounds {
+	for _, in := range current.Inbounds() {
 		kind := text(in["type"])
 		if operation == "tls" && kind == "vmess" {
 			tls := object(in["tls"])
@@ -256,14 +252,12 @@ func mutateApp(app *App, settings VPNSettings, operation string, values []string
 		if err := validateDomain(values[0]); err != nil {
 			return err
 		}
-		for _, in := range app.Inbounds {
-			if in["type"] == "vless" {
-				tls := ensureObject(in, "tls")
-				tls["server_name"] = values[0]
-				ensureObject(ensureObject(tls, "reality"), "handshake")["server"] = values[0]
+		for i := range app.Nodes {
+			if app.Nodes[i].Protocol == "vless" {
+				app.Nodes[i].TLS.ServerName = values[0]
+				app.Nodes[i].TLS.HandshakeHost = values[0]
 			}
 		}
-		app.Profile.RealitySNI = values[0]
 	case "ws":
 		if err := count(1); err != nil {
 			return err
@@ -271,12 +265,11 @@ func mutateApp(app *App, settings VPNSettings, operation string, values []string
 		if err := validateWebSocketPath(values[0]); err != nil {
 			return err
 		}
-		for _, in := range app.Inbounds {
-			if in["type"] == "vmess" {
-				ensureObject(in, "transport")["path"] = values[0]
+		for i := range app.Nodes {
+			if app.Nodes[i].Protocol == "vmess" {
+				app.Nodes[i].Transport.Path = values[0]
 			}
 		}
-		app.Profile.WSPath = values[0]
 	case "tls":
 		if err := count(4); err != nil {
 			return err
@@ -301,13 +294,13 @@ func mutateApp(app *App, settings VPNSettings, operation string, values []string
 		if err = validateImportedCertificate(cert, key, values[3]); err != nil {
 			return err
 		}
-		for _, in := range app.Inbounds {
-			if in["type"] == "vless" || values[0] != "all" && values[0] != in["type"] {
+		for i := range app.Nodes {
+			n := &app.Nodes[i]
+			if n.Protocol == "vless" || values[0] != "all" && values[0] != n.Protocol {
 				continue
 			}
-			in["tls"] = merge(object(in["tls"]), Object{"enabled": true, "certificate_path": filepath.ToSlash(cert), "key_path": filepath.ToSlash(key), "server_name": values[3]})
+			n.TLS = ManagedTLS{Enabled: true, Certificate: filepath.ToSlash(cert), Key: filepath.ToSlash(key), ServerName: values[3]}
 		}
-		app.Profile.TLSSNI, app.Profile.SelfSigned = values[3], false
 	case "argo":
 		if len(values) > 1 {
 			return errors.New("域名参数过多")

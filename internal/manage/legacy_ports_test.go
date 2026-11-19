@@ -36,7 +36,7 @@ func validatePortMutation(root string, app App, settings VPNSettings, scope, ope
 	if err != nil {
 		return err
 	}
-	profile := app.Profile
+	profile := app.fixtureProfile()
 	owner := normalScope
 	if scope == vpngateScope {
 		var exists bool
@@ -114,17 +114,16 @@ func changePorts(app *App, settings VPNSettings, operation string, values []stri
 func applyPorts(app *App, operation, protocol string, ranges []portRange) error {
 	if operation == "port" {
 		port := ranges[0].first
-		if port != app.Profile.Ports[protocol] {
+		if port != app.fixtureProfile().Ports[protocol] {
 			if err := probePort(port); err != nil {
 				return err
 			}
 		}
-		for _, in := range app.Inbounds {
-			if in["type"] == protocol {
-				in["listen_port"] = port
+		for i := range app.Nodes {
+			if app.Nodes[i].Protocol == protocol {
+				app.Nodes[i].Port = port
 			}
 		}
-		app.Profile.Ports[protocol] = port
 		return nil
 	}
 	ports := make([]string, len(ranges))
@@ -132,9 +131,9 @@ func applyPorts(app *App, operation, protocol string, ranges []portRange) error 
 		ports[i] = r.String()
 	}
 	if protocol == "hysteria2" {
-		app.Profile.Hopping = ports
+		app.Hopping = ports
 	} else {
-		app.Profile.TUICPorts = ports
+		app.TUICPorts = ports
 	}
 	return nil
 }
@@ -147,7 +146,7 @@ func commitTUICPorts(root string, app App, settings VPNSettings, scope string, v
 	current := &app
 	name := "app.json"
 	if scope == vpngateScope {
-		current = &App{Profile: settings.Profiles[settings.ActiveCountry]}
+		current = &App{Country: settings.Profiles[settings.ActiveCountry].Country, Hopping: settings.Profiles[settings.ActiveCountry].Hopping, TUICPorts: settings.Profiles[settings.ActiveCountry].TUICPorts}
 		name = "vpngate/settings.json"
 	}
 	if err := applyPorts(current, "multiport", "tuic", ranges); err != nil {
@@ -155,7 +154,9 @@ func commitTUICPorts(root string, app App, settings VPNSettings, scope string, v
 	}
 	var value any = app
 	if scope == vpngateScope {
-		settings.Profiles[settings.ActiveCountry] = current.Profile
+		p := settings.Profiles[settings.ActiveCountry]
+		p.TUICPorts = current.TUICPorts
+		settings.Profiles[settings.ActiveCountry] = p
 		value = settings
 	}
 	files := fileBundle{}
@@ -166,7 +167,7 @@ func commitTUICPorts(root string, app App, settings VPNSettings, scope string, v
 }
 
 func writeTUICLink(output io.Writer, app App, settings VPNSettings, private map[string]Secrets, scope string, port int) error {
-	profile, inbounds := app.Profile, app.Inbounds
+	profile, inbounds := app.fixtureProfile(), app.Inbounds()
 	name := Labels["tuic"] + "-普通-" + app.Name
 	if scope == vpngateScope {
 		country := settings.ActiveCountry
@@ -196,7 +197,7 @@ func writeTUICLink(output io.Writer, app App, settings VPNSettings, private map[
 			continue
 		}
 		cache := certificateCache{}
-		managed, err := managedNodes(App{Profile: profile, Inbounds: []Object{inbound}})
+		managed, err := managedNodes(App{Nodes: fixtureNodes([]Object{inbound}), Country: profile.Country, Hopping: profile.Hopping, TUICPorts: profile.TUICPorts})
 		if err != nil {
 			return err
 		}

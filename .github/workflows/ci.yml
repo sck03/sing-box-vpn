@@ -62,8 +62,12 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
-      - name: Panel DOM regression
-        run: npm ci && npm test
+      - name: Generated panel contracts and DOM regression
+        run: |
+          go run ./cmd/panel-contract -check
+          npm ci
+          npm run typecheck
+          npm test
       - name: Download verified sing-box 1.14.4
         run: |
           mkdir -p .build/core
@@ -78,13 +82,15 @@ jobs:
           gzip -dc .build/core/mihomo.gz > .build/core/mihomo
           chmod +x .build/core/mihomo
           echo "MIHOMO_BINARY=$PWD/.build/core/mihomo" >> "$GITHUB_ENV"
+      - name: Strict protocol fixture preflight
+        run: SBVPN_REQUIRE_CLIENT_CHECK=1 go test -count=1 -run '^TestRealFiveProtocolsTCPUDP$' ./addons/vpngate/gateway
       - name: Go tests, race detection and 72 real subscription TCP/UDP links
         run: SBVPN_REQUIRE_CLIENT_CHECK=1 RUN_UDP_IDLE_TESTS=1 go test -race -timeout=25m -count=1 -v ./...
       - name: Managed runtime account isolation and real TCP/UDP links
         run: |
           go build -tags with_quic,with_utls,with_wireguard -o "$GITHUB_WORKSPACE/.build/managed-core" ./cmd/managed-core
           MANAGED_CORE_BINARY="$GITHUB_WORKSPACE/.build/managed-core" go test -race -count=1 -v -run '^(TestManagedAccountIsolation|TestRealFiveProtocolsTCPUDP)$' ./addons/vpngate/gateway
-          MANAGED_CORE_BINARY="$GITHUB_WORKSPACE/.build/managed-core" go test -race -count=1 -v -run '^TestCredentialPublicationRetryDoesNotRepeatRotation$' ./internal/manage
+          MANAGED_CORE_BINARY="$GITHUB_WORKSPACE/.build/managed-core" go test -race -count=1 -v -run '^(TestCredentialPublicationRetryDoesNotRepeatRotation|TestAccountBatchPublishesOnceAndPreservesIndividualResults)$' ./internal/manage
       - name: Formatting, vet and shell checks
         run: |
           test -z "$(gofmt -l manifest.go internal cmd addons/vpngate/gateway)"
@@ -111,8 +117,12 @@ jobs:
           sudo .build/yg-vpngate panel --root "$PWD/.test/core-updater" \
             --core "$PWD/.test/core-updater/sing-box.candidate" --runtime "$PWD/.build/managed-core" --no-system validate
           .build/yg-vpngate core --root "$PWD/.test/core-updater" check
-      - name: Real panel API contracts in isolated development mode
-        run: GATEWAY_BINARY="$PWD/.build/yg-vpngate" MANAGED_CORE_BINARY="$PWD/.build/managed-core" node scripts/test-panel-local.mjs
+      - name: Install browser acceptance dependencies
+        run: |
+          python3 -m pip install -r scripts/browser-requirements.txt
+          python3 -m playwright install --with-deps chromium
+      - name: Real panel API and desktop/mobile browser contracts
+        run: PANEL_TEST_SCREENSHOT_DIR="$PWD/.test/browser" PANEL_BROWSER_TEST=1 PYTHON_BINARY=python3 GATEWAY_BINARY="$PWD/.build/yg-vpngate" MANAGED_CORE_BINARY="$PWD/.build/managed-core" node scripts/test-panel-local.mjs
       - name: OpenVPN, tunnel DNS and fail-closed namespace acceptance
         run: sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_NETNS_TESTS=1 "$(command -v go)" test -run '^TestLinuxNamespaceIsolation$' -count=1 -v -timeout=6m ./addons/vpngate/gateway
       - name: IPv4 and IPv6 multiport forwarding and owned firewall cleanup
@@ -145,6 +155,16 @@ jobs:
           path: |
             .build/release/*.tar.gz
             .build/release/SHA256SUMS
+      - name: Preserve acceptance diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: acceptance-diagnostics
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            .test/**/*.log
+            .test/**/*.png
   release:
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.publish)
     needs: verify

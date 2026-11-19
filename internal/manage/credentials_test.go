@@ -16,8 +16,8 @@ func TestManagedNodesDoNotPersistDuplicateCredentialMetadata(t *testing.T) {
 	root, core, app := appFixture(t)
 	server := readBytes(t, filepath.Join(root, "sb.json"))
 	links := readBytes(t, filepath.Join(root, "jhsub.txt"))
-	expected := text(objects(app.Inbounds[0]["users"])[0]["uuid"])
-	app.Profile.Secrets.UUID["vless"] = randomUUID()
+	expected := text(objects(app.Inbounds()[0]["users"])[0]["uuid"])
+	app.fixtureProfile().Secrets.UUID["vless"] = randomUUID()
 	if err := AtomicJSON(filepath.Join(root, "app.json"), app); err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +27,7 @@ func TestManagedNodesDoNotPersistDuplicateCredentialMetadata(t *testing.T) {
 	if _, err := ReadJSON(filepath.Join(root, "app.json"), &app); err != nil {
 		t.Fatal(err)
 	}
-	if app.Profile.Secrets.UUID["vless"] != expected || !bytes.Equal(server, readBytes(t, filepath.Join(root, "sb.json"))) || !bytes.Equal(links, readBytes(t, filepath.Join(root, "jhsub.txt"))) {
+	if app.fixtureProfile().Secrets.UUID["vless"] != expected || !bytes.Equal(server, readBytes(t, filepath.Join(root, "sb.json"))) || !bytes.Equal(links, readBytes(t, filepath.Join(root, "jhsub.txt"))) {
 		t.Fatal("persisted node authority changed credentials or generated content")
 	}
 }
@@ -52,7 +52,7 @@ func TestCustomCredentialsPersistAndStayScoped(t *testing.T) {
 	if _, err := ReadJSON(filepath.Join(root, "app.json"), &current); err != nil {
 		t.Fatal(err)
 	}
-	for _, in := range current.Inbounds {
+	for _, in := range current.Inbounds() {
 		kind, users := text(in["type"]), objects(in["users"])
 		for _, key := range []string{"uuid", "password"} {
 			if value, exists := users[0][key]; exists && value != customUUID {
@@ -60,12 +60,12 @@ func TestCustomCredentialsPersistAndStayScoped(t *testing.T) {
 			}
 		}
 	}
-	for _, value := range current.Profile.Secrets.UUID {
+	for _, value := range current.fixtureProfile().Secrets.UUID {
 		if value != customUUID {
 			t.Fatal("stored UUID and running configuration disagree")
 		}
 	}
-	for _, value := range current.Profile.Secrets.Passwords {
+	for _, value := range current.fixtureProfile().Secrets.Passwords {
 		if value != customUUID {
 			t.Fatal("stored password and running configuration disagree")
 		}
@@ -109,7 +109,7 @@ func TestCustomCredentialsPersistAndStayScoped(t *testing.T) {
 	if _, err := ReadJSON(filepath.Join(root, "app.json"), &current); err != nil {
 		t.Fatal(err)
 	}
-	if current.Profile.Secrets.UUID["tuic"] == customUUID || current.Profile.Secrets.Passwords["tuic"] == customUUID || current.Profile.Secrets.UUID["vless"] != customUUID {
+	if current.fixtureProfile().Secrets.UUID["tuic"] == customUUID || current.fixtureProfile().Secrets.Passwords["tuic"] == customUUID || current.fixtureProfile().Secrets.UUID["vless"] != customUUID {
 		t.Fatal("random reset did not update only the selected protocol")
 	}
 }
@@ -140,14 +140,14 @@ func TestCredentialInputAndImportedUsers(t *testing.T) {
 		}
 	}
 	old := randomUUID()
-	app := App{Inbounds: []Object{{"type": "vmess", "users": []Object{{"uuid": randomUUID()}, {"uuid": old}}}}}
+	app := App{Nodes: []ManagedNode{{Protocol: "vmess", UUID: randomUUID()}, {Protocol: "tuic", UUID: old}}}
 	if err := changeCredentials(&app, "credentials", []string{"vmess", customUUID}); err != nil {
 		t.Fatal(err)
 	}
-	users := objects(app.Inbounds[0]["users"])
-	if users[0]["uuid"] != customUUID || users[1]["uuid"] != old || app.Profile.Secrets.UUID["vmess"] != customUUID {
-		t.Fatal("customization overwrote an imported additional user")
+	if app.Nodes[0].UUID != customUUID || app.Nodes[1].UUID != old {
+		t.Fatal("credential edit changed another node")
 	}
+
 }
 
 func TestTUICCredentialsCanChangeIndependently(t *testing.T) {
@@ -164,12 +164,12 @@ func TestTUICCredentialsCanChangeIndependently(t *testing.T) {
 		{"both", []string{strings.ToUpper(customUUID), "new password"}, customUUID, "new password"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			app := App{Inbounds: []Object{{"type": "tuic", "users": []Object{{"uuid": oldUUID, "password": oldPassword}}}}}
+			app := App{Nodes: fixtureNodes([]Object{{"type": "tuic", "users": []Object{{"uuid": oldUUID, "password": oldPassword}}}})}
 			if err := changeCredentials(&app, "credentials", append([]string{"tuic"}, tc.input...)); err != nil {
 				t.Fatal(err)
 			}
-			user := objects(app.Inbounds[0]["users"])[0]
-			if user["uuid"] != tc.uuid || user["password"] != tc.password || app.Profile.Secrets.UUID["tuic"] != tc.uuid || app.Profile.Secrets.Passwords["tuic"] != tc.password {
+			user := objects(app.Inbounds()[0]["users"])[0]
+			if user["uuid"] != tc.uuid || user["password"] != tc.password || app.fixtureProfile().Secrets.UUID["tuic"] != tc.uuid || app.fixtureProfile().Secrets.Passwords["tuic"] != tc.password {
 				t.Fatal("independent credential update changed the omitted field or lost metadata")
 			}
 		})
@@ -186,7 +186,7 @@ func TestAllCredentialsAllowSeparatePassword(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := readObject(t, filepath.Join(root, "sbox.json"))
-	for _, entries := range [][]Object{app.Inbounds, objects(client["outbounds"])} {
+	for _, entries := range [][]Object{app.Inbounds(), objects(client["outbounds"])} {
 		for _, entry := range entries {
 			user := entry
 			if users := objects(entry["users"]); len(users) > 0 {

@@ -245,8 +245,8 @@ func managedCertificatePair(root string, asset CertificateAsset) bool {
 
 func certificateUses(c PlatformConfig, path, service string) bool {
 	if service == "sb-core" {
-		for _, in := range c.App.Inbounds {
-			if in["_disabled"] != true && text(object(in["tls"])["certificate_path"]) == path {
+		for _, n := range c.App.Nodes {
+			if !n.Disabled && n.TLS.Certificate == path {
 				return true
 			}
 		}

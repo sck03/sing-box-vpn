@@ -264,7 +264,7 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 	}
 	vpnProfile.Secrets.UUID["tuic"] = "23456789-abcd-4ef0-8123-456789abcdef"
 	vpnProfile.Secrets.Passwords["tuic"] = "independent TUIC @:/?# password"
-	app := manage.App{Name: "protocol-test", Address: "127.0.0.1", Profile: profile, Inbounds: manage.MakeInbounds(profile, ""), SocksPort: 40000}
+	app := manage.App{Name: "protocol-test", Address: "127.0.0.1", Nodes: manage.MakeNodes(profile, ""), SocksPort: 40000}
 	vpnProfile.Country = "JP"
 	secret := vpnProfile.Secrets
 	secret.SocksUser, secret.SocksPass = cfg.ProxyUser, cfg.ProxyPass
@@ -311,7 +311,7 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 	if _, err := manage.ReadJSON(filepath.Join(root, "app.json"), &app); err != nil {
 		t.Fatal(err)
 	}
-	profile = app.Profile
+	// profile remains the fixture defaults; app.Nodes is the authoritative configuration.
 	if _, err := manage.ReadJSON(filepath.Join(root, "vpngate", "settings.json"), &settings); err != nil {
 		t.Fatal(err)
 	}

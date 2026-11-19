@@ -27,7 +27,7 @@ func TestBackupWaitsForPublicationAndPreservesRenewal(t *testing.T) {
 	if err = <-done; err != nil {
 		t.Fatal(err)
 	}
-	asset := CertificateAsset{ID: "managed", Provider: "acme", Domain: "example.com", Email: "test@example.com", Certificate: c.App.Profile.Certificate, Key: c.App.Profile.Key}
+	asset := CertificateAsset{ID: "managed", Provider: "acme", Domain: "example.com", Email: "test@example.com", Certificate: c.App.fixtureProfile().Certificate, Key: c.App.fixtureProfile().Key}
 	c.Certificates = append(c.Certificates, asset)
 	b := platformBackup{Files: map[string][]byte{}}
 	b.Root = root
@@ -41,7 +41,7 @@ func TestBackupWaitsForPublicationAndPreservesRenewal(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
-	keyRel, err := filepath.Rel(root, c.App.Profile.Key)
+	keyRel, err := filepath.Rel(root, c.App.fixtureProfile().Key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestBackupWaitsForPublicationAndPreservesRenewal(t *testing.T) {
 func TestRestoredCertificateQueuesRegistration(t *testing.T) {
 	root, core, _ := appFixture(t)
 	s, c, _ := platformFixture(t, root, core)
-	c.Certificates = []CertificateAsset{{ID: "renew", Provider: "acme", Domain: c.App.Profile.TLSSNI, Email: "test@example.com", Certificate: c.App.Profile.Certificate, Key: c.App.Profile.Key}}
+	c.Certificates = []CertificateAsset{{ID: "renew", Provider: "acme", Domain: c.App.fixtureProfile().TLSSNI, Email: "test@example.com", Certificate: c.App.fixtureProfile().Certificate, Key: c.App.fixtureProfile().Key}}
 	id, err := s.Store.Queue(t.Context(), "apply", "test", []byte(`{}`), 1, mustJSON(t, c))
 	if err != nil {
 		t.Fatal(err)

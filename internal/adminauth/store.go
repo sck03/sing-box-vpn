@@ -24,6 +24,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+var ErrConflict = errors.New("administrator revision conflict")
+
 var ErrUnauthorized = errors.New("invalid credentials or expired session")
 var ErrLimited = errors.New("too many login attempts; retry after 15 minutes")
 
@@ -346,7 +348,7 @@ func (s *Store) Save(ctx context.Context, actor string, a Admin, password string
 				return e
 			}
 			if n != 1 {
-				return errors.New("administrator revision conflict")
+				return ErrConflict
 			}
 		}
 	}

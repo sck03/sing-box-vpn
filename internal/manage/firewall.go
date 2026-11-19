@@ -122,7 +122,7 @@ func firewallRules(app App, settings VPNSettings, gateway Object, subscription s
 	if subscription.Enabled {
 		reservations = append(reservations, portReservation{portRange{subscription.Port, subscription.Port}, "", "subscription"})
 	}
-	inputs := append(append([]Object{}, app.Inbounds...), objects(gateway["inbounds"])...)
+	inputs := append(append([]Object{}, app.Inbounds()...), objects(gateway["inbounds"])...)
 	ports := map[string]bool{}
 	for _, in := range inputs {
 		if in["_disabled"] == true {
@@ -153,7 +153,7 @@ func firewallRules(app App, settings VPNSettings, gateway Object, subscription s
 	for _, name := range names {
 		fmt.Fprintf(&input, "-A %s -p %s -j ACCEPT\n", inputChain, name)
 	}
-	profiles := []Profile{app.Profile}
+	profiles := []Profile{app.profile()}
 	if settings.ActiveCountry != "" {
 		profile, exists := settings.Profiles[settings.ActiveCountry]
 		if !exists {
@@ -162,7 +162,7 @@ func firewallRules(app App, settings VPNSettings, gateway Object, subscription s
 		profiles = append(profiles, profile)
 	}
 	for i, profile := range profiles {
-		entries := app.Inbounds
+		entries := app.Inbounds()
 		if i > 0 {
 			entries = objects(gateway["inbounds"])
 		}

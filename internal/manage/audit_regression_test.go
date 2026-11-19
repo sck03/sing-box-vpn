@@ -111,7 +111,7 @@ func TestDisabledSubscriberBlocksCustomOutputAndExport(t *testing.T) {
 	if err := checkOutputAccounts(ctx, root, c, "custom", s.Accounts); err == nil {
 		t.Fatal("disabled subscriber authorized")
 	}
-	if _, err := (AccountService{Root: root, Store: s.Accounts}).Export(ctx, application.AccountCommand{ID: "a", Client: "uri"}); err == nil {
+	if _, err := (s.accountService()).Export(ctx, application.AccountCommand{ID: "a", Client: "uri"}); err == nil {
 		t.Fatal("disabled subscriber exported")
 	}
 }

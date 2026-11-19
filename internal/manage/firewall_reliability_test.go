@@ -63,7 +63,7 @@ func TestFirewallFailedCleanupRetainsOwnership(t *testing.T) {
 
 func TestFirewallIPv6QueryFailureIsReported(t *testing.T) {
 	root := t.TempDir()
-	if err := AtomicJSON(filepath.Join(root, "app.json"), App{Inbounds: []Object{{"type": "vmess", "listen_port": 20001}}}); err != nil {
+	if err := AtomicJSON(filepath.Join(root, "app.json"), App{Nodes: fixtureNodes([]Object{{"type": "vmess", "listen_port": 20001}})}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "firewall.owner"), []byte("sck03/sing-box-vpn\n"), 0600); err != nil {
@@ -112,8 +112,7 @@ func BenchmarkFirewallForwardingRules(b *testing.B) {
 		}
 		return p
 	}
-	app := App{Profile: profile(20000, []string{"21000:21002"}, []string{"21100:21102"})}
-	app.Inbounds = MakeInbounds(app.Profile, "")
+	app := fixtureApp(profile(20000, []string{"21000:21002"}, []string{"21100:21102"}))
 	settings := VPNSettings{ActiveCountry: "JP", Profiles: map[string]Profile{
 		"JP": profile(22000, []string{"23000:23002"}, []string{"23100:23102"}),
 	}}

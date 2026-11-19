@@ -36,3 +36,7 @@
 - [s-ui 前端路由](https://github.com/alireza0/s-ui-frontend/blob/3235da1c7fc07eb7fae13a9bfca7dde147c7e6aa/src/router/index.ts)与[侧栏](https://github.com/alireza0/s-ui-frontend/blob/3235da1c7fc07eb7fae13a9bfca7dde147c7e6aa/src/layouts/default/Drawer.vue)：按入站、用户、出站、端点、证书和系统设置区分资源；移动端使用抽屉。该前端提交为 s-ui `d1c2ce92a77b32388845bc863a7f0a70871f74ca` 引用的子模块版本。
 
 本项目采用清楚的节点/用户/系统职责与统一页面登记，将不常用资源放入高级区；保留原生 ES 模块，不增加生产前端框架或 Node 运行依赖。扩展页面须登记权限、标题、分组、搜索关键词和可选页内定位。
+
+模板与规则页在宽屏上并列显示模板列表和当前模板资源，行内「策略与规则」可直接定位模板；窄屏自动改为单列。资源区域按策略组、远程规则和本地规则切换，共享规则和账户模板覆盖按需展开。
+
+![模板列表与当前资源](images/subscription-templates.png)

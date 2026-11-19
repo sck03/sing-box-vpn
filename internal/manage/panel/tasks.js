@@ -1,8 +1,9 @@
 import { api } from "./api.js";
+import { dialogSession } from "./dialog-session.js";
 import { validationLabel } from "./validation.js";
 import { table } from "./tables.js";
 import { card } from "./dom.js";
-import { $, el, button, row, help, badge, date } from "./dom.js";
+import { el, button, row, help, badge, date } from "./dom.js";
 
 const kinds = {
   apply: "应用配置",
@@ -44,8 +45,7 @@ export const canViewTask = (task, session) =>
     (task.details?.operators ||
       (task.details?.actor && task.details.actor === session.id)));
 
-export function taskDetails(task) {
-  const dialog = $("#dialog");
+export function taskDetails(task, session = dialogSession()) {
   const failed = task.state === "failed";
   const details = el("dl", { class: "detail-grid" });
   for (const [label, value] of [
@@ -62,7 +62,7 @@ export function taskDetails(task) {
     el("summary", {}, "技术详情"),
     el("pre", {}, JSON.stringify(task.result, null, 2)),
   );
-  dialog.replaceChildren(
+  session.replace(
     el("h2", {}, "任务 #" + task.id),
     badge(failed ? "需要处理" : taskPhase(task.state), failed ? "bad" : "good"),
     details,
@@ -78,9 +78,8 @@ export function taskDetails(task) {
     ),
     ...resultDetails(task.result),
     diagnostic,
-    row(button("关闭", () => dialog.close())),
+    row(button("关闭", session.close)),
   );
-  dialog.showModal();
 }
 
 export function tasksCard(tasks, ctx) {
@@ -142,9 +141,28 @@ export function tasksCard(tasks, ctx) {
           : []),
         ...(canViewTask(t, ctx.session)
           ? [
-              button("详情", async () =>
-                taskDetails(await api("/api/tasks/detail?id=" + t.id)),
-              ),
+              button("详情", async () => {
+                const session = dialogSession(ctx.signal);
+                session.replace(help("正在读取任务详情…"));
+                try {
+                  const task = await api(
+                    "/api/tasks/detail?id=" + t.id,
+                    undefined,
+                    { signal: session.signal },
+                  );
+                  if (session.active()) taskDetails(task, session);
+                } catch (error) {
+                  if (session.active())
+                    session.replace(
+                      el(
+                        "p",
+                        { class: "form-error", role: "alert" },
+                        error.message,
+                      ),
+                      row(button("关闭", session.close)),
+                    );
+                }
+              }),
             ]
           : []),
         ...(t.state === "queued" &&

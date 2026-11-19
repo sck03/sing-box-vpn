@@ -282,8 +282,3 @@ func readAdministrator(input io.Reader, nulDelimited bool) (administratorCredent
 	credentials.Username, credentials.Password = fields[0], fields[1]
 	return credentials, nil
 }
-
-func platformOwned(root string) bool {
-	_, err := os.Stat(filepath.Join(root, ".platform-v4"))
-	return err == nil
-}

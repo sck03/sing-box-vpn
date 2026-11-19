@@ -31,12 +31,11 @@ func (service AccountService) ServeDownload(w http.ResponseWriter, r *http.Reque
 		http.NotFound(w, r)
 		return
 	}
-	store, closeStore, err := service.openStore()
+	store, err := service.requireStore()
 	if err != nil {
 		http.Error(w, "account service unavailable", 503)
 		return
 	}
-	defer closeStore()
 	grant, usage, err := store.Grant(r.Context(), token)
 	if err != nil {
 		http.NotFound(w, r)

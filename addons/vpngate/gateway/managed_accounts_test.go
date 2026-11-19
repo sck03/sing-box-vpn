@@ -76,7 +76,7 @@ func TestManagedAccountIsolation(t *testing.T) {
 	entries := manage.MakeInbounds(p, "")
 	delete(entries[0], "tls")
 	entries[0]["users"].([]manage.Object)[0]["flow"] = ""
-	app := manage.App{Name: "accounts", Address: "127.0.0.1", Profile: p, Inbounds: manage.MakeInbounds(p, ""), SocksPort: 40000}
+	app := manage.App{Name: "accounts", Address: "127.0.0.1", Nodes: manage.MakeNodes(p, ""), SocksPort: 40000}
 	publishProtocolFixture(t, root, binary, &app)
 	var exported struct {
 		Outbounds []manage.Object `json:"outbounds"`

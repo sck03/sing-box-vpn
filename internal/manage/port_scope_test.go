@@ -4,8 +4,7 @@ import "testing"
 
 func TestPortOwnershipUsesScopeRatherThanProfileCountry(t *testing.T) {
 	for _, kind := range Protocols {
-		app := App{Profile: Profile{Country: "JP", Ports: map[string]int{kind: 20001}},
-			Inbounds: []Object{{"type": kind, "listen_port": 20001}}}
+		app := App{Nodes: fixtureNodes([]Object{{"type": kind, "listen_port": 20001}}), Country: "JP"}
 		settings := VPNSettings{ActiveCountry: "JP", Profiles: map[string]Profile{
 			"JP": {Ports: map[string]int{kind: 22001}},
 		}}

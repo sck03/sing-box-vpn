@@ -37,11 +37,11 @@ func publishProtocolFixture(t *testing.T, root, core string, app *manage.App) {
 	if err = store.SaveAccount(t.Context(), domain.Account{ID: "export-fixture", Name: "Protocol"}); err != nil {
 		t.Fatal(err)
 	}
-	service := manage.AccountService{Root: root, Store: store, Config: &config}
+	service := manage.AccountService{Root: root, Core: core, Store: store, Config: &config}
 	snapshot := sub.Snapshot{Version: sub.SchemaVersion, Revision: 1, Artifacts: map[string]sub.Artifact{}}
 	subscriptions := sub.DefaultConfig()
 	for _, scope := range []string{"normal", "vpngate"} {
-		entries := app.Inbounds
+		entries := app.Inbounds()
 		if scope == "vpngate" {
 			if settings.ActiveCountry == "" {
 				continue

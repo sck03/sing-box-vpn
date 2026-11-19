@@ -170,7 +170,7 @@ func TestVPNSettingsAreIndependent(t *testing.T) {
 		t.Fatal("editing an entry resumed or relocated the tunnel")
 	}
 	before := readBytes(t, filepath.Join(root, "vpngate", "server.json"))
-	if err := run("port", "tuic", strconv.Itoa(app.Profile.Ports["vless"])); err == nil {
+	if err := run("port", "tuic", strconv.Itoa(app.fixtureProfile().Ports["vless"])); err == nil {
 		t.Fatal("VPNGate took an ordinary node's reserved port")
 	}
 	if !bytes.Equal(before, readBytes(t, filepath.Join(root, "vpngate", "server.json"))) {

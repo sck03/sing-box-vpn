@@ -51,23 +51,38 @@ func merge(values ...Object) Object {
 	return out
 }
 
+func MakeNodes(p Profile, prefix string) []ManagedNode {
+	host, port := p.HandshakeHost, p.HandshakePort
+	if host == "" {
+		host = p.RealitySNI
+	}
+	if port == 0 {
+		port = 443
+	}
+	nodes := make([]ManagedNode, 0, len(Protocols))
+	for _, kind := range Protocols {
+		n := ManagedNode{ID: prefix + Tags[kind], Protocol: kind, Port: p.Ports[kind], UUID: p.Secrets.UUID[kind], Password: p.Secrets.Passwords[kind], TLS: ManagedTLS{Enabled: true, ServerName: p.TLSSNI, Certificate: p.Certificate, Key: p.Key}}
+		if kind == "vless" || kind == "vmess" {
+			n.Password = ""
+		}
+		if kind == "hysteria2" || kind == "anytls" {
+			n.UUID = ""
+		}
+		if kind == "vless" {
+			n.Flow = "xtls-rprx-vision"
+			n.TLS = ManagedTLS{Enabled: true, ServerName: p.RealitySNI, RealityPrivate: p.Secrets.Reality.Private, RealityShortID: p.Secrets.Reality.ShortID, HandshakeHost: host, HandshakePort: port}
+		}
+		if kind == "vmess" {
+			n.TLS.Enabled = p.VMessTLS
+			n.Transport = ManagedTransport{Type: "ws", Path: p.WSPath, Host: p.TLSSNI}
+		}
+		nodes = append(nodes, n)
+	}
+	return nodes
+}
+
 func MakeInbounds(p Profile, prefix string) []Object {
-	tls := Object{"enabled": true, "certificate_path": p.Certificate, "key_path": p.Key}
-	handshakeHost, handshakePort := p.HandshakeHost, p.HandshakePort
-	if handshakeHost == "" {
-		handshakeHost = p.RealitySNI
-	}
-	if handshakePort == 0 {
-		handshakePort = 443
-	}
-	s := p.Secrets
-	return []Object{
-		{"type": "vless", "tag": prefix + Tags["vless"], "listen": "::", "listen_port": p.Ports["vless"], "users": []Object{{"uuid": s.UUID["vless"], "flow": "xtls-rprx-vision"}}, "tls": Object{"enabled": true, "server_name": p.RealitySNI, "reality": Object{"enabled": true, "handshake": Object{"server": handshakeHost, "server_port": handshakePort}, "private_key": s.Reality.Private, "short_id": []string{s.Reality.ShortID}}}},
-		{"type": "vmess", "tag": prefix + Tags["vmess"], "listen": "::", "listen_port": p.Ports["vmess"], "users": []Object{{"uuid": s.UUID["vmess"], "alterId": 0}}, "transport": Object{"type": "ws", "path": p.WSPath, "max_early_data": 2048, "early_data_header_name": "Sec-WebSocket-Protocol"}, "tls": merge(tls, Object{"enabled": p.VMessTLS, "server_name": p.TLSSNI})},
-		{"type": "hysteria2", "tag": prefix + Tags["hysteria2"], "listen": "::", "listen_port": p.Ports["hysteria2"], "users": []Object{{"password": s.Passwords["hysteria2"]}}, "ignore_client_bandwidth": false, "tls": merge(tls, Object{"alpn": []string{"h3"}})},
-		{"type": "tuic", "tag": prefix + Tags["tuic"], "listen": "::", "listen_port": p.Ports["tuic"], "users": []Object{{"uuid": s.UUID["tuic"], "password": s.Passwords["tuic"]}}, "congestion_control": "bbr", "tls": merge(tls, Object{"alpn": []string{"h3"}})},
-		{"type": "anytls", "tag": prefix + Tags["anytls"], "listen": "::", "listen_port": p.Ports["anytls"], "users": []Object{{"password": s.Passwords["anytls"]}}, "tls": merge(tls)},
-	}
+	return (App{Nodes: MakeNodes(p, prefix)}).Inbounds()
 }
 
 func ServerConfig(inbounds []Object, routing map[string][]string, endpoints []Object, socksPort int) (Object, error) {

@@ -1,8 +1,8 @@
 # 兼容性与验证边界
 
-本版只接受新数据库 schema 13 / 备份格式 7，不迁移旧账户或管理接口。平台配置 schema 4 与数据库版本独立。Linux Debian/Ubuntu + systemd，amd64/arm64；Windows 用于开发与本机测试。数据目录由 root 独占，面板默认回环。
+本版只接受新数据库 schema 14 / 备份格式 7，不迁移旧账户或管理接口。平台配置 schema 4 与数据库版本独立。Linux Debian/Ubuntu + systemd，amd64/arm64；Windows 用于开发与本机测试。数据目录由 root 独占，面板默认回环。
 
-订阅配置 schema=5，不接受旧订阅配置。模板 version=1、平台 schema=4、数据库 schema=13 与备份容器 7 保持独立；同数据库版本中的旧订阅内容也会被拒绝。转换新增受控 SIP003、WS early-data、gRPC 参数、VLESS XHTTP 和 Hysteria2 地址规范化，按客户端/协议/传输/加密方式筛选。sing-box 1.14.4 不接受 XHTTP，相关输出或探测使用支持它的目标；未知 XHTTP extra 字段明确拒绝。
+订阅配置 schema=5，不接受旧订阅配置。模板 version=1、平台 schema=4、数据库 schema=14 与备份容器 7 保持独立；同数据库版本中的旧订阅内容也会被拒绝。转换新增受控 SIP003、WS early-data、gRPC 参数、VLESS XHTTP 和 Hysteria2 地址规范化，按客户端/协议/传输/加密方式筛选。sing-box 1.14.4 不接受 XHTTP，相关输出或探测使用支持它的目标；未知 XHTTP extra 字段明确拒绝。
 
 Release 标签使用 `vMAJOR.MINOR.PATCH`，主版本号与数据格式无绑定：v5.0.0 等正式标签可安装，但包内容必须满足当前平台约定。版本号变化不会自动迁移数据库。证书提供方仅接受 `acme` / `import`，旧 `certbot` 标记不兼容。
 

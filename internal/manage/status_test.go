@@ -15,8 +15,7 @@ func TestTextStatusUsesSeparateVPNPortsAndHidesSecrets(t *testing.T) {
 		Secrets: Secrets{UUID: map[string]string{"vless": "private-uuid", "vmess": "private-vmess"},
 			Passwords: map[string]string{"hysteria2": "private-password"}, Reality: Reality{Private: "private-reality-key"}},
 	}
-	app := App{Address: "203.0.113.10", Profile: profile, Inbounds: MakeInbounds(profile, ""),
-		Advanced: CoreSettings{Endpoints: []Object{{"private_key": "private-warp-key", "type": "wireguard", "tag": "warp-out"}}}, Routing: map[string][]string{"warp": {"example.net"}}}
+	app := App{Address: "203.0.113.10", Nodes: MakeNodes(profile, ""), Advanced: CoreSettings{Endpoints: []Object{{"private_key": "private-warp-key", "type": "wireguard", "tag": "warp-out"}}}, Routing: map[string][]string{"warp": {"example.net"}}, Country: profile.Country, Hopping: profile.Hopping, TUICPorts: profile.TUICPorts}
 	vpnProfile := profile
 	vpnProfile.Ports = map[string]int{"vless": 31001, "vmess": 31002, "hysteria2": 31003, "tuic": 31004, "anytls": 31005}
 	settings := VPNSettings{ActiveCountry: "JP", Profiles: map[string]Profile{"JP": vpnProfile}}
@@ -44,7 +43,7 @@ func TestTextStatusUsesSeparateVPNPortsAndHidesSecrets(t *testing.T) {
 func TestTextStatusRemainsAvailableWhenCoreIsMissing(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "app.json")
-	app := App{Address: "203.0.113.10\n\x1b[31m", Profile: Profile{RealitySNI: "example.com\r\u202e"}}
+	app := App{Address: "203.0.113.10\n\x1b[31m"}
 	if err := AtomicJSON(path, app); err != nil {
 		t.Fatal(err)
 	}

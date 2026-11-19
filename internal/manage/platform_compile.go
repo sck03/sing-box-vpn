@@ -132,7 +132,7 @@ func (s *PlatformService) buildConfig(ctx context.Context, c PlatformConfig, mod
 	for id, source := range prepared {
 		r.Sources[id] = source
 	}
-	files, _, _, err := compileSubscriptions(ctx, s.Root, s.Core, c.Subscriptions, r, local, mode, AccountService{Root: s.Root, Store: s.Accounts, Control: s.Store, Config: &c})
+	files, _, _, err := compileSubscriptions(ctx, s.Root, s.Core, c.Subscriptions, r, local, mode, AccountService{Root: s.Root, Core: s.Core, Store: s.Accounts, Control: s.Store, Config: &c})
 	if err != nil {
 		return nil, err
 	}

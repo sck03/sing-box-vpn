@@ -32,7 +32,7 @@ func appFixture(t *testing.T) (string, string, App) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	app := App{Name: "test", Address: "127.0.0.1", Profile: p, Inbounds: MakeInbounds(p, ""), Routing: map[string][]string{}, SocksPort: 40000}
+	app := App{Name: "test", Address: "127.0.0.1", Nodes: MakeNodes(p, ""), Routing: map[string][]string{}, SocksPort: 40000, Country: p.Country, Hopping: p.Hopping, TUICPorts: p.TUICPorts}
 	if err = CommitApp(context.Background(), root, core, &app); err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestTLSImportRejectsWrongDomainAndMissingFiles(t *testing.T) {
 	if err := EnsureCertificate(cert, key, "example.com"); err != nil {
 		t.Fatal(err)
 	}
-	app := App{Inbounds: []Object{{"type": "anytls"}}}
+	app := App{Nodes: fixtureNodes([]Object{{"type": "anytls"}})}
 	if err := mutateApp(&app, VPNSettings{}, "tls", []string{"anytls", cert, key, "other.example"}); err == nil {
 		t.Fatal("TLS import accepted a certificate that does not cover its SNI")
 	}
@@ -127,7 +127,7 @@ func TestTLSImportRejectsInvalidValidityPeriod(t *testing.T) {
 		if err := AtomicBytes(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0600); err != nil {
 			t.Fatal(err)
 		}
-		app := App{Inbounds: []Object{{"type": "anytls"}}}
+		app := App{Nodes: fixtureNodes([]Object{{"type": "anytls"}})}
 		if err := mutateApp(&app, VPNSettings{}, "tls", []string{"anytls", certPath, keyPath, "example.com"}); err == nil {
 			t.Fatal("expired or not-yet-valid certificate was accepted")
 		}
@@ -219,7 +219,7 @@ func TestInvalidClientDoesNotCommitAnyWorkingConfig(t *testing.T) {
 		before[name] = readBytes(t, filepath.Join(root, name))
 	}
 	bad := app
-	object(object(bad.Inbounds[0]["tls"])["reality"])["private_key"] = "invalid-private-key"
+	bad.Nodes[0].TLS.RealityPrivate = "invalid-private-key"
 	if err := CommitApp(context.Background(), root, core, &bad); err == nil {
 		t.Fatal("invalid client config was accepted")
 	}
@@ -231,7 +231,7 @@ func TestInvalidClientDoesNotCommitAnyWorkingConfig(t *testing.T) {
 }
 func TestHoppingAndMihomoManualGroup(t *testing.T) {
 	root, core, app := appFixture(t)
-	app.Profile.Hopping = []string{"31000:31100", "31200"}
+	app.Hopping = []string{"31000:31100", "31200"}
 	if err := CommitApp(context.Background(), root, core, &app); err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +292,7 @@ func TestPinsFollowIndividualProtocolCertificates(t *testing.T) {
 		t.Fatal(err)
 	}
 	cache := certificateCache{}
-	oldInfo, err := cache.get(app.Profile.Certificate)
+	oldInfo, err := cache.get(app.fixtureProfile().Certificate)
 	if err != nil {
 		t.Fatal(err)
 	}

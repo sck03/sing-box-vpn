@@ -97,7 +97,7 @@ func TestMultiportPersistsAndProducesScopedTUICLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings, _, err = loadVPN(root)
-	if err != nil || !reflect.DeepEqual(current.Profile.TUICPorts, []string{strconv.Itoa(normalPort)}) || !reflect.DeepEqual(settings.Profiles["JP"].TUICPorts, []string{strconv.Itoa(vpnPort)}) {
+	if err != nil || !reflect.DeepEqual(current.fixtureProfile().TUICPorts, []string{strconv.Itoa(normalPort)}) || !reflect.DeepEqual(settings.Profiles["JP"].TUICPorts, []string{strconv.Itoa(vpnPort)}) {
 		t.Fatal("scoped multiports were not persisted", err)
 	}
 	newPort, err := AvailablePort(used)
@@ -147,12 +147,12 @@ func TestPortConflictsDoNotCommit(t *testing.T) {
 		before[name] = readBytes(t, filepath.Join(root, name))
 	}
 	cases := [][]string{
-		{"multiport", "tuic", strconv.Itoa(app.Profile.Ports["vless"])},
+		{"multiport", "tuic", strconv.Itoa(app.fixtureProfile().Ports["vless"])},
 		{"multiport", "tuic", strconv.Itoa(settings.Profiles["JP"].Ports["tuic"])},
 		{"multiport", "tuic", strconv.Itoa(settings.Profiles["KR"].Ports["tuic"])},
 		{"hopping", strconv.Itoa(port)},
 		{"port", "tuic", strconv.Itoa(port)},
-		{"multiport", "tuic", strconv.Itoa(app.Profile.Ports["tuic"]), "--scope", vpngateScope},
+		{"multiport", "tuic", strconv.Itoa(app.fixtureProfile().Ports["tuic"]), "--scope", vpngateScope},
 	}
 	reserved := usedPorts(app, settings)
 	reserved[port] = true
@@ -197,7 +197,7 @@ func TestPortProbeRejectsLoopbackAndIPv6Listeners(t *testing.T) {
 }
 
 func TestAllocationAndSubscriptionRespectForwardRanges(t *testing.T) {
-	app := App{Profile: Profile{TUICPorts: []string{"20000:59998"}}}
+	app := App{TUICPorts: []string{"20000:59998"}}
 	ranges, err := usedPortRanges(app, VPNSettings{})
 	if err != nil {
 		t.Fatal(err)

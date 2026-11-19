@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"io"
-	"path/filepath"
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
-	"github.com/sck03/sing-box-vpn/internal/controlstore"
 )
 
 type AccountService struct {
@@ -36,15 +34,11 @@ func (r bindingRepository) RequireAccount(ctx context.Context, id string) error 
 	return err
 }
 
-func (s AccountService) openStore() (*accounting.Store, func(), error) {
-	if s.Store != nil {
-		return s.Store, func() {}, nil
+func (s AccountService) requireStore() (*accounting.Store, error) {
+	if s.Store == nil {
+		return nil, errors.New("account repository dependency is required")
 	}
-	store, err := accounting.Open(filepath.Join(s.Root, "control.db"))
-	if err != nil {
-		return nil, func() {}, err
-	}
-	return store, func() { _ = store.Close() }, nil
+	return s.Store, nil
 }
 
 func (s AccountService) Execute(ctx context.Context, c application.AccountCommand, out io.Writer) error {
@@ -56,11 +50,10 @@ func (s AccountService) Execute(ctx context.Context, c application.AccountComman
 	if c.Password != "" && (len(c.Password) < 16 || len(c.Password) > 128) {
 		return errors.New("custom password must contain 16–128 bytes")
 	}
-	store, closeStore, err := s.openStore()
+	store, err := s.requireStore()
 	if err != nil {
 		return err
 	}
-	defer closeStore()
 	s.Store = store
 	switch c.Operation {
 	case "bind":
@@ -109,12 +102,7 @@ func (s AccountService) configSnapshot(ctx context.Context) (PlatformConfig, err
 	{
 		store := s.Control
 		if store == nil {
-			opened, err := controlstore.Open(filepath.Join(s.Root, "control.db"))
-			if err != nil {
-				return PlatformConfig{}, err
-			}
-			defer opened.Close()
-			store = opened
+			return PlatformConfig{}, errors.New("configuration repository dependency is required")
 		}
 		data, err := store.AppliedConfig(ctx)
 		if err != nil {
@@ -140,5 +128,5 @@ func configuredEntries(c PlatformConfig, scope string) ([]ManagedNode, error) {
 		return nil, errors.New("VPNGate has no selected country")
 	}
 	p.Secrets = c.VPNSecrets[c.VPN.ActiveCountry]
-	return managedNodes(App{Profile: p, Inbounds: MakeInbounds(p, "vg-"+c.VPN.ActiveCountry+"-")})
+	return MakeNodes(p, "vg-"+c.VPN.ActiveCountry+"-"), nil
 }

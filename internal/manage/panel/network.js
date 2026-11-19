@@ -1,3 +1,4 @@
+/** @typedef {import("./contracts.js").ManagedNode} ManagedNode */
 import { api } from "./api.js";
 import { capabilities } from "./capabilities.js";
 import {
@@ -25,7 +26,46 @@ const nodeFields = (protocols) => [
   { key: "port", label: "监听端口", type: "number", min: 1, max: 65535 },
   { key: "disabled", label: "停用入站", type: "bool" },
   { key: "tls.server_name", label: "TLS / Reality SNI" },
-  { key: "tls.enabled", label: "启用 TLS", type: "bool" },
+  {
+    key: "tls.enabled",
+    label: "启用 TLS",
+    type: "bool",
+    visible: (v) => v.protocol === "vmess",
+  },
+  {
+    key: "tls.reality_private",
+    label: "Reality 私钥",
+    type: "password",
+    visible: (v) => v.protocol === "vless",
+  },
+  {
+    key: "tls.reality_short_id",
+    label: "Reality Short ID",
+    visible: (v) => v.protocol === "vless",
+  },
+  {
+    key: "flow",
+    label: "VLESS Flow",
+    type: "select",
+    options: [
+      ["", "无"],
+      ["xtls-rprx-vision", "Vision"],
+    ],
+    visible: (v) => v.protocol === "vless",
+  },
+  {
+    key: "transport.early_data",
+    label: "WebSocket Early Data（字节）",
+    type: "number",
+    min: 0,
+    max: 65535,
+    visible: (v) => v.protocol === "vmess",
+  },
+  {
+    key: "transport.early_data_header",
+    label: "Early Data 请求头",
+    visible: (v) => v.protocol === "vmess",
+  },
   {
     key: "tls.handshake_host",
     label: "Reality 握手域名",

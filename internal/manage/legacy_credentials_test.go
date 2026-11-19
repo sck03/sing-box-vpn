@@ -65,31 +65,21 @@ func changeCredentials(app *App, operation string, values []string) error {
 		}
 	}
 	matched := false
-	for _, in := range app.Inbounds {
-		if values[0] != "all" && in["type"] != values[0] {
+	for i := range app.Nodes {
+		n := &app.Nodes[i]
+		if kind != "all" && n.Protocol != kind {
 			continue
 		}
-		users := objects(in["users"])
-		if len(users) == 0 {
-			return errors.New("入口缺少用户凭据")
-		}
-		// Imported additional users keep their own identities when customizing
-		// the exported user; random reset retains the existing all-user behavior.
-		if custom {
-			users = users[:1]
-		}
-		for _, user := range users {
-			if _, ok := user["uuid"]; ok && (!custom || value != "") {
-				user["uuid"] = value
-				if !custom {
-					user["uuid"] = randomUUID()
-				}
+		if n.UUID != "" && (!custom || value != "") {
+			n.UUID = value
+			if !custom {
+				n.UUID = randomUUID()
 			}
-			if _, ok := user["password"]; ok && (!custom || password != "") {
-				user["password"] = password
-				if !custom {
-					user["password"] = randomSecret()
-				}
+		}
+		if n.Password != "" && (!custom || password != "") {
+			n.Password = password
+			if !custom {
+				n.Password = randomSecret()
 			}
 		}
 		matched = true
@@ -97,28 +87,5 @@ func changeCredentials(app *App, operation string, values []string) error {
 	if !matched {
 		return errors.New("未找到所选协议入口")
 	}
-	syncProfileSecrets(&app.Profile, app.Inbounds)
 	return nil
-}
-
-func syncProfileSecrets(profile *Profile, inbounds []Object) {
-	if profile.Secrets.UUID == nil {
-		profile.Secrets.UUID = map[string]string{}
-	}
-	if profile.Secrets.Passwords == nil {
-		profile.Secrets.Passwords = map[string]string{}
-	}
-	for _, in := range inbounds {
-		users := objects(in["users"])
-		if len(users) == 0 {
-			continue
-		}
-		kind := text(in["type"])
-		if value, ok := users[0]["uuid"]; ok {
-			profile.Secrets.UUID[kind] = text(value)
-		}
-		if value, ok := users[0]["password"]; ok {
-			profile.Secrets.Passwords[kind] = text(value)
-		}
-	}
 }

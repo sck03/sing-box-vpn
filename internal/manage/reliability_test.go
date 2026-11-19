@@ -29,7 +29,7 @@ func TestDisabledRequiredAccountDoesNotStopPlatform(t *testing.T) {
 	if err := s.Accounts.SaveAccount(t.Context(), a); err != nil {
 		t.Fatal(err)
 	}
-	if err := (AccountService{Root: root, Store: s.Accounts}).Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: a.ID, Scope: "normal"}, new(bytes.Buffer)); err != nil {
+	if err := (s.accountService()).Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: a.ID, Scope: "normal"}, new(bytes.Buffer)); err != nil {
 		t.Fatal(err)
 	}
 	c.Subscriptions = sub.Config{Version: sub.SchemaVersion,
@@ -202,10 +202,12 @@ func TestAccountDownloadsUseSharedClientCatalog(t *testing.T) {
 	// Plain VMess WS is common to every encoder and avoids pretending all
 	// applications can import pinned certificates or Reality fingerprints.
 	var inboundID string
-	for _, inbound := range app.Inbounds {
-		if text(inbound["type"]) == "vmess" {
-			delete(inbound, "tls")
-			inboundID = text(inbound["tag"])
+	for i := range app.Nodes {
+		if app.Nodes[i].Protocol == "vmess" {
+			app.Nodes[i].TLS.Enabled = false
+			app.Nodes[i].Transport.EarlyData = 0
+			app.Nodes[i].Transport.EarlyDataHeader = ""
+			inboundID = app.Nodes[i].ID
 			break
 		}
 	}

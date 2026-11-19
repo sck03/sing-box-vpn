@@ -2,7 +2,6 @@ package manage
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"net/http"
@@ -124,11 +123,7 @@ func matchesETag(header, tag string) bool {
 	return false
 }
 
-func subscriptionHandler(root string, stores ...*accounting.Store) http.Handler {
-	return subscriptionHandlerView(root, &subscriptionView{}, stores...)
-}
-
-func subscriptionHandlerView(root string, view *subscriptionView, stores ...*accounting.Store) http.Handler {
+func subscriptionHandlerView(root string, view *subscriptionView, store *accounting.Store) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet && request.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
@@ -143,16 +138,11 @@ func subscriptionHandlerView(root string, view *subscriptionView, stores ...*acc
 		status := http.StatusServiceUnavailable
 		var artifact sub.Artifact
 		var usage *sub.Usage
-		service := AccountService{Root: root}
-		if len(stores) > 0 {
-			service.Store = stores[0]
-		}
-		store, closeStore, err := service.openStore()
-		if err != nil {
-			http.Error(w, "subscription unavailable", 503)
+		if store == nil {
+			http.Error(w, "subscription repository unavailable", 503)
 			return
 		}
-		defer closeStore()
+		var err error
 		err = withStartupLock(request.Context(), root, func() error {
 			view.mu.Lock()
 			defer view.mu.Unlock()
@@ -220,19 +210,4 @@ func subscriptionHandlerView(root string, view *subscriptionView, stores ...*acc
 		}
 		http.ServeContent(w, request, parts[3], time.Time{}, bytes.NewReader(artifact.Data))
 	})
-}
-
-func subscriptionReadSnapshot(ctx context.Context, root string) (sub.Snapshot, error) {
-	var snapshot sub.Snapshot
-	err := withStartupLock(ctx, root, func() error {
-		found, err := ReadJSON(filepath.Join(root, subscriptionsSnapshot), &snapshot)
-		if err != nil {
-			return err
-		}
-		if !found {
-			return errors.New("no published subscriptions")
-		}
-		return nil
-	})
-	return snapshot, err
 }

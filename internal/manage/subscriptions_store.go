@@ -90,8 +90,11 @@ func captureSubscriptionSources(ctx context.Context, root string, c sub.Config, 
 	for _, source := range c.Sources {
 		if source.Kind == "account" {
 			if service.Store == nil {
+				if len(services) > 0 {
+					return c, nil, nil, errors.New("account source requires an injected repository")
+				}
 				var err error
-				service.Store, closeStore, err = service.openStore()
+				service, closeStore, err = openAccountSource(root)
 				if err != nil {
 					return c, nil, nil, err
 				}

@@ -11,7 +11,7 @@ func writeStatusText(output io.Writer, app App, settings VPNSettings, scope, ver
 	var out bytes.Buffer
 	fmt.Fprintf(&out, " 当前 Sing-box 正式版内核：%s\n", TerminalText(version))
 	fmt.Fprintf(&out, " 节点入口地址：%s\n", TerminalText(app.Address))
-	profile, inbounds := app.Profile, app.Inbounds
+	profile, inbounds := app.fixtureProfile(), app.Inbounds()
 	if scope == vpngateScope {
 		var exists bool
 		profile, exists = settings.Profiles[settings.ActiveCountry]

@@ -49,11 +49,10 @@ type AccountExport struct {
 
 func (s AccountService) exportInputs(ctx context.Context, command application.AccountCommand) (accountExportInputs, error) {
 	var result accountExportInputs
-	store, closeStore, err := s.openStore()
+	store, err := s.requireStore()
 	if err != nil {
 		return result, err
 	}
-	defer closeStore()
 	err = withStartupLock(ctx, s.Root, func() error {
 		usage, err := store.DownloadAccount(ctx, command.ID, time.Now())
 		if err != nil {
@@ -189,10 +188,11 @@ func (s AccountService) compileAccount(ctx context.Context, inputs accountExport
 	}
 	data, err := json.Marshal(struct {
 		Compiler int
+		Parser   int
 		Inputs   string
 		Template sub.Template
 		Skip     bool
-	}{sub.CompilerVersion, inputs.digest, template, skip})
+	}{sub.CompilerVersion, sub.ParserVersion, inputs.digest, template, skip})
 	if err != nil {
 		return accountCompilation{}, err
 	}
@@ -201,6 +201,9 @@ func (s AccountService) compileAccount(ctx context.Context, inputs accountExport
 		value := accountCompilation{option: option}
 		if err == nil {
 			value.artifact, _, err = plan.Render()
+			if err == nil && parserValidatedClient(template.Client) {
+				value.option.Validation, err = validateSubscriptionArtifact(ctx, s.Root, s.Core, template, value.artifact)
+			}
 		}
 		if err != nil {
 			value.option.Available = false
@@ -211,7 +214,7 @@ func (s AccountService) compileAccount(ctx context.Context, inputs accountExport
 		return value, err
 	})
 	compiled.option.Diagnostics = slices.Clone(compiled.option.Diagnostics)
-	if err == nil {
+	if err == nil && !parserValidatedClient(template.Client) {
 		compiled.option.Validation, err = validateSubscriptionArtifact(ctx, s.Root, s.Core, template, compiled.artifact)
 		if err != nil {
 			compiled.option.Available = false

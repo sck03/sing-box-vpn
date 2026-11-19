@@ -7,133 +7,71 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/sck03/sing-box-vpn/internal/serverconfig"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
-// ManagedNode is the authoritative on-disk server node. Profile and sing-box's
-// dynamic objects are reconstructed at the management/core boundaries only.
-type ManagedNode struct {
-	ID        string        `json:"id"`
-	Protocol  string        `json:"protocol"`
-	Port      int           `json:"port"`
-	Disabled  bool          `json:"disabled"`
-	UUID      string        `json:"uuid,omitempty"`
-	Password  string        `json:"password,omitempty"`
-	Flow      string        `json:"flow,omitempty"`
-	TLS       ManagedTLS    `json:"tls"`
-	Transport sub.Transport `json:"transport,omitempty"`
-}
+const AppSchema = 3
 
-type ManagedTLS struct {
-	Enabled        bool   `json:"enabled"`
-	ServerName     string `json:"server_name,omitempty"`
-	Certificate    string `json:"certificate,omitempty"`
-	Key            string `json:"key,omitempty"`
-	RealityPrivate string `json:"reality_private,omitempty"`
-	RealityShortID string `json:"reality_short_id,omitempty"`
-	HandshakeHost  string `json:"handshake_host,omitempty"`
-	HandshakePort  int    `json:"handshake_port,omitempty"`
-}
+type ManagedNode serverconfig.Node
+type ManagedTLS = serverconfig.TLS
+type ManagedTransport = serverconfig.Transport
 
-type appDocument struct {
-	Schema     int                 `json:"schema"`
-	Version    string              `json:"version"`
-	Name       string              `json:"name"`
-	Address    string              `json:"address"`
-	Nodes      []ManagedNode       `json:"nodes"`
-	Country    string              `json:"country,omitempty"`
-	Hopping    []string            `json:"hopping,omitempty"`
-	TUICPorts  []string            `json:"tuic_ports,omitempty"`
-	Routing    map[string][]string `json:"routing"`
-	SocksPort  int                 `json:"socks_port"`
-	CDNAddress string              `json:"cdn_address,omitempty"`
-	Argo       Object              `json:"argo,omitempty"`
-	Advanced   CoreSettings        `json:"advanced"`
-}
+func (n ManagedNode) inbound() Object { return serverconfig.Node(n).Inbound() }
+func (n ManagedNode) Validate() error { return serverconfig.Node(n).Validate() }
 
 func managedNodes(app App) ([]ManagedNode, error) {
-	nodes := make([]ManagedNode, 0, len(app.Inbounds))
-	for _, in := range app.Inbounds {
-		kind := text(in["type"])
-		users := objects(in["users"])
-		if len(users) > 1 {
-			return nil, errors.New("managed node requires exactly one user")
-		}
-		if len(users) == 0 {
-			users = []Object{{}}
-		}
-		t := object(in["tls"])
-		r := object(t["reality"])
-		hs := object(r["handshake"])
-		short := stringsValue(r["short_id"])
-		sid := ""
-		if len(short) > 0 {
-			sid = short[0]
-		}
-		n := ManagedNode{ID: text(in["tag"]), Protocol: kind, Port: number(in["listen_port"]), UUID: text(users[0]["uuid"]), Password: text(users[0]["password"]), Flow: text(users[0]["flow"]), TLS: ManagedTLS{Enabled: t["enabled"] == true, ServerName: text(t["server_name"]), Certificate: text(t["certificate_path"]), Key: text(t["key_path"]), RealityPrivate: text(r["private_key"]), RealityShortID: sid, HandshakeHost: text(hs["server"]), HandshakePort: number(hs["server_port"])}}
-		n.Disabled = in["_disabled"] == true
-		if n.TLS.ServerName == "" {
-			if kind == "vless" {
-				n.TLS.ServerName = app.Profile.RealitySNI
-			} else {
-				n.TLS.ServerName = app.Profile.TLSSNI
-			}
-		}
-		if kind == "vmess" {
-			transport := object(in["transport"])
-			n.Transport = sub.Transport{Type: text(transport["type"]), Path: text(transport["path"]), Host: webSocketHost(transport, n.TLS.ServerName)}
-			if n.Transport.Type == "ws" {
-				if err := validateWebSocketPath(n.Transport.Path); err != nil {
-					return nil, err
-				}
-			}
-		}
-		nodes = append(nodes, n)
+	if len(app.Nodes) > 256 {
+		return nil, errors.New("at most 256 inbounds")
 	}
-	return nodes, nil
+	return app.Nodes, nil
 }
 
-func (n ManagedNode) inbound() Object {
-	in := Object{"type": n.Protocol, "tag": n.ID, "listen": "::", "listen_port": n.Port}
-	if n.Disabled {
-		in["_disabled"] = true
+// Inbounds returns a detached core projection, never the authoritative state.
+func (a App) Inbounds() []Object {
+	inbounds := make([]Object, 0, len(a.Nodes))
+	for _, n := range a.Nodes {
+		inbounds = append(inbounds, n.inbound())
 	}
-	user := Object{}
-	if n.UUID != "" {
-		user["uuid"] = n.UUID
-	}
-	if n.Password != "" {
-		user["password"] = n.Password
-	}
-	if n.Flow != "" {
-		user["flow"] = n.Flow
-	}
-	in["users"] = []Object{user}
-	t := Object{"enabled": n.TLS.Enabled, "server_name": n.TLS.ServerName}
-	in["tls"] = t
-	if n.TLS.RealityPrivate != "" {
-		t["reality"] = Object{"enabled": true, "private_key": n.TLS.RealityPrivate, "short_id": []string{n.TLS.RealityShortID}, "handshake": Object{"server": n.TLS.HandshakeHost, "server_port": n.TLS.HandshakePort}}
-	} else {
-		t["certificate_path"], t["key_path"] = n.TLS.Certificate, n.TLS.Key
-	}
-	if n.Protocol == "vmess" {
-		user["alterId"] = 0
-		in["transport"] = Object{"type": "ws", "path": n.Transport.Path, "headers": Object{"Host": n.Transport.Host}, "max_early_data": 2048, "early_data_header_name": "Sec-WebSocket-Protocol"}
-	}
-	if n.Protocol == "hysteria2" || n.Protocol == "tuic" {
-		t["alpn"] = []string{"h3"}
-	}
-	if n.Protocol == "hysteria2" {
-		in["ignore_client_bandwidth"] = false
-	}
-	if n.Protocol == "tuic" {
-		in["congestion_control"] = "bbr"
-	}
-	return in
+	return inbounds
 }
 
+// profile supplies port allocation metadata for the shared VPNGate allocator.
+// Credentials and TLS settings are never reconstructed from this view.
+func (a App) profile() Profile {
+	p := Profile{Ports: map[string]int{}, Country: a.Country, Hopping: a.Hopping, TUICPorts: a.TUICPorts}
+	for _, n := range a.Nodes {
+		if p.Ports[n.Protocol] == 0 {
+			p.Ports[n.Protocol] = n.Port
+		}
+	}
+	return p
+}
+
+func (a App) MarshalJSON() ([]byte, error) {
+	type document App
+	return json.Marshal(struct {
+		Schema int `json:"schema"`
+		document
+	}{AppSchema, document(a)})
+}
+func (a *App) UnmarshalJSON(data []byte) error {
+	type document App
+	var d struct {
+		Schema int `json:"schema"`
+		document
+	}
+	if err := strictSubscriptionJSON(data, &d); err != nil {
+		return err
+	}
+	if d.Schema != AppSchema {
+		return errors.New("unsupported app schema; use a fresh configuration directory")
+	}
+	*a = App(d.document)
+	return nil
+}
 func (n ManagedNode) subscriptionNode(address, name, scope string, ports []string, cache certificateCache) (sub.Node, error) {
-	node := sub.Node{ID: scope + "-" + n.Protocol, SourceID: scope, Name: name, Gateway: scope == vpngateScope, Protocol: n.Protocol, Server: address, Port: n.Port, UUID: n.UUID, Password: n.Password, Flow: n.Flow, Transport: n.Transport, TLS: sub.TLS{Enabled: n.TLS.Enabled, ServerName: n.TLS.ServerName}}
+	node := sub.Node{ID: scope + "-" + n.Protocol, SourceID: scope, Name: name, Gateway: scope == vpngateScope, Protocol: n.Protocol, Server: address, Port: n.Port, UUID: n.UUID, Password: n.Password, Flow: n.Flow, Transport: sub.Transport{Type: n.Transport.Type, Path: n.Transport.Path, Host: n.Transport.Host, EarlyData: n.Transport.EarlyData, EarlyDataHeader: n.Transport.EarlyDataHeader}, TLS: sub.TLS{Enabled: n.TLS.Enabled, ServerName: n.TLS.ServerName}}
 	if n.ID != Tags[n.Protocol] && !strings.HasPrefix(n.ID, "vg-") {
 		node.ID = scope + "-" + n.ID
 	}
@@ -172,62 +110,4 @@ func (n ManagedNode) subscriptionNode(address, name, scope string, ports []strin
 		node.Cipher = "auto"
 	}
 	return node, node.Validate()
-}
-
-func (a App) MarshalJSON() ([]byte, error) {
-	nodes, err := managedNodes(a)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(appDocument{Schema: 2, Version: a.Version, Name: a.Name, Address: a.Address, Nodes: nodes, Country: a.Profile.Country, Hopping: a.Profile.Hopping, TUICPorts: a.Profile.TUICPorts, Routing: a.Routing, SocksPort: a.SocksPort, CDNAddress: a.CDNAddress, Argo: a.Argo, Advanced: a.Advanced})
-}
-
-func (a *App) UnmarshalJSON(data []byte) error {
-	var d appDocument
-	if err := strictSubscriptionJSON(data, &d); err != nil {
-		return err
-	}
-	if d.Schema != 2 {
-		return errors.New("unsupported app schema; install into a new configuration directory")
-	}
-	app := App{Version: d.Version, Name: d.Name, Address: d.Address, Routing: d.Routing, SocksPort: d.SocksPort, CDNAddress: d.CDNAddress, Argo: d.Argo, Advanced: d.Advanced}
-	p := Profile{Ports: map[string]int{}, Secrets: Secrets{UUID: map[string]string{}, Passwords: map[string]string{}}, Country: d.Country, Hopping: d.Hopping, TUICPorts: d.TUICPorts}
-	seen := map[string]bool{}
-	if len(d.Nodes) > 256 {
-		return errors.New("at most 256 inbounds")
-	}
-	for _, n := range d.Nodes {
-		if Labels[n.Protocol] == "" || seen[n.ID] || n.Port < 1 || n.Port > 65535 {
-			return errors.New("invalid or duplicate managed node")
-		}
-		seen[n.ID] = true
-		if p.Ports[n.Protocol] == 0 {
-			p.Ports[n.Protocol] = n.Port
-		}
-		if n.UUID != "" {
-			p.Secrets.UUID[n.Protocol] = n.UUID
-		}
-		if n.Password != "" {
-			p.Secrets.Passwords[n.Protocol] = n.Password
-		}
-		if n.Protocol == "vless" {
-			key, err := base64.RawURLEncoding.DecodeString(n.TLS.RealityPrivate)
-			if err != nil {
-				return err
-			}
-			private, err := ecdh.X25519().NewPrivateKey(key)
-			if err != nil {
-				return err
-			}
-			p.Secrets.Reality = Reality{Private: n.TLS.RealityPrivate, Public: base64.RawURLEncoding.EncodeToString(private.PublicKey().Bytes()), ShortID: n.TLS.RealityShortID}
-			p.RealitySNI, p.HandshakeHost, p.HandshakePort = n.TLS.ServerName, n.TLS.HandshakeHost, n.TLS.HandshakePort
-		}
-		if n.Protocol == "vmess" {
-			p.Certificate, p.Key, p.TLSSNI, p.VMessTLS, p.WSPath = n.TLS.Certificate, n.TLS.Key, n.TLS.ServerName, n.TLS.Enabled, n.Transport.Path
-		}
-		app.Inbounds = append(app.Inbounds, n.inbound())
-	}
-	app.Profile = p
-	*a = app
-	return nil
 }

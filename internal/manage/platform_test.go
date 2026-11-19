@@ -16,7 +16,7 @@ import (
 )
 
 func TestDeploymentPlanPreservesStoppedAndUnaffected(t *testing.T) {
-	old := PlatformConfig{App: App{Inbounds: []Object{}}, Argo: TunnelSettings{Mode: "off"}}
+	old := PlatformConfig{App: App{Nodes: []ManagedNode{}}, Argo: TunnelSettings{Mode: "off"}}
 	c := old
 	c.Listener.Enabled = true
 	plan := deploymentPlan(c, old, []string{"sb-core"})
@@ -136,7 +136,7 @@ func TestAccountSourceUsesCandidatePublishingAddress(t *testing.T) {
 	root, core, _ := appFixture(t)
 	s, c, _ := platformFixture(t, root, core)
 	ctx := t.Context()
-	service := AccountService{Root: root}
+	service := s.accountService()
 	if e := s.Accounts.SaveAccount(ctx, domain.Account{ID: "a", Name: "A"}); e != nil {
 		t.Fatal(e)
 	}

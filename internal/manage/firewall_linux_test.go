@@ -70,8 +70,8 @@ func TestLinuxMultiportFirewall(t *testing.T) {
 		}
 		return p
 	}
-	app := App{Profile: profile(20000, []string{"31000:31002"}, []string{"31100", "31110:31112"}), SocksPort: 40000}
-	app.Inbounds = MakeInbounds(app.Profile, "")
+	app := fixtureApp(profile(20000, []string{"31000:31002"}, []string{"31100", "31110:31112"}))
+	app.SocksPort = 40000
 	settings := VPNSettings{ActiveCountry: "JP", ProxyPort: 7928, Profiles: map[string]Profile{
 		"JP": profile(22000, []string{"32000:32002"}, []string{"32100"}),
 		"KR": profile(24000, []string{"34000"}, []string{"34100"}),
@@ -141,7 +141,7 @@ func TestLinuxMultiportFirewall(t *testing.T) {
 	for _, ports := range [][2]int{{31000, 20002}, {31002, 20002}, {31100, 20003}, {31112, 20003}, {32002, 22002}, {32100, 22003}, {34100, 0}, {33333, 0}} {
 		probe(ports[0], ports[1])
 	}
-	app.Profile.TUICPorts = nil
+	app.TUICPorts = nil
 	jp := settings.Profiles["JP"]
 	jp.TUICPorts = nil
 	settings.Profiles["JP"] = jp

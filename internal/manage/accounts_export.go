@@ -12,11 +12,10 @@ import (
 // accountNodes is shared by direct downloads, account subscription sources and
 // previews. Callers own the publication lock; this function never acquires it.
 func (s AccountService) accountNodes(ctx context.Context, id, scope string, tuicPort int) ([]sub.Node, error) {
-	store, closeStore, err := s.openStore()
+	store, err := s.requireStore()
 	if err != nil {
 		return nil, err
 	}
-	defer closeStore()
 	usage, err := store.DownloadAccount(ctx, id, time.Now())
 	if err != nil {
 		return nil, err
@@ -49,7 +48,7 @@ func accountNodes(ctx context.Context, store *accounting.Store, config PlatformC
 		if err != nil {
 			return nil, err
 		}
-		profile := app.Profile
+		profile := app.profile()
 		if runtime == vpngateScope {
 			profile = settings.Profiles[settings.ActiveCountry]
 		}

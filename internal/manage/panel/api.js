@@ -1,12 +1,30 @@
+/** @typedef {import("./contracts.js").APIError} ErrorDetail */
+export class RequestError extends Error {
+  /** @param {string} message @param {number} status @param {ErrorDetail} [detail] */
+  constructor(message, status, detail) {
+    super(message);
+    this.name = "RequestError";
+    this.status = status;
+    this.code = detail?.code || "http_error";
+    this.field = detail?.field;
+    this.retryable = detail?.retryable === true;
+  }
+}
 let csrf = "";
 let sessionGeneration = 0;
 let sessionRequests = new AbortController();
+/** @param {string | null | undefined} value */
 export function setCSRF(value) {
   sessionRequests.abort();
   sessionRequests = new AbortController();
   sessionGeneration++;
   csrf = value || "";
 }
+/**
+ * @param {string} path
+ * @param {unknown} [body]
+ * @param {{blob?: boolean, signal?: AbortSignal, timeout?: number}} [options]
+ */
 export async function api(
   path,
   body,
@@ -39,10 +57,16 @@ export async function api(
   };
   stale();
   if (!response.ok) {
-    const error = new Error(
-      (await response.text()).trim() || `HTTP ${response.status}`,
+    const text = (await response.text()).trim();
+    let detail;
+    try {
+      detail = JSON.parse(text).error;
+    } catch {}
+    const error = new RequestError(
+      detail?.message || text || `HTTP ${response.status}`,
+      response.status,
+      detail,
     );
-    error.status = response.status;
     stale();
     throw error;
   }
@@ -50,6 +74,7 @@ export async function api(
   stale();
   return value;
 }
+/** @param {Blob} blob @param {string} name */
 export function download(blob, name) {
   const url = URL.createObjectURL(blob),
     link = document.createElement("a");
@@ -58,6 +83,7 @@ export function download(blob, name) {
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
+/** @param {File} file @param {string} password @param {number} [revision] */
 export function restoreForm(file, password, revision) {
   if (file.size > 96 * 1024 * 1024) throw new Error("备份文件超过 96 MiB");
   const form = new FormData();

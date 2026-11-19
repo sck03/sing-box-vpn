@@ -45,8 +45,8 @@ func TestCertificateMaterialValidation(t *testing.T) {
 func TestCertificateProvidersRejectLegacy(t *testing.T) {
 	root, core, _ := appFixture(t)
 	_, config, _ := platformFixture(t, root, core)
-	config.Certificates = []CertificateAsset{{ID: "certificate", Domain: config.App.Profile.TLSSNI,
-		Certificate: config.App.Profile.Certificate, Key: config.App.Profile.Key, Email: "test@example.test"}}
+	config.Certificates = []CertificateAsset{{ID: "certificate", Domain: config.App.fixtureProfile().TLSSNI,
+		Certificate: config.App.fixtureProfile().Certificate, Key: config.App.fixtureProfile().Key, Email: "test@example.test"}}
 	for _, provider := range []string{"acme", "import"} {
 		config.Certificates[0].Provider = provider
 		if err := config.Validate(); err != nil {

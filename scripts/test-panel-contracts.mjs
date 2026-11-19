@@ -24,9 +24,8 @@ globalThis.fetch = async (path) => ({
 });
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const { formDialog, table } = await import("../internal/manage/panel/ui.js");
-const { validatePassword } = await import(
-  "../internal/manage/panel/capabilities.js"
-);
+const { validatePassword } =
+  await import("../internal/manage/panel/capabilities.js");
 assert.doesNotThrow(() =>
   validatePassword("一二三四五六", capabilitiesFixture.password_bytes),
 );
@@ -50,9 +49,8 @@ assert.equal(
   null,
 );
 
-const { gatewayFields } = await import(
-  "../internal/manage/panel/network-fields.js"
-);
+const { gatewayFields } =
+  await import("../internal/manage/panel/network-fields.js");
 formDialog(
   "网关",
   gatewayFields(capabilitiesFixture.gateway.limits),
@@ -66,9 +64,8 @@ const connections = document.querySelector('[aria-label="最大连接数"]');
 connections.value = "2048";
 assert.equal(connections.checkValidity(), false);
 
-const { outboundFields, normalizeOutbound } = await import(
-  "../internal/manage/panel/outbound-fields.js"
-);
+const { outboundFields, normalizeOutbound } =
+  await import("../internal/manage/panel/outbound-fields.js");
 let submitted;
 formDialog(
   "出站",
@@ -182,9 +179,8 @@ const panel = document.createElement("div");
 panel.append(...operator);
 assert(panel.textContent.includes("换 IP"));
 assert(!panel.textContent.includes("选择 / 新增国家"));
-const { subscriptionStatus } = await import(
-  "../internal/manage/panel/subscription-status.js"
-);
+const { subscriptionStatus } =
+  await import("../internal/manage/panel/subscription-status.js");
 const activity = await subscriptionStatus({
   request: async () => ({
     resources: [
@@ -212,9 +208,8 @@ assert(activity.textContent.includes("最后成功"));
 console.log(
   "Panel contract checks passed: UTF-8 passwords, shared gateway limits, protocol fields, workspace state, mobile sorting, usage focus, operator controls.",
 );
-const { navigation, markNavigation } = await import(
-  "../internal/manage/panel/navigation.js"
-);
+const { navigation, markNavigation } =
+  await import("../internal/manage/panel/navigation.js");
 const nav = document.createElement("nav");
 nav.append(...navigation("admin", () => {}, "overview"));
 document.body.append(nav);
@@ -313,9 +308,8 @@ assert.equal(
 );
 assert.match(document.querySelector("dialog").textContent, /重启/);
 // Both public listeners use the same TLS/proxy contract.
-const { accessFields, accessOptions, accessValue } = await import(
-  "../internal/manage/panel/public-access-fields.js"
-);
+const { accessFields, accessOptions, accessValue } =
+  await import("../internal/manage/panel/public-access-fields.js");
 const certificateAssets = [
   {
     id: "shared",
@@ -360,9 +354,8 @@ assert.deepEqual(
     trusted_proxy: [],
   },
 );
-const { tasksCard, taskDetails, taskStage } = await import(
-  "../internal/manage/panel/tasks.js"
-);
+const { tasksCard, taskDetails, taskStage } =
+  await import("../internal/manage/panel/tasks.js");
 assert.equal(
   taskStage({ state: "failed", phase: "executing" }),
   "失败于：执行中",
@@ -424,9 +417,8 @@ assert.deepEqual(maintenanceCalls.pop(), {
   path: "/api/tasks/delete",
   body: { id: 1 },
 });
-const { historyControls, journalCard } = await import(
-  "../internal/manage/panel/log-maintenance.js"
-);
+const { historyControls, journalCard } =
+  await import("../internal/manage/panel/log-maintenance.js");
 const retention = await historyControls(historyContext);
 [...retention.querySelectorAll("button")]
   .find((b) => b.textContent === "清理已处理")
@@ -490,9 +482,8 @@ assert.equal(switched.obfs, undefined);
 assert.equal(switched.server_ports, undefined);
 assert.equal(switched.tls, undefined);
 
-const { templateFields, normalizeTemplate } = await import(
-  "../internal/manage/panel/clients.js"
-);
+const { templateFields, normalizeTemplate } =
+  await import("../internal/manage/panel/clients.js");
 const catalog = {
   mihomo: {
     label: "Mihomo",
@@ -533,9 +524,8 @@ assert.equal(
   "unrelated edit replaced inherited DNS policy",
 );
 
-const { templateResources } = await import(
-  "../internal/manage/panel/subscription-fields.js"
-);
+const { templateResources } =
+  await import("../internal/manage/panel/subscription-fields.js");
 template.groups = [];
 template.providers = [];
 template.rules = [
@@ -549,6 +539,9 @@ const resources = templateResources(
   () => resourceChanges++,
 );
 document.querySelector("#content").replaceChildren(resources);
+[...resources.querySelectorAll("button")]
+  .find((b) => b.textContent.startsWith("本地规则 ·"))
+  .click();
 [...resources.querySelectorAll("button")]
   .find((b) => b.textContent === "↓")
   .click();
