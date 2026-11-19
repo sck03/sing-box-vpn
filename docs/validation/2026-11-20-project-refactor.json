@@ -95,6 +95,20 @@
     {
       "command": "bash -n; shellcheck --severity=warning; scripts/test-program-upgrade.sh; scripts/test-install-ownership.sh; scripts/test-installer.sh",
       "result": "passed"
+    },
+    {
+      "command": "Fresh release sb.sh install; scripts/test-platform-linux.py; scripts/test-access-maintenance-linux.py",
+      "result": "passed",
+      "evidence": ".test/refactor-linux-logs/install.log",
+      "scope": "New data directory and systemd deployment; independent account export/QR/grants; stopped-state preservation; failed application rollback; live certificate replacement; independent subscription TLS; panel listener/TLS restart and rollback; task retention and project journal cleanup.",
+      "fixture_notes": "An initial isolated-root attempt encountered the preceding disposable installation's owned firewall chains. The old manager removed those chains before the successful retry. After acceptance, the preceding VM installation, its firewall and active services were restored."
+    },
+    {
+      "command": "SBVPN_REQUIRE_CLIENT_CHECK=1 RUN_UDP_IDLE_TESTS=1 go test -race -timeout=25m -count=1 -v ./...",
+      "result": "passed on GitHub Actions",
+      "commit": "1ef37c41c5a3f377f49ed05111576b5db4515579",
+      "run_id": 44586448270,
+      "scope": "Complete Go race suite and real TCP/UDP protocol matrix. The duplicate local QEMU race compilation was stopped after this exact pushed-code check passed. Remaining workflow checks are tracked by the linked repository workflow rather than inferred from this one successful step."
     }
   ],
   "benchmarks": {
