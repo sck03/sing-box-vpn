@@ -131,6 +131,8 @@ CI 的独立下载验证和全新安装步骤均显式传递该只读令牌；�
 
 服务单元生成器测试已移至 internal/hostservice/platform_test.go，直接验证生产 renderer；删除了 service-recovery.sh 和只验证该复制夹具的测试。GitHub 全量 race 步骤强制要求 Mihomo validator，避免核心检查被静默跳过。前端仍是无构建步骤的原生模块，新高级表单与主题样式由 npm test 和隔离浏览器脚本验证。
 
+Linux systemd 恢复验收也直接使用 `hostservice.PlatformUnits`，仅将主进程替换为测试 helper，并将防火墙命令包装到隔离命名空间；重启、启动前恢复和限速策略均来自生产单元。Windows 的 `go test ./...` 不编译 `//go:build linux` 文件，交付前另行交叉编译 Linux 全部测试：设置 `GOOS=linux`、`CGO_ENABLED=0`，运行 `go test -exec <仅返回成功的本机程序> -run '^$' ./...`。该检查只证明编译成功，真实执行由 Linux CI 完成。
+
 真实 HTTP 测试会校验权益改名、实际到期字段、额度与次数拒绝、归档 revision 冲突以及归档筛选。完成 `node scripts/test-panel-api.mjs` 后，在同一临时面板上运行 `python scripts/test-panel-browser.py`。沿用 `PANEL_TEST_URL` 和测试管理员环境变量，需要 Python Playwright 和 Chromium。通过 `CHROME_BINARY` 可指定已有 Chrome 可执行文件。该脚本使用真实鼠标、键盘和触屏事件，并验证 390 × 844 视口中首条权益的位置。
 
 共用启动器支持 `PANEL_BROWSER_TEST=1 node scripts/test-panel-local.mjs` 自动续跑浏览器验收；`PYTHON_BINARY` 可指定开发 Python，`PANEL_TEST_SCREENSHOT_DIR` 保存桌面/手机及新增设置页面截图。Linux 公网访问专项为 `sudo env RUN_ACCESS_MAINTENANCE_TESTS=1 SB_TEST_ROOT=/etc/s-box SB_TEST_PASSWORD=... python3 scripts/test-access-maintenance-linux.py`，仅在可丢弃 VM 执行：检查内置订阅 TLS、面板重启/回滚、任务处理/删除/保留以及项目日志清理不会影响全局日志。HTTP 切换到 HTTPS 使用不同 Cookie 名称，客户端需重新登录。此专项已接入全新安装 CI。

@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/sck03/sing-box-vpn/internal/hostservice"
 )
 
 func TestLinuxServiceStartupRecovery(t *testing.T) {
@@ -56,7 +58,7 @@ func TestLinuxServiceStartupRecovery(t *testing.T) {
 	}
 	interrupt()
 	// Run only the firewall operation inside an isolated namespace; service
-	// startup still exercises the real manager, recovery lock and systemd sandbox.
+	// startup still exercises the real manager, recovery lock and production unit policy.
 	wrapper := filepath.Join(root, "startup-manager")
 	quotedManager := "'" + strings.ReplaceAll(manager, "'", "'\"'\"'") + "'"
 	source := fmt.Sprintf("#!/bin/sh\nexec ip netns exec %s %s \"$@\"\n", namespace, quotedManager)
@@ -69,7 +71,20 @@ func TestLinuxServiceStartupRecovery(t *testing.T) {
 	}
 	unitDirectory := "/run/systemd/system"
 	unitPath := filepath.Join(unitDirectory, name+".service")
-	unit := fmt.Sprintf("[Unit]\nStartLimitIntervalSec=1h\nStartLimitBurst=1\n[Service]\nExecStart=%s -test.run=^TestServiceRecoveryHelper$\nEnvironment=SBVPN_SERVICE_HELPER=1 SBVPN_SERVICE_ROOT=%s\nRestart=no\nProtectSystem=strict\nReadOnlyPaths=%s\nNoNewPrivileges=true\n", strconv.Quote(binary), root, root)
+	units, err := hostservice.PlatformUnits(root, binary, manager)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(units["sb-core.service"], "\n")
+	for i, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "ExecStart="):
+			lines[i] = fmt.Sprintf("ExecStart=%s -test.run=^TestServiceRecoveryHelper$\nEnvironment=SBVPN_SERVICE_HELPER=1 SBVPN_SERVICE_ROOT=%s", strconv.Quote(binary), strconv.Quote(root))
+		case strings.HasPrefix(line, "ExecStartPre="):
+			lines[i] = strings.Replace(line, "/usr/local/bin/yg-vpngate", strconv.Quote(wrapper), 1)
+		}
+	}
+	unit := strings.Join(lines, "\n")
 	if err := os.WriteFile(unitPath, []byte(unit), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -77,12 +92,8 @@ func TestLinuxServiceStartupRecovery(t *testing.T) {
 		_ = exec.Command("systemctl", "stop", name+".service").Run()
 		_ = exec.Command("systemctl", "reset-failed", name+".service").Run()
 		_ = os.Remove(unitPath)
-		directory := unitPath + ".d"
-		_ = os.Remove(filepath.Join(directory, "10-sb-vpn-recovery.conf"))
-		_ = os.Remove(directory)
 		_ = exec.Command("systemctl", "daemon-reload").Run()
 	})
-	serviceScript(t, unitDirectory, root, wrapper, "write_service_recovery \"$SB_ROOT\" "+name)
 	run("systemctl", "daemon-reload")
 	run("systemctl", "start", name+".service")
 	execute := func(c context.Context, binary string, args ...string) ([]byte, error) {
@@ -137,7 +148,7 @@ func TestLinuxServiceStartupRecovery(t *testing.T) {
 	}
 	if !restarted {
 		t.Log(string(run("journalctl", "-u", name+".service", "-n", "30", "--no-pager")))
-		t.Fatal("unexpected clean exit did not restart despite the original start limit")
+		t.Fatal("production unit did not restart after an unexpected clean exit")
 	}
 	check()
 	// Explicit stop remains stopped even with Restart=always.
