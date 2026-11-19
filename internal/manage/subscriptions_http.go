@@ -17,11 +17,10 @@ import (
 )
 
 type subscriptionView struct {
-	mu                                     sync.Mutex
-	configInfo, snapshotInfo, settingsInfo os.FileInfo
-	config                                 sub.Config
-	snapshot                               sub.Snapshot
-	settings                               subscriptionSettings
+	mu                       sync.Mutex
+	configInfo, snapshotInfo os.FileInfo
+	config                   sub.Config
+	snapshot                 sub.Snapshot
 }
 
 func sameSubscriptionFile(a, b os.FileInfo) bool {
@@ -31,7 +30,7 @@ func sameSubscriptionFile(a, b os.FileInfo) bool {
 // The configuration lock gives a consistent view across snapshot and permission
 // changes. Atomic inode replacement invalidates the cache even within one second.
 func (v *subscriptionView) load(root string) error {
-	paths := []string{"subscription.json", subscriptionsConfig, subscriptionsSnapshot}
+	paths := []string{subscriptionsConfig, subscriptionsSnapshot}
 	infos := make([]os.FileInfo, len(paths))
 	for i, path := range paths {
 		file, err := os.Open(filepath.Join(root, path))
@@ -50,26 +49,19 @@ func (v *subscriptionView) load(root string) error {
 		}
 		infos[i] = info
 	}
-	if !sameSubscriptionFile(v.settingsInfo, infos[0]) {
-		var settings subscriptionSettings
-		if _, err := ReadJSON(filepath.Join(root, paths[0]), &settings); err != nil {
-			return err
-		}
-		v.settings, v.settingsInfo = settings, infos[0]
-	}
-	if !sameSubscriptionFile(v.configInfo, infos[1]) {
+	if !sameSubscriptionFile(v.configInfo, infos[0]) {
 		var c sub.Config
-		if _, err := ReadJSON(filepath.Join(root, paths[1]), &c); err != nil {
+		if _, err := ReadJSON(filepath.Join(root, paths[0]), &c); err != nil {
 			return err
 		}
 		if err := c.Validate(); err != nil {
 			return err
 		}
-		v.config, v.configInfo = c, infos[1]
+		v.config, v.configInfo = c, infos[0]
 	}
-	if !sameSubscriptionFile(v.snapshotInfo, infos[2]) {
+	if !sameSubscriptionFile(v.snapshotInfo, infos[1]) {
 		var snapshot sub.Snapshot
-		if _, err := ReadJSON(filepath.Join(root, paths[2]), &snapshot); err != nil {
+		if _, err := ReadJSON(filepath.Join(root, paths[1]), &snapshot); err != nil {
 			return err
 		}
 		if snapshot.Version != sub.SchemaVersion || len(snapshot.Artifacts) > sub.MaxObjects {
@@ -82,7 +74,7 @@ func (v *subscriptionView) load(root string) error {
 				return errors.New("invalid subscription artifact")
 			}
 		}
-		v.snapshot, v.snapshotInfo = snapshot, infos[2]
+		v.snapshot, v.snapshotInfo = snapshot, infos[1]
 	}
 	return nil
 }
@@ -163,10 +155,6 @@ func subscriptionHandler(root string, stores ...*accounting.Store) http.Handler 
 			defer view.mu.Unlock()
 			if err := view.load(root); err != nil {
 				return err
-			}
-			if !view.settings.Enabled {
-				status = http.StatusNotFound
-				return errors.New("subscription disabled")
 			}
 			grant, err := store.LookupGrant(request.Context(), parts[2])
 			if err != nil || grant.AccountID != "" || !slices.Contains(grant.Outputs, parts[3]) || (grant.MaxDownloads != nil && grant.Downloads >= *grant.MaxDownloads) {

@@ -14,13 +14,14 @@ import (
 )
 
 func TestAccountCommandsAndExportsKeepIndependentCredentials(t *testing.T) {
-	root, _, _ := appFixture(t)
+	root, _, app := appFixture(t)
 	store, err := accounting.Open(filepath.Join(root, "control.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	service := AccountService{Root: root, Store: store}
+	config := PlatformConfig{App: app}
+	service := AccountService{Root: root, Store: store, Config: &config}
 	outputs := map[string]string{}
 	for _, id := range []string{"alice", "bob"} {
 		if err := store.SaveAccount(t.Context(), domain.Account{ID: id, Name: id}); err != nil {
@@ -62,13 +63,14 @@ func TestAccountCommandsAndExportsKeepIndependentCredentials(t *testing.T) {
 }
 
 func TestAccountBatchBindingIsIndependentAndAtomic(t *testing.T) {
-	root, _, _ := appFixture(t)
+	root, _, app := appFixture(t)
 	store, err := accounting.Open(filepath.Join(root, "control.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	svc := AccountService{Root: root, Store: store}
+	config := PlatformConfig{App: app}
+	svc := AccountService{Root: root, Store: store, Config: &config}
 	for _, id := range []string{"alice", "bob"} {
 		if err := store.SaveAccount(t.Context(), domain.Account{ID: id, Name: id}); err != nil {
 			t.Fatal(err)

@@ -24,9 +24,8 @@ globalThis.fetch = async (path) => ({
 });
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const { formDialog, table } = await import("../internal/manage/panel/ui.js");
-const { validatePassword } = await import(
-  "../internal/manage/panel/capabilities.js"
-);
+const { validatePassword } =
+  await import("../internal/manage/panel/capabilities.js");
 assert.doesNotThrow(() =>
   validatePassword("一二三四五六", capabilitiesFixture.password_bytes),
 );
@@ -50,9 +49,8 @@ assert.equal(
   null,
 );
 
-const { gatewayFields } = await import(
-  "../internal/manage/panel/network-fields.js"
-);
+const { gatewayFields } =
+  await import("../internal/manage/panel/network-fields.js");
 formDialog(
   "网关",
   gatewayFields(capabilitiesFixture.gateway.limits),
@@ -66,9 +64,8 @@ const connections = document.querySelector('[aria-label="最大连接数"]');
 connections.value = "2048";
 assert.equal(connections.checkValidity(), false);
 
-const { outboundFields, normalizeOutbound } = await import(
-  "../internal/manage/panel/outbound-fields.js"
-);
+const { outboundFields, normalizeOutbound } =
+  await import("../internal/manage/panel/outbound-fields.js");
 let submitted;
 formDialog(
   "出站",
@@ -175,14 +172,15 @@ const operator = await vpngate({
     throw new Error("operator requested secrets");
   },
   task() {},
+  section: "gateway",
 });
+await tick();
 const panel = document.createElement("div");
 panel.append(...operator);
 assert(panel.textContent.includes("换 IP"));
 assert(!panel.textContent.includes("选择 / 新增国家"));
-const { subscriptionStatus } = await import(
-  "../internal/manage/panel/subscription-status.js"
-);
+const { subscriptionStatus } =
+  await import("../internal/manage/panel/subscription-status.js");
 const activity = await subscriptionStatus({
   request: async () => ({
     resources: [
@@ -210,9 +208,8 @@ assert(activity.textContent.includes("最后成功"));
 console.log(
   "Panel contract checks passed: UTF-8 passwords, shared gateway limits, protocol fields, workspace state, mobile sorting, usage focus, operator controls.",
 );
-const { navigation, markNavigation } = await import(
-  "../internal/manage/panel/navigation.js"
-);
+const { navigation, markNavigation } =
+  await import("../internal/manage/panel/navigation.js");
 const nav = document.createElement("nav");
 nav.append(...navigation("admin", () => {}, "overview"));
 document.body.append(nav);
@@ -254,10 +251,15 @@ globalThis.fetch = async (path, options) => {
   return {
     ok: true,
     json: async () =>
-      path.endsWith("preview") ? { options: body.options } : { ok: true },
+      path.endsWith("preview")
+        ? { options: body.options }
+        : path === "/api/panel/settings" && !body
+          ? { options: initial, revision: "saved" }
+          : { ok: true },
   };
 };
 const accessPage = await access({
+  session: { role: "admin" },
   request: async () => ({
     options: initial,
     active: { ...initial, public_url: "http://localhost:2096" },
@@ -270,7 +272,10 @@ const accessPage = await access({
   render() {},
 });
 document.querySelector("#content").replaceChildren(...accessPage);
-accessPage[0].querySelector("button").click();
+await tick();
+[...accessPage[0].querySelectorAll("button")]
+  .find((b) => b.textContent === "配置面板访问")
+  .click();
 const mode = document.querySelector('[aria-label="访问方式"]');
 mode.value = "tls";
 mode.dispatchEvent(new Event("change", { bubbles: true }));
@@ -301,8 +306,142 @@ assert.equal(
   accessCalls[1].body.options.public_url,
   "https://panel.example.com",
 );
+assert.match(document.querySelector("dialog").textContent, /重启/);
+// Both public listeners use the same TLS/proxy contract.
+const { accessFields, accessOptions, accessValue } =
+  await import("../internal/manage/panel/public-access-fields.js");
+const certificateAssets = [
+  {
+    id: "shared",
+    domain: "sub.example.test",
+    certificate: "/cert.pem",
+    key: "/key.pem",
+  },
+];
+formDialog(
+  "独立下载监听",
+  accessFields(certificateAssets, true),
+  {
+    ...accessValue({
+      listen: "0.0.0.0:2097",
+      public_url: "https://sub.example.test",
+    }),
+    mode: "tls",
+    enabled: true,
+  },
+  () => {},
+);
+assert.equal(
+  document.querySelector('[aria-label="访问方式"]').options.length,
+  2,
+);
+assert.match(document.querySelector("dialog").textContent, /无需 Nginx\/Caddy/);
+assert.deepEqual(
+  accessOptions(
+    {
+      mode: "tls",
+      listen: "0.0.0.0:2097",
+      public_url: "https://sub.example.test/",
+      certificate_asset: "shared",
+    },
+    certificateAssets,
+  ),
+  {
+    listen: "0.0.0.0:2097",
+    public_url: "https://sub.example.test",
+    certificate: "/cert.pem",
+    key: "/key.pem",
+    trusted_proxy: [],
+  },
+);
+const { tasksCard, taskDetails, taskStage } =
+  await import("../internal/manage/panel/tasks.js");
+assert.equal(
+  taskStage({ state: "failed", phase: "executing" }),
+  "失败于：执行中",
+);
+taskDetails({
+  id: 1,
+  kind: "apply",
+  state: "succeeded",
+  phase: "succeeded",
+  result: { retained: false, outcome: "passed" },
+});
 assert.match(
   document.querySelector("dialog").textContent,
-  /systemctl restart sb-panel/,
+  /详情已按保留策略清理/,
+);
+const maintenanceCalls = [];
+globalThis.confirm = () => true;
+globalThis.fetch = async (path, options) => {
+  maintenanceCalls.push({
+    path,
+    body: options.body && JSON.parse(options.body),
+  });
+  return { ok: true, json: async () => ({ deleted: 1 }) };
+};
+const historyContext = {
+  session: { role: "admin" },
+  render() {},
+  request: async () => ({
+    policy: { count: 20, days: 1, result_bytes: 262144 },
+    usage: { completed: 1, pending: 1, result_bytes: 512 },
+  }),
+};
+const tasks = tasksCard(
+  [
+    { id: 1, kind: "service", state: "failed", phase: "executing" },
+    { id: 2, kind: "service", state: "running", phase: "executing" },
+  ],
+  historyContext,
+);
+document.querySelector("#content").replaceChildren(tasks);
+const finishedRow = tasks.querySelector("tbody tr");
+assert.equal(
+  tasks.querySelectorAll("tbody tr")[1].textContent.includes("删除"),
+  false,
+);
+[...finishedRow.querySelectorAll("button")]
+  .find((b) => b.textContent === "标记已处理")
+  .click();
+await tick();
+assert.deepEqual(maintenanceCalls.pop(), {
+  path: "/api/tasks/acknowledge",
+  body: { id: 1 },
+});
+[...finishedRow.querySelectorAll("button")]
+  .find((b) => b.textContent === "删除")
+  .click();
+await tick();
+assert.deepEqual(maintenanceCalls.pop(), {
+  path: "/api/tasks/delete",
+  body: { id: 1 },
+});
+const { historyControls, journalCard } =
+  await import("../internal/manage/panel/log-maintenance.js");
+const retention = await historyControls(historyContext);
+[...retention.querySelectorAll("button")]
+  .find((b) => b.textContent === "清理已处理")
+  .click();
+await tick();
+assert.deepEqual(maintenanceCalls.pop(), {
+  path: "/api/tasks/history/clear",
+  body: { acknowledged_only: true },
+});
+assert.equal(
+  journalCard([], { session: { role: "operator" } }).textContent.includes(
+    "清理运行日志",
+  ),
+  false,
+);
+assert(
+  capabilitiesFixture.services.some(
+    (s) => s.name === "sb-vpngate-core" && s.section === "access",
+  ),
+);
+assert(
+  capabilitiesFixture.services.some(
+    (s) => s.name === "sb-vpngate-gateway" && s.section === "gateway",
+  ),
 );
 dom.window.close();

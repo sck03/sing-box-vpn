@@ -1,4 +1,5 @@
 import { api, download, restoreForm } from "./api.js";
+import { historyControls, journalCard } from "./log-maintenance.js";
 import { tasksCard } from "./tasks.js";
 import { capabilities } from "./capabilities.js";
 import { workspace } from "./workspace.js";
@@ -24,23 +25,10 @@ export async function maintenance(ctx) {
     const data = latest || (await (ctx.request || api)("/api/overview"));
     const tasks = tasksCard((latest || data).tasks, ctx);
     taskTable = tasks.querySelector(".data-table");
-    const logs = card(
-      "运行日志",
-      row(
-        ...[
-          ...(metadata.services || []).map((service) => service.name),
-          "sb-panel",
-        ].map((service) =>
-          button(service, async () =>
-            showResult(
-              service,
-              (await api("/api/logs?service=" + service)).log,
-            ),
-          ),
-        ),
-      ),
-    );
-    return [tasks, logs];
+    const logs = journalCard(metadata.services || [], ctx);
+    const history =
+      ctx.session.role === "admin" ? await historyControls(ctx) : null;
+    return [tasks, ...(history ? [history] : []), logs];
   }
   if (ctx.session.role === "operator") return logsAndTasks();
   const backup = () => {
@@ -99,6 +87,7 @@ export async function maintenance(ctx) {
           const result = await api(
             "/api/restore",
             restoreForm(candidate.backup, candidate.password),
+            { timeout: 180000 },
           );
           if (!matchesSelection(candidate) || ctx.signal?.aborted) return;
           preview = { ...candidate, revision: result.revision };
@@ -118,6 +107,7 @@ export async function maintenance(ctx) {
             const result = await api(
               "/api/restore",
               restoreForm(preview.backup, preview.password, preview.revision),
+              { timeout: 180000 },
             );
             notice("恢复任务 #" + result.task_id + " 已排队");
             preview = null;

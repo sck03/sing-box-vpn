@@ -2,15 +2,16 @@ package manage
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
+	"github.com/sck03/sing-box-vpn/internal/publicaccess"
 	"io"
 	"net"
 	"net/http"
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
@@ -19,19 +20,22 @@ import (
 )
 
 type subscriptionSettings struct {
-	Enabled       bool   `json:"enabled"`
-	Port          int    `json:"port"`
-	Listen        string `json:"listen"`
-	PublicBaseURL string `json:"public_base_url,omitempty"`
+	Enabled       bool     `json:"enabled"`
+	Port          int      `json:"port"`
+	Listen        string   `json:"listen"`
+	PublicBaseURL string   `json:"public_base_url,omitempty"`
+	Certificate   string   `json:"certificate,omitempty"`
+	Key           string   `json:"key,omitempty"`
+	TrustedProxy  []string `json:"trusted_proxy,omitempty"`
 }
 
 var subscriptionTokenPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
-func subscriptionBase(settings subscriptionSettings, address string) string {
-	if settings.PublicBaseURL != "" {
-		return strings.TrimRight(settings.PublicBaseURL, "/")
-	}
-	return "http://" + net.JoinHostPort(address, strconv.Itoa(settings.Port))
+func (s subscriptionSettings) accessOptions() publicaccess.Options {
+	return publicaccess.Options{Listen: net.JoinHostPort(s.Listen, strconv.Itoa(s.Port)), PublicURL: s.PublicBaseURL, Certificate: s.Certificate, Key: s.Key, TrustedProxy: s.TrustedProxy}
+}
+func (s subscriptionSettings) Validate() error {
+	return s.accessOptions().Validate(publicaccess.Rules{AllowProxyPath: true, RequireHTTPS: true})
 }
 
 func RunSubscription(ctx context.Context, args []string, output io.Writer) error {
@@ -49,8 +53,8 @@ func RunSubscription(ctx context.Context, args []string, output io.Writer) error
 	if !found || !settings.Enabled {
 		return errors.New("订阅监听服务未启用")
 	}
-	if net.ParseIP(settings.Listen) == nil || settings.Port < 1 || settings.Port > 65535 {
-		return errors.New("订阅监听地址或端口错误")
+	if err := settings.Validate(); err != nil {
+		return err
 	}
 	listener, err := net.Listen("tcp", net.JoinHostPort(settings.Listen, strconv.Itoa(settings.Port)))
 	if err != nil {
@@ -70,7 +74,11 @@ func RunSubscription(ctx context.Context, args []string, output io.Writer) error
 		return err
 	}
 	defer control.Close()
-	server := &http.Server{Handler: unifiedDownloadHandler(AccountService{Root: *root, Store: store, Control: control}), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 15 * time.Second, MaxHeaderBytes: 16 << 10}
+	options := settings.accessOptions()
+	if settings.Certificate != "" {
+		listener = tls.NewListener(listener, options.TLS())
+	}
+	server := &http.Server{Handler: options.Protect(unifiedDownloadHandler(AccountService{Root: *root, Store: store, Control: control})), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 15 * time.Second, MaxHeaderBytes: 16 << 10}
 	err = httpserver.Serve(child, listener, server, 32)
 	cancel()
 	return err

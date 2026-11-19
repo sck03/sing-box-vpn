@@ -28,6 +28,22 @@ func (s *Store) CompleteExternal(ctx context.Context, id int64, phase, target st
 
 func (s *Store) ExpireExternal(ctx context.Context, before time.Time) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE control_tasks SET state='failed',phase='interrupted',error='未收到升级健康检查结果，请检查服务状态和升级日志',outcome='failed',result=json_set(result,'$.outcome','failed','$.phase','interrupted'),input='{}',updated=?
- WHERE kind='program-upgrade' AND state='running' AND phase='awaiting-panel-health' AND updated<?`, time.Now().Unix(), before.Unix())
+ WHERE kind IN ('program-upgrade','panel-restart') AND state='running' AND phase='awaiting-panel-health' AND updated<?`, time.Now().Unix(), before.Unix())
 	return err
+}
+
+func (s *Store) CompletePanelRestart(ctx context.Context, id int64, result []byte, phase, detail string) (bool, error) {
+	if len(result) > 8192 || !json.Valid(result) || len(detail) > 2048 {
+		return false, errors.New("invalid panel restart result")
+	}
+	state, outcome := "succeeded", "passed"
+	if detail != "" {
+		state, outcome = "failed", "failed"
+	}
+	r, err := s.db.ExecContext(ctx, `UPDATE control_tasks SET state=?,phase=?,error=?,result=?,outcome=?,input='{}',updated=? WHERE id=? AND kind='panel-restart' AND state='running' AND phase='awaiting-panel-health'`, state, phase, detail, result, outcome, time.Now().Unix(), id)
+	if err != nil {
+		return false, err
+	}
+	n, err := r.RowsAffected()
+	return n == 1, err
 }

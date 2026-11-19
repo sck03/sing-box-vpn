@@ -199,7 +199,7 @@ func TestServiceCatalogNamesAndWorkspaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]string{"sing-box": "inbounds", "vpngate-core": "vpngate", "vpngate": "vpngate", "subscription": "access", "argo": "outbounds"}
+	want := map[string]string{"sb-core": "inbounds", "sb-vpngate-core": "vpngate", "sb-vpngate-gateway": "vpngate", "sb-subscription": "access", "sb-argo": "outbounds"}
 	if len(status) != len(want) {
 		t.Fatal(status)
 	}
@@ -209,10 +209,10 @@ func TestServiceCatalogNamesAndWorkspaces(t *testing.T) {
 			t.Fatal(service)
 		}
 	}
-	if scopeService("vpngate") != "vpngate-core" || scopeService("normal") != "sing-box" || serviceDetails("vpngate").Runtime != "" {
+	if scopeService("vpngate") != "sb-vpngate-core" || scopeService("normal") != "sb-core" || serviceDetails("sb-vpngate-gateway").Runtime != "" {
 		t.Fatal("gateway and metered runtime identities conflated")
 	}
-	for _, old := range []string{"sing-box-vpngate", "yg-vpngate", "sb-subscription", "sb-argo", "user"} {
+	for _, old := range []string{"sing-box-vpngate", "yg-vpngate", "subscription", "argo", "vpngate", "vpngate-core", "sing-box", "user"} {
 		if _, err := s.Queue(t.Context(), PlatformAction{Operation: "service", Service: old, Value: "start"}, "test"); err == nil {
 			t.Fatal("old service accepted", old)
 		}

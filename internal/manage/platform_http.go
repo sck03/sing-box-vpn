@@ -10,9 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/netip"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
 
@@ -20,6 +18,7 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/adminauth"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	"github.com/sck03/sing-box-vpn/internal/httpserver"
+	"github.com/sck03/sing-box-vpn/internal/publicaccess"
 )
 
 //go:embed panel/*
@@ -78,12 +77,7 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 	if secure {
 		cookieName = "__Host-sbvpn"
 	}
-	proxy := []netip.Prefix{}
-	for _, v := range options.TrustedProxy {
-		if p, err := netip.ParsePrefix(v); err == nil {
-			proxy = append(proxy, p)
-		}
-	}
+	proxy, _ := publicaccess.NewProxyPolicy(options.TrustedProxy)
 	loginSlots := make(chan struct{}, 2)
 	requests, streams := make(httpserver.Gate, 32), make(httpserver.Gate, 32)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -119,15 +113,15 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 		}
 		defer release()
 		if len(proxy) > 0 {
-			ip, err := netip.ParseAddr(peer)
-			if err != nil || !slices.ContainsFunc(proxy, func(p netip.Prefix) bool { return p.Contains(ip) }) || r.Header.Get("X-Forwarded-Proto") != "https" {
-				http.Error(w, "untrusted proxy", 403)
+			var err error
+			peer, err = proxy.Peer(r)
+			if err != nil {
+				http.Error(w, err.Error(), 403)
 				return
 			}
-			peer = forwardedPeer(r.Header.Get("X-Forwarded-For"), peer, proxy)
 		}
 		path := r.URL.Path
-		publicRead := (r.Method == "GET" || r.Method == "HEAD") && (path == "/" || path == "/user" || path == "/api/capabilities" || strings.HasPrefix(path, "/panel/") || strings.HasPrefix(path, "/u/"))
+		publicRead := (r.Method == "GET" || r.Method == "HEAD") && (path == "/" || path == "/user" || path == "/api/capabilities" || strings.HasPrefix(path, "/panel/") || strings.HasPrefix(path, "/u/") || strings.HasPrefix(path, "/s/"))
 		if origin := r.Header.Get("Origin"); !publicRead && origin != "" && origin != options.PublicURL {
 			http.Error(w, "cross-origin request rejected", 403)
 			return
@@ -150,8 +144,8 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 			servePanelAsset(w, r, name)
 			return
 		}
-		if strings.HasPrefix(path, "/u/") {
-			s.accountService().ServeDownload(w, r)
+		if strings.HasPrefix(path, "/u/") || strings.HasPrefix(path, "/s/") {
+			unifiedDownloadHandler(s.accountService()).ServeHTTP(w, r)
 			return
 		}
 		if path == "/api/auth/login" && r.Method == "POST" {
@@ -208,7 +202,7 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 		}
 		ctx := r.Context()
 		access := panelAccess{actor: session.ID, publicURL: options.PublicURL, admin: admin, operator: operator, require: require, audit: audit}
-		if s.servePanelSettings(w, r, access, options) {
+		if s.servePanelRestart(w, r, access, options) || s.servePanelSettings(w, r, access, options) {
 			return
 		}
 		if s.serveAccounts(w, r, access) || s.serveGrants(w, r, access) || s.serveConfiguration(w, r, access) || s.serveTasks(w, r, access) {
@@ -279,9 +273,7 @@ func (s *PlatformService) Serve(ctx context.Context, options PanelOptions, out i
 	}
 	options.PublicURL = options.origin()
 	if options.Certificate != "" {
-		base, _ := url.Parse(options.PublicURL)
-		cache := &panelCertificateCache{asset: CertificateAsset{Domain: base.Hostname(), Certificate: options.Certificate, Key: options.Key}}
-		listener = tls.NewListener(listener, &tls.Config{MinVersion: tls.VersionTLS12, GetCertificate: cache.get})
+		listener = tls.NewListener(listener, publicaccess.Options(options).TLS())
 	}
 	child, cancel := context.WithCancel(ctx)
 	defer cancel()

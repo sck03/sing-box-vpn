@@ -218,3 +218,21 @@ func TestDisabledSubscriptionDoesNotListen(t *testing.T) {
 		t.Fatal("disabled server started")
 	}
 }
+
+func TestPanelAdvancedDownloadsWithoutIndependentListener(t *testing.T) {
+	root, token := t.TempDir(), strings.Repeat("a", 64)
+	subscriptionFixture(t, root, token, `{"version":1}`)
+	if err := os.Remove(filepath.Join(root, "subscription.json")); err != nil {
+		t.Fatal(err)
+	}
+	s, err := OpenPlatform(root, "", "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	r := httptest.NewRecorder()
+	s.Handler(PanelOptions{PublicURL: "http://example.com"}).ServeHTTP(r, httptest.NewRequest("GET", "http://example.com/s/"+token+"/normal-sing-box", nil))
+	if r.Code != 200 || r.Body.String() != `{"version":1}` {
+		t.Fatal(r.Code, r.Body.String())
+	}
+}

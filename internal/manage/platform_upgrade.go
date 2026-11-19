@@ -175,13 +175,13 @@ func (s *PlatformService) rollbackRuntime(ctx context.Context) error {
 		return err
 	}
 	for _, name := range active {
-		if name == "sing-box" || name == "vpngate-core" {
+		if name == "sb-core" || name == "sb-vpngate-core" {
 			started := time.Now().UnixNano()
 			if err = s.service(ctx, name, "restart"); err != nil {
 				break
 			}
 			scope := "normal"
-			if name == "vpngate-core" {
+			if name == "sb-vpngate-core" {
 				scope = "vpngate"
 			}
 			if err = s.awaitRuntime(ctx, scope, started); err != nil {
@@ -197,7 +197,7 @@ func (s *PlatformService) rollbackRuntime(ctx context.Context) error {
 			e = os.Rename(s.Runtime+".candidate", s.Runtime)
 		}
 		for _, name := range active {
-			if name == "sing-box" || name == "vpngate-core" {
+			if name == "sb-core" || name == "sb-vpngate-core" {
 				e = errors.Join(e, s.service(restore, name, "restart"))
 			}
 		}

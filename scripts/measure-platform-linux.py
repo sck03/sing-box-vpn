@@ -28,7 +28,7 @@ with opener.open(request, timeout=30) as response:
     response.read()
 cookie = "; ".join(c.name + "=" + c.value for c in cookies)
 resources = {}
-for service in ["sb-panel", "sing-box"]:
+for service in ["sb-panel", "sb-core"]:
     pid = int(subprocess.check_output(["systemctl", "show", service, "--property=MainPID", "--value"], text=True))
     resources[service] = {"pid": pid, "cpu_ticks": [], "peak_rss_kib": 0, "process_lost": False}
 stop = threading.Event()

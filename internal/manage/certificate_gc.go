@@ -2,6 +2,7 @@ package manage
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -91,6 +92,20 @@ func (s *PlatformService) panelCertificateRefs() (map[string]PanelOptions, error
 		return nil, err
 	}
 	refs := map[string]PanelOptions{"面板（已保存）": saved}
+	var restart panelRestartReceipt
+	if exists, err := ReadJSON(filepath.Join(s.Root, panelRestartFile), &restart); err != nil {
+		return nil, err
+	} else if exists && restart.Outcome == "pending" {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		task, err := s.Store.Task(ctx, restart.TaskID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return nil, err
+		}
+		if err == nil && (task.State == "queued" || task.State == "running") {
+			refs["面板（重启回滚）"] = restart.Previous
+		}
+	}
 	s.panelMu.RLock()
 	defer s.panelMu.RUnlock()
 	if s.activePanel != nil {

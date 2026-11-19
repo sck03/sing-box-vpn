@@ -14,6 +14,7 @@ const kinds = {
   "program-upgrade": "程序升级",
   "runtime-rollback": "核心回滚",
   "outbound-probe": "检测出站",
+  "panel-restart": "应用面板访问",
 };
 const phases = {
   queued: "等待执行",
@@ -32,6 +33,10 @@ const phases = {
 };
 export const taskKind = (kind) => kinds[kind] || kind;
 export const taskPhase = (phase) => phases[phase] || phase;
+export const taskStage = (task) =>
+  task.state === "failed"
+    ? "失败于：" + taskPhase(task.phase)
+    : taskPhase(task.phase);
 export const canViewTask = (task, session) =>
   session.role === "admin" ||
   (session.role === "operator" &&
@@ -44,7 +49,7 @@ export function taskDetails(task) {
   const details = el("dl", { class: "detail-grid" });
   for (const [label, value] of [
     ["操作", taskKind(task.kind)],
-    ["阶段", taskPhase(task.phase)],
+    ["阶段", taskStage(task)],
     ["发起人", task.actor],
     ["更新时间", date(task.updated)],
   ]) {
@@ -105,13 +110,35 @@ export function tasksCard(tasks, ctx) {
                   : "warn",
             ),
         },
-        { label: "阶段", value: (t) => taskPhase(t.phase) },
+        { label: "阶段", value: (t) => taskStage(t) },
         { label: "业务结果", value: (t) => outcome(t.outcome) },
         { label: "时间", value: (t) => date(t.updated) },
         { key: "error", label: "结果" },
       ],
       tasks,
       (t) => [
+        ...(ctx.session.role === "admin" &&
+        ["succeeded", "failed", "cancelled"].includes(t.state)
+          ? [
+              ...(!t.acknowledged
+                ? [
+                    button("标记已处理", async () => {
+                      await api("/api/tasks/acknowledge", { id: t.id });
+                      ctx.render();
+                    }),
+                  ]
+                : []),
+              button(
+                "删除",
+                async () => {
+                  if (!confirm("删除任务 #" + t.id + " 的历史记录？")) return;
+                  await api("/api/tasks/delete", { id: t.id });
+                  ctx.render();
+                },
+                "danger",
+              ),
+            ]
+          : []),
         ...(canViewTask(t, ctx.session)
           ? [
               button("详情", async () =>
@@ -135,7 +162,9 @@ export function tasksCard(tasks, ctx) {
 }
 
 function resultDetails(result) {
-  if (!result || result.pruned) return [];
+  if (!result) return [];
+  if (result.retained === false)
+    return [help("任务详情已按保留策略清理，最终结果仍保留。")];
   const sections = [];
   if (result.target_version)
     sections.push(

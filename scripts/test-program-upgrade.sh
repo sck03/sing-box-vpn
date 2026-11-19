@@ -26,7 +26,7 @@ for scenario in stopped active fail; do
     systemctl() {
         printf '%s\n' "$*" >> "$TEST_LOG"
         case "$1" in
-            show) if [[ "$2" == subscription && "$TEST_SCENARIO" != stopped ]]; then echo active; else echo inactive; fi;;
+            show) if [[ "$2" == sb-subscription && "$TEST_SCENARIO" != stopped ]]; then echo active; else echo inactive; fi;;
             restart) if [[ "$TEST_SCENARIO" == fail && $("$MANAGER") == new ]]; then return 1; fi;;
             is-active) return 0;;
             *) echo 'unexpected systemctl operation' >&2; return 1;;
@@ -45,7 +45,7 @@ for scenario in stopped active fail; do
     if [[ "$scenario" == stopped ]]; then
         if grep -q '^restart ' "$TEST_LOG"; then exit 1; fi
     fi
-    if grep -Eq '^(enable|disable|start)|^restart (sing-box|yg-vpngate)' "$TEST_LOG"; then exit 1; fi
+    if grep -Eq '^(enable|disable|start)|^restart (sb-core|yg-vpngate)' "$TEST_LOG"; then exit 1; fi
 done
 echo 'Program upgrade: stopped, active and rollback scenarios passed.'
 
@@ -70,7 +70,7 @@ MOCK
     chmod +x "$base/bin/systemctl" "$base/bin/sleep"
     set +e
     env PATH="$base/bin:$PATH" PANEL_TEST_BASE="$base" PANEL_TEST_SCENARIO="$scenario" \
-        bash "$ROOT/lib/restart-panel.sh" "$base/stage" "$base/app" "$base/manager" "$base/runtime" "$base" 42 v5.1.0 sing-box sb-panel > "$base/result" 2>&1
+        bash "$ROOT/lib/restart-panel.sh" "$base/stage" "$base/app" "$base/manager" "$base/runtime" "$base" 42 v5.1.0 sb-core sb-panel > "$base/result" 2>&1
     result=$?
     set -e
     if [[ "$scenario" != panel-ok ]]; then
@@ -78,11 +78,11 @@ MOCK
         phase=rolled-back
         [[ "$scenario" != panel-rollback-fail ]] || phase=rollback-failed
         grep -q "\"actual_version\":\"v5.0.0\".*\"phase\":\"$phase\"" "$base/program-upgrade.json"
-        grep -q '^restart sing-box$' "$base/log"
+        grep -q '^restart sb-core$' "$base/log"
     else
         [[ "$result" == 0 && $("$base/manager" --version) == 5.1.0 && $(<"$base/app/version") == new ]]
         grep -q '"actual_version":"v5.1.0".*"phase":"succeeded"' "$base/program-upgrade.json"
-        if grep -q '^restart sing-box$' "$base/log"; then exit 1; fi
+        if grep -q '^restart sb-core$' "$base/log"; then exit 1; fi
     fi
 done
 echo 'Deferred panel restart: success, rollback and rollback failure receipts passed.'

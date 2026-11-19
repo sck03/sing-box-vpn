@@ -137,6 +137,7 @@ jobs:
           tar -xzf .build/release/sing-box-vpn-*.tar.gz -C .test/platform-install
           sudo --preserve-env=SBVPN_GITHUB_TOKEN env SB_ADDRESS=127.0.0.1 SB_ADMIN_JSON_FILE="$admin_file" bash .test/platform-install/sing-box-vpn/sb.sh install
           SB_TEST_PASSWORD="$test_password" python3 scripts/test-platform-linux.py
+          sudo env RUN_ACCESS_MAINTENANCE_TESTS=1 SB_TEST_ROOT=/etc/s-box SB_TEST_PASSWORD="$test_password" python3 scripts/test-access-maintenance-linux.py
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: verified-release

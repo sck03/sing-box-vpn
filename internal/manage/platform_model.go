@@ -9,7 +9,6 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/gatewayconfig"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 	"net"
-	"net/url"
 	"slices"
 	"strings"
 )
@@ -90,16 +89,9 @@ func (c PlatformConfig) Validate() error {
 	if c.Listener.Enabled && (c.Listener.Port < 1 || c.Listener.Port > 65535 || ports[c.Listener.Port] || net.ParseIP(c.Listener.Listen) == nil) {
 		return errors.New("invalid or conflicting download listener")
 	}
-	if c.Listener.Enabled || c.Listener.PublicBaseURL != "" {
-		if err := shareableURL(c.Listener.PublicBaseURL); err != nil {
+	if c.Listener.Enabled {
+		if err := c.Listener.Validate(); err != nil {
 			return err
-		}
-		if err := sub.HTTPURL(c.Listener.PublicBaseURL); err != nil {
-			return err
-		}
-		u, _ := url.Parse(c.Listener.PublicBaseURL)
-		if u.RawQuery != "" || u.ForceQuery || u.RawPath != "" {
-			return errors.New("download public URL cannot contain a query or escaped path")
 		}
 	}
 	if err = c.Subscriptions.Validate(); err != nil {

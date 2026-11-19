@@ -130,6 +130,14 @@ export const pages = [
 );
 const byID = new Map(pages.map((page) => [page.id, page]));
 export const sections = {
+  access: [
+    ["panel", "面板访问", "面板 HTTPS TLS Nginx Caddy"],
+    ["subscription", "独立订阅", "订阅 下载 HTTPS TLS Nginx Caddy"],
+  ],
+  vpngate: [
+    ["access", "接入核心", "用户 入口 端口 认证 计量", ["admin", "operator"]],
+    ["gateway", "出口网关", "OpenVPN 国家 IP 出口 策略", ["admin", "operator"]],
+  ],
   outbounds: [
     ["proxy", "代理出站", "SOCKS 外部代理 出站组 检测 连通性"],
     ["warp", "WARP / WireGuard", "WARP WireGuard 端点"],

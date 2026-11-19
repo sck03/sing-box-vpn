@@ -175,7 +175,7 @@ func TestQueuedTaskImmediatelyInvalidatesOverview(t *testing.T) {
 	if _, err := s.overviewSnapshot(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	id, err := s.Queue(t.Context(), PlatformAction{Operation: "service", Service: "sing-box", Value: "stop"}, "admin")
+	id, err := s.Queue(t.Context(), PlatformAction{Operation: "service", Service: "sb-core", Value: "stop"}, "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,8 @@ func TestAccountDownloadsUseSharedClientCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	service := AccountService{Root: root, Store: store}
+	config := PlatformConfig{App: app}
+	service := AccountService{Root: root, Store: store, Config: &config}
 	if err := store.SaveAccount(t.Context(), domain.Account{ID: "all", Name: "All"}); err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +236,7 @@ func TestAccountDownloadsUseSharedClientCatalog(t *testing.T) {
 	for _, client := range clients {
 		t.Run(client, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			(AccountService{Root: root, Store: store}).ServeDownload(w, httptest.NewRequest("GET", "/u/"+token+"/"+client, nil))
+			service.ServeDownload(w, httptest.NewRequest("GET", "/u/"+token+"/"+client, nil))
 			if w.Code != 200 || w.Body.Len() == 0 || !strings.HasPrefix(w.Header().Get("Cache-Control"), "no-store") {
 				t.Fatal("catalog format cannot be downloaded safely", w.Code, w.Body.String())
 			}

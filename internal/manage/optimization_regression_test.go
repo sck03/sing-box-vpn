@@ -150,46 +150,6 @@ func TestUpgradeWaitTimeoutReleasesControlLane(t *testing.T) {
 	}
 }
 
-func TestPanelCertificateCacheRotationAndExpiry(t *testing.T) {
-	root := t.TempDir()
-	asset := CertificateAsset{Domain: "cache.example.test", Certificate: filepath.Join(root, "cert.pem"), Key: filepath.Join(root, "key.pem")}
-	if err := EnsureCertificate(asset.Certificate, asset.Key, asset.Domain); err != nil {
-		t.Fatal(err)
-	}
-	cache := panelCertificateCache{asset: asset}
-	first, err := cache.get(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	other := t.TempDir()
-	cert, key := filepath.Join(other, "cert.pem"), filepath.Join(other, "key.pem")
-	if err := EnsureCertificate(cert, key, asset.Domain); err != nil {
-		t.Fatal(err)
-	}
-	if err := AtomicBytes(asset.Certificate, readBytes(t, cert), 0600); err != nil {
-		t.Fatal(err)
-	}
-	cache.next = time.Time{}
-	partial, err := cache.get(nil)
-	if err != nil || first != partial {
-		t.Fatal("partial rotation lost valid cached pair", err)
-	}
-	if err := AtomicBytes(asset.Key, readBytes(t, key), 0600); err != nil {
-		t.Fatal(err)
-	}
-	cache.next = time.Time{}
-	rotated, err := cache.get(nil)
-	if err != nil || rotated == first {
-		t.Fatal("valid rotation did not refresh", err)
-	}
-	leaf := *cache.material.leaf
-	leaf.NotAfter = time.Now().Add(-time.Second)
-	cache.material.leaf = &leaf
-	if expired, err := cache.get(nil); err == nil || expired != nil {
-		t.Fatal("expired cached certificate was served")
-	}
-}
-
 func TestShareReadinessMatchesDownloadAfterUnbind(t *testing.T) {
 	root, core, _ := appFixture(t)
 	s, _, admin := platformFixture(t, root, core)

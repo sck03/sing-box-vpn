@@ -21,6 +21,7 @@
   --bad-bg: #462a35;
   --bad-text: #ffb9c4;
   --radius: 14px;
+  --shadow: 0 4px 18px #0002;
   color: var(--text);
   background: var(--surface);
 }
@@ -44,6 +45,7 @@
   --warn-text: #795700;
   --bad-bg: #fce8ed;
   --bad-text: #a12c44;
+  --shadow: 0 4px 18px #192e4308;
 }
 * {
   box-sizing: border-box;
@@ -322,6 +324,26 @@ footer {
   border: 1px solid var(--line);
   border-radius: var(--radius);
 }
+.card {
+  box-shadow: var(--shadow);
+}
+.access-address {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--input);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.access-address code {
+  color: var(--text);
+}
+.journal-controls select {
+  width: auto;
+  max-width: 100%;
+  margin: 0;
+  flex: 1 1 200px;
+}
 .card > .help:first-of-type {
   margin-top: -5px;
 }
@@ -469,7 +491,9 @@ footer {
 .workspace [role="tabpanel"] > .card:last-child {
   margin-bottom: 0;
 }
-.card:has(.remote-table:not(.show-onboarding)) > .workflow { display: none; }
+.card:has(.remote-table:not(.show-onboarding)) > .workflow {
+  display: none;
+}
 .workflow {
   list-style: none;
   display: grid;

@@ -40,9 +40,9 @@ for unit in "$@"; do
     started=$(date +%s%N)
     if ! systemctl restart "$unit" || ! systemctl is-active --quiet "$unit"; then failed=1; continue; fi
     case "$unit" in
-        sing-box|vpngate-core)
+        sb-core|sb-vpngate-core)
             instance=normal
-            [[ "$unit" != vpngate-core ]] || instance=vpngate
+            [[ "$unit" != sb-vpngate-core ]] || instance=vpngate
             if ! printf '{"instance":"%s","started":%s}\n' "$instance" "$started" | "$manager" panel --root "$root" wait-runtime; then failed=1; fi
             ;;
     esac

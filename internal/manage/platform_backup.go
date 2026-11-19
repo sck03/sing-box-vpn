@@ -141,7 +141,7 @@ func validateArchivedPairs(c PlatformConfig, b platformBackup) error {
 }
 
 func validateCertificatePairs(c PlatformConfig, read func(string) ([]byte, error)) error {
-	pairs := [][2]string{{c.App.Profile.Certificate, c.App.Profile.Key}}
+	pairs := [][2]string{{c.App.Profile.Certificate, c.App.Profile.Key}, {c.Listener.Certificate, c.Listener.Key}}
 	for _, in := range c.App.Inbounds {
 		t := object(in["tls"])
 		pairs = append(pairs, [2]string{text(t["certificate_path"]), text(t["key_path"])})
@@ -174,6 +174,9 @@ func validateCertificatePairs(c PlatformConfig, read func(string) ([]byte, error
 	return nil
 }
 func pendingCertificatePath(c PlatformConfig, path string) bool {
+	if c.Listener.Enabled && (c.Listener.Certificate == path || c.Listener.Key == path) {
+		return false
+	}
 	for _, in := range c.App.Inbounds {
 		tls := object(in["tls"])
 		if text(tls["certificate_path"]) == path || text(tls["key_path"]) == path {
@@ -201,6 +204,8 @@ func certificatePaths(c PlatformConfig) []string {
 	}
 	add(c.App.Profile.Certificate)
 	add(c.App.Profile.Key)
+	add(c.Listener.Certificate)
+	add(c.Listener.Key)
 	for _, in := range c.App.Inbounds {
 		t := object(in["tls"])
 		add(text(t["certificate_path"]))
@@ -312,6 +317,15 @@ func relocateBackup(c *PlatformConfig, b platformBackup, destination string) err
 		}
 		return filepath.ToSlash(filepath.Join(destination, filepath.FromSlash(rel))), nil
 	}
+	var listenerErr error
+	c.Listener.Certificate, listenerErr = mapPath(c.Listener.Certificate)
+	if listenerErr != nil {
+		return listenerErr
+	}
+	c.Listener.Key, listenerErr = mapPath(c.Listener.Key)
+	if listenerErr != nil {
+		return listenerErr
+	}
 	if err := mapAppCertificates(&c.App, mapPath); err != nil {
 		return err
 	}
@@ -360,6 +374,15 @@ func (s *PlatformService) servePlatformBackup(w http.ResponseWriter, r *http.Req
 		return
 	}
 	defer s.backupBusy.Store(false)
+	controller := http.NewResponseController(w)
+	if err := controller.SetReadDeadline(time.Now().Add(2 * time.Minute)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		platformError(w, err)
+		return
+	}
+	if err := controller.SetWriteDeadline(time.Now().Add(3 * time.Minute)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		platformError(w, err)
+		return
+	}
 	var v backupRequest
 	defer v.Close()
 	if err := readBackupRequest(w, r, &v); err != nil {
@@ -411,6 +434,13 @@ func (s *PlatformService) servePlatformBackup(w http.ResponseWriter, r *http.Req
 		}
 		previewConfig := c
 		if err = relocateBackup(&previewConfig, b, stage); err == nil {
+			for path, data := range b.Files {
+				if err = AtomicBytes(filepath.Join(stage, filepath.FromSlash(path)), data, 0600); err != nil {
+					break
+				}
+			}
+		}
+		if err == nil {
 			err = previewConfig.Validate()
 		}
 		if err != nil {

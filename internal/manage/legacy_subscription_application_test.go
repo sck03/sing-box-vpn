@@ -87,7 +87,7 @@ func (s SubscriptionService) legacyExecute(ctx context.Context, command fixtureS
 				return err
 			}
 			for _, id := range g.Outputs {
-				if _, err = fmt.Fprintf(output, "%s/s/%s/%s\n", subscriptionBase(listener, app.Address), token, id); err != nil {
+				if _, err = fmt.Fprintf(output, "%s/s/%s/%s\n", fixtureSubscriptionBase(listener, app.Address), token, id); err != nil {
 					return err
 				}
 			}

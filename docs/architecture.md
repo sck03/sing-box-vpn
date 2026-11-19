@@ -1,6 +1,8 @@
 # 架构与维护
 
-`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 12；平台配置 schema=4、节点文档 schema=2、订阅配置 schema=2 是各自独立的格式版本。面向空目录，不提供旧数据库、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责，不允许旧 CLI 修改配置投影。
+`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 13；平台配置 schema=4、节点文档 schema=2、订阅配置 schema=2 是各自独立的格式版本。面向空目录，不提供旧数据库、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责，不允许旧 CLI 修改配置投影。
+
+公网传输由 `internal/publicaccess` 管理，共用 `internal/tlsconfig`；服务登记位于 `internal/servicecatalog`。主机操作按 service/deployment/units/gateway/network/journal 分文件，日志系统适配位于 `internal/hostservice`。任务保留策略与执行终态分离；面板访问重启由独立助手和持久收据完成。账户服务不再回退读取旧 JSON 配置，调用者必须注入配置/控制仓库，或读取当前数据库。
 
 ## 模块边界
 
@@ -19,12 +21,14 @@
 | internal/accounting                                              | 权益激活、日历账期、凭据代次、预留/检查点、下载计数                                     |
 | internal/controlstore                                            | desired/applied revision、持久任务、运行心跳、观测状态                                  |
 | internal/manage/platform\_\*                                     | 应用编排、配置图校验、备份、证书、主机服务、HTTP/CLI                                    |
-| internal/manage/platform_services                                | 统一服务登记：systemd 名称、职责、对应工作区、受管核心实例；供状态、能力目录和恢复共用  |
+| internal/servicecatalog                                          | 统一服务登记：systemd 名称、职责、对应工作区、受管核心实例；供状态、能力目录和恢复共用  |
+| internal/publicaccess                                            | 面板/订阅共享传输策略、URL/Host 校验与可信代理链，不依赖平台存储                        |
 | internal/manage/platform_panel_settings                          | 启动访问配置的验证、预览、并发版本核对和原子保存；不参与权益计量                        |
+| internal/manage/panel_restart                                    | 独立 systemd 助手应用面板设置、健康探测、自动回滚与持久终态                             |
 | internal/manage/platform_compile                                 | 候选准备、运行恢复编译、完整草稿预览及输出诊断                                          |
 | internal/manage/platform_acme                                    | 内置 lego 客户端、HTTP-01 验证、账户与签发结果持久化；复用平台任务调度与证书发布        |
 | internal/manage/certificate_material                             | 独立的 PEM 匹配、域名验证与有效期检查；已解析材料供状态、续期和导入复用，无共享过期缓存 |
-| internal/manage/panel_certificate                                | 面板 TLS 证书对的 30 秒刷新缓存；刷新失败仅保留未过期材料                               |
+| internal/tlsconfig                                               | 面板与订阅共用 TLS 证书对的 30 秒刷新缓存；刷新失败仅保留未过期材料                     |
 | internal/manage/program_upgrade_result                           | 升级助手结果收据、监听健康探测及任务终态；不重放升级副作用                              |
 | internal/manage/platform_task_output                             | 有界结果落盘、秘密隐藏以及取消后的部分结果保留                                          |
 | internal/manage/subscriptions_status、subscriptions_notification | 只读运行状态投影、独立通知活动记录；状态查询跳过缓存中的节点和模板正文                  |
@@ -38,7 +42,7 @@
 
 面板、普通核心、VPNGate 核心、VPNGate 网关和可选下载/Argo 服务分进程运行。一个权益不创建一个进程或端口。普通与 VPNGate 同库共享额度池，网关后端不重复计费。
 
-服务名为 `sing-box`（普通核心）、`vpngate-core`（VPNGate 用户核心）、`vpngate`（隧道网关）、`subscription`（下载）、`argo`（Cloudflare 隧道）；不注册旧名称别名。`vpngate-core` 依赖 `vpngate.service`，受管核心实例 ID 仍为业务范围 `normal` / `vpngate`，实例身份与系统服务名分离。前端日志入口消费能力目录，概览消费服务 DTO 的职责和工作区，不另维护一份服务名称清单。
+服务名为 `sb-core`（普通核心）、`sb-vpngate-core`（VPNGate 用户核心）、`sb-vpngate-gateway`（隧道网关）、`sb-subscription`（下载）、`sb-argo`（Cloudflare 隧道）；不注册旧名称别名。`sb-vpngate-core` 依赖 `sb-vpngate-gateway.service`，受管核心实例 ID 仍为业务范围 `normal` / `vpngate`，实例身份与系统服务名分离。前端日志入口消费能力目录，概览消费服务 DTO 的职责和工作区，不另维护一份服务名称清单。
 
 `panel.json` 是面板监听、TLS 和可信代理的启动配置，独立于数据库中的节点/权益配置。管理员通过 `/api/panel/settings/preview` 校验，通过 `/api/panel/settings` 的版本核对保存；变更需明确重启面板才生效。节点配置与面板设置相互核查端口，证书引用纳入材料回收保护。分享地址只读取已应用下载配置与当前生效面板源站；不可分享的回环地址在创建下载令牌前拒绝。
 
@@ -54,7 +58,7 @@ HTTP/CLI → Validate → 校验资源引用/核心配置 → revision CAS 保�
 
 升级等待期间控制通道不执行后续任务，后台探测仍独立。`wait-panel` 经本机 `/healthz` 校验 HTTP/TLS 监听及 worker 启动完成，不依赖公网 DNS、反代或管理员登录。该接口仅允许本机来源并校验 Host。等待超过 20 分钟仍无确认结果时任务失败，要求检查系统状态；不将超时视为升级成功。
 
-一个进程级 worker 文件锁防双管理器；控制通道串行执行配置、刷新和分发，独立后台通道串行执行只读出站/订阅探测，慢探测不占用控制通道。排队最多 32，任务展示/保留 200 条，结果最多 256 KiB；控制任务期限 5 分钟，64 节点探测按统一预算为 8 分 24 秒。调度在任务之间及空闲时执行，相同自动任务去重。提交后的任务不依赖浏览器连接。新的运行实例心跳与配置 revision 分开，未重启的无关实例可继续持旧启动 revision。
+一个进程级 worker 文件锁防双管理器；控制通道串行执行配置、刷新和分发，独立后台通道串行执行只读出站/订阅探测，慢探测不占用控制通道。排队最多 32，任务默认保留 200 条，可配置 20–2000 条，结果最多 256 KiB；控制任务期限 5 分钟，64 节点探测按统一预算为 8 分 24 秒。调度在任务之间及空闲时执行，相同自动任务去重。提交后的任务不依赖浏览器连接。新的运行实例心跳与配置 revision 分开，未重启的无关实例可继续持旧启动 revision。
 
 凭据撤销和账本变更不参加配置回滚，不能复活已撤销用户。绑定、轮换、解除绑定与 `credential_publications.revision` 在同一事务提交；发布成功更新 `published`，核心从同一数据库快照读取版本和凭据，在 Start 成功后确认 `loaded`。控制通道每 5 秒核对未完成发布，失败指数退避至 5 分钟；只重启仍活动且未加载新版本的实例。重试不重放原始轮换命令，手动停止的实例下次启动加载。`loaded` 表示最近一次成功启动加载的版本，是否仍在线必须结合心跳判断。账户独立到期不依赖面板或下载监听。
 
@@ -98,7 +102,7 @@ lego 的账户私钥、登记与签发结果保存于 `acme/lego/`，以 0600 �
 
 授权 Tick 一次批量查询活跃凭据及权益，账户账期只推进一次，不逐凭据重复 SELECT；同 Store 变更通过 epoch 失效，其他进程的变更仍在复查周期发现。下载授权最多 10,000 个有效记录，失效历史最多 1,000 条/30 天；创建时及每小时回收。账期保留最近 120 期，存在未结清 lease 的旧账期不删除。撤销凭据 ID 与 lease 高水位永久保留，不能回收以复活历史身份。
 
-已结束任务保留最近 200 条/30 天，详细结果总预算 8 MiB；超出部分保留明确的结果已回收标记。执行状态与业务 outcome 分别展示：passed、partial、failed、cached。刷新报告包含检查数、成功数、输出数、失败来源和最后成功时间；没有可用输出时不会标记为缓存成功。账户与下载授权 GET 接口使用分页 envelope；账户只推进当前页账期，显示订阅者停用的有效状态。空任务队列只读探测，不先取得 SQLite 写锁。批量绑定通过唯一表达式索引检查认证身份，每批只回收一次事件历史。
+已结束任务默认保留最近 200 条/30 天，详细结果默认预算 8 MiB，支持策略配置、删除和处理标记；超出部分保留明确的结果已回收标记。执行状态与业务 outcome 分别展示：passed、partial、failed、cached。刷新报告包含检查数、成功数、输出数、失败来源和最后成功时间；没有可用输出时不会标记为缓存成功。账户与下载授权 GET 接口使用分页 envelope；账户只推进当前页账期，显示订阅者停用的有效状态。空任务队列只读探测，不先取得 SQLite 写锁。批量绑定通过唯一表达式索引检查认证身份，每批只回收一次事件历史。
 
 HTTP 统一完成 Host/Origin、会话与 CSRF 检查后分发给 `platform_http_accounts.go`、`platform_http_subscriptions.go`、`platform_http_config.go`、`platform_http_tasks.go`。各业务保留显式角色和审计检查。新增接口必须通过同一入口，不能直接暴露内部 handler。
 

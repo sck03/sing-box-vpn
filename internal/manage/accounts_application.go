@@ -103,7 +103,7 @@ func (s AccountService) configSnapshot(ctx context.Context) (PlatformConfig, err
 	if s.Config != nil {
 		return *s.Config, nil
 	}
-	if s.Control != nil || platformOwned(s.Root) {
+	{
 		store := s.Control
 		if store == nil {
 			opened, err := controlstore.Open(filepath.Join(s.Root, "control.db"))
@@ -123,14 +123,6 @@ func (s AccountService) configSnapshot(ctx context.Context) (PlatformConfig, err
 		}
 		return observedConfig(ctx, store, c)
 	}
-	var app App
-	if ok, err := ReadJSON(filepath.Join(s.Root, "app.json"), &app); err != nil {
-		return PlatformConfig{}, err
-	} else if !ok {
-		return PlatformConfig{}, errors.New("ordinary node is not initialized")
-	}
-	settings, private, err := loadVPN(s.Root)
-	return PlatformConfig{App: app, VPN: settings, VPNSecrets: private}, err
 }
 
 func configuredEntries(c PlatformConfig, scope string) ([]ManagedNode, error) {

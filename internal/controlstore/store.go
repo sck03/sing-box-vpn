@@ -22,18 +22,19 @@ type State struct {
 	Applied         json.RawMessage `json:"applied"`
 }
 type Task struct {
-	ID      int64                    `json:"id"`
-	Kind    string                   `json:"kind"`
-	Actor   string                   `json:"actor"`
-	State   string                   `json:"state"`
-	Phase   string                   `json:"phase"`
-	Error   string                   `json:"error,omitempty"`
-	Created int64                    `json:"created"`
-	Updated int64                    `json:"updated"`
-	Input   json.RawMessage          `json:"-"`
-	Result  json.RawMessage          `json:"result,omitempty"`
-	Outcome string                   `json:"outcome,omitempty"`
-	Details application.TaskAudience `json:"details"`
+	ID           int64                    `json:"id"`
+	Kind         string                   `json:"kind"`
+	Actor        string                   `json:"actor"`
+	State        string                   `json:"state"`
+	Phase        string                   `json:"phase"`
+	Error        string                   `json:"error,omitempty"`
+	Created      int64                    `json:"created"`
+	Updated      int64                    `json:"updated"`
+	Input        json.RawMessage          `json:"-"`
+	Result       json.RawMessage          `json:"result,omitempty"`
+	Outcome      string                   `json:"outcome,omitempty"`
+	Acknowledged bool                     `json:"acknowledged"`
+	Details      application.TaskAudience `json:"details"`
 }
 
 func Open(path string) (*Store, error) {
@@ -42,7 +43,7 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS control_state(id INTEGER PRIMARY KEY CHECK(id=1),revision INTEGER NOT NULL,applied_revision INTEGER NOT NULL,desired BLOB NOT NULL,applied BLOB NOT NULL);
-CREATE TABLE IF NOT EXISTS control_tasks(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,actor TEXT NOT NULL,lane TEXT NOT NULL DEFAULT 'control' CHECK(lane IN ('control','background')),state TEXT NOT NULL,phase TEXT NOT NULL,error TEXT NOT NULL DEFAULT '',created INTEGER NOT NULL,updated INTEGER NOT NULL,input BLOB NOT NULL,result BLOB NOT NULL DEFAULT '{}',outcome TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS control_tasks(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,actor TEXT NOT NULL,lane TEXT NOT NULL DEFAULT 'control' CHECK(lane IN ('control','background')),state TEXT NOT NULL,phase TEXT NOT NULL,error TEXT NOT NULL DEFAULT '',created INTEGER NOT NULL,updated INTEGER NOT NULL,input BLOB NOT NULL,result BLOB NOT NULL DEFAULT '{}',outcome TEXT NOT NULL DEFAULT '',acknowledged INTEGER NOT NULL DEFAULT 0 CHECK(acknowledged IN (0,1)));
 CREATE INDEX IF NOT EXISTS control_task_lane ON control_tasks(state,lane,id);
 CREATE TABLE IF NOT EXISTS runtime_state(instance TEXT PRIMARY KEY,revision INTEGER NOT NULL,version TEXT NOT NULL,started INTEGER NOT NULL,heartbeat INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS observations(name TEXT PRIMARY KEY,value TEXT NOT NULL);
@@ -242,7 +243,7 @@ func (s *Store) Finish(ctx context.Context, id int64, result error) error {
 	if err != nil {
 		return err
 	}
-	return s.PruneHistory(ctx, time.Now())
+	return nil
 }
 func (s *Store) Applied(ctx context.Context, revision int64) error {
 	r, err := s.db.ExecContext(ctx, `UPDATE control_state SET applied=desired,applied_revision=revision WHERE id=1 AND revision=?`, revision)
@@ -259,7 +260,7 @@ func (s *Store) Applied(ctx context.Context, revision int64) error {
 // Only an interrupted configuration application is replayed automatically.
 // Non-idempotent operations require an explicit new request after interruption.
 func (s *Store) Recover(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE control_tasks SET state=CASE WHEN kind='apply' THEN 'queued' ELSE 'failed' END,input=CASE WHEN kind='apply' THEN input ELSE CAST('{}' AS BLOB) END,phase='interrupted',error='process interrupted; inspect state before retrying',updated=? WHERE state='running' AND NOT (kind='program-upgrade' AND phase='awaiting-panel-health')`, time.Now().Unix())
+	_, err := s.db.ExecContext(ctx, `UPDATE control_tasks SET state=CASE WHEN kind='apply' THEN 'queued' ELSE 'failed' END,input=CASE WHEN kind='apply' THEN input ELSE CAST('{}' AS BLOB) END,phase='interrupted',error='process interrupted; inspect state before retrying',updated=? WHERE state='running' AND NOT (kind IN ('program-upgrade','panel-restart') AND phase='awaiting-panel-health')`, time.Now().Unix())
 	return err
 }
 func (s *Store) Cancel(ctx context.Context, id int64) error {
@@ -280,12 +281,16 @@ func (s *Store) TaskSummaries(ctx context.Context) ([]Task, error) {
 	return s.tasks(ctx, "CAST('{}' AS BLOB)")
 }
 func (s *Store) Task(ctx context.Context, id int64) (t Task, err error) {
-	err = s.db.QueryRowContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,CAST(result AS BLOB),outcome FROM control_tasks WHERE id=?`, id).Scan(&t.ID, &t.Kind, &t.Actor, &t.State, &t.Phase, &t.Error, &t.Created, &t.Updated, &t.Result, &t.Outcome)
+	err = s.db.QueryRowContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,CAST(result AS BLOB),outcome,acknowledged FROM control_tasks WHERE id=?`, id).Scan(&t.ID, &t.Kind, &t.Actor, &t.State, &t.Phase, &t.Error, &t.Created, &t.Updated, &t.Result, &t.Outcome, &t.Acknowledged)
 	t.Details = application.TaskDetails(t.Kind, t.Actor)
 	return
 }
 func (s *Store) tasks(ctx context.Context, result string) ([]Task, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,`+result+`,outcome FROM control_tasks ORDER BY id DESC LIMIT 200`)
+	policy, err := s.HistoryPolicy(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,`+result+`,outcome,acknowledged FROM control_tasks ORDER BY state IN ('queued','running') DESC,id DESC LIMIT ?`, policy.Count+32)
 	if err != nil {
 		return nil, err
 	}
@@ -293,7 +298,7 @@ func (s *Store) tasks(ctx context.Context, result string) ([]Task, error) {
 	v := []Task{}
 	for rows.Next() {
 		var t Task
-		if err = rows.Scan(&t.ID, &t.Kind, &t.Actor, &t.State, &t.Phase, &t.Error, &t.Created, &t.Updated, &t.Result, &t.Outcome); err != nil {
+		if err = rows.Scan(&t.ID, &t.Kind, &t.Actor, &t.State, &t.Phase, &t.Error, &t.Created, &t.Updated, &t.Result, &t.Outcome, &t.Acknowledged); err != nil {
 			return nil, err
 		}
 		t.Details = application.TaskDetails(t.Kind, t.Actor)

@@ -1,14 +1,16 @@
 import { api } from "./api.js";
 import { capabilities } from "./capabilities.js";
 import { tasksCard } from "./tasks.js";
-import { canView, pageFor, groupFor, routeFor } from "./page-catalog.js";
+import { canView, pageFor, sectionsFor, routeFor } from "./page-catalog.js";
 import { el, card, help, table, badge, button } from "./ui.js";
 
 function configurationStatus(snapshot) {
   if (snapshot.revision === snapshot.applied_revision)
     return `已应用 v${snapshot.applied_revision}`;
   const task = snapshot.tasks.find((entry) => entry.kind === "apply");
-  const stage = { queued: "排队中", running: "应用中", failed: "应用失败" }[task?.state] || "待应用";
+  const stage =
+    { queued: "排队中", running: "应用中", failed: "应用失败" }[task?.state] ||
+    "待应用";
   return `v${snapshot.revision} ${stage} · 生效 v${snapshot.applied_revision}`;
 }
 export async function overview(ctx) {
@@ -66,10 +68,7 @@ export async function overview(ctx) {
     "div",
     { class: "stats" },
     ...[
-      [
-        configurationStatus(data),
-        "配置状态",
-      ],
+      [configurationStatus(data), "配置状态"],
       [data.runtimes.filter((v) => v.recent).length, "近期在线实例"],
       [data.tasks.filter((v) => v.state === "failed").length, "失败任务"],
       [
@@ -115,7 +114,7 @@ export async function overview(ctx) {
     card(
       "系统服务",
       help(
-        "服务启动只运行已保存的配置。点击服务对应的设置入口配置功能；VPNGate 节点核心与隧道网关分工运行，共用同一 VPNGate 页面。",
+        "服务启动只运行已保存的配置。点击服务对应的设置入口配置功能；VPNGate 接入核心与出口网关分别进入对应工作区。",
       ),
       table(
         [
@@ -139,13 +138,15 @@ export async function overview(ctx) {
                 v.page + (v.section ? "/" + v.section : ""),
                 ctx.session.role,
               );
+              const section = sectionsFor(v.page, ctx.session.role).find(
+                ([key]) => key === target.section,
+              );
               return canView(v.page, ctx.session.role)
                 ? el(
                     "a",
                     { href: "#" + target.hash },
-                    groupFor(v.page).label +
-                      " / " +
-                      pageFor(v.page, ctx.session.role).title,
+                    pageFor(v.page, ctx.session.role).title +
+                      (section ? " / " + section[1] : ""),
                   )
                 : el("span", {}, "请联系管理员配置");
             },
@@ -183,6 +184,7 @@ export async function overview(ctx) {
                 ),
               )
           : null,
+        { controls: false },
       ),
     ),
     tasksCard(data.tasks, ctx),

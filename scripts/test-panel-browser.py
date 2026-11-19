@@ -99,6 +99,28 @@ def check(browser, base):
     expect(phone.locator("#dialog")).to_be_visible()
     mobile.close()
     assert not browser_errors, browser_errors
+    # Service routes select different VPNGate workspaces; fixed lists have no pager.
+    page.goto(base + "/#overview")
+    expect(page.locator('a[href="#vpngate/access"]')).to_be_visible()
+    expect(page.locator('a[href="#vpngate/gateway"]')).to_be_visible()
+    if screenshots:
+        page.screenshot(path=os.path.join(screenshots, "services.png"), full_page=True)
+    page.goto(base + "/#access/panel")
+    page.get_by_role("button", name="配置面板访问", exact=True).click()
+    expect(page.get_by_label("访问方式", exact=True)).to_have_count(1)
+    assert page.get_by_label("访问方式", exact=True).locator("option").count() == 3
+    if screenshots:
+        page.screenshot(path=os.path.join(screenshots, "public-access.png"), full_page=True)
+    page.keyboard.press("Escape")
+    page.goto(base + "/#access/subscription")
+    page.get_by_role("button", name="配置独立下载监听", exact=True).click()
+    assert page.get_by_label("访问方式", exact=True).locator("option").count() == 2
+    page.keyboard.press("Escape")
+    page.goto(base + "/#maintenance/logs")
+    expect(page.get_by_role("button", name="保留策略", exact=True)).to_be_visible()
+    expect(page.get_by_role("button", name="清理运行日志", exact=True)).to_be_visible()
+    if screenshots:
+        page.screenshot(path=os.path.join(screenshots, "maintenance.png"), full_page=True)
     context.close()
 
 

@@ -54,7 +54,7 @@ func TestSystemServicesActiveRejectsQueryFailures(t *testing.T) {
 			if tc.overflow && !errors.Is(err, command.ErrOutputLimit) {
 				t.Fatal("output limit error lost")
 			}
-			if !strings.Contains(err.Error(), "sing-box") {
+			if !strings.Contains(err.Error(), "sb-core") {
 				t.Fatal("query error omitted the service name")
 			}
 		})
@@ -65,13 +65,13 @@ func TestSystemServicesActiveRecognizesUnitStates(t *testing.T) {
 	for _, code := range []string{"3", "4"} {
 		t.Run(code, func(t *testing.T) {
 			bin := t.TempDir()
-			script := "#!/bin/sh\ncase \"$3\" in\nsing-box) exit 0;;\nvpngate-core) exit " + code + ";;\nesac\nexit 1\n"
+			script := "#!/bin/sh\ncase \"$3\" in\nsb-core) exit 0;;\nsb-vpngate-core) exit " + code + ";;\nesac\nexit 1\n"
 			if err := os.WriteFile(filepath.Join(bin, "systemctl"), []byte(script), 0700); err != nil {
 				t.Fatal(err)
 			}
 			t.Setenv("PATH", bin)
 			active, err := (systemServices{}).active(t.Context())
-			if err != nil || !reflect.DeepEqual(active, []string{"sing-box"}) {
+			if err != nil || !reflect.DeepEqual(active, []string{"sb-core"}) {
 				t.Fatalf("incorrect restart plan: %v, %v", active, err)
 			}
 		})

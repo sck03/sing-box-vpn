@@ -259,6 +259,9 @@ func (s *PlatformService) Run(ctx context.Context) error {
 	if err = lockFile(workerLock); err != nil {
 		return errors.New("another platform worker is already running")
 	}
+	if err := s.reconcilePanelRestart(ctx); err != nil {
+		_ = s.Auth.Audit(ctx, "scheduler", "panel-restart-receipt", "", "failed")
+	}
 	if err := s.reconcileProgramUpgrade(ctx); err != nil {
 		_ = s.Auth.Audit(ctx, "scheduler", "upgrade-receipt", "", "failed")
 	}

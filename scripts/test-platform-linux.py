@@ -86,12 +86,12 @@ try:
     raise AssertionError("loopback installation generated an unusable share")
 except urllib.error.HTTPError as error:
     assert error.code == 400, error.code
-    assert "127.0.0.1" in error.read().decode()
+    assert "公网访问" in error.read().decode()
 assert not api("/api/grants?q=" + identifier)["items"]
 # Advertise a synthetic HTTPS origin only in this disposable installation.
 # Downloads below still use the local panel; no external site is contacted.
 published = copy.deepcopy(original)
-published["listener"] = {"enabled": True, "listen": "127.0.0.1", "port": 2097, "public_base_url": "https://subscriptions.example.test"}
+published["listener"] = {"enabled": True, "listen": "127.0.0.1", "port": 2097, "public_base_url": "https://subscriptions.example.test", "trusted_proxy": ["127.0.0.1/32"]}
 apply(published)
 grant = api("/api/grants", share)
 assert grant["user_url"].startswith("https://subscriptions.example.test/user#")
@@ -108,17 +108,17 @@ assert usage["started_at"] is None
 print("HTTP: login, independent account, binding, export, QR and first-use grant passed",flush=True)
 apply(original)
 
-task(operation="service", service="sing-box", value="stop")
+task(operation="service", service="sb-core", value="stop")
 changed=copy.deepcopy(original)
 changed["app"].setdefault("advanced",{})["log"]={"level":"warn"}
 apply(changed)
-assert subprocess.run(["systemctl","is-active","--quiet","sing-box"]).returncode!=0
-task(operation="service", service="sing-box", value="start")
+assert subprocess.run(["systemctl","is-active","--quiet","sb-core"]).returncode!=0
+task(operation="service", service="sb-core", value="start")
 apply(original)
 print("systemd: stopped state preserved after configuration application",flush=True)
 
 def unit_enabled_state():
-    result = subprocess.run(["systemctl", "is-enabled", "sing-box"], text=True, capture_output=True)
+    result = subprocess.run(["systemctl", "is-enabled", "sb-core"], text=True, capture_output=True)
     assert result.returncode in (0, 1), result.stderr
     return result.stdout.strip()
 
@@ -132,7 +132,7 @@ with socket.socket() as occupied:
     result=apply(bad,"failed")
     assert result["phase"]=="rolled-back",result
 assert unit_enabled_state()==enabled
-assert subprocess.run(["systemctl","is-active","--quiet","sing-box"]).returncode==0
+assert subprocess.run(["systemctl","is-active","--quiet","sb-core"]).returncode==0
 apply(original)
 usage=next(a for a in api("/api/accounts?q="+account["id"])["items"] if a["id"]==account["id"])
 account["revision"]=usage["revision"];account["disabled"]=True

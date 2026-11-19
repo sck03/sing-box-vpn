@@ -1,3 +1,4 @@
+import { workspace } from "./workspace.js";
 import { api } from "./api.js";
 import { capabilities } from "./capabilities.js";
 import { showFacts, showRecords } from "./details.js";
@@ -73,12 +74,19 @@ export async function vpngate(ctx) {
   );
   if (!admin)
     return [
-      status,
-      card(
-        "配置权限",
-        help(
-          "操作员可以控制网关和查询出口；国家、入口和筛选策略由管理员配置。",
-        ),
+      workspace(
+        "vpngate",
+        {
+          access: () =>
+            card(
+              "VPNGate 接入核心",
+              help(
+                "sb-vpngate-core 负责用户接入、认证和计量；入口配置由管理员管理。",
+              ),
+            ),
+          gateway: () => status,
+        },
+        ctx,
       ),
     ];
   const controls = card(
@@ -162,53 +170,66 @@ export async function vpngate(ctx) {
       ],
     ),
   );
+  const policy = card(
+    "运行策略",
+    button("编辑来源与筛选", () =>
+      formDialog(
+        "VPNGate 来源与策略",
+        gatewayFields(metadata.gateway.limits),
+        { ...metadata.gateway.defaults, ...c.gateway },
+        (v) => {
+          c.gateway = v;
+          ctx.changed();
+          ctx.render();
+        },
+      ),
+    ),
+    help(
+      "支持 sticky / fixed、来源地址、ISP / hosting 策略与 ASN 筛选。更改国家请使用上方国家选择，认证与隔离字段由服务端维护。",
+    ),
+    el(
+      "details",
+      { class: "advanced" },
+      el("summary", {}, "高级配置"),
+      button("编辑完整策略 JSON", () =>
+        jsonDialog("VPNGate 高级策略", c.gateway, (v) => {
+          c.gateway = v;
+          ctx.changed();
+          ctx.render();
+        }),
+      ),
+    ),
+    el(
+      "pre",
+      {},
+      JSON.stringify(
+        {
+          country: c.gateway.country,
+          mode: c.gateway.mode,
+          require_isp: c.gateway.require_isp,
+          exclude_hosting: c.gateway.exclude_hosting,
+          sources: c.gateway.sources,
+        },
+        null,
+        2,
+      ),
+    ),
+  );
   return [
-    status,
-    controls,
-    card(
-      "运行策略",
-      button("编辑来源与筛选", () =>
-        formDialog(
-          "VPNGate 来源与策略",
-          gatewayFields(metadata.gateway.limits),
-          { ...metadata.gateway.defaults, ...c.gateway },
-          (v) => {
-            c.gateway = v;
-            ctx.changed();
-            ctx.render();
-          },
-        ),
-      ),
-      help(
-        "支持 sticky / fixed、来源地址、ISP / hosting 策略与 ASN 筛选。更改国家请使用上方国家选择，认证与隔离字段由服务端维护。",
-      ),
-      el(
-        "details",
-        { class: "advanced" },
-        el("summary", {}, "高级配置"),
-        button("编辑完整策略 JSON", () =>
-          jsonDialog("VPNGate 高级策略", c.gateway, (v) => {
-            c.gateway = v;
-            ctx.changed();
-            ctx.render();
-          }),
-        ),
-      ),
-      el(
-        "pre",
-        {},
-        JSON.stringify(
-          {
-            country: c.gateway.country,
-            mode: c.gateway.mode,
-            require_isp: c.gateway.require_isp,
-            exclude_hosting: c.gateway.exclude_hosting,
-            sources: c.gateway.sources,
-          },
-          null,
-          2,
-        ),
-      ),
+    workspace(
+      "vpngate",
+      {
+        access: () => [
+          help("sb-vpngate-core 负责用户接入、认证和计量。"),
+          controls,
+        ],
+        gateway: () => [
+          status,
+          help("sb-vpngate-gateway 负责 OpenVPN 隧道、出口验证与节点切换。"),
+          policy,
+        ],
+      },
+      ctx,
     ),
   ];
 }

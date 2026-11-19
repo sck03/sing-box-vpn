@@ -99,7 +99,7 @@ type fakeServices struct {
 	afterFailure func()
 }
 
-func (s *fakeServices) active(context.Context) ([]string, error) { return []string{"sing-box"}, nil }
+func (s *fakeServices) active(context.Context) ([]string, error) { return []string{"sb-core"}, nil }
 func (s *fakeServices) restart(_ context.Context, name string) error {
 	s.calls = append(s.calls, name)
 	data, err := os.ReadFile(filepath.Join(s.root, "sing-box"))
@@ -147,9 +147,9 @@ func TestCoreUpdateAndAutomaticRollback(t *testing.T) {
 			services.fail = fail
 			before := readBytes(t, filepath.Join(root, "sb.json"))
 			_, err := u.activate(context.Background(), root, candidate, true)
-			expected, calls := "new", []string{"sing-box"}
+			expected, calls := "new", []string{"sb-core"}
 			if fail {
-				expected, calls = "old", []string{"sing-box", "sing-box"}
+				expected, calls = "old", []string{"sb-core", "sb-core"}
 				if err == nil {
 					t.Fatal("startup failure ignored")
 				}
@@ -298,7 +298,7 @@ type failedRecoveryServices struct {
 }
 
 func (s *failedRecoveryServices) active(context.Context) ([]string, error) {
-	return []string{"sing-box", "vpngate-core"}, nil
+	return []string{"sb-core", "sb-vpngate-core"}, nil
 }
 
 func (s *failedRecoveryServices) restart(ctx context.Context, name string) error {
@@ -325,7 +325,7 @@ func TestCoreRollbackReportsServiceRecoveryFailure(t *testing.T) {
 	if !errors.Is(err, recoveryErr) {
 		t.Fatal("service recovery failure was hidden", err)
 	}
-	if string(readBytes(t, filepath.Join(root, "sing-box"))) != "old" || !reflect.DeepEqual(services.calls, []string{"sing-box", "sing-box", "vpngate-core"}) {
+	if string(readBytes(t, filepath.Join(root, "sing-box"))) != "old" || !reflect.DeepEqual(services.calls, []string{"sb-core", "sb-core", "sb-vpngate-core"}) {
 		t.Fatal("rollback did not restore the original core or try both services", services.calls)
 	}
 }

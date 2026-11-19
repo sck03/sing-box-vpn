@@ -331,7 +331,7 @@ export async function subscriptions(ctx) {
       }),
     sharing: async () => {
       const applied = await request("/api/grant-options");
-      const reason = !applied.listener_enabled ? "请在公网访问中启用下载监听并应用配置。" : applied.unavailable || (!applied.outputs.length && "请先创建并应用一个订阅输出。");
+      const reason = applied.unavailable || (!applied.outputs.length && "请先创建并应用一个订阅输出。");
       return card(
         "输出下载授权",
         help(

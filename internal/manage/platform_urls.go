@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/sck03/sing-box-vpn/internal/application"
+	"github.com/sck03/sing-box-vpn/internal/publicaccess"
 )
 
 func appliedDownloadOrigin(c PlatformConfig, fallback string) (string, error) {
@@ -14,7 +15,7 @@ func appliedDownloadOrigin(c PlatformConfig, fallback string) (string, error) {
 	if c.Listener.Enabled {
 		origin = strings.TrimRight(c.Listener.PublicBaseURL, "/")
 	}
-	if err := shareableURL(origin); err != nil {
+	if err := publicaccess.ShareableURL(origin); err != nil {
 		return "", err
 	}
 	return origin, nil
@@ -53,9 +54,6 @@ func (s *PlatformService) grantOptions(ctx context.Context, fallback string) (gr
 func (v grantOptions) validate(outputs []string) error {
 	if v.Unavailable != "" {
 		return errors.New(v.Unavailable)
-	}
-	if len(outputs) > 0 && !v.ListenerEnabled {
-		return errors.New("enable and apply the download listener first")
 	}
 	for _, id := range outputs {
 		if !slices.ContainsFunc(v.Outputs, func(o application.Option) bool { return o.ID == id }) {

@@ -51,7 +51,7 @@ install_main() (
         local code=$?
         trap - EXIT
         if ((code != 0 && created)); then
-            if ((units)); then stop_owned_units sb-recovery.timer sing-box.service sb-panel.service; fi
+            if ((units)); then stop_owned_units sb-recovery.timer sb-core.service sb-panel.service; fi
             [[ ! -d "$APP_HOME" ]] || mv -- "$APP_HOME" "${APP_HOME}.install-failed.$failure_stamp"
             [[ ! -d "$SB_ROOT" ]] || mv -- "$SB_ROOT" "${SB_ROOT}.install-failed.$failure_stamp"
             echo "安装失败，诊断材料保留在 .install-failed.$failure_stamp 目录；可重新运行安装。" >&2
@@ -80,8 +80,8 @@ install_main() (
     units=1
     panel install-services
     ln -sfn "$APP_HOME/sb.sh" /usr/bin/sb
-    systemctl enable --now sing-box sb-panel
-    systemctl is-active --quiet sing-box sb-panel
+    systemctl enable --now sb-core sb-panel
+    systemctl is-active --quiet sb-core sb-panel
     printf '已安装：%s\n' "$("$MANAGER" --version)"
     echo '面板默认仅监听 127.0.0.1:2096。'
     echo '本机执行 SSH 端口转发：ssh -L 2096:127.0.0.1:2096 root@VPS，然后打开 http://127.0.0.1:2096'
@@ -103,14 +103,20 @@ uninstall_main() {
         fi
         [[ "$answer" == yes ]] || { echo '已取消卸载。'; return 0; }
     fi
-    stop_owned_units sb-recovery.timer sb-recovery.service sb-panel.service subscription.service argo.service vpngate-core.service vpngate.service sing-box.service
+    stop_owned_units sb-recovery.timer sb-recovery.service sb-panel.service sb-subscription.service sb-argo.service sb-vpngate-core.service sb-vpngate-gateway.service sb-core.service
     "$MANAGER" cleanup --config "$SB_ROOT/vpngate/gateway.json" 2>/dev/null || true
     "$MANAGER" firewall --root "$SB_ROOT" --remove
     local service
-    for service in sb-panel subscription argo vpngate-core vpngate sing-box; do
+    for service in sb-panel sb-subscription sb-argo sb-vpngate-core sb-vpngate-gateway sb-core; do
         remove_owned_units "$service.service"
     done
     remove_owned_units sb-recovery.service sb-recovery.timer
+    local journal_limits=/etc/systemd/journald@sb-vpn.conf.d/limits.conf
+    if [[ -f "$journal_limits" && ! -L "$journal_limits" && ! -L "${journal_limits%/*}" ]] &&
+       head -n 1 "$journal_limits" | grep -qx '# Managed by sing-box-vpn'; then
+        rm -f -- "$journal_limits"
+        rmdir -- /etc/systemd/journald@sb-vpn.conf.d 2>/dev/null || true
+    fi
     rm -f -- /usr/bin/sb "$MANAGER" /etc/sysctl.d/90-sing-box-vpn.conf
     rm -rf -- "$SB_ROOT" "$APP_HOME"
     systemctl daemon-reload
@@ -118,8 +124,8 @@ uninstall_main() {
 }
 diagnose() {
     panel status
-    systemctl --no-pager --full status sb-panel sing-box vpngate-core vpngate subscription argo || true
-    journalctl -u sb-panel -u sing-box -u vpngate-core -u vpngate -n 100 --no-pager
+    systemctl --no-pager --full status sb-panel sb-core sb-vpngate-core sb-vpngate-gateway sb-subscription sb-argo || true
+    journalctl --namespace=sb-vpn -u sb-panel -u sb-core -u sb-vpngate-core -u sb-vpngate-gateway -n 100 --no-pager
 }
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; fi
 if (($# > 2)) || { (($# == 2)) && [[ "$1" != uninstall || "$2" != --yes ]]; }; then

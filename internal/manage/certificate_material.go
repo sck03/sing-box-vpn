@@ -3,7 +3,7 @@ package manage
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"errors"
+	"github.com/sck03/sing-box-vpn/internal/tlsconfig"
 	"os"
 	"time"
 )
@@ -18,22 +18,11 @@ type certificateMaterial struct {
 }
 
 func parseCertificateMaterial(cert, key []byte, domain string) (certificateMaterial, error) {
-	pair, err := tls.X509KeyPair(cert, key)
+	pair, err := tlsconfig.Parse(cert, key, domain)
 	if err != nil {
-		return certificateMaterial{}, errors.New("certificate and private key do not match")
-	}
-	leaf := pair.Leaf
-	if leaf == nil {
-		// Honor Go's x509keypairleaf debug setting without parsing twice normally.
-		leaf, err = x509.ParseCertificate(pair.Certificate[0])
-		if err != nil {
-			return certificateMaterial{}, err
-		}
-	}
-	if err = leaf.VerifyHostname(domain); err != nil {
 		return certificateMaterial{}, err
 	}
-	return certificateMaterial{certificate: cert, key: key, leaf: leaf, pair: &pair}, nil
+	return certificateMaterial{certificate: cert, key: key, leaf: pair.Leaf, pair: pair}, nil
 }
 
 func readCertificateMaterial(asset CertificateAsset) (certificateMaterial, error) {
@@ -49,10 +38,7 @@ func readCertificateMaterial(asset CertificateAsset) (certificateMaterial, error
 }
 
 func (m certificateMaterial) validateTime(now time.Time) error {
-	if now.Before(m.leaf.NotBefore) || !now.Before(m.leaf.NotAfter) {
-		return errors.New("certificate is not currently valid")
-	}
-	return nil
+	return tlsconfig.ValidAt(m.pair, now)
 }
 
 func validatePEM(cert, key []byte, domain string) (*x509.Certificate, error) {

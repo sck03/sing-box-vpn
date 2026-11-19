@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,7 +34,7 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 	if err := f.Parse(args); err != nil {
 		return err
 	}
-	if len(f.Args()) != 1 {
+	if len(f.Args()) != 1 && !(len(f.Args()) == 2 && f.Arg(0) == "restart-settings") {
 		return errors.New("panel requires init, serve, configure, reset-admin, status, command, apply, recover or restore")
 	}
 	if *core == "" {
@@ -103,6 +104,12 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 		return options
 	}
 	switch op {
+	case "restart-settings":
+		id, err := strconv.ParseInt(f.Arg(1), 10, 64)
+		if err != nil {
+			return err
+		}
+		return s.restartPanelSettings(ctx, id)
 	case "complete-upgrade":
 		return s.reconcileProgramUpgrade(ctx)
 	case "wait-panel":
@@ -137,6 +144,11 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 			return err
 		}
 		return withStartupLock(ctx, s.Root, func() error {
+			if pending, err := s.Store.PendingKind(ctx, "panel-restart"); err != nil {
+				return err
+			} else if pending {
+				return errors.New("panel restart is still pending")
+			}
 			if err := s.validatePanelListener(ctx, options); err != nil {
 				return err
 			}

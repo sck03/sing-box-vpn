@@ -292,26 +292,22 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := manage.AtomicJSON(filepath.Join(root, "subscription.json"), manage.Object{"enabled": true, "port": subscriptionPort, "token": token, "listen": "127.0.0.1"}); err != nil {
+	// Protocol acceptance uses the panel's shared download route in local
+	// development mode. Public subscription transport is tested separately.
+	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(subscriptionPort)))
+	if err != nil {
 		t.Fatal(err)
 	}
-	subscriptionCtx, stopSubscription := context.WithCancel(ctx)
-	subscriptionDone := make(chan error, 1)
-	go func() {
-		subscriptionDone <- manage.RunSubscription(subscriptionCtx, []string{"--root", root}, io.Discard)
-	}()
-	t.Cleanup(func() {
-		stopSubscription()
-		select {
-		case err := <-subscriptionDone:
-			if err != nil {
-				t.Error(err)
-			}
-		case <-time.After(3 * time.Second):
-			t.Error("protocol subscription server did not stop")
-		}
-	})
-	subscriptionURL := "http://127.0.0.1:" + strconv.Itoa(subscriptionPort) + "/s/" + token + "/"
+	platform, err := manage.OpenPlatform(root, binary, "", true)
+	if err != nil {
+		listener.Close()
+		t.Fatal(err)
+	}
+	origin := "http://" + listener.Addr().String()
+	downloadServer := &http.Server{Handler: platform.Handler(manage.PanelOptions{Listen: listener.Addr().String(), PublicURL: origin})}
+	go downloadServer.Serve(listener)
+	t.Cleanup(func() { downloadServer.Close(); platform.Close() })
+	subscriptionURL := origin + "/s/" + token + "/"
 	if _, err := manage.ReadJSON(filepath.Join(root, "app.json"), &app); err != nil {
 		t.Fatal(err)
 	}

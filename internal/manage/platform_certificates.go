@@ -95,6 +95,9 @@ func (s *PlatformService) CertificateStatus(ctx context.Context) ([]Object, erro
 		return nil, err
 	}
 	usedBy := make(map[string][]string)
+	if c.Listener.Certificate != "" {
+		usedBy[c.Listener.Certificate] = append(usedBy[c.Listener.Certificate], "独立订阅（已保存）")
+	}
 	for _, node := range nodes {
 		usedBy[node.TLS.Certificate] = append(usedBy[node.TLS.Certificate], node.ID)
 	}
@@ -241,16 +244,16 @@ func managedCertificatePair(root string, asset CertificateAsset) bool {
 }
 
 func certificateUses(c PlatformConfig, path, service string) bool {
-	if service == "sing-box" {
+	if service == "sb-core" {
 		for _, in := range c.App.Inbounds {
 			if in["_disabled"] != true && text(object(in["tls"])["certificate_path"]) == path {
 				return true
 			}
 		}
 	}
-	if service == "vpngate-core" {
+	if service == "sb-vpngate-core" {
 		p := c.VPN.Profiles[c.VPN.ActiveCountry]
 		return p.Certificate == path
 	}
-	return false
+	return service == "sb-subscription" && c.Listener.Enabled && c.Listener.Certificate == path
 }

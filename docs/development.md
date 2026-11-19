@@ -1,12 +1,12 @@
 # 开发与发布
 
-当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载六组。数据库使用 schema 12，所有旧数据库及其备份明确拒绝。
+当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载六组。数据库使用 schema 13，所有旧数据库及其备份明确拒绝。
 
 `scripts/test-panel-navigation.mjs` 覆盖角色过滤、搜索定位、空/非法路由、同页标签的前进/返回与表单复用、延迟读取合并与取消、错误重试、权益初始读取预算、稀疏订阅草稿和 SSE 启动。`TestPanelEphemeralDevelopmentListener` 实际启动回环随机端口、请求能力接口并关闭服务，同时拒绝公网随机端口；设置校验仍拒绝保存端口 0。`TestPanelHealthSurvivesSaturatedRequests` 验证 32 个业务请求占满限额时，本机健康检查仍能准确判断 worker 就绪状态。
 
 当前新增公网设置和服务登记回归：`go test ./internal/manage -run 'TestPanelAccess|TestPanelSettings|TestShareRejects|TestServiceCatalog|TestCertificateGarbage'`；管理员最低 8/最高 72 UTF-8 字节，`TestEightBytePasswordBoundary` 覆盖创建、登录、修改和重置。前端契约回归包含导航折叠记忆、当前分组展开、公网访问方式切换和先预览后保存；分享回归确认随机 ID 与默认继承权益策略。
 
-`GET /api/panel/settings` 返回 `{options,active,revision,restart_required}`；`POST /api/panel/settings/preview` 接受 `{options}` 并只校验；`POST /api/panel/settings` 接受 `{options,revision}`，旧 revision 返回 409。全部要求管理员会话，写入要求 CSRF；不保存未校验配置。救援 CLI `panel configure` 从 stdin 接受相同 PanelOptions。`/api/capabilities.services` 统一登记服务及工作区；服务动作只接受 `sing-box/vpngate-core/vpngate/subscription/argo`，没有旧名称别名。
+`GET /api/panel/settings` 返回 `{options,active,revision,restart_required}`；`POST /api/panel/settings/preview` 接受 `{options}` 并只校验；`POST /api/panel/settings` 接受 `{options,revision}`，旧 revision 返回 409。全部要求管理员会话，写入要求 CSRF；不保存未校验配置。救援 CLI `panel configure` 从 stdin 接受相同 PanelOptions。`/api/capabilities.services` 统一登记服务及工作区；服务动作只接受 `sb-core/sb-vpngate-core/sb-vpngate-gateway/sb-subscription/sb-argo`，没有旧名称别名。
 
 本轮新增 `internal/database/database_test.go` 的连接替换/超时外键回归，以及 `platform_contracts_test.go` 的共享参数、公开分享、候选校验、WARP、缓存持久化与取消结果测试。前端第五组 `scripts/test-panel-contracts.mjs` 覆盖 UTF-8 密码、网关范围、协议字段、移动排序与操作员网关控制。
 
@@ -75,9 +75,9 @@ Windows 先加载 `scripts/dev-env.ps1`，将 `GATEWAY_BINARY` 和 `MANAGED_CORE
 
 可对该独立面板运行真实 HTTP 工作流：设置 `PANEL_TEST_URL`、`PANEL_TEST_USERNAME`（默认 reviewadmin）和 `PANEL_TEST_PASSWORD`，执行 `node scripts/test-panel-api.mjs`。脚本只接受回环 URL，并在创建数据前确认服务均处于 no-system 状态。验证绑定/导出、下载次数、跨站分享、完整候选预览和任务应用；不能指向真实安装。
 
-配置预览统一为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回 `valid`、普通服务端脱敏配置、输出列表与诊断。旧 `/api/subscriptions/preview` 已删除。公开 `/api/capabilities` 提供协议、网关范围与密码字节范围。节点文档 schema=2、订阅 schema=2、平台 schema=4；备份容器格式仍为 7，但只接受 schema 12 数据库。
+配置预览统一为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回 `valid`、普通服务端脱敏配置、输出列表与诊断。旧 `/api/subscriptions/preview` 已删除。公开 `/api/capabilities` 提供协议、网关范围与密码字节范围。节点文档 schema=2、订阅 schema=2、平台 schema=4；备份容器格式仍为 7，但只接受 schema 13 数据库。
 
-当前数据库 schema 12、备份格式 7。不复用早期开发目录或旧数据库；应用配置 schema 与数据库版本分别维护。对外 CLI 保留 panel、核心 prepare/check、firewall、下载监听和网关运行模式，旧 config/accounts/subscriptions/asset/remote 命令不再暴露。
+当前数据库 schema 13、备份格式 7。不复用早期开发目录或旧数据库；应用配置 schema 与数据库版本分别维护。对外 CLI 保留 panel、核心 prepare/check、firewall、下载监听和网关运行模式，旧 config/accounts/subscriptions/asset/remote 命令不再暴露。
 
 账户策略存储为独立字段，备份结构校验随 schema 更新；所有旧 schema 数据库及其备份明确拒绝。新增回归覆盖配置快照、纯账户订阅自动恢复、模板省略字段、Argo 日志滚动、BBR 部分失败重试、任务详情权限、分页边界、日期精度及分享结果窗口。`Task.details` 是服务端生成的详情访问描述，前端不再维护任务类型白名单。
 
@@ -87,7 +87,7 @@ Windows 先加载 `scripts/dev-env.ps1`，将 `GATEWAY_BINARY` 和 `MANAGED_CORE
 
 主机升级调用 `panel --root <目录> wait-runtime`，stdin 为 `{"instance":"normal","started":<Unix纳秒>}`，等待 started 不早于本次重启的近期心跳，最长 20 秒。重启助手另外调用 `wait-panel` 验证实际本机监听/TLS 和 worker 就绪，最长 30 秒；随后原子保存 `program-upgrade.json` 并调用 `complete-upgrade`。收据按任务 ID 和目标版本匹配，启动可重复消费，成功、回滚和回滚失败均有终态。等待阶段保留跨重启，20 分钟无确认结果则失败。`recover-services` 在打开数据库之前执行；服务变更与升级共用恢复文件锁。
 
-重构回归：`go test ./internal/manage -run 'TestUpgradeReceipt|TestPanelCertificateCache|TestShareReadiness|TestInvalidPanelInitialization|TestPanelHealth|TestSubscriptionSchedule'`。`BenchmarkSubscriptionScheduleRead` 对照完整投影读取与调度元数据读取；`npm test` 覆盖 gRPC/未知传输仅改标识后保留原始字段。真实浏览器覆盖菜单外点击、相邻按钮鼠标点击、键盘、触屏、权益到期字段和额度消息。
+重构回归：`go test ./internal/manage -run 'TestUpgradeReceipt|TestShareReadiness|TestInvalidPanelInitialization|TestPanelHealth|TestSubscriptionSchedule|TestSubscriptionHTTPS|TestPanelAdvanced|TestRestorePreviewUsesArchived'`，TLS 缓存和传输策略单独运行 `go test ./internal/tlsconfig ./internal/publicaccess`。`BenchmarkSubscriptionScheduleRead` 对照完整投影读取与调度元数据读取；`npm test` 覆盖 gRPC/未知传输保留、共用 TLS 字段、任务清理与保留详情提示。真实浏览器覆盖鼠标、键盘、触屏、权益编辑、独立服务链接和访问方式。
 
 `internal/backuparchive` 单独负责格式 7（8 字节项目标记 + age 流 + tar），使用 scrypt 工作因子 16 并限制解密工作因子。禁止恢复前使用尚未完成认证的条目。新增测试覆盖密文损坏、截断、路径限制、并发发布锁、授权生命周期、任务预算、状态搜索与分页。
 
@@ -128,6 +128,8 @@ CI 的独立下载验证和全新安装步骤均显式传递该只读令牌；�
 ## 本地清理与 main 交付
 
 真实 HTTP 测试会校验权益改名、实际到期字段、额度与次数拒绝、归档 revision 冲突以及归档筛选。完成 `node scripts/test-panel-api.mjs` 后，在同一临时面板上运行 `python scripts/test-panel-browser.py`。沿用 `PANEL_TEST_URL` 和测试管理员环境变量，需要 Python Playwright 和 Chromium。通过 `CHROME_BINARY` 可指定已有 Chrome 可执行文件。该脚本使用真实鼠标、键盘和触屏事件，并验证 390 × 844 视口中首条权益的位置。
+
+共用启动器支持 `PANEL_BROWSER_TEST=1 node scripts/test-panel-local.mjs` 自动续跑浏览器验收；`PYTHON_BINARY` 可指定开发 Python，`PANEL_TEST_SCREENSHOT_DIR` 保存桌面/手机及新增设置页面截图。Linux 公网访问专项为 `sudo env RUN_ACCESS_MAINTENANCE_TESTS=1 SB_TEST_ROOT=/etc/s-box SB_TEST_PASSWORD=... python3 scripts/test-access-maintenance-linux.py`，仅在可丢弃 VM 执行：检查内置订阅 TLS、面板重启/回滚、任务处理/删除/保留以及项目日志清理不会影响全局日志。HTTP 切换到 HTTPS 使用不同 Cookie 名称，客户端需重新登录。此专项已接入全新安装 CI。
 
 停止测试进程和专用 VM 后，可删除 `.test/` 中的日志、临时数据库、测试二进制及 Go 缓存，`.build/release/.bin/` 中的打包中间文件，以及 `scripts/__pycache__/`。下一次加载 `scripts/dev-env.ps1` 会重建缓存目录；Go 会重新下载和编译所需模块。
 

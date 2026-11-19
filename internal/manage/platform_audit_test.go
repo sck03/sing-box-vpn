@@ -14,6 +14,7 @@ import (
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/domain"
+	"github.com/sck03/sing-box-vpn/internal/publicaccess"
 )
 
 func TestInitializeRejectsInvalidAdminAndRetriesProjection(t *testing.T) {
@@ -147,7 +148,7 @@ func TestForwardedPeerTrustBoundary(t *testing.T) {
 		{"192.0.2.1, invalid", "127.0.0.1"},
 		{"", "127.0.0.1"},
 	} {
-		if got := forwardedPeer(tc.header, "127.0.0.1", trusted); got != tc.want {
+		if got := publicaccess.ForwardedPeer(tc.header, "127.0.0.1", trusted); got != tc.want {
 			t.Fatal(tc, got)
 		}
 	}

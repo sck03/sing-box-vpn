@@ -2,6 +2,8 @@ package manage
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -29,7 +31,20 @@ func TestSubscriptionURLsReachBothAddressFamilies(t *testing.T) {
 	seedOutputGrant(t, root, token, []string{"normal-sing-box"}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- RunSubscription(ctx, []string{"--root", root}, io.Discard) }()
+	go func() {
+		listener, err := net.Listen("tcp", net.JoinHostPort(settings.Listen, fmt.Sprint(settings.Port)))
+		if err != nil {
+			done <- err
+			return
+		}
+		server := &http.Server{Handler: subscriptionHandler(root)}
+		go func() { <-ctx.Done(); server.Close() }()
+		err = server.Serve(listener)
+		if errors.Is(err, http.ErrServerClosed) {
+			err = nil
+		}
+		done <- err
+	}()
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -46,7 +61,7 @@ func TestSubscriptionURLsReachBothAddressFamilies(t *testing.T) {
 	client := &http.Client{Transport: transport, Timeout: time.Second}
 	for _, address := range []string{"127.0.0.1", "::1"} {
 		t.Run(address, func(t *testing.T) {
-			endpoint := subscriptionBase(settings, address) + "/s/" + token + "/normal-sing-box"
+			endpoint := fixtureSubscriptionBase(settings, address) + "/s/" + token + "/normal-sing-box"
 			deadline := time.Now().Add(3 * time.Second)
 			for {
 				response, err := client.Get(endpoint)

@@ -1,0 +1,72 @@
+{
+  "date": "2026-11-19",
+  "base_commit": "b9c7883",
+  "database_schema": 13,
+  "environment": {
+    "windows": "amd64, Go 1.27.3, Node 24.18, Chrome",
+    "linux": "Ubuntu amd64, kernel 6.8.0-149-generic, systemd 255, QEMU TCG, 2 vCPU, 2 GiB",
+    "official_sing_box": "1.14.4",
+    "mihomo": "1.19.33"
+  },
+  "checks": {
+    "go_test_all_with_official_mihomo_and_managed_core": "passed",
+    "go_vet_all": "passed",
+    "six_frontend_suites": "passed",
+    "isolated_panel_api": "passed",
+    "chrome_desktop_and_mobile": "passed; 1280x900 and 390x844, screenshots inspected",
+    "managed_five_protocol_tcp_udp_and_account_isolation": "passed",
+    "linux_schema13_install_and_platform_acceptance": "passed",
+    "linux_public_tls_restart_and_rollback": "passed",
+    "linux_task_handling_deletion_and_retention": "passed",
+    "linux_namespace_journal_download_filter_and_cleanup": "passed; global marker preserved",
+    "linux_install_upgrade_and_unit_ownership_scripts": "passed",
+    "shellcheck_warning": "passed",
+    "linux_amd64_arm64_manager_and_managed_core_builds": "passed",
+    "archived_subscription_certificate_restore_preview": "passed"
+  },
+  "performance": {
+    "duration_seconds": 60.08,
+    "workers": 4,
+    "per_iteration_wait_ms": 50,
+    "requests": 2145,
+    "errors": 0,
+    "requests_per_second": 35.7,
+    "response_bytes": 5152290,
+    "latency_ms_p50": 40.8,
+    "latency_ms_p95": 96.19,
+    "resources": {
+      "sb-panel": {
+        "peak_rss_kib": 24048,
+        "cpu_percent_one_core": 68.19,
+        "process_lost": false
+      },
+      "sb-core": {
+        "peak_rss_kib": 30508,
+        "cpu_percent_one_core": 0.77,
+        "process_lost": false
+      }
+    },
+    "scope": "Read-only panel diagnostic baseline on an emulated VM; not maximum capacity, proxy throughput or before/after comparison."
+  },
+  "upstream_reference": {
+    "3x_ui": "5297fd3c8495d80fab97ae511553fa545c69e913",
+    "s_ui": "b659142befa4881a889b6c6735b966febc966fd9",
+    "scope": "Fixed-source references only; neither upstream was deployed or benchmarked."
+  },
+  "not_run_locally_this_round": [
+    "Windows race",
+    "Full Linux netns/firewall/storage acceptance suite",
+    "Public ACME and volunteer VPNGate lines",
+    "Physical mobile and arm64 execution",
+    "Closed-source client imports, physical power loss and long sustained load"
+  ],
+  "cleanup": {
+    "processes_and_vm": "stopped",
+    "temporary_files": 57,
+    "temporary_bytes": 205092881,
+    "manual_directory": ".cleanup-manual/20261119-public-access-maintenance",
+    "reason": "Automatic approval review rejected recursive deletion with blocked by policy; moved with native PowerShell after verifying workspace paths.",
+    "preserved": "Toolchains, developer dependencies, VM base/working disks, valid regression fixtures, licenses and validation records."
+  },
+  "github_ci": "Per-commit Actions status is separate from local checks."
+}

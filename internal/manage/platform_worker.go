@@ -58,6 +58,9 @@ func (s *PlatformService) runLane(ctx context.Context, lane string) error {
 				stop()
 			}
 			if time.Now().After(nextSubscriptions) {
+				if err := s.reconcilePanelRestart(ctx); err != nil {
+					_ = s.Auth.Audit(ctx, "scheduler", "panel-restart-receipt", "", "failed")
+				}
 				nextSubscriptions = time.Now().Add(time.Minute)
 				if err := s.reconcileProgramUpgrade(ctx); err != nil {
 					_ = s.Auth.Audit(ctx, "scheduler", "upgrade-receipt", "", "failed")
@@ -111,7 +114,9 @@ func (s *PlatformService) runTask(ctx context.Context, task controlstore.Task) e
 	}
 	child, cancel := context.WithTimeout(ctx, budget)
 	var err error
-	if task.Kind == "apply" {
+	if task.Kind == "panel-restart" {
+		err = s.startPanelRestart(child, task.ID, task.Input)
+	} else if task.Kind == "apply" {
 		var input applyInput
 		err = json.Unmarshal(task.Input, &input)
 		if err == nil {

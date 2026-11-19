@@ -195,8 +195,8 @@ const stream = overviewStream({
     );
     const failed = ctx.overview.tasks.filter(
       (task) =>
-        task.state === "failed" ||
-        ["partial", "cached", "failed"].includes(task.outcome),
+        !task.acknowledged && (task.state === "failed" ||
+        ["partial", "cached", "failed"].includes(task.outcome)),
     );
     const status = $("#task-status");
     status.hidden = active.length === 0 && failed.length === 0;

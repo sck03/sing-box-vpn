@@ -15,7 +15,7 @@ func TestTaskRetentionBudgetsAndPending(t *testing.T) {
 	defer s.Close()
 	now := time.Now().Unix()
 	_, err = s.db.Exec(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<220)
- INSERT INTO control_tasks(kind,actor,state,phase,created,updated,input,result) SELECT 'test','test','succeeded','succeeded',?,?,'{}',? FROM n`, now, now, `{"outcome":"partial","data":"`+strings.Repeat("测", 85<<10)+`"}`)
+ INSERT INTO control_tasks(kind,actor,state,phase,created,updated,input,result,outcome) SELECT 'test','test','succeeded','succeeded',?,?,'{}',?,'partial' FROM n`, now, now, `{"outcome":"partial","data":"`+strings.Repeat("测", 85<<10)+`"}`)
 	if err != nil {
 		t.Fatal(err)
 	}

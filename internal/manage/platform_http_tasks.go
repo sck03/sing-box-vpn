@@ -6,6 +6,9 @@ import (
 )
 
 func (s *PlatformService) serveTasks(w http.ResponseWriter, r *http.Request, access panelAccess) bool {
+	if s.serveTaskMaintenance(w, r, access) || s.serveJournal(w, r, access) {
+		return true
+	}
 	ctx, path := r.Context(), r.URL.Path
 	admin, operator, require, audit := access.admin, access.operator, access.require, access.audit
 	var err error
@@ -70,18 +73,6 @@ func (s *PlatformService) serveTasks(w http.ResponseWriter, r *http.Request, acc
 			platformError(w, err)
 		} else {
 			jsonResponse(w, Object{"ok": true})
-		}
-		return true
-	}
-	if path == "/api/logs" && r.Method == "GET" {
-		if !require(operator) || !audit("service-logs", r.URL.Query().Get("service")) {
-			return true
-		}
-		v, e := s.Logs(ctx, r.URL.Query().Get("service"))
-		if e != nil {
-			platformError(w, e)
-		} else {
-			jsonResponse(w, Object{"log": v})
 		}
 		return true
 	}

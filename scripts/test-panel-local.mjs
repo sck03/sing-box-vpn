@@ -125,6 +125,22 @@ try {
   });
   test.child.stdin.end();
   await check(test.done, "Panel API acceptance");
+  if (process.env.PANEL_BROWSER_TEST === "1") {
+    const browser = launch(
+      process.env.PYTHON_BINARY || "python",
+      ["scripts/test-panel-browser.py"],
+      {
+        env: {
+          ...process.env,
+          PANEL_TEST_URL: url,
+          PANEL_TEST_USERNAME: "reviewadmin",
+          PANEL_TEST_PASSWORD: password,
+        },
+      },
+    );
+    browser.child.stdin.end();
+    await check(browser.done, "Panel browser acceptance");
+  }
   successful = true;
 } catch (error) {
   console.error(log);

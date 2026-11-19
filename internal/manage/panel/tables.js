@@ -135,7 +135,7 @@ export function table(columns, items, actions, options = {}) {
     const visible = columns
       .map((c, i) => ({ c, i }))
       .filter(({ i }) => !preference.hidden.includes(i));
-    const pages = Math.max(1, Math.ceil(data.length / 20));
+    const pages = Math.max(1, Math.ceil(data.length / (options.controls === false ? Math.max(1,data.length) : 20)));
     page = Math.min(page, pages - 1);
     const t = el("table"),
       head = el("tr");
@@ -171,7 +171,7 @@ export function table(columns, items, actions, options = {}) {
     if (actions) head.append(el("th", {}, "操作"));
     t.append(el("thead", {}, head));
     const tbody = el("tbody");
-    for (const item of data.slice(page * 20, (page + 1) * 20)) {
+    for (const item of options.controls === false ? data : data.slice(page * 20, (page + 1) * 20)) {
       const tr = el("tr");
       tr.rowItem = item;
       tr.rowKey = rowKey(item);
@@ -233,7 +233,7 @@ export function table(columns, items, actions, options = {}) {
     page = 0;
     render();
   });
-  wrapper.append(controls, body, pager);
+  if (options.controls === false) wrapper.append(body); else wrapper.append(controls, body, pager);
   wrapper.updateItems = (next) => {
     const serialized = JSON.stringify(next);
     items = next;
@@ -331,8 +331,6 @@ export async function remoteTable(columns, load, actions, options = {}) {
     controls: false,
     actionVersion: options.actionVersion,
   });
-  view.querySelector(".table-tools").remove();
-  view.querySelector(".pager").remove();
   body.append(view);
   let offset = 0,
     generation = 0,

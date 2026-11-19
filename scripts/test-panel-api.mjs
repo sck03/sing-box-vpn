@@ -132,6 +132,7 @@ config.listener = {
   listen: "127.0.0.1",
   port: 2097,
   public_base_url: "https://subscriptions.example.test",
+  trusted_proxy: ["127.0.0.1/32"],
 };
 await finished(
   ok(await call("/api/config", { revision: state.revision, config })).task_id,
