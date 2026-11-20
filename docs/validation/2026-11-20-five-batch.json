@@ -107,7 +107,7 @@
   },
   "ci": {
     "workflow": ".github/workflows/ci.yml",
-    "result_source": "GitHub Actions checks on the implementation commit",
+    "result_source": "GitHub Actions checks on the follow-up release-packaging fix commit",
     "required": [
       "full Go race tests",
       "real client protocol matrix",
@@ -118,7 +118,25 @@
       "amd64/arm64 release build",
       "fresh install and deployment rollback"
     ],
-    "local_vm_executed": false
+    "local_vm_executed": false,
+    "initial_run": {
+      "id": 44744839864,
+      "number": 95,
+      "commit": "f094ec849e4e35c8bfb0da1aa011a9c779a38fe1",
+      "conclusion": "failure",
+      "passed_before_failure": [
+        "full race and client matrix",
+        "managed account isolation and credential reload",
+        "vet and shell checks",
+        "desktop/mobile browser",
+        "network namespace/OpenVPN",
+        "IPv4/IPv6 firewall",
+        "disk failure recovery",
+        "systemd recovery"
+      ],
+      "failure": "Release archive included removed addons directory; diagnostics upload also traversed root-owned test fixtures",
+      "fix": "Remove obsolete archive member, validate release source inventory before compilation and in tests, upload screenshots from the explicit runner-owned browser directory"
+    }
   },
   "unverified": [
     "Stash, Surge, Surge Mac, Surfboard, Loon, Quantumult X, Shadowrocket and Egern device application import",
@@ -135,7 +153,7 @@
       "development caches",
       "current local acceptance logs"
     ],
-    "result": "Moved 15 obsolete paths into .cleanup-manual/2026-11-20-five-batch after automatic approval rejected recursive deletion (blocked by policy)",
+    "result": "Moved 15 obsolete paths, the empty legacy addons directory and two stale browser directories into .cleanup-manual/2026-11-20-five-batch after automatic approval rejected recursive deletion (blocked by policy)",
     "active_python": ".tools/python313-packages"
   }
 }

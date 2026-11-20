@@ -24,6 +24,21 @@ import (
 
 const releaseTags = "with_quic,with_utls,with_wireguard,with_gvisor"
 
+var releaseMembers = []string{
+	"sb.sh", "install.sh", "lib", "internal", "cmd", "scripts", "go.mod", "go.sum",
+	"package.json", "package-lock.json", "third_party", "manifest.go", "manifest_test.go",
+	"tsconfig.json", "versions.json", "LICENSE", "NOTICE.md", "README.md", "docs", ".github",
+}
+
+func validateReleaseSources(root string) error {
+	for _, member := range releaseMembers {
+		if _, err := os.Lstat(filepath.Join(root, member)); err != nil {
+			return fmt.Errorf("release source %s: %w", member, err)
+		}
+	}
+	return nil
+}
+
 func main() {
 	if err := build(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -36,6 +51,9 @@ func build() error {
 	flag.Parse()
 	root, err := filepath.Abs(*rootArg)
 	if err != nil {
+		return err
+	}
+	if err := validateReleaseSources(root); err != nil {
 		return err
 	}
 	goBinary := os.Getenv("GO_BINARY")
@@ -165,7 +183,7 @@ func build() error {
 		}
 		return nil
 	}
-	for _, member := range []string{"sb.sh", "install.sh", "lib", "addons", "internal", "cmd", "scripts", "go.mod", "go.sum", "package.json", "package-lock.json", "third_party", "manifest.go", "manifest_test.go", "tsconfig.json", "versions.json", "LICENSE", "NOTICE.md", "README.md", "docs", ".github"} {
+	for _, member := range releaseMembers {
 		if err = add(filepath.Join(root, member), member); err != nil {
 			writer.Close()
 			gz.Close()

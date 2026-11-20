@@ -162,17 +162,16 @@ jobs:
           path: |
             .build/release/*.tar.gz
             .build/release/SHA256SUMS
-      - name: Preserve acceptance diagnostics
+      - name: Preserve browser acceptance diagnostics
         if: failure()
         uses: actions/upload-artifact@v7.0.2
         with:
           name: acceptance-diagnostics
-          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
-          path: |
-            .test/**/*.log
-            .test/**/*.png
+          # Explicit runner-owned directory: recursive .test scanning also
+          # visits root-owned installation fixtures and fails with EACCES.
+          path: .test/browser/
   release:
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.publish)
     needs: verify
