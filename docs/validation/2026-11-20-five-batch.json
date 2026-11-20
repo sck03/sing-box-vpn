@@ -1,0 +1,141 @@
+{
+  "date": "2026-11-20",
+  "base_commit": "fcf833a5dd57fe721cf41d33f970810064ffd419",
+  "scope": "Five-batch correctness, subscription, modularity, UX and validation refactor",
+  "versions": {
+    "go": "1.27.3",
+    "sing_box": "1.14.4",
+    "mihomo": "1.19.33",
+    "database": 16,
+    "platform": 6,
+    "subscription": 6,
+    "parser": 2,
+    "compiler": 6,
+    "backup": 8
+  },
+  "local": {
+    "os": "Windows amd64",
+    "cpu": "Intel Core i5-9400F",
+    "checks": [
+      {
+        "command": "MANAGED_CORE_BINARY=<managed-core> GATEWAY_BINARY=<sbvpn> go test ./...",
+        "result": "passed"
+      },
+      {
+        "command": "go vet ./...",
+        "result": "passed"
+      },
+      {
+        "command": "npm run typecheck && npm test && go run ./cmd/panel-contract -check",
+        "result": "passed",
+        "dom_suites": 10
+      },
+      {
+        "command": "SBVPN_REQUIRE_CLIENT_CHECK=1 go test -count=1 -v -timeout=10m -run \"^(TestRealFiveProtocolsTCPUDP|TestManagedAccountIsolation|TestManagedCredentialReload)$\" ./internal/vpngate",
+        "result": "passed",
+        "connection_cases": 36,
+        "tcp_udp_links": 72,
+        "skipped_cases": 4,
+        "skip_reason": "Mihomo URI importer cannot represent self-signed TLS for VMess/TUIC. Both ordinary and VPNGate native configurations passed."
+      },
+      {
+        "command": "PANEL_BROWSER_TEST=1 node scripts/test-panel-local.mjs",
+        "result": "passed",
+        "coverage": [
+          "live API",
+          "create-bind-share flow",
+          "retry without duplicate account",
+          "platform filtering",
+          "Stash official import link",
+          "desktop pointer and keyboard",
+          "mobile touch and no horizontal overflow",
+          "certificate, template and preview workflows"
+        ]
+      },
+      {
+        "command": "go test ./internal/manage -run \"Test.*(Share|Account|ConfigurationView|Preset|Outbound|PlatformCollections)\" -count=1 && go test ./internal/clientprofile ./internal/subscription ./cmd/...",
+        "result": "passed",
+        "purpose": "Final DTO and VPNGate-only onboarding follow-up, then browser rebuilt and rerun"
+      }
+    ]
+  },
+  "benchmark": {
+    "command": "go test ./internal/manage -run \"^$\" -bench \"^BenchmarkConfigurationView$\" -benchmem -benchtime=1s -count=3",
+    "fixture": "128 outbounds, same-process comparison of previous and current redaction algorithms",
+    "samples": [
+      {
+        "implementation": "previous",
+        "ns_per_op": 1806121,
+        "bytes_per_op": 508494,
+        "allocations_per_op": 7900
+      },
+      {
+        "implementation": "previous",
+        "ns_per_op": 1773119,
+        "bytes_per_op": 507880,
+        "allocations_per_op": 7900
+      },
+      {
+        "implementation": "previous",
+        "ns_per_op": 1750152,
+        "bytes_per_op": 508286,
+        "allocations_per_op": 7900
+      },
+      {
+        "implementation": "current",
+        "ns_per_op": 1027989,
+        "bytes_per_op": 314938,
+        "allocations_per_op": 4641
+      },
+      {
+        "implementation": "current",
+        "ns_per_op": 1031448,
+        "bytes_per_op": 315817,
+        "allocations_per_op": 4642
+      },
+      {
+        "implementation": "current",
+        "ns_per_op": 1027002,
+        "bytes_per_op": 315160,
+        "allocations_per_op": 4641
+      }
+    ],
+    "limitations": [
+      "Microbenchmark only, not whole-process RSS or proxy throughput",
+      "Earlier overlapping-browser samples excluded from final comparison"
+    ]
+  },
+  "ci": {
+    "workflow": ".github/workflows/ci.yml",
+    "result_source": "GitHub Actions checks on the implementation commit",
+    "required": [
+      "full Go race tests",
+      "real client protocol matrix",
+      "Linux network namespace and OpenVPN",
+      "IPv4/IPv6 firewall ownership",
+      "disk-full and killed-meter recovery",
+      "systemd startup recovery",
+      "amd64/arm64 release build",
+      "fresh install and deployment rollback"
+    ],
+    "local_vm_executed": false
+  },
+  "unverified": [
+    "Stash, Surge, Surge Mac, Surfboard, Loon, Quantumult X, Shadowrocket and Egern device application import",
+    "OpenClash router application",
+    "long-duration production load and power-loss experiments"
+  ],
+  "cleanup": {
+    "policy": "Remove obsolete temporary environments and duplicate archives after validation; use .cleanup-manual if deletion is blocked",
+    "preserved": [
+      "licenses",
+      "historical validation evidence",
+      "test fixtures",
+      "toolchains",
+      "development caches",
+      "current local acceptance logs"
+    ],
+    "result": "Moved 15 obsolete paths into .cleanup-manual/2026-11-20-five-batch after automatic approval rejected recursive deletion (blocked by policy)",
+    "active_python": ".tools/python313-packages"
+  }
+}

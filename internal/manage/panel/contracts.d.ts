@@ -48,6 +48,11 @@ export interface AccountExportResponse {
   validation: SubscriptionValidation;
 }
 
+export interface AccountSummary extends Usage {
+  download_scopes: Array<string> | null;
+  download_denial: string;
+}
+
 export interface Admin {
   id: string;
   role: string;
@@ -78,6 +83,7 @@ export interface Capabilities {
   dns: Array<string> | null;
   endpoints: Array<string> | null;
   services: Array<string> | null;
+  outbound_fields: Record<string, OutboundFields> | null;
 }
 
 export interface CertificateAsset {
@@ -172,6 +178,12 @@ export interface ManagedNode {
   flow?: string;
   tls: ServerTLS;
   transport?: ServerTransport;
+}
+
+export interface OutboundFields {
+  tls: boolean;
+  required_tls: boolean;
+  utls: boolean;
 }
 
 export interface OverviewSnapshot {
@@ -292,6 +304,8 @@ export interface SubscriptionAccountExportPolicy {
 export interface SubscriptionAccountOutputOption {
   profile: string;
   description: string;
+  platforms: Array<string> | null;
+  import_prefix?: string;
   client: string;
   label: string;
   extension: string;

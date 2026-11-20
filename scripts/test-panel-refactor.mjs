@@ -155,6 +155,21 @@ assert.equal(
 );
 assert(dialog.querySelector('[aria-label="显示Reality 私钥"]'));
 dialog.close();
+config.app.nodes = null;
+let dirty = false;
+const preset = { id: "added", protocol: "vless", port: 12345, tls: {} };
+globalThis.fetch = async (url) => {
+  assert.equal(url, "/api/preset");
+  return { ok: true, json: async () => preset };
+};
+document.querySelector("main").replaceChildren(...await inbounds({ ...ctx, changed() { dirty = true; } }));
+[...document.querySelectorAll("main button")].find((b) => b.textContent === "新增入站").click();
+dialog.querySelector('[aria-label="唯一 ID"]').value = "added";
+dialog.querySelector("form").dispatchEvent(new Event("submit", { cancelable: true }));
+await tick();
+assert.equal(dirty, true);
+assert.deepEqual(config.app.nodes, [preset], "null node collection detached the edited list");
+dialog.close();
 console.log(
   "Refactor regressions passed: secret controls, certificate selection, preview drafts, stale dialogs and protocol-aware copy.",
 );

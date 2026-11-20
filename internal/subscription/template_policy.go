@@ -59,6 +59,9 @@ func validateTemplateExtensions(t Template) error {
 			return errors.New("invalid policy group ID")
 		}
 		name := fallback(g.Name, g.ID)
+		if !slices.Contains([]string{"sing-box", "mihomo", "openclash", "stash", "egern"}, t.Client) && textCommentName(name) {
+			return errors.New("target text format cannot represent a comment-prefixed policy name")
+		}
 		if len(name) > 256 || names[name] || reservedName(name) || strings.ContainsAny(name, ",\"=\r\n\x00|[]") {
 			return errors.New("invalid or duplicate policy display name")
 		}
@@ -156,6 +159,9 @@ func validateTemplateExtensions(t Template) error {
 		}
 	}
 	if t.DNSPolicy != nil {
+		if t.Client == "stash" && t.DNSPolicy.FakeIP != nil && !*t.DNSPolicy.FakeIP {
+			return errors.New("Stash uses fake-IP; configure domain exclusions instead of disabling it")
+		}
 		if t.Client == "sing-box" && (t.DNSPolicy.FakeIP != nil && *t.DNSPolicy.FakeIP || t.DNSPolicy.IPv6 || len(t.DNSPolicy.FakeIPFilter) > 0 || len(t.DNSPolicy.Local) > 1 || len(t.DNSPolicy.Remote) > 1 || len(t.DNSPolicy.Bootstrap) > 1) {
 			return errors.New("sing-box DNS policy accepts one resolver per role and uses native address handling")
 		}

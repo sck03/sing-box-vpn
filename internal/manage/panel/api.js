@@ -155,6 +155,10 @@ export const getAccountOutputs = (id, scope, signal, request = api) =>
  * @returns {Promise<import("./contracts.js").AccountExportResponse>} */
 export const exportAccount = (input, request = api) =>
   request("/api/accounts/export", input);
+/** @param {string} id @param {AbortSignal} [signal] @param {typeof api} [request]
+ * @returns {Promise<import("./contracts.js").AccountSummary>} */
+export const getAccount = (id, signal, request = api) =>
+  request("/api/accounts/detail?id=" + encodeURIComponent(id), undefined, { signal });
 /** @param {boolean} secret @param {AbortSignal} [signal]
  * @returns {Promise<import("./contracts.js").ConfigurationState>} */
 export const getConfiguration = (secret, signal) =>

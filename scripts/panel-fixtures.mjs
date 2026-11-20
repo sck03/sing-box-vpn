@@ -1,5 +1,10 @@
 export const capabilitiesFixture = {
   runtime: {
+	 outbound_fields: {
+	   vless: { tls: true, utls: true }, vmess: { tls: true, utls: true },
+	   anytls: { tls: true, required_tls: true, utls: true },
+	   hysteria2: { tls: true, required_tls: true }, tuic: { tls: true, required_tls: true },
+	 },
     inbounds: ["vless", "vmess", "hysteria2", "tuic", "anytls"],
     outbounds: ["direct", "socks", "selector", "urltest", "vless", "vmess", "hysteria2", "tuic", "anytls"],
     dns: ["tcp", "udp", "tls", "https", "local", "resolved"],

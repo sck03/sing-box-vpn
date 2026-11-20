@@ -50,7 +50,7 @@ const catalog = {
   mihomo: {
     label: "Mihomo",
     modes: ["config", "provider"],
-    features: { dns: true, advanced_dns: true },
+    features: { dns: true, advanced_dns: true, fake_ip_toggle: true },
   },
   uri: { label: "URI", modes: ["nodes"], features: {} },
 };

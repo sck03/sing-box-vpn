@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/sck03/sing-box-vpn/internal/statefile"
 	"io"
 	"os"
 	"path/filepath"
@@ -19,102 +20,17 @@ type fileBuffer [32 << 10]byte
 
 var fileBuffers = sync.Pool{New: func() any { return new(fileBuffer) }}
 
-func ReadJSON(path string, target any) (bool, error) {
-	file, err := os.Open(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return false, err
-	}
-	if !info.Mode().IsRegular() {
-		return false, errors.New("配置文件不是普通文件")
-	}
-	if info.Size() > maxJSONFile {
-		return false, errors.New("配置文件超过 16 MiB")
-	}
-	// One allocation for an atomic, stable file. A concurrent growth is still
-	// bounded by the original limit rather than trusting the initial size.
-	data := make([]byte, int(info.Size())+1)
-	n, err := io.ReadFull(file, data)
-	data = data[:n]
-	if err == nil && n <= maxJSONFile {
-		var tail []byte
-		tail, err = io.ReadAll(io.LimitReader(file, int64(maxJSONFile+1-n)))
-		data = append(data, tail...)
-	}
-	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
-		return false, err
-	}
-	if len(data) > maxJSONFile {
-		return false, errors.New("配置文件超过 16 MiB")
-	}
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
-		return true, errors.New("配置文件不能为 null")
-	}
-	return true, json.Unmarshal(data, target)
-}
-
-func jsonEncoder(output io.Writer) *json.Encoder {
-	encoder := json.NewEncoder(output)
-	encoder.SetEscapeHTML(false)
-	encoder.SetIndent("", "  ")
-	return encoder
-}
-
-func JSONBytes(value any) ([]byte, error) {
-	var out bytes.Buffer
-	err := jsonEncoder(&out).Encode(value)
-	return out.Bytes(), err
-}
-
-func AtomicJSON(path string, value any) error {
-	return atomicWrite(path, 0600, func(output io.Writer) error {
-		return jsonEncoder(output).Encode(value)
-	})
-}
-
+func ReadJSON(path string, target any) (bool, error) { return statefile.ReadJSON(path, target) }
+func jsonEncoder(output io.Writer) *json.Encoder     { return statefile.JSONEncoder(output) }
+func JSONBytes(value any) ([]byte, error)            { return statefile.JSONBytes(value) }
+func AtomicJSON(path string, value any) error        { return statefile.AtomicJSON(path, value) }
 func AtomicBytes(path string, data []byte, mode os.FileMode) error {
-	return atomicWrite(path, mode, func(output io.Writer) error {
-		n, err := output.Write(data)
-		if err == nil && n != len(data) {
-			return io.ErrShortWrite
-		}
-		return err
-	})
+	return statefile.AtomicBytes(path, data, mode)
 }
-
 func atomicWrite(path string, mode os.FileMode, write func(io.Writer) error) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
-	}
-	file, err := os.CreateTemp(filepath.Dir(path), ".write-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(file.Name())
-	if err = file.Chmod(mode); err == nil {
-		err = write(file)
-	}
-	if err == nil {
-		err = file.Sync()
-	}
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	if err := os.Rename(file.Name(), path); err != nil {
-		return err
-	}
-	return syncDirectory(filepath.Dir(path))
+	return statefile.AtomicWrite(path, mode, write)
 }
+func syncDirectory(path string) error { return statefile.SyncDirectory(path) }
 
 // A private draft is invisible until its journal is durable. Write it once;
 // preparePublish syncs its directory tree together after all files are ready.

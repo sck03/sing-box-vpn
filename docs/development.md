@@ -62,7 +62,7 @@ Windows 开发先 `. ./scripts/dev-env.ps1`。真实链路设置 `SING_BOX_BINAR
 
 ```bash
 RUN_UDP_IDLE_TESTS=1 go test -race -timeout=25m -count=1 ./...
-MANAGED_CORE_BINARY="$PWD/.build/managed-core" go test -race -count=1 -run '^(TestManagedAccountIsolation|TestManagedCredentialReload|TestRealFiveProtocolsTCPUDP)$' ./addons/vpngate/gateway
+MANAGED_CORE_BINARY="$PWD/.build/managed-core" go test -race -count=1 -run '^(TestManagedAccountIsolation|TestManagedCredentialReload|TestRealFiveProtocolsTCPUDP)$' ./internal/vpngate
 MANAGED_CORE_BINARY="$PWD/.build/managed-core" go test -race -count=1 -run '^TestCredentialPublicationRetryDoesNotRepeatRotation$' ./internal/manage
 bash scripts/test-program-upgrade.sh
 bash scripts/test-installer.sh
@@ -205,7 +205,7 @@ go vet ./...
 
 ## 5.1 重构回归
 
-前端回归增加 `scripts/test-panel-refactor.mjs`，覆盖密钥可见性、证书回选、访问预览草稿、迟到响应与复制协议字段；现在共有九组。浏览器验收新增按钮后使用明确的提交按钮定位，避免把显示密码按钮当作登录操作。
+前端回归共有十组，覆盖密钥可见性、证书回选、访问预览草稿、迟到响应、协议字段、自动绑定、平台选择和输出用途。浏览器验收使用明确的提交按钮定位，避免把显示密码按钮当作登录操作。
 
 `manifest_test.go` 要求组件版本与 go.mod 一致。模板导入测试拒绝有损逻辑条件、非末尾 MATCH、脚本、未知字段和过量输入。发行包选择测试拒绝草稿、预发行、错误资产地址/摘要和重复资产；升级 Shell 测试同时断言校验器回滚。
 
@@ -220,3 +220,9 @@ Windows 的 VPNGate 配置在构造时统一目录格式，后续校验/重载�
 npm test 包括首次导出查询取消、替换对话框、默认模板重置、模式隔离和简单规则编辑。Go 专项包括输出身份、精确授权、远程模板隔离，以及 TestClientExportsDoNotNeedMihomo、TestUnsupportedProbeIsNotNodeFailure、TestProbeSummaryDistinguishesUnsupportedAndFailed、TestArtifactParsersCoverGeneratedClientModes。历史版本比较测试不是生产兼容层。
 
 变更输出结构时同时更新 clientprofile 输出目录、subscription 策略、授权 schema、面板生成契约、API/浏览器夹具和文档。验证记录单独记录实际命令与限制，历史记录保持原样。
+
+## 当前源码入口
+
+管理程序使用 `go build -o .build/yg-vpngate ./cmd/sbvpn` 构建；VPNGate 测试包为 `./internal/vpngate`。原 addons/vpngate/gateway 源码目录已移除。修改能力 DTO 后运行 `go run ./cmd/panel-contract`，并运行 `npm run typecheck`、`npm test`。
+
+完整验收应设置 `MANAGED_CORE_BINARY`、`SING_BOX_BINARY`、`MIHOMO_BINARY`，未设置时相关集成测试会跳过，不能只凭 `go test ./...` 的绿色结果宣称客户端链路通过。Windows 使用 `scripts/dev-env.ps1` 配置工具链；Linux 的 namespace、systemd、nftables、磁盘故障和 race 验收见 `.github/workflows/ci.yml`。本地 QEMU 脚本需要自行准备其依赖镜像和密钥；缺少资产时不会自动创建虚拟机。

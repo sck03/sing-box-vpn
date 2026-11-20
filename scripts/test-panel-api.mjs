@@ -506,6 +506,7 @@ ok(await call("/api/accounts", { account: limited }));
 const findAccount = async (archived = false) =>
   ok(await call(`/api/accounts?q=${limited.id}&archived=${archived}`)).items[0];
 let entitlement = await findAccount();
+assert.deepEqual(ok(await call("/api/accounts/detail?id=" + limited.id)), entitlement);
 assert.equal(entitlement.expires_at, null);
 assert(entitlement.effective_expires_at);
 assert.equal(entitlement.download_denial, "no_bound_inbound");

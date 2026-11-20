@@ -3,7 +3,7 @@
 import os
 import uuid
 import time
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -69,17 +69,27 @@ def check(browser, base):
     # The live API suite configures a shareable public origin. Open its token
     # on this loopback listener, keeping the whole test on the disposable host.
     grant = api.post(base + "/api/grants", headers=headers, data={
-        "id": account + "-share", "account_id": account, "profiles": ["uri"],
+        "id": account + "-share", "account_id": account, "profiles": ["uri", "stash-config", "sing-box-nodes"],
     })
     assert grant.ok, grant.text()
     page.goto(base + "/user#" + grant.json()["token"])
-    expect(page.locator(".client-grid .client-download")).to_have_count(1)
+    expect(page.locator(".client-grid .client-download")).to_have_count(3)
     expect(page.get_by_role("heading", name="通用节点 · URI 明文", exact=True)).to_be_visible()
+    page.get_by_label("设备平台", exact=True).select_option("iOS")
+    page.locator("details.subscription-configs summary").click()
+    expect(page.get_by_role("link", name="在 Stash 中打开", exact=True)).to_have_attribute("href", "stash://install-config?url=" + quote(base + "/u/" + grant.json()["token"] + "/stash-config", safe=""))
+    page.get_by_label("设备平台", exact=True).select_option("Windows")
+    expect(page.locator(".client-download:visible")).to_have_count(2)
+    page.get_by_label("设备平台", exact=True).select_option("")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     screenshots = os.getenv("PANEL_TEST_SCREENSHOT_DIR")
     if screenshots:
         os.makedirs(screenshots, exist_ok=True)
         page.screenshot(path=os.path.join(screenshots, "user-available.png"), full_page=True)
+        page.set_viewport_size({"width": 390, "height": 844})
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        page.screenshot(path=os.path.join(screenshots, "user-mobile.png"), full_page=True)
+        page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(base + "/#subscriptions/status")
     expect(page.get_by_role("heading", name="已发布输出", exact=True)).to_be_visible()
     expect(page.get_by_text("已发布", exact=True)).to_be_visible()
@@ -181,6 +191,19 @@ def check(browser, base):
         page.screenshot(path=os.path.join(screenshots, "subscription-preview.png"), full_page=True)
     page.keyboard.press("Escape")
     assert not browser_errors, browser_errors
+    page.goto(base + "/#accounts")
+    page.get_by_role("button", name="新建权益", exact=True).click()
+    dialog.get_by_label("名称", exact=True).fill(account + "-wizard")
+    expect(dialog.get_by_label("创建后自动绑定节点", exact=True)).to_be_checked()
+    dialog.get_by_label("入站入口（可多选）", exact=True).select_option([inbound["id"]])
+    dialog.get_by_role("button", name="保存", exact=True).click()
+    dialog.get_by_role("button", name="创建分享", exact=True).click(timeout=90000)
+    expect(dialog.get_by_label("设备平台", exact=True)).to_be_visible()
+    dialog.get_by_role("button", name="保存", exact=True).click()
+    expect(dialog.get_by_role("heading", name="分享已创建", exact=True)).to_be_visible()
+    assert api.get(base + "/api/accounts?q=" + account + "-wizard").json()["total"] == 1
+    if screenshots:
+        page.screenshot(path=os.path.join(screenshots, "account-onboarding.png"), full_page=True)
     context.close()
 
 

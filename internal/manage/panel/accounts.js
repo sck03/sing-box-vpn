@@ -1,3 +1,5 @@
+import { accountFields } from "./account-fields.js";
+import { openAccountBindingTask, accountCreated } from "./account-onboarding.js";
 import { api, exportAccount } from "./api.js";
 import { createAccountShare } from "./sharing.js";
 import { accountOutputDialog } from "./account-outputs.js";
@@ -32,118 +34,37 @@ const states = {
 export async function accounts(ctx) {
   const request = ctx.request || api;
   const admin = ctx.session.role === "admin";
-  const fields = (existing, people) => [
-    {
-      key: "id",
-      label: "权益 ID",
-      required: true,
-      readonly: existing,
-      advanced: true,
-    },
-    { key: "name", label: "名称", required: true },
-    ...(people.length
-      ? [
-          {
-            key: "subscriber_id",
-            label: "用户分组（可选）",
-            advanced: true,
-            type: "select",
-            options: [["", "独立权益"], ...people.map((p) => [p.id, p.name])],
-          },
-        ]
-      : []),
-    {
-      key: "quota_bytes",
-      label: "每周期额度（GiB）",
-      type: "number",
-      scale: 1073741824,
-      nullable: true,
-      min: 0,
-      help: "留空不限；0 表示零额度。支持小数，保存时取最接近的整数字节。",
-    },
-    { key: "expires_at", label: "绝对到期时间", type: "date" },
-    { key: "disabled", label: "管理员禁用", type: "bool" },
-    {
-      key: "start_mode",
-      label: "开始策略",
-      advanced: true,
-      type: "select",
-      readonly: existing,
-      options: [
-        ["created", "创建时开始"],
-        ["first_use", "首次成功代理认证"],
-        ["scheduled", "指定时间"],
-      ],
-    },
-    {
-      key: "starts_at",
-      label: "指定开始时间",
-      advanced: true,
-      type: "date",
-      readonly: existing,
-      visible: (v) => v.start_mode === "scheduled",
-    },
-    {
-      key: "duration_seconds",
-      label: "有效时长（天，0 不限）",
-      advanced: true,
-      type: "number",
-      scale: 86400,
-      readonly: existing,
-      min: 0,
-    },
-    {
-      key: "period.kind",
-      label: "额度重置",
-      advanced: true,
-      type: "select",
-      readonly: existing,
-      options: [
-        ["none", "总额不重置"],
-        ["days", "每 N 个日历日"],
-        ["monthly", "每月指定日期"],
-      ],
-    },
-    {
-      key: "period.days",
-      label: "间隔日数",
-      advanced: true,
-      type: "number",
-      readonly: existing,
-      min: 1,
-      max: 3660,
-      visible: (v) => v.period?.kind === "days",
-    },
-    {
-      key: "period.day",
-      label: "每月几号（短月取月末）",
-      advanced: true,
-      type: "number",
-      readonly: existing,
-      min: 1,
-      max: 31,
-      visible: (v) => v.period?.kind === "monthly",
-    },
-    {
-      key: "period.timezone",
-      label: "IANA 时区",
-      advanced: true,
-      readonly: existing,
-      help: "例如 Asia/Shanghai、America/New_York",
-      visible: (v) => ["days", "monthly"].includes(v.period?.kind),
-    },
-  ];
   const edit = async (item) =>
     loadDialog(
       ctx.signal,
       item.revision ? "编辑权益" : "新建权益",
       (signal) =>
-        (ctx.workflowRequest || api)("/api/subscribers", undefined, { signal }),
-      (subscribers) =>
+        Promise.all([
+          (ctx.workflowRequest || api)("/api/subscribers", undefined, { signal }),
+          item.revision ? [] : bindingFields(signal),
+        ]),
+      ([subscribers, bindings]) =>
         formDialog(
           item.revision ? "编辑权益" : "新建权益",
-          fields(!!item.revision, subscribers),
-          item,
+          [
+            ...accountFields(!!item.revision, subscribers),
+            ...(!item.revision
+              ? [
+                  {
+                    key: "bind_now", label: "创建后自动绑定节点", type: "bool",
+                    section: "可连接的节点", readonly: !bindings[0]?.options.length,
+                    help: bindings[0]?.options.length
+                      ? "绑定成功后可直接创建分享链接。"
+                      : "尚无已应用的节点，可先创建权益，稍后再绑定。",
+                  },
+                  ...bindings.map((field) => ({ ...field, visible: (v) => v.bind_now })),
+                ]
+              : []),
+          ],
+          {
+            ...item, bind_now: !!bindings[0]?.options.length,
+            scope: bindings[0]?.options[0]?.[0] || "normal", inbound_ids: [],
+          },
           async (v) => {
             const account = {};
             for (const key of [
@@ -165,18 +86,21 @@ export async function accounts(ctx) {
             notice("权益已保存，相关订阅会自动更新");
             ctx.render();
             if (!item.revision) {
-              const dialog = /** @type {HTMLDialogElement} */ (
-                document.querySelector("#dialog")
-              );
-              dialog.replaceChildren(
-                el("h2", {}, "权益已创建"),
-                help("接下来绑定可用入站，再创建分享地址。"),
-                row(
-                  button("绑定入站", () => bind(account, undefined), "primary"),
-                  button("稍后设置", () => dialog.close()),
-                ),
-              );
-              dialog.showModal();
+              if (!v.bind_now) accountCreated(account, bind);
+              else {
+                try {
+                  const id = await ctx.task({
+                    operation: "account",
+                    account: {
+                      operation: "bind", id: account.id,
+                      scope: v.scope, inbound_ids: v.inbound_ids,
+                    },
+                  });
+                  await openAccountBindingTask(ctx, account, id, bind);
+                } catch (error) {
+                  accountCreated(account, bind, "权益已经保存，绑定未排队：" + error.message);
+                }
+              }
             }
           },
         ),
@@ -200,7 +124,7 @@ export async function accounts(ctx) {
         options: [
           ["normal", "普通节点"],
           ["vpngate", "VPNGate"],
-        ],
+        ].filter((_, index) => choices[index].length),
       },
       {
         key: "inbound_ids",
@@ -230,12 +154,14 @@ export async function accounts(ctx) {
             advanced: true,
           },
         ],
-        { scope: "normal", inbound_ids: [] },
-        (v) =>
-          ctx.task({
+        { scope: fields[0].options[0]?.[0] || "normal", inbound_ids: [] },
+        async (v) => {
+          const id = await ctx.task({
             operation: "account",
             account: { operation: "bind", id: item.id, ...v },
-          }),
+          });
+          await openAccountBindingTask(ctx, item, id, bind);
+        },
       ),
     );
   const credentials = async (item) => {
@@ -439,6 +365,8 @@ export async function accounts(ctx) {
                   {},
                   `${bytes(a.charged_bytes)} / ${bytes(a.quota_bytes)}`,
                 ),
+                el("small", { class: "muted" }, a.quota_bytes === null
+                  ? "不限额度" : "剩余 " + bytes(Math.max(0, a.quota_bytes - a.charged_bytes))),
                 ...(a.quota_bytes !== null
                   ? [
                       el("progress", {

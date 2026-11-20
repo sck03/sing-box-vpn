@@ -70,12 +70,26 @@ const { outboundFields, normalizeOutbound } = await import(
   "../internal/manage/panel/outbound-fields.js"
 );
 let submitted;
+{
+  const original = {
+    type: "anytls", tag: "anytls", server: "example.com", server_port: 443,
+    password: "fixture-only",
+    tls: { enabled: true, server_name: "example.com", utls: { enabled: true, fingerprint: "chrome" } },
+  };
+  formDialog("AnyTLS 编辑", outboundFields(["anytls"], [], [], capabilitiesFixture.runtime.outbound_fields), original,
+    (v) => { submitted = normalizeOutbound(v, original, capabilitiesFixture.runtime.outbound_fields); }, true);
+  assert.equal(document.querySelector('[aria-label="浏览器 TLS 指纹"]').disabled, false);
+  document.querySelector('[aria-label="出站标识"]').value = "renamed";
+  document.querySelector("#dialog form").dispatchEvent(new Event("submit", { cancelable: true }));
+  await tick();
+  assert.deepEqual(submitted, { ...original, tag: "renamed" });
+}
 formDialog(
   "出站",
-  outboundFields(capabilitiesFixture.protocols, ["upstream"], ["dns-local"]),
+  outboundFields(capabilitiesFixture.protocols, ["upstream"], ["dns-local"], capabilitiesFixture.runtime.outbound_fields),
   { tag: "remote", type: "socks", server: "example.com", server_port: 443 },
   (v) => {
-    submitted = normalizeOutbound(v);
+    submitted = normalizeOutbound(v, undefined, capabilitiesFixture.runtime.outbound_fields);
   },
 );
 const type = document.querySelector('[aria-label="类型"]');
@@ -111,10 +125,10 @@ for (const transport of [
   };
   formDialog(
     "保留出站",
-    outboundFields(capabilitiesFixture.protocols, ["upstream"], ["dns-local"]),
+    outboundFields(capabilitiesFixture.protocols, ["upstream"], ["dns-local"], capabilitiesFixture.runtime.outbound_fields),
     original,
     (v) => {
-      submitted = normalizeOutbound(v, original);
+      submitted = normalizeOutbound(v, original, capabilitiesFixture.runtime.outbound_fields);
     },
     true,
   );
@@ -459,7 +473,7 @@ assert(
 // switch, while an unrelated template edit keeps inherited DNS defaults.
 formDialog(
   "Hy2",
-  outboundFields(capabilitiesFixture.protocols, [], []),
+  outboundFields(capabilitiesFixture.protocols, [], [], capabilitiesFixture.runtime.outbound_fields),
   {
     tag: "hy2",
     type: "hysteria2",
@@ -469,7 +483,7 @@ formDialog(
     tls: { enabled: true },
   },
   (v) => {
-    submitted = normalizeOutbound(v);
+    submitted = normalizeOutbound(v, undefined, capabilitiesFixture.runtime.outbound_fields);
   },
   true,
 );
@@ -488,7 +502,7 @@ assert.deepEqual(submitted.obfs, {
   type: "salamander",
   password: "obfs-secret",
 });
-const switched = normalizeOutbound({ ...submitted, type: "direct" }, submitted);
+const switched = normalizeOutbound({ ...submitted, type: "direct" }, submitted, capabilitiesFixture.runtime.outbound_fields);
 assert.equal(switched.obfs, undefined);
 assert.equal(switched.server_ports, undefined);
 assert.equal(switched.tls, undefined);

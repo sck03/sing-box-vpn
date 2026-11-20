@@ -115,3 +115,7 @@ OpenVPN DCO 能否使用依赖内核、客户端/服务端和密码套件；只�
 参考 3x-ui 的证书选择与安装引导，以及 s-ui 的核心维护与更新状态交互，使用本项目现有 Go/ES-module 架构重新实现；不引入 Xray 配置语义，也不复制其前后端实现。s-ui 的订阅模板、Sub-Store 脚本和 ACL4SSR 的 INI 并非可直接互换的格式。
 
 模板导入提供明确的格式适配边界，支持 ACL4SSR 风格简单 .list 规则，以及官方 sing-box / Mihomo 配置中可无损转换的简单规则。内置用途预设继续独立维护，来源与版本仅供追溯；未增加 AGPL 代码或第三方运行时依赖。正式连通能力仍以兼容性记录和实机测试为准。
+
+## 2026-11-20 客户端模板核对
+
+Stash 模板按官方 [DNS](https://stash.wiki/features/dns-server)、[规则集合](https://stash.wiki/rules/rule-set)与 [URL Schema](https://stash.wiki/faq/url-schema)文档独立实现。使用 follow-rule、独立代理域名解析、Fake-IP 排除域名以及 MRS domain/ipcidr；仅完整配置生成应用导入链接。与 Mihomo 共用的范围限定为策略组和通用路由构造。参考 3x-ui/s-ui 的管理职责划分、Sub-Store 的解析/转换/产出分离和 MiniSubConvert 的短操作路径；未复制上游实现或增加服务端 Node 进程。

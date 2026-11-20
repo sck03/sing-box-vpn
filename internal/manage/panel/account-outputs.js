@@ -1,3 +1,4 @@
+import { supportsPlatform, platformChoices } from "./client-platforms.js";
 import { api, getAccountOutputs } from "./api.js";
 import { loadDialog } from "./dialog-session.js";
 import { validationLabel } from "./validation.js";
@@ -42,8 +43,8 @@ export async function accountOutputDialog({
         label: multiple ? "允许的订阅格式与用途（可多选）" : "订阅格式与用途",
         type: multiple ? "multiselect" : "select",
         required: true,
-        options: () =>
-          available().map((option) => [
+        options: (value) =>
+          available().filter((option) => supportsPlatform(option, value.device_platform)).map((option) => [
             option.profile,
             `${option.label} · ${option.nodes}/${option.input_nodes} 节点${option.experimental ? " · 实验适配" : ""}`,
           ]),
@@ -75,6 +76,8 @@ export async function accountOutputDialog({
                     ?.download_scopes?.includes(scope),
               ),
           },
+          { key: "device_platform", label: "设备平台", type: "select",
+            options: () => [["", "全部设备"], ...platformChoices(options)] },
           clientField,
           ...fields,
         ],
@@ -89,7 +92,8 @@ export async function accountOutputDialog({
             )
           )
             throw new Error("请选择当前权益可用的客户端格式。");
-          await save(value);
+          const { device_platform, ...payload } = value;
+          await save(payload);
         },
       );
       const summary = el("div", {

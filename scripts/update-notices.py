@@ -13,7 +13,7 @@ for target in ("windows", "linux"):
     env = dict(os.environ, GOOS=target, GOARCH="amd64", CGO_ENABLED="0")
     raw = subprocess.check_output([
         "go", "list", "-deps", "-json", "-tags", "with_quic,with_utls,with_wireguard,with_gvisor",
-        "./addons/vpngate/gateway", "./cmd/managed-core",
+        "./cmd/sbvpn", "./cmd/managed-core",
     ], cwd=root, env=env, text=True, encoding="utf-8")
     while raw.strip():
         value, end = decoder.raw_decode(raw.lstrip())

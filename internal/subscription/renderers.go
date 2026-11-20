@@ -15,7 +15,7 @@ var renderers = map[string]artifactEncoder{
 	"sing-box":  nativeEncoder("outbounds", "application/json", Node.SingBox, singBoxTemplate),
 	"mihomo":    nativeEncoder("proxies", "application/yaml", Node.Mihomo, clashTemplate),
 	"openclash": nativeEncoder("proxies", "application/yaml", Node.Mihomo, clashTemplate),
-	"stash":     nativeEncoder("proxies", "application/yaml", stashNode, clashTemplate),
+	"stash":     nativeEncoder("proxies", "application/yaml", stashNode, stashTemplate),
 	"egern":     nativeEncoder("proxies", "application/yaml", egernNode, egernTemplate),
 	"uri":       uriEncoder, "base64": uriEncoder, "shadowrocket": uriEncoder,
 	"surge": textEncoder, "surge-mac": textEncoder, "loon": textEncoder, "quantumult-x": textEncoder, "surfboard": textEncoder,

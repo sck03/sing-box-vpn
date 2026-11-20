@@ -2,6 +2,8 @@ import { $, el, help, row, button, table, badge } from "./ui.js";
 
 export function verificationLabel(profile) {
   if (profile.tested_version) return `发行测试版本 · ${profile.tested_version}`;
+  if (profile.verification?.includes("node-roundtrip"))
+    return "节点语义校验 · 应用待验收";
   if (profile.verification?.includes("parser-roundtrip")) return "解析往返校验";
   if (profile.verification?.includes("uri-roundtrip"))
     return "URI 往返 · 应用待验收";

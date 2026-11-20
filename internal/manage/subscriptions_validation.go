@@ -21,8 +21,9 @@ func validateSubscriptionArtifact(ctx context.Context, root, core string, templa
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
-	if template.Client != "sing-box" {
-		return sub.ValidateArtifact(template, artifact)
+	result, failure = sub.ValidateArtifact(template, artifact)
+	if failure != nil || template.Client != "sing-box" {
+		return result, failure
 	}
 	result.Scope = "core-config"
 	if core == "" {

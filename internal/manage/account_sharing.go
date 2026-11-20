@@ -11,14 +11,16 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/application"
 )
 
-type shareAccount struct {
+// AccountSummary is the shared account-list and detail response, including
+// current availability for creating download grants.
+type AccountSummary struct {
 	accounting.Usage
 	Scopes []string `json:"download_scopes"`
 	Denial string   `json:"download_denial"`
 }
 
-func (s AccountService) shareAccounts(ctx context.Context, store *accounting.Store, users []accounting.Usage) ([]shareAccount, error) {
-	result := make([]shareAccount, 0, len(users))
+func (s AccountService) shareAccounts(ctx context.Context, store *accounting.Store, users []accounting.Usage) ([]AccountSummary, error) {
+	result := make([]AccountSummary, 0, len(users))
 	if len(users) == 0 {
 		return result, nil
 	}
@@ -50,7 +52,7 @@ func (s AccountService) shareAccounts(ctx context.Context, store *accounting.Sto
 		return nil, err
 	}
 	for _, u := range users {
-		row := shareAccount{Usage: u, Scopes: []string{}}
+		row := AccountSummary{Usage: u, Scopes: []string{}}
 		for _, b := range bindings[u.ID] {
 			if available[b] && !slices.Contains(row.Scopes, b.Runtime) {
 				row.Scopes = append(row.Scopes, b.Runtime)
@@ -62,7 +64,7 @@ func (s AccountService) shareAccounts(ctx context.Context, store *accounting.Sto
 	}
 	return result, nil
 }
-func (a shareAccount) downloadDenial(g accounting.Grant) string {
+func (a AccountSummary) downloadDenial(g accounting.Grant) string {
 	if reason := a.Usage.DownloadDenial(g); reason != "" {
 		return reason
 	}
@@ -112,9 +114,9 @@ func (s *PlatformService) validateShare(ctx context.Context, g accounting.Grant)
 	}
 	return nil
 }
-func (s *PlatformService) shareAccountPage(ctx context.Context, q application.PageQuery, archived bool) (application.Page[shareAccount], error) {
+func (s *PlatformService) shareAccountPage(ctx context.Context, q application.PageQuery, archived bool) (application.Page[AccountSummary], error) {
 	page, err := s.Accounts.AccountPage(ctx, q, time.Now(), archived)
-	result := application.Page[shareAccount]{Total: page.Total, Limit: page.Limit, Offset: page.Offset}
+	result := application.Page[AccountSummary]{Total: page.Total, Limit: page.Limit, Offset: page.Offset}
 	if err == nil {
 		result.Items, err = s.accountService().shareAccounts(ctx, s.Accounts, page.Items)
 	}

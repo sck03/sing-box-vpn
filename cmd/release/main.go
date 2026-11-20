@@ -54,7 +54,7 @@ func build() error {
 		if err = checkCertificateDependencies(goBinary, root, arch); err != nil {
 			return err
 		}
-		for _, target := range []struct{ name, pkg string }{{"yg-vpngate", "./addons/vpngate/gateway"}, {"managed-core", "./cmd/managed-core"}} {
+		for _, target := range []struct{ name, pkg string }{{"yg-vpngate", "./cmd/sbvpn"}, {"managed-core", "./cmd/managed-core"}} {
 			binary := filepath.Join(destination, ".bin", "linux-"+arch, target.name)
 			if err := os.MkdirAll(filepath.Dir(binary), 0755); err != nil {
 				return err
@@ -217,7 +217,7 @@ func releaseEnvironment(arch string) []string {
 // sing-box declares optional ACME dependencies in its module metadata. Release
 // binaries must leave those providers disabled: the platform owns ACME via lego.
 func checkCertificateDependencies(goBinary, root, arch string) error {
-	cmd := exec.Command(goBinary, "list", "-deps", "-tags", releaseTags, "./addons/vpngate/gateway", "./cmd/managed-core")
+	cmd := exec.Command(goBinary, "list", "-deps", "-tags", releaseTags, "./cmd/sbvpn", "./cmd/managed-core")
 	cmd.Dir, cmd.Env = root, releaseEnvironment(arch)
 	cmd.Stderr = os.Stderr
 	output, err := cmd.Output()

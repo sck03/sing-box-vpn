@@ -60,13 +60,13 @@ profile 指令最多三个参数，使用固定字段缓冲并提前拒绝多余
 | cmd/release/                                            | Go 交叉编译与可复现归档、流式 SHA256                    |
 | internal/manage/platform\_\*                            | 面板/API 的国家配置、持久任务、服务启停与恢复编排       |
 | internal/gatewayconfig                                  | 管理面板与网关共同使用的类型、默认值和边界校验          |
-| addons/vpngate/gateway/                                 | 节点/profile、国家/ISP、代理、worker、namespace         |
-| addons/vpngate/gateway/{control,socks,udp,transport}.go | 控制 HTTP、SOCKS 握手、UDP 会话、共享 IPC 帧与 TCP 中继 |
-| addons/vpngate/gateway/{server,http}.go                 | 共用连接退出/准入、HTTP 请求边界与节点源流式读取        |
-| addons/vpngate/gateway/access.go                        | 认证代次、连接和待拨号的统一容量、出口撤销              |
-| addons/vpngate/gateway/{nodes,geo}.go                   | 节点缓存/候选与后台刷新回收、出口及 Geo/ASN 校验        |
-| addons/vpngate/gateway/source_cache.go                  | 候选和已验证节点的来源归属、统一缓存读写                |
-| addons/vpngate/gateway/node_source.go                   | CSV 完整性、候选去重排序和 Base64 解码缓冲复用          |
+| internal/vpngate/                                 | 节点/profile、国家/ISP、代理、worker、namespace         |
+| internal/vpngate/{control,socks,udp,transport}.go | 控制 HTTP、SOCKS 握手、UDP 会话、共享 IPC 帧与 TCP 中继 |
+| internal/vpngate/{server,http}.go                 | 共用连接退出/准入、HTTP 请求边界与节点源流式读取        |
+| internal/vpngate/access.go                        | 认证代次、连接和待拨号的统一容量、出口撤销              |
+| internal/vpngate/{nodes,geo}.go                   | 节点缓存/候选与后台刷新回收、出口及 Geo/ASN 校验        |
+| internal/vpngate/source_cache.go                  | 候选和已验证节点的来源归属、统一缓存读写                |
+| internal/vpngate/node_source.go                   | CSV 完整性、候选去重排序和 Base64 解码缓冲复用          |
 | internal/manage/platform_host.go                        | 服务单元、失败回滚、15 秒重试及 5 分钟最多 10 次启动    |
 | internal/subscription/                                  | 类型化节点、来源集合、预览、独立客户端模板与快照生成    |
 | sb-core.service                                         | 普通五协议                                              |

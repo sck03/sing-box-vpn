@@ -89,17 +89,17 @@ jobs:
           go build -tags with_quic,with_utls,with_wireguard,with_gvisor -o "$GITHUB_WORKSPACE/.build/managed-core" ./cmd/managed-core
           echo "MANAGED_CORE_BINARY=$PWD/.build/managed-core" >> "$GITHUB_ENV"
       - name: Strict protocol fixture preflight
-        run: SBVPN_REQUIRE_CLIENT_CHECK=1 go test -count=1 -run '^TestRealFiveProtocolsTCPUDP$' ./addons/vpngate/gateway
+        run: SBVPN_REQUIRE_CLIENT_CHECK=1 go test -count=1 -run '^TestRealFiveProtocolsTCPUDP$' ./internal/vpngate
       - name: Go tests, race detection and 72 real subscription TCP/UDP links
         run: SBVPN_REQUIRE_CLIENT_CHECK=1 RUN_UDP_IDLE_TESTS=1 go test -race -timeout=25m -count=1 -v ./...
       - name: Managed runtime account isolation and real TCP/UDP links
         run: |
           go test -race -tags with_quic,with_utls,with_wireguard,with_gvisor -count=1 ./internal/runtime
-          MANAGED_CORE_BINARY="$GITHUB_WORKSPACE/.build/managed-core" go test -race -count=1 -v -run '^(TestManagedAccountIsolation|TestManagedCredentialReload|TestRealFiveProtocolsTCPUDP)$' ./addons/vpngate/gateway
+          MANAGED_CORE_BINARY="$GITHUB_WORKSPACE/.build/managed-core" go test -race -count=1 -v -run '^(TestManagedAccountIsolation|TestManagedCredentialReload|TestRealFiveProtocolsTCPUDP)$' ./internal/vpngate
           MANAGED_CORE_BINARY="$GITHUB_WORKSPACE/.build/managed-core" go test -race -count=1 -v -run '^(TestCredentialPublicationRetryDoesNotRepeatRotation|TestAccountBatchPublishesOnceAndPreservesIndividualResults)$' ./internal/manage
       - name: Formatting, vet and shell checks
         run: |
-          test -z "$(gofmt -l manifest.go internal cmd addons/vpngate/gateway)"
+          test -z "$(gofmt -l manifest.go internal cmd)"
           go vet ./...
           for script in sb.sh install.sh lib/*.sh scripts/*.sh; do
             bash -n "$script"
@@ -110,7 +110,7 @@ jobs:
           bash scripts/test-install-ownership.sh
           bash scripts/test-installer.sh
       - name: Build Linux management and gateway binary
-        run: CGO_ENABLED=0 go build -trimpath -o "$GITHUB_WORKSPACE/.build/yg-vpngate" ./addons/vpngate/gateway
+        run: CGO_ENABLED=0 go build -trimpath -o "$GITHUB_WORKSPACE/.build/yg-vpngate" ./cmd/sbvpn
       - name: Online validator download and current platform CLI
         env:
           SBVPN_GITHUB_TOKEN: ${{ github.token }}
@@ -131,7 +131,7 @@ jobs:
       - name: Real panel API and desktop/mobile browser contracts without Mihomo
         run: MIHOMO_BINARY="$PWD/.test/must-not-exist" PANEL_TEST_SCREENSHOT_DIR="$PWD/.test/browser" PANEL_BROWSER_TEST=1 PYTHON_BINARY=python3 GATEWAY_BINARY="$PWD/.build/yg-vpngate" MANAGED_CORE_BINARY="$PWD/.build/managed-core" node scripts/test-panel-local.mjs
       - name: OpenVPN, tunnel DNS and fail-closed namespace acceptance
-        run: sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_NETNS_TESTS=1 "$(command -v go)" test -run '^TestLinuxNamespaceIsolation$' -count=1 -v -timeout=6m ./addons/vpngate/gateway
+        run: sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_NETNS_TESTS=1 "$(command -v go)" test -run '^TestLinuxNamespaceIsolation$' -count=1 -v -timeout=6m ./internal/vpngate
       - name: IPv4 and IPv6 multiport forwarding and owned firewall cleanup
         run: sudo env RUN_FIREWALL_TESTS=1 "$(command -v go)" test -run '^TestLinuxMultiportFirewall$' -count=1 -v -timeout=3m ./internal/manage
       - name: Disk exhaustion and killed accounting process recovery

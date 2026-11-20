@@ -27,6 +27,15 @@ const { templateResources } = await import(
 const { validationLabel } = await import(
   "../internal/manage/panel/validation.js"
 );
+const { supportsPlatform, platformChoices, applicationImport } = await import("../internal/manage/panel/client-platforms.js");
+const stash = { client: "stash", mode: "config", platforms: ["iOS", "macOS"], import_prefix: "stash://install-config?url=" };
+assert.equal(supportsPlatform(stash, "Windows"), false);
+assert.equal(supportsPlatform({ platforms: ["通用导入"] }, "Windows"), true);
+assert.deepEqual(platformChoices([stash, { platforms: ["通用导入", "iOS"] }]), ["iOS", "macOS"]);
+const address = "https://example.com/sub?name=a&token=b";
+assert.equal(applicationImport(stash, address), "stash://install-config?url=" + encodeURIComponent(address));
+assert.equal(applicationImport({ ...stash, mode: "provider" }, address), "");
+assert.equal(applicationImport({ ...stash, import_prefix: "javascript:" }, address), "");
 const dialog = document.querySelector("dialog");
 for (const cancel of ["page", "replacement", "close"]) {
   const page = new AbortController();
@@ -121,7 +130,7 @@ assert.match(
 );
 assert.equal(
   validationLabel({ state: "passed", engine: "mihomo", scope: "parser" }),
-  "节点格式检查通过 · 客户端导入待验证",
+  "节点数量与连接参数检查通过 · 应用导入待验证",
 );
 const { taskDetails } = await import("../internal/manage/panel/tasks.js");
 taskDetails({

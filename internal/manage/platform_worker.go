@@ -17,18 +17,19 @@ import (
 func (s *PlatformService) runWorkers(ctx context.Context) error {
 	child, cancel := context.WithCancel(ctx)
 	defer cancel()
-	done := make(chan error, 2)
+	done := make(chan error, 3)
 	go func() { done <- s.runLane(child, "control") }()
 	go func() { done <- s.runLane(child, "background") }()
+	go func() { done <- s.runRetention(child) }()
 	err := <-done
 	cancel()
-	return errors.Join(err, <-done)
+	return errors.Join(err, <-done, <-done)
 }
 
 func (s *PlatformService) runLane(ctx context.Context, lane string) error {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
-	nextMaintenance, nextSubscriptions, nextRetention := time.Time{}, time.Time{}, time.Time{}
+	nextMaintenance, nextSubscriptions := time.Time{}, time.Time{}
 	nextCredentials, credentialDelay := time.Time{}, 5*time.Second
 	for {
 		if err := ctx.Err(); err != nil {
@@ -47,15 +48,6 @@ func (s *PlatformService) runLane(ctx context.Context, lane string) error {
 					credentialDelay = 5 * time.Second
 				}
 				nextCredentials = time.Now().Add(credentialDelay)
-			}
-			if time.Now().After(nextRetention) {
-				nextRetention = time.Now().Add(time.Hour)
-				maintenance, stop := context.WithTimeout(ctx, 30*time.Second)
-				err := errors.Join(s.Accounts.PruneHistory(maintenance, time.Now()), s.Store.PruneHistory(maintenance, time.Now()), s.pruneCertificates(maintenance, time.Now()))
-				if err != nil {
-					_ = s.Auth.Audit(maintenance, "scheduler", "history-retention", "", "failed")
-				}
-				stop()
 			}
 			if time.Now().After(nextSubscriptions) {
 				if err := s.reconcilePanelRestart(ctx); err != nil {

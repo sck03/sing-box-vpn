@@ -18,6 +18,7 @@ type Features struct {
 	HysteriaObfs   bool `json:"hysteria_obfs"`
 	PolicyGroups   bool `json:"policy_groups"`
 	AdvancedDNS    bool `json:"advanced_dns"`
+	FakeIPToggle   bool `json:"fake_ip_toggle"`
 	RuleProviders  bool `json:"rule_providers"`
 	NativeTemplate bool `json:"native_template"`
 }
@@ -62,12 +63,12 @@ var catalog = map[string]Profile{
 	"sing-box":     {"sing-box", protocols, []string{"nodes", "config"}, "config", "core-check", "1.14.4", false, Features{TUN: true, DNS: true, PortHopping: true, PublicKeyPin: true, UTLS: true}},
 	"mihomo":       {"Mihomo", protocols, []string{"nodes", "provider", "config"}, "config", "ci-core-check", "1.19.33", false, Features{TUN: true, DNS: true, Probe: true, PortHopping: true, CertificatePin: true, UTLS: true}},
 	"openclash":    {"OpenClash", protocols, []string{"provider", "config"}, "provider", "mihomo-core; router untested", "", true, Features{TUN: true, DNS: true, Probe: true, PortHopping: true, CertificatePin: true, UTLS: true}},
-	"surge":        {"Surge", protocols, []string{"nodes", "config"}, "config", "encoder-only", "", true, Features{DNS: true, PortHopping: true, CertificatePin: true}},
-	"surge-mac":    {"Surge Mac", protocols, []string{"nodes", "config"}, "config", "encoder-only", "", true, Features{DNS: true, PortHopping: true, CertificatePin: true}},
-	"loon":         {"Loon", []string{"vless", "vmess", "hysteria2", "anytls", "trojan", "ss"}, []string{"nodes", "config"}, "config", "encoder-only", "", true, Features{DNS: true}},
-	"quantumult-x": {"Quantumult X", []string{"vless", "vmess", "anytls", "trojan", "ss"}, []string{"nodes", "config"}, "config", "encoder-only", "", true, Features{DNS: true}},
-	"surfboard":    {"Surfboard", []string{"vmess", "hysteria2", "tuic", "anytls", "trojan", "ss"}, []string{"nodes", "config"}, "config", "encoder-only", "", true, Features{DNS: true, PortHopping: true, CertificatePin: true}},
-	"stash":        {"Stash", protocols, []string{"provider", "config"}, "provider", "encoder-only", "", true, Features{DNS: true, Probe: true}},
+	"surge":        {"Surge", protocols, []string{"nodes", "config"}, "config", "node-roundtrip; app untested", "", true, Features{DNS: true, PortHopping: true, CertificatePin: true}},
+	"surge-mac":    {"Surge Mac", protocols, []string{"nodes", "config"}, "config", "node-roundtrip; app untested", "", true, Features{DNS: true, PortHopping: true, CertificatePin: true}},
+	"loon":         {"Loon", []string{"vless", "vmess", "hysteria2", "anytls", "trojan", "ss"}, []string{"nodes", "config"}, "config", "node-roundtrip; app untested", "", true, Features{DNS: true}},
+	"quantumult-x": {"Quantumult X", []string{"vless", "vmess", "anytls", "trojan", "ss"}, []string{"nodes", "config"}, "config", "node-roundtrip; app untested", "", true, Features{DNS: true}},
+	"surfboard":    {"Surfboard", []string{"vmess", "hysteria2", "tuic", "anytls", "trojan", "ss"}, []string{"nodes", "config"}, "config", "node-roundtrip; app untested", "", true, Features{DNS: true, PortHopping: true, CertificatePin: true}},
+	"stash":        {"Stash", protocols, []string{"provider", "config"}, "provider", "node-roundtrip; app untested", "", true, Features{DNS: true, Probe: true}},
 	"egern":        {"Egern", protocols, []string{"nodes", "config"}, "config", "encoder-only", "", true, Features{PortHopping: true, CertificatePin: true, HysteriaObfs: true, GRPC: true}},
 	"shadowrocket": {"Shadowrocket", protocols, []string{"nodes", "rules"}, "nodes", "uri-roundtrip; app untested", "", true, Features{PortHopping: true, UTLS: true}},
 	"uri":          {"通用 URI", protocols, []string{"nodes"}, "nodes", "parser-roundtrip", "", false, Features{PortHopping: true, UTLS: true}},
@@ -76,6 +77,7 @@ var catalog = map[string]Profile{
 
 func Lookup(id string) (Profile, bool) {
 	p, ok := catalog[id]
+	p.Features.FakeIPToggle = id == "mihomo" || id == "openclash"
 	p.Features.HopInterval = slices.Contains([]string{"sing-box", "mihomo", "openclash", "egern"}, id)
 	if slices.Contains([]string{"sing-box", "mihomo", "openclash", "uri", "base64", "shadowrocket"}, id) {
 		p.Features.GRPC, p.Features.HTTPUpgrade = true, true
@@ -107,6 +109,9 @@ func All() map[string]Profile {
 func Describe(id string) (Client, bool) {
 	p, ok := Lookup(id)
 	c := Client{Profile: p, Extension: Extension(id), Connections: map[string]Connection{}, NativeFields: TemplateFields(id)}
+	if id == "stash" {
+		c.Limitations = []string{"DNS 使用 Fake-IP，可设置域名排除；不支持切换 redir-host。", "模板经节点语义校验，尚未完成 Stash 应用导入验收。"}
+	}
 	for _, protocol := range p.Protocols {
 		c.Connections[protocol] = connection(id, protocol)
 	}

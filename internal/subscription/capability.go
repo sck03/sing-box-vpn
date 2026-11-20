@@ -69,6 +69,9 @@ func capabilityError(n Node, client string, cap clientprofile.Profile) error {
 		return errors.New("sing-box requires a public-key pin, not a certificate hash")
 	}
 	if !slices.Contains([]string{"sing-box", "mihomo", "openclash", "stash", "egern", "uri", "base64", "shadowrocket"}, client) {
+		if textCommentName(n.Name) {
+			return errors.New("target text format cannot represent a comment-prefixed node name; rename the node")
+		}
 		fields := []string{n.Name, n.Server, n.Password, n.Transport.Path, n.Transport.Host, n.Transport.Authority, n.Transport.ServiceName, n.TLS.ServerName}
 		fields = append(fields, n.TLS.ALPN...)
 		if n.Plugin != nil {
@@ -81,4 +84,9 @@ func capabilityError(n Node, client string, cap clientprofile.Profile) error {
 		}
 	}
 	return nil
+}
+
+func textCommentName(name string) bool {
+	name = strings.TrimSpace(name)
+	return strings.HasPrefix(name, "#") || strings.HasPrefix(name, ";") || strings.HasPrefix(name, "//")
 }

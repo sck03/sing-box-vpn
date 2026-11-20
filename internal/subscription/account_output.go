@@ -8,6 +8,8 @@ import (
 type AccountOutputOption struct {
 	Profile          string       `json:"profile"`
 	Description      string       `json:"description"`
+	Platforms        []string     `json:"platforms"`
+	ImportPrefix     string       `json:"import_prefix,omitempty"`
 	Client           string       `json:"client"`
 	Label            string       `json:"label"`
 	Extension        string       `json:"extension"`
@@ -30,6 +32,9 @@ func (config Config) PlanAccountOutput(nodes []Node, templates map[string]Templa
 	profile, _ := clientprofile.Lookup(output.Client)
 	option := AccountOutputOption{Profile: client, Client: output.Client, Mode: output.Mode, Label: output.Label, Description: output.Description, Extension: clientprofile.Extension(output.Client), Input: len(nodes), Experimental: profile.Experimental, Diagnostics: []Diagnostic{}}
 	option.ReferenceVersion = profile.TestedVersion
+	metadata, _ := clientprofile.Describe(output.Client)
+	option.Platforms = metadata.Platforms
+	option.ImportPrefix = clientprofile.ImportPrefix(output.Client, output.Mode)
 	if !ok {
 		return option, PreparedOutput{}, errors.New("unsupported account client")
 	}

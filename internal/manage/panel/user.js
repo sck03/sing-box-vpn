@@ -1,3 +1,4 @@
+import { supportsPlatform, platformChoices, applicationImport } from "./client-platforms.js";
 // Keep the fragment for reloads; it is never sent in HTTP requests or referrers.
 const base = new URL("./", location.href);
 const target = document.querySelector("#user-content");
@@ -72,7 +73,13 @@ async function load(token, signal, current) {
     ["已下载次数", u.downloads + " / " + (u.max_downloads ?? "不限")],
   ])
     details.append(element("dt", label), element("dd", value));
-  target.replaceChildren(heading, usage, details);
+  const meta = element("div", ""); meta.className = "usage-meta";
+  meta.append(element("span", "剩余 " + format(u.quota_bytes === null ? null : Math.max(0, u.quota_bytes - u.charged_bytes))),
+    element("span", "到期 " + when(u.effective_expires_at)));
+  usage.append(meta);
+  const more = element("details", ""); more.className = "usage-details";
+  more.append(element("summary", "用量与有效期详情"), details);
+  target.replaceChildren(heading, usage, more);
   if (u.download_denial) {
     target.append(
       element(
@@ -106,12 +113,24 @@ async function load(token, signal, current) {
   advanced.append(configs);
   if (u.profiles.some((p) => p.mode === "config")) target.append(advanced);
   if (u.profiles.every((p) => p.mode === "config")) advanced.open = true;
+  const platform = element("select", "");
+  platform.setAttribute("aria-label", "设备平台");
+  const all = element("option", "全部设备");
+  all.value = "";
+  platform.append(all);
+  for (const name of platformChoices(u.profiles)) {
+    const option = element("option", name); option.value = name; platform.append(option);
+  }
+  const filter = element("label", "设备平台 "); filter.className = "client-platform-filter"; filter.append(platform);
+  target.insertBefore(filter, grid);
+  const cards = [];
   for (const profile of u.profiles) {
     const destination = profile.mode === "config" ? configs : grid;
     const client = profile.profile;
     const label = profile.label;
     const wrap = document.createElement("div");
     wrap.className = "client-download";
+    cards.push({ profile, wrap });
     const address = new URL("u/" + token + "/" + client, base).href;
     wrap.append(
       element("h3", label),
@@ -169,9 +188,29 @@ async function load(token, signal, current) {
         input.select();
       }
     });
-    wrap.append(link, document.createTextNode(" "), copy);
+    const actions = element("div", ""); actions.className = "client-actions";
+    const importURL = applicationImport(profile, address);
+    if (importURL) {
+      const install = element("a", "在 Stash 中打开");
+      install.href = importURL; install.className = "download-link primary-link";
+      actions.append(install);
+    }
+    actions.append(copy, link);
+    wrap.append(actions);
     destination.append(wrap);
   }
+  const empty = element("p", "当前分享没有此平台的专用格式，可选择其他设备或联系管理员添加。");
+  empty.hidden = true; empty.setAttribute("role", "status"); target.append(empty);
+  const applyFilter = () => {
+    for (const { profile, wrap } of cards) wrap.hidden = !supportsPlatform(profile, platform.value);
+    const visible = cards.filter(({ wrap }) => !wrap.hidden);
+    grid.hidden = !visible.some(({ profile }) => profile.mode !== "config");
+    advanced.hidden = !visible.some(({ profile }) => profile.mode === "config");
+    if (grid.hidden && !advanced.hidden) advanced.open = true;
+    empty.hidden = visible.length !== 0;
+  };
+  platform.addEventListener("change", applyFilter);
+  applyFilter();
 }
 let loading = false,
   generation = 0,

@@ -31,7 +31,7 @@ type ParseResult struct {
 }
 
 func InputFormats() []string {
-	return []string{"auto", "uri", "base64", "mihomo", "sing-box", "nodes", "surge", "loon", "quantumult-x"}
+	return []string{"auto", "uri", "base64", "mihomo", "stash", "sing-box", "nodes", "surge", "loon", "quantumult-x"}
 }
 
 // Parsers operate on bounded data, never execute scripts or resolve local files.
@@ -110,7 +110,7 @@ func ParseSource(data []byte, source Source) (ParseResult, error) {
 				return result, err
 			}
 		}
-	case "mihomo", "sing-box":
+	case "mihomo", "stash", "sing-box":
 		var document struct {
 			Proxies   []map[string]any `yaml:"proxies"`
 			Outbounds []map[string]any `yaml:"outbounds"`
@@ -144,6 +144,8 @@ func ParseSource(data []byte, source Source) (ParseResult, error) {
 					continue
 				}
 				n, err = FromSingBox(item)
+			} else if format == "stash" {
+				n, err = fromStash(item)
 			} else {
 				n, err = fromMihomo(item)
 			}

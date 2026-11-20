@@ -323,6 +323,12 @@ func decodePlatform(data []byte) (PlatformConfig, error) {
 	return c, err
 }
 func (c *PlatformConfig) normalize() {
+	if c.App.Nodes == nil {
+		c.App.Nodes = []ManagedNode{}
+	}
+	if c.Certificates == nil {
+		c.Certificates = []CertificateAsset{}
+	}
 	if c.VPN.Profiles == nil {
 		c.VPN.Profiles = map[string]Profile{}
 	}

@@ -20,7 +20,7 @@
 
 ## 模块边界
 
-订阅流水线为 Source → ParseResult → normalize/Process → PreparedOutput → renderer → Snapshot。纯解析、连接模型、账户模板策略与声明式模板位于 `internal/subscription`；`renderers.go` 显式登记编码器，sing-box、Mihomo、URI 的字段映射各自独立。`internal/clientprofile` 描述客户端、协议、传输、加密和插件范围。新增客户端必须登记编码器和能力，补充字段往返及核心/应用验收，不使用隐式文本回退。
+订阅流水线为 Source → ParseResult → normalize/Process → PreparedOutput → renderer → Snapshot。纯解析、连接模型、账户模板策略与声明式模板位于 `internal/subscription`；`renderers.go` 显式登记编码器，sing-box、Mihomo、URI 的字段映射各自独立。`internal/clientprofile` 描述客户端、协议、传输、加密、插件、设备平台与已核实的导入方式；Stash 和 Mihomo 各自拥有完整模板，仅共用明确一致的策略组和路由规则构造。新增客户端必须登记编码器和能力，补充字段往返及核心/应用验收，不使用隐式文本回退。
 
 编译缓存以 SchemaVersion、CompilerVersion、选定节点和有效模板的摘要为键，复用前验证产物 ETag/正文摘要。连接、证书、模板或规则变化会失效；来源/能力/路由安全仍每次检查。解析语义变化时递增 ParserVersion，使来源正文与条件请求缓存失效；渲染语义变化时递增 CompilerVersion；持久化结构变化时递增 SchemaVersion。sing-box 核心校验另以核心身份和产物 ETag 缓存。
 
@@ -65,7 +65,7 @@ subscriptions/schedule.json 是截止时间与权益修订的小型投影，不�
 | internal/manage/panel                                            | 原生 ES 模块 SPA，共享表单/列表/草稿，静态嵌入二进制                                            |
 | internal/subscription                                            | 纯配置处理、解析、集合预算、节点选择与客户端渲染                                                |
 | internal/runtime                                                 | 受管 sing-box 注册、认证后计量守卫                                                              |
-| addons/vpngate/gateway                                           | 独立 VPNGate 后端、netns/OpenVPN、出口验证和 SOCKS 转发                                         |
+| internal/vpngate                                           | 独立 VPNGate 后端、netns/OpenVPN、出口验证和 SOCKS 转发                                         |
 | internal/command                                                 | 子进程期限、取消、有界输出                                                                      |
 | internal/hostservice                                             | 不依赖数据库的失败服务恢复、Argo 运行观察、可重试网络设置恢复，通过命令适配器访问主机           |
 | internal/httpserver                                              | HTTP 生命周期、连接上限、独立请求并发准入，不依赖业务或数据库                                   |
@@ -227,3 +227,17 @@ clientprofile/output.go 定义稳定输出身份（格式与用途）；subscrip
 loadDialog 在首次查询前占有对话框；切页、关闭或替换会取消读取并阻止迟到响应。账户保存后的绑定向导拥有独立工作流会话，允许保存触发的页面刷新。简单规则与策略组、远程规则的能力独立控制。
 
 卸载停止项目服务后调用与面板相同的网络恢复流程，成功后才删除数据库和程序。deployment/retention.go 只清理带项目所有权和成功标记的升级目录，保留最近两份；失败目录和无标记目录不自动删除。服务端不安装、探测路径或启动 Mihomo；客户端原生校验与互通仅存在于测试代码和 CI。
+
+## 命令入口、适配与后台维护（2026-11-20）
+
+生产入口为 `cmd/sbvpn`，负责管理命令与 VPNGate 命令装配，发行文件名仍由 release 构建定义。VPNGate 的运行、控制、SOCKS 与 namespace 实现位于 `internal/vpngate`；生产代码不导入 manage。统一入口注入配置事务，保留现有发布恢复和跨进程互斥，测试夹具也使用同一事务。没有复制第二套配置发布流程。
+
+`internal/statefile` 负责有界 JSON 与持久原子文件写入，`internal/filelock` 负责平台文件锁，`internal/terminal` 与 `internal/country` 提供共享显示规则。manage 中保留窄适配调用；账户、控制仓库、运行时与订阅编译器继续独立。程序仍为模块化单体，运行实例和后台进程保持原有隔离。
+
+`platform_service.go` 仅组装资源与生命周期；configuration_view 负责脱敏投影，platform_start 负责恢复后启动，node_presets 负责预设与国家准备。读取不带秘密的配置直接从持久 JSON 生成脱敏视图，减少重复往返；查看或修改界面不会改写原始秘密。单协议预设仅分配该协议的端口，VLESS / 默认 VMess 不生成未使用的 PEM。
+
+历史回收拥有独立有界 worker；不在每次交互任务认领前串行执行清理。证书回收仍持有配置和发布锁，SQLite 回收仍可能与写入竞争，不能承诺零等待。关闭时取消并等待所有 worker。凭据对账、配置应用和主机状态变更继续由控制通道按顺序执行。
+
+`runtimeconfig.Capabilities.outbound_fields` 统一 TLS / 必需 TLS / uTLS 字段能力，前端显隐与清理消费同一目录。AnyTLS 改名保留指纹，QUIC 协议不显示 TCP uTLS。编辑用节点和证书集合规范化为空数组，避免表单写入临时数组。
+
+账户字段定义与开通工作流分离。创建后可自动排队绑定，任务成功后读取单账户当前状态再进入分享；队列失败保留已创建权益。工作流不继承已刷新页面的取消信号，但对话框替换与注销仍终止对应读取。公开下载监听显式提供平台筛选模块，未扩大管理 API 的访问权限。

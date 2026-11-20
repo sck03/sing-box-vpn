@@ -12,11 +12,13 @@ import (
 func Capabilities() map[string]clientprofile.Client { return clientprofile.Catalog() }
 
 type Artifact struct {
-	Name      string `json:"name"`
-	Extension string `json:"extension,omitempty"`
-	MIME      string `json:"mime"`
-	Data      []byte `json:"data"`
-	ETag      string `json:"etag"`
+	Name             string `json:"name"`
+	Extension        string `json:"extension,omitempty"`
+	MIME             string `json:"mime"`
+	Data             []byte `json:"data"`
+	ETag             string `json:"etag"`
+	NodeCount        int    `json:"node_count"`
+	ConnectionDigest string `json:"connection_digest,omitempty"`
 }
 
 func Render(nodes []Node, t Template, skipUnsupported bool) (Artifact, []Diagnostic, error) {
@@ -103,6 +105,10 @@ func renderSelected(selected []Node, t Template, a Artifact, diagnostics []Diagn
 		return a, diagnostics, errors.New("output size limit exceeded")
 	}
 	a.ETag = `"` + Digest(a.Data) + `"`
+	if t.Mode != "rules" {
+		a.NodeCount = len(selected)
+		a.ConnectionDigest = connectionDigest(selected, t.Client)
+	}
 	return a, diagnostics, nil
 }
 

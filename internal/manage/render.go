@@ -12,20 +12,29 @@ import (
 )
 
 func NewProfile(root string, used map[int]bool, suffix string, excluded ...portRange) (Profile, error) {
+	return newProfile(root, used, suffix, Protocols, excluded...)
+}
+
+func newProfile(root string, used map[int]bool, suffix string, protocols []string, excluded ...portRange) (Profile, error) {
 	directory := root
 	if suffix != "" {
 		directory = filepath.Join(root, "vpngate")
 	}
 	p := Profile{Ports: map[string]int{}, Certificate: filepath.ToSlash(filepath.Join(directory, suffix+"cert.pem")), Key: filepath.ToSlash(filepath.Join(directory, suffix+"private.key")), RealitySNI: "www.apple.com", TLSSNI: "www.bing.com", SelfSigned: true, WSPath: "/" + hex.EncodeToString(randomBytes(16))}
-	if err := EnsureCertificate(p.Certificate, p.Key, p.TLSSNI); err != nil {
-		return p, err
+	if slices.ContainsFunc(protocols, func(protocol string) bool { return protocol != "vless" && protocol != "vmess" }) {
+		if err := EnsureCertificate(p.Certificate, p.Key, p.TLSSNI); err != nil {
+			return p, err
+		}
 	}
-	for _, protocol := range Protocols {
+	for _, protocol := range protocols {
 		port, err := AvailablePort(used, excluded...)
 		if err != nil {
 			return p, err
 		}
 		p.Ports[protocol] = port
+	}
+	if !slices.Contains(protocols, "vless") {
+		return p, nil
 	}
 	key, err := ecdh.X25519().GenerateKey(rand.Reader)
 	if err != nil {

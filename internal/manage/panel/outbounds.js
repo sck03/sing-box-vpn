@@ -113,13 +113,14 @@ export async function outbounds(ctx) {
       selection(),
       resourceEditor({
         title: "出站与出站组",
-        normalize: normalizeOutbound,
+        normalize: (value, previous) => normalizeOutbound(value, previous, runtime.outbound_fields),
         preserve: true,
         items: a.outbounds,
         fields: outboundFields(
           runtime.outbounds,
           [...a.outbounds, ...a.endpoints].map((v) => v.tag),
           (effective.dns?.servers || []).map((v) => v.tag),
+          runtime.outbound_fields,
         ),
         defaults: {
           type: "socks",

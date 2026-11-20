@@ -143,6 +143,14 @@ DNS 分为 local、remote、bootstrap；bootstrap 使用 IP，其余支持 IP �
 
 授权统一通过 /api/grants 创建、查询和撤销。输出分享为 `/s/<token>/<output-id>`，账户分享与输出分享互斥。自定义输出在 HEAD/304 前重新检查授权、账户和缓存期限。
 
+## 目标平台与产物完整性
+
+输入格式新增显式 Stash；输出仍由客户端与用途共同标识。`/api/accounts/outputs` 和公开用量的 profiles 同时提供 platforms、import_prefix。平台筛选不改变下载授权，服务端仍在每次下载时重新检查权益与兼容性。Stash 完整配置支持官方 `stash://install-config?url=`，Provider 和节点片段只提供复制/下载。其他客户端没有经过核实的导入协议时不生成猜测链接。
+
+Stash 使用独立完整模板：DNS 路由使用 follow-rule，不输出 Mihomo 的 respect-rules、enhanced-mode 或 TUN 字段；保留 MRS domain/ipcidr 支持。Stash 默认 Fake-IP，可配置排除域名，显式关闭会返回错误。前端依据共享能力隐藏不适用开关，不把它标成 redir-host。
+
+当前 ParserVersion=2、CompilerVersion=6。生成产物保存节点数和不含明文秘密的连接摘要；解析后比较数量、名称、凭据、TLS、传输与协议参数，拒绝节点丢失或关键字段变化。等价默认值、公开说明的自签证书固定值映射被规范化。文本客户端的注释前缀名称（#、;、//）明确拒绝；允许跳过不兼容节点时，节点数与诊断同时减少。节点语义校验不等于应用完整配置已导入。Egern 仍只报告编码完成。
+
 ## 验证范围与预算
 
 Egern 独立渲染 IPv4 `ip_cidr` 与 IPv6 `ip_cidr6`，支持 UDP 中继、Hysteria2 跳跃端口/间隔及 salamander、VLESS/VMess TLS gRPC、WebSocket、Reality 和证书 SHA256 指纹。TUIC 未指定 ALPN 时输出 h3；显式 ALPN 仅在 TUIC 保留。TUIC 自定义拥塞控制/UDP 中继模式、gRPC 明文与未支持字段会拒绝或按输出策略跳过。该适配器仍为实验级，不能以其他客户端核心检查代替 Egern 应用导入。

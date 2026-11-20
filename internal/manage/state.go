@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
+	"github.com/sck03/sing-box-vpn/internal/country"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	"math/big"
 	"os"
@@ -26,7 +27,7 @@ type Object = map[string]any
 var Protocols = domain.Protocols
 var Tags = map[string]string{"vless": "vless-sb", "vmess": "vmess-sb", "hysteria2": "hy2-sb", "tuic": "tuic5-sb", "anytls": "anytls-sb"}
 var Labels = map[string]string{"vless": "VLESS-Reality", "vmess": "VMess-WS", "hysteria2": "Hysteria-2", "tuic": "TUIC-v5", "anytls": "AnyTLS"}
-var Countries = map[string]string{"JP": "日本", "KR": "韩国", "US": "美国", "TW": "台湾", "HK": "香港", "SG": "新加坡", "TH": "泰国", "VN": "越南", "DE": "德国", "GB": "英国", "CA": "加拿大"}
+var Countries = country.Names
 
 type Reality struct {
 	Private string `json:"private_key"`

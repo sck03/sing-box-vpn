@@ -122,7 +122,7 @@ export function templateFields(catalog) {
       options: [["", "继承模板默认（启用）"], ["true", "启用"], ["false", "关闭"]],
       advanced: true,
       visible: (v) =>
-        complete(v) && ["mihomo", "openclash", "stash"].includes(v.client),
+        complete(v) && capability(v)?.features.fake_ip_toggle,
     },
     {
       key: "dns_policy.fake_ip_filter",
@@ -163,6 +163,8 @@ export function templateFields(catalog) {
 }
 
 export function normalizeTemplate(value, catalog) {
+	if (value.client === "stash" && value.mode === "config" && value.dns_policy?.fake_ip === false)
+	  throw new Error("Stash 使用 Fake-IP，请设置排除域名，或清除关闭 Fake-IP 的配置。");
   const features = catalog[value.client]?.features || {};
   const nativeFields = catalog[value.client]?.native_fields;
   for (const key of [...(nativeFields?.managed || []), ...(nativeFields?.forbidden || [])]) {

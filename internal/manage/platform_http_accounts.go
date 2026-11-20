@@ -111,6 +111,20 @@ func (s *PlatformService) serveAccounts(w http.ResponseWriter, r *http.Request, 
 		}
 		return true
 	}
+	if path == "/api/accounts/detail" && r.Method == "GET" {
+		usage, e := s.Accounts.Account(ctx, r.URL.Query().Get("id"))
+		if e != nil {
+			platformError(w, e)
+			return true
+		}
+		rows, e := s.accountService().shareAccounts(ctx, s.Accounts, []accounting.Usage{usage})
+		if e != nil {
+			platformError(w, e)
+		} else {
+			jsonResponse(w, rows[0])
+		}
+		return true
+	}
 	if path == "/api/accounts/archive" && r.Method == "POST" {
 		if !require(admin) {
 			return true

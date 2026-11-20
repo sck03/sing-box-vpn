@@ -6,6 +6,6 @@ export function validationLabel(value) {
   if (value.state === "passed" && value.scope === "core-config")
     return "sing-box 配置检查通过";
   if (value.state === "passed" && value.scope === "parser")
-    return "节点格式检查通过 · 客户端导入待验证";
+    return "节点数量与连接参数检查通过 · 应用导入待验证";
   return "已生成 · 应用导入待验证";
 }

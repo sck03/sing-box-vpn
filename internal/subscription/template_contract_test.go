@@ -32,6 +32,12 @@ func TestDNSInheritanceAcrossJSONRoundTrip(t *testing.T) {
 					t.Fatal(err)
 				}
 				a, _, err := Render([]Node{portableNodes()[0]}, template, false)
+				if client == "stash" && tc.mode == "redir-host" {
+					if err == nil {
+						t.Fatal("unsupported Stash mode accepted")
+					}
+					return
+				}
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -40,7 +46,7 @@ func TestDNSInheritanceAcrossJSONRoundTrip(t *testing.T) {
 					t.Fatal(err)
 				}
 				dns := obj(tree["dns"])
-				if dns["enhanced-mode"] != tc.mode || len(stringList(dns["fake-ip-filter"])) != tc.filters {
+				if (client != "stash" && dns["enhanced-mode"] != tc.mode) || len(stringList(dns["fake-ip-filter"])) != tc.filters {
 					t.Fatal(dns)
 				}
 			})

@@ -160,8 +160,6 @@ func withNamedFileLock(root, name string, operation func() error) error {
 	return operation()
 }
 
-func TryLockFile(file *os.File) error { return lockFile(file) }
-
 type releaseAsset struct {
 	Name   string `json:"name"`
 	URL    string `json:"browser_download_url"`

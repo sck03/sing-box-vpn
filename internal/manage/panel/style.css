@@ -963,6 +963,8 @@ progress {
 }
 .client-download small {
   min-height: 0;
+  color: var(--muted);
+  line-height: 1.6;
 }
 .client-download p {
   margin: 0;
@@ -970,7 +972,9 @@ progress {
 }
 .client-compatibility {
   border-left: 3px solid var(--accent);
-  padding-left: 12px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: var(--selected);
   margin-bottom: 16px;
 }
 .client-compatibility:empty {
@@ -1352,11 +1356,14 @@ progress {
 /* Nodes first; device policies remain an explicit advanced choice. */
 .subscription-configs { margin-top: 24px; }
 .subscription-configs > summary { cursor: pointer; padding: 14px 0; font-weight: 600; }
-.client-download h3, .client-download p { margin: 0; }
-.client-download small { color: var(--muted); line-height: 1.6; }
-.client-download .download-link { margin-top: 8px; }
-.client-download button { min-height: 44px; }
-.client-compatibility { padding: 12px 16px; border-radius: 10px; background: var(--selected); margin-bottom: 16px; }
+.client-platform-filter { display: flex; align-items: center; gap: 12px; margin: 18px 0 4px; font-weight: 600; }
+.client-platform-filter select { width: auto; min-width: 150px; margin: 0; }
+.client-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; }
+.client-actions button, .client-actions a { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+.client-actions .primary-link { padding: 8px 12px; border: 1px solid var(--accent); border-radius: 9px; }
+.usage-meta { display: flex; flex-wrap: wrap; gap: 8px 24px; color: var(--muted); font-size: 13px; }
+.usage-details { margin: 8px 0 24px; }
+.usage-details summary { cursor: pointer; color: var(--muted); padding: 6px 0; }
 @media (max-width: 640px) {
  .user-page { margin: 24px auto; padding: 0 16px; }
  .usage-summary { padding: 18px; }

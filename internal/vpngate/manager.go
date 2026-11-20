@@ -1,0 +1,374 @@
+package vpngate
+
+import (
+	"context"
+	"errors"
+	"net"
+	"net/http"
+	"path/filepath"
+	"reflect"
+	"slices"
+	"sync"
+	"time"
+)
+
+type tunnel interface {
+	start(context.Context, Node) error
+	stop()
+	socket() string
+	died() <-chan error
+}
+
+func (b *backend) socket() string     { return b.workerSocket }
+func (b *backend) died() <-chan error { return b.exited }
+
+type manager struct {
+	transaction    func(string, func() error) error
+	mu             sync.Mutex
+	actionSlot     chan struct{}
+	cfg            Config
+	configPath     string
+	status         Status
+	ready          bool
+	epoch          uint64
+	current        tunnel
+	previous       Node
+	nodes          []Node
+	nodesUpdated   time.Time
+	sourceEpoch    uint64
+	refreshSlot    chan struct{}
+	refreshDone    chan struct{}
+	refreshCancel  context.CancelFunc
+	refreshStopped bool
+	sourceClient   *http.Client
+	hostClient     *http.Client
+	connections    map[net.Conn]bool
+	pendingDials   map[*pendingDial]struct{}
+	wake           chan struct{}
+	cancel         context.CancelFunc
+	swap           bool
+	factory        func(Config) tunnel
+	probeOverride  func(context.Context, Config, tunnel) (Geo, error)
+	geoCache       map[string]cachedGeo
+	failed         map[string]time.Time
+}
+
+func newManager(c Config, path string, transaction func(string, func() error) error) *manager {
+	// Normalize identity before comparing later validated reloads.
+	c.DataDir, c.RunDir = filepath.Clean(c.DataDir), filepath.Clean(c.RunDir)
+	m := &manager{transaction: transaction, cfg: c, configPath: path, status: Status{Version: version(), State: "stopped", Country: c.Country, Mode: c.Mode, Updated: time.Now()}, connections: map[net.Conn]bool{}, wake: make(chan struct{}, 1), factory: func(c Config) tunnel { return &backend{cfg: c} }}
+	m.refreshSlot = make(chan struct{}, 1)
+	m.actionSlot = make(chan struct{}, 1)
+	m.pendingDials = map[*pendingDial]struct{}{}
+	m.sourceClient = directClient(25 * time.Second)
+	m.hostClient = &http.Client{Timeout: 12 * time.Second, Transport: m.sourceClient.Transport, CheckRedirect: m.sourceClient.CheckRedirect}
+	m.geoCache = map[string]cachedGeo{}
+	m.failed = map[string]time.Time{}
+	m.previous = loadSourceCache[Node](c, "last-node.json")
+	if cached := loadSourceCache[[]Node](c, "nodes.json"); len(cached) <= maxNodes {
+		m.nodes = cached
+	}
+	return m
+}
+func (m *manager) snapshot() Status {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s := m.status
+	if s.State == "ready" && !m.ready {
+		s.State, s.Reason, s.Exit = "waiting", "forwarding blocked; waiting for exit verification", nil
+	}
+	if s.Exit != nil {
+		g := *s.Exit
+		s.Exit = &g
+	}
+	return s
+}
+func (m *manager) setStatus(state, reason string, node Node, geo *Geo) {
+	m.mu.Lock()
+	previous := m.status
+	m.status = Status{Version: version(), State: state, Reason: reason, Country: m.cfg.Country, Mode: m.cfg.Mode, Node: node.Host, Exit: geo, Updated: time.Now()}
+	s := m.status
+	sameExit := previous.Exit == nil && geo == nil || previous.Exit != nil && geo != nil && *previous.Exit == *geo
+	changed := previous.State != s.State || previous.Reason != s.Reason || previous.Country != s.Country || previous.Mode != s.Mode || previous.Node != s.Node || !sameExit
+	dir := m.cfg.DataDir
+	m.mu.Unlock()
+	if changed {
+		_ = atomicJSON(filepath.Join(dir, "state.json"), s)
+	}
+}
+func (m *manager) apply(c Config, swap bool) error {
+	if e := c.validate(); e != nil {
+		return e
+	}
+	m.mu.Lock()
+	if c.Listen != m.cfg.Listen || c.RunDir != m.cfg.RunDir || c.DataDir != m.cfg.DataDir {
+		m.mu.Unlock()
+		return errors.New("restart the daemon to change its listening port or directories")
+	}
+	if !swap && reflect.DeepEqual(c, m.cfg) {
+		m.mu.Unlock()
+		return nil
+	}
+	if !slices.Equal(c.Sources, m.cfg.Sources) {
+		m.sourceEpoch++
+		m.nodes, m.previous = nil, Node{}
+		m.nodesUpdated = time.Time{}
+		clear(m.failed)
+		if m.refreshCancel != nil {
+			m.refreshCancel()
+		}
+	}
+	m.cfg = c
+	m.swap = swap
+	m.ready = false
+	m.epoch++
+	m.status = Status{Version: version(), State: "waiting", Country: c.Country, Mode: c.Mode, Reason: "configuration changed; forwarding blocked", Updated: time.Now()}
+	if m.cancel != nil {
+		m.cancel()
+	}
+	m.mu.Unlock()
+	m.revoke()
+	select {
+	case m.wake <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
+func (m *manager) run(ctx context.Context) {
+	defer m.sourceClient.CloseIdleConnections()
+	defer m.stopRefresh()
+	var done chan struct{}
+	select {
+	case m.wake <- struct{}{}:
+	default:
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			m.mu.Lock()
+			if m.cancel != nil {
+				m.cancel()
+			}
+			m.mu.Unlock()
+			m.revoke()
+			if done != nil {
+				<-done
+			}
+			m.setStatus("stopped", "daemon stopped", Node{}, nil)
+			return
+		case <-m.wake:
+			m.mu.Lock()
+			if m.cancel != nil {
+				m.cancel()
+			}
+			m.mu.Unlock()
+			m.revoke()
+			if done != nil {
+				<-done
+				done = nil
+			}
+			child, cancel := context.WithCancel(ctx)
+			m.mu.Lock()
+			c := m.cfg
+			swap := m.swap
+			m.swap = false
+			m.cancel = cancel
+			m.mu.Unlock()
+			if !c.Enabled {
+				cancel()
+				m.setStatus("stopped", "disabled by user", Node{}, nil)
+				continue
+			}
+			done = make(chan struct{})
+			go func(finished chan struct{}) { defer close(finished); m.connectLoop(child, c, swap) }(done)
+		}
+	}
+}
+
+// Block forwarding on the first failure; transient lookups get two retries
+// on the existing tunnel before the connection loop tears it down.
+func (m *manager) recheck(ctx context.Context, c Config, active tunnel, n Node, client *http.Client) (Geo, error) {
+	return m.verifyExit(ctx, c, active, n, client, true)
+}
+
+func (m *manager) verifyExit(ctx context.Context, c Config, active tunnel, n Node, client *http.Client, revokeOnFailure bool) (Geo, error) {
+	for attempt := 0; ; attempt++ {
+		g, err := m.probe(ctx, c, active, client)
+		if ctx.Err() != nil {
+			return Geo{}, context.Cause(ctx)
+		}
+		if err == nil {
+			return g, err
+		}
+		if revokeOnFailure {
+			m.revoke()
+		}
+		m.setStatus("verifying", err.Error()+"; forwarding blocked", n, nil)
+		var temporary probeUnavailable
+		if !errors.As(err, &temporary) || attempt == 2 {
+			return g, err
+		}
+		if client != nil {
+			client.CloseIdleConnections()
+		}
+		timer := time.NewTimer(2 * time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return Geo{}, context.Cause(ctx)
+		case <-timer.C:
+		}
+	}
+}
+
+func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
+	backoff := 5 * time.Second
+	lastFailure := ""
+	var initial []Node
+	if !swap {
+		m.mu.Lock()
+		cached, saved := m.nodes, m.previous.Host != ""
+		m.mu.Unlock()
+		if saved {
+			initial = m.reconnectCandidates(c, cached, false)
+			if len(initial) > 0 {
+				// Retry one saved candidate immediately; update its source in parallel.
+				initial = []Node{initial[0]}
+				m.scheduleRefresh(ctx, c, false)
+			}
+		}
+	}
+	for ctx.Err() == nil {
+		pool := initial
+		cachedAttempt := len(pool) > 0
+		initial = nil
+		if len(pool) == 0 {
+			m.setStatus("fetching", "fetching same-country candidates", Node{}, nil)
+			pool = m.reconnectCandidates(c, m.refresh(ctx, c, false), swap)
+		}
+		if len(pool) == 0 {
+			reason := "no valid candidate in requested country"
+			if lastFailure != "" {
+				reason += "; last tunnel failure: " + lastFailure
+			}
+			m.setStatus("waiting", reason, Node{}, nil)
+		}
+		for _, n := range pool {
+			if ctx.Err() != nil {
+				return
+			}
+			m.mu.Lock()
+			sessionEpoch := m.epoch
+			m.mu.Unlock()
+			m.setStatus("connecting", "OpenVPN handshake", n, nil)
+			active := m.factory(c)
+			session, stop := context.WithCancelCause(ctx)
+			var client *http.Client
+			e := active.start(session, n)
+			if e == nil {
+				// Observe death during startup verification as well as between health
+				// checks. A failed process must not retain a 12-second probe and retries.
+				go watchTunnel(session, active, stop)
+				client = tunnelClient(active)
+				m.setStatus("verifying", "verifying exit country and provider", n, nil)
+				var g Geo
+				// Startup already blocks forwarding; retries must retain its epoch.
+				g, e = m.verifyExit(session, c, active, n, client, false)
+				if e == nil && session.Err() == nil {
+					m.mu.Lock()
+					if session.Err() != nil || sessionEpoch != m.epoch || m.cfg.Country != c.Country {
+						m.mu.Unlock()
+						stop(nil)
+						client.CloseIdleConnections()
+						active.stop()
+						return
+					}
+					m.current = active
+					m.previous = n
+					m.ready = true
+					m.mu.Unlock()
+					// An implicit fixed node is already persisted in last-node.json;
+					// rewriting gateway.json here could overwrite a concurrent menu edit.
+					_ = saveSourceCache(c, "last-node.json", n)
+					m.setStatus("ready", "volunteer / residential candidate", n, &g)
+					backoff = 5 * time.Second
+					swap = false
+					e = m.monitorSession(session, c, active, n, client)
+				}
+			}
+			m.revoke()
+			stop(nil)
+			if client != nil {
+				client.CloseIdleConnections()
+			}
+			active.stop()
+			m.mu.Lock()
+			m.current = nil
+			m.mu.Unlock()
+			if ctx.Err() != nil {
+				return
+			}
+			reason := "connection failed"
+			if e != nil {
+				reason = e.Error()
+			}
+			lastFailure = reason
+			m.setStatus("waiting", reason, n, nil)
+			m.mu.Lock()
+			m.failed[n.Host] = time.Now().Add(2 * time.Minute)
+			m.mu.Unlock()
+		}
+		if cachedAttempt {
+			continue
+		}
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+		if backoff < 60*time.Second {
+			backoff *= 2
+			if backoff > 60*time.Second {
+				backoff = 60 * time.Second
+			}
+		}
+	}
+}
+
+func watchTunnel(ctx context.Context, active tunnel, cancel context.CancelCauseFunc) {
+	select {
+	case <-active.died():
+		cancel(errors.New("tunnel process stopped; forwarding blocked"))
+	case <-ctx.Done():
+	}
+}
+
+func (m *manager) monitorSession(ctx context.Context, c Config, active tunnel, n Node, client *http.Client) error {
+	tick := time.NewTicker(time.Duration(c.HealthInterval) * time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		case <-tick.C:
+			g, e := m.recheck(ctx, c, active, n, client)
+			if ctx.Err() != nil {
+				return context.Cause(ctx)
+			}
+			if e != nil {
+				return e
+			}
+			m.mu.Lock()
+			if ctx.Err() != nil || m.current != active || m.cfg.Country != c.Country {
+				m.mu.Unlock()
+				return errors.New("tunnel changed during health verification")
+			}
+			m.ready = true
+			m.mu.Unlock()
+			m.setStatus("ready", "volunteer / residential candidate", n, &g)
+		}
+	}
+}

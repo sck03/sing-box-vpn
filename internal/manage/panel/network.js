@@ -155,14 +155,14 @@ export async function inbounds(ctx) {
       ),
     ),
   );
-  const items = c.app.nodes || [];
+  const items = (c.app.nodes ??= []);
   const add = button(
     "新增入站",
     () =>
       formDialog(
         "选择协议预设",
         [
-          { key: "id", label: "唯一 ID", required: true },
+          { key: "id", label: "唯一 ID", required: true, advanced: true },
           {
             key: "protocol",
             label: "协议",
@@ -170,7 +170,7 @@ export async function inbounds(ctx) {
             options: protocols,
           },
         ],
-        { id: "", protocol: "vless" },
+        { id: "node-" + crypto.randomUUID().replaceAll("-", ""), protocol: "vless" },
         async (v) => {
           const node = await api("/api/preset", v);
           items.push(node);

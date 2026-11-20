@@ -9,11 +9,18 @@ import (
 )
 
 type Capabilities struct {
-	Inbounds  []string `json:"inbounds"`
-	Outbounds []string `json:"outbounds"`
-	DNS       []string `json:"dns"`
-	Endpoints []string `json:"endpoints"`
-	Services  []string `json:"services"`
+	Inbounds       []string                  `json:"inbounds"`
+	Outbounds      []string                  `json:"outbounds"`
+	DNS            []string                  `json:"dns"`
+	Endpoints      []string                  `json:"endpoints"`
+	Services       []string                  `json:"services"`
+	OutboundFields map[string]OutboundFields `json:"outbound_fields"`
+}
+
+type OutboundFields struct {
+	TLS         bool `json:"tls"`
+	RequiredTLS bool `json:"required_tls"`
+	UTLS        bool `json:"utls"`
 }
 
 func Supported() Capabilities {
@@ -23,6 +30,11 @@ func Supported() Capabilities {
 		DNS:       []string{"tcp", "udp", "tls", "https", "local", "resolved"},
 		Endpoints: []string{"wireguard"},
 		Services:  []string{"resolved"},
+		OutboundFields: map[string]OutboundFields{
+			"vless": {TLS: true, UTLS: true}, "vmess": {TLS: true, UTLS: true},
+			"hysteria2": {TLS: true, RequiredTLS: true}, "tuic": {TLS: true, RequiredTLS: true},
+			"anytls": {TLS: true, RequiredTLS: true, UTLS: true},
+		},
 	}
 }
 

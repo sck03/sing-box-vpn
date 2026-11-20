@@ -14,7 +14,7 @@ Release 标签使用 `vMAJOR.MINOR.PATCH`，主版本号与数据格式无绑定
 
 Mihomo 开发/CI 测试基线为 1.19.33；部署服务器无需安装它。双方协议、传输和 TLS 参数匹配时，Mihomo 客户端可连接 sing-box 服务端。原生 sing-box/Mihomo 配置和 Provider 是推荐输出。Mihomo URI 导入器忽略 VMess insecure 和 TUIC allow_insecure；这两类自签 TLS URI 不纳入真实链路通过项，其原生配置已覆盖。OpenClash 使用 Mihomo Provider 格式，尚不代表实体 OpenWrt/LuCI 验收。
 
-客户端与模式统一登记在 `internal/clientprofile`，通过 `/api/clients` 提供详细字段范围。`/api/accounts/outputs` 按账户和实例计算实际可下载格式，公开用量的 `profiles` 返回对象数组，每项同时标明客户端语法和用途。Surge、Surge Mac、Loon、Quantumult X、Surfboard、Stash、Egern、Shadowrocket 标为实验适配；范围不代表所有应用版本和组合已通过。账户模板策略明确控制是否跳过不兼容节点，并展示数量与原因。详见[订阅验证范围](subscriptions.md#验证范围与预算)。
+客户端与模式统一登记在 `internal/clientprofile`，通过 `/api/clients` 提供详细字段范围。`/api/accounts/outputs` 按账户和实例计算实际可下载格式，公开用量的 `profiles` 返回对象数组，每项同时标明客户端语法和用途。Surge、Surge Mac、Loon、Quantumult X、Surfboard、Stash、Egern、Shadowrocket 标为实验适配；范围不代表所有应用版本和组合已通过。账户模板策略明确控制是否跳过不兼容节点，并展示数量与原因。Stash 独立 DNS 模板使用 follow-rule 与 Fake-IP 排除域名；不接受关闭 Fake-IP。该客户端仍未完成实体应用验收。节点验证比较产物数量和连接语义。详见[订阅验证范围](subscriptions.md#验证范围与预算)。
 
 域名解析优先级使用 resolve/prefer_ipv4/prefer_ipv6，保留其他地址族回退；IP 请求不会被 SNI/HTTP Host 隐式替换。现代 DNS 与 SRS 规则集有效，旧 geosite/geoip 和 DNS 格式不兼容。
 

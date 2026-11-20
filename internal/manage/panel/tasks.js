@@ -5,7 +5,7 @@ import { table } from "./tables.js";
 import { card } from "./dom.js";
 import { el, button, row, help, badge, date } from "./dom.js";
 
-export async function openTask(id, signal = undefined) {
+export async function openTask(id, signal = undefined, completed = undefined) {
   const session = dialogSession(signal);
   const content = el("div", {}, help("正在读取任务详情…"));
   session.replace(content, row(button("关闭", session.close)));
@@ -53,6 +53,10 @@ export async function openTask(id, signal = undefined) {
         previous = signature;
       }
       terminal = !["queued", "running"].includes(task.state);
+	  if (terminal && completed) {
+	    const actions = await completed(task, session.signal);
+	    if (session.active() && actions?.length) content.append(row(...actions));
+	  }
       if (!terminal && !document.hidden) timer = setTimeout(refresh, 1500);
     } catch (error) {
       if (session.active())

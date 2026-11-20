@@ -67,7 +67,7 @@ func TestPublicShareNavigationRetainsManagementOriginProtection(t *testing.T) {
 	for _, tc := range []struct {
 		path   string
 		status int
-	}{{"/", 200}, {"/user", 200}, {"/panel/theme.js", 200}, {"/u/" + token + "/usage", 200}, {"/api/state", 403}} {
+	}{{"/", 200}, {"/user", 200}, {"/panel/theme.js", 200}, {"/panel/client-platforms.js", 200}, {"/u/" + token + "/usage", 200}, {"/api/state", 403}} {
 		request := panelRequest("GET", tc.path, nil, session)
 		request.Header.Set("Sec-Fetch-Site", "cross-site")
 		request.Header.Set("Origin", "https://other.example")

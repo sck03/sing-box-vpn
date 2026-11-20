@@ -19,9 +19,9 @@ import (
 const (
 	SchemaVersion = 6
 	// ParserVersion invalidates fetched node caches, including conditional GETs.
-	ParserVersion = 1
+	ParserVersion = 2
 	// CompilerVersion invalidates rendered artifacts and account export plans.
-	CompilerVersion = 5
+	CompilerVersion = 6
 	MaxNodes        = 4096
 	MaxBody         = 8 << 20
 	MaxObjects      = 128

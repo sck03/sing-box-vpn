@@ -1,12 +1,12 @@
 const groups = ["selector", "urltest"];
 const passwordProtocols = ["socks", "hysteria2", "tuic", "anytls"];
-const tlsProtocols = ["vless", "vmess", "hysteria2", "tuic", "anytls"];
 const uuidProtocols = ["vless", "vmess", "tuic"];
 const isRemote = (v) => !["direct", ...groups].includes(v.type);
-const tlsActive = (v) =>
-  ["hysteria2", "tuic", "anytls"].includes(v.type) || v.tls?.enabled;
 
-export function outboundFields(protocols, tags, resolvers) {
+export function outboundFields(protocols, tags, resolvers, capabilities) {
+  const tlsActive = (value) => capabilities[value.type]?.required_tls || value.tls?.enabled;
+  const tlsProtocols = Object.keys(capabilities).filter((type) => capabilities[type].tls);
+  const utlsProtocols = Object.keys(capabilities).filter((type) => capabilities[type].utls);
   const peers = (v) => tags.filter((tag) => tag !== v.tag);
   return [
     { key: "tag", label: "出站标识", required: true, section: "基本信息" },
@@ -101,7 +101,7 @@ export function outboundFields(protocols, tags, resolvers) {
       label: "启用 TLS",
       type: "bool",
       section: "连接安全",
-      visible: (v) => ["vless", "vmess"].includes(v.type),
+      visible: (v) => capabilities[v.type]?.tls && !capabilities[v.type].required_tls,
     },
     {
       key: "tls.server_name",
@@ -153,7 +153,7 @@ export function outboundFields(protocols, tags, resolvers) {
       key: "tls.utls.enabled",
       label: "浏览器 TLS 指纹",
       type: "bool",
-      visible: (v) => ["vless", "vmess"].includes(v.type) && v.tls?.enabled,
+      visible: (v) => utlsProtocols.includes(v.type) && tlsActive(v),
     },
     {
       key: "tls.utls.fingerprint",
@@ -162,8 +162,8 @@ export function outboundFields(protocols, tags, resolvers) {
       options: ["chrome", "firefox", "safari", "edge", "random"],
       default: "chrome",
       visible: (v) =>
-        ["vless", "vmess"].includes(v.type) &&
-        v.tls?.enabled &&
+        utlsProtocols.includes(v.type) &&
+        tlsActive(v) &&
         v.tls?.utls?.enabled,
     },
     {
@@ -280,7 +280,8 @@ export function outboundFields(protocols, tags, resolvers) {
   ];
 }
 
-export function normalizeOutbound(v, previous) {
+export function normalizeOutbound(v, previous, capabilities) {
+	const capability = capabilities[v.type] || {};
   if (
     previous &&
     previous.transport?.type !== v.transport?.type &&
@@ -326,14 +327,14 @@ export function normalizeOutbound(v, previous) {
     "min_idle_session",
   ])
     if (v.type !== "anytls" || v[key] === "" || v[key] == null) delete v[key];
-  if (["hysteria2", "tuic", "anytls"].includes(v.type)) {
+  if (capability.required_tls) {
     v.tls ??= {};
     v.tls.enabled = true;
   }
-  if (!tlsProtocols.includes(v.type) || !v.tls?.enabled) delete v.tls;
+  if (!capability.tls || !v.tls?.enabled) delete v.tls;
   if (v.tls) {
     if (v.type !== "vless" || !v.tls.reality?.enabled) delete v.tls.reality;
-    if (!["vless", "vmess"].includes(v.type) || !v.tls.utls?.enabled)
+    if (!capability.utls || !v.tls.utls?.enabled)
       delete v.tls.utls;
   }
   if (!["vless", "vmess"].includes(v.type) || !v.transport?.type)
