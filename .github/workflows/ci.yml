@@ -75,10 +75,12 @@ jobs:
           echo '699a1b510aa4396b2176d32d1181920399ebf1e267835da6f3b598d0f7c24968  .build/core/core.tar.gz' | sha256sum -c -
           tar -xzf .build/core/core.tar.gz -C .build/core
           echo "SING_BOX_BINARY=$PWD/.build/core/sing-box-1.14.4-linux-amd64/sing-box" >> "$GITHUB_ENV"
-      - name: Download verified Mihomo 1.19.33 for subscription acceptance
+      - name: Download Mihomo test client for subscription acceptance
         run: |
-          curl -fLsS --retry 2 https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-linux-amd64-v1-v1.19.33.gz -o .build/core/mihomo.gz
-          echo '8ec92e7b2fdc6b853ba00156bab7e4e965c8b0d843b8c4ac8ab98795f02ad524  .build/core/mihomo.gz' | sha256sum -c -
+          version="$(node -p "require('./scripts/client-test-versions.json').mihomo.version")"
+          digest="$(node -p "require('./scripts/client-test-versions.json').mihomo.linux_amd64_sha256")"
+          curl -fLsS --retry 2 "https://github.com/MetaCubeX/mihomo/releases/download/v$version/mihomo-linux-amd64-v1-v$version.gz" -o .build/core/mihomo.gz
+          printf '%s  %s\n' "$digest" .build/core/mihomo.gz | sha256sum -c -
           gzip -dc .build/core/mihomo.gz > .build/core/mihomo
           chmod +x .build/core/mihomo
           echo "MIHOMO_BINARY=$PWD/.build/core/mihomo" >> "$GITHUB_ENV"
@@ -126,8 +128,8 @@ jobs:
         run: |
           python3 -m pip install -r scripts/browser-requirements.txt
           python3 -m playwright install --with-deps chromium
-      - name: Real panel API and desktop/mobile browser contracts
-        run: PANEL_TEST_SCREENSHOT_DIR="$PWD/.test/browser" PANEL_BROWSER_TEST=1 PYTHON_BINARY=python3 GATEWAY_BINARY="$PWD/.build/yg-vpngate" MANAGED_CORE_BINARY="$PWD/.build/managed-core" node scripts/test-panel-local.mjs
+      - name: Real panel API and desktop/mobile browser contracts without Mihomo
+        run: MIHOMO_BINARY="$PWD/.test/must-not-exist" PANEL_TEST_SCREENSHOT_DIR="$PWD/.test/browser" PANEL_BROWSER_TEST=1 PYTHON_BINARY=python3 GATEWAY_BINARY="$PWD/.build/yg-vpngate" MANAGED_CORE_BINARY="$PWD/.build/managed-core" node scripts/test-panel-local.mjs
       - name: OpenVPN, tunnel DNS and fail-closed namespace acceptance
         run: sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_NETNS_TESTS=1 "$(command -v go)" test -run '^TestLinuxNamespaceIsolation$' -count=1 -v -timeout=6m ./addons/vpngate/gateway
       - name: IPv4 and IPv6 multiport forwarding and owned firewall cleanup

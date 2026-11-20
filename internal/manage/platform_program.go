@@ -17,7 +17,6 @@ type ProgramComponent struct {
 	Expected   string `json:"expected"`
 	Compatible bool   `json:"compatible"`
 	Error      string `json:"error,omitempty"`
-	Optional   bool   `json:"optional"`
 	Available  bool   `json:"available"`
 }
 type ProgramStatus struct {
@@ -40,14 +39,10 @@ func (s *PlatformService) ProgramStatus(ctx context.Context, check bool) (Progra
 	for _, target := range []struct{ id, name, path, expected string }{
 		{"runtime", "受管 sing-box 核心", s.Runtime, v.ManagedRuntime},
 		{"validator", "官方配置校验器", s.Core, v.SingBox.Tested},
-		{"mihomo", "Mihomo 配置校验器", mihomoBinary(s.Root), v.Mihomo.Tested},
 	} {
 		component := ProgramComponent{ID: target.id, Name: target.name, Expected: target.expected}
-		component.Optional = target.id == "mihomo"
 		var err error
-		if target.id == "mihomo" {
-			component.Version, err = checkMihomo(probe, target.path)
-		} else if target.id == "validator" {
+		if target.id == "validator" {
 			component.Version, err = CheckCore(probe, target.path)
 		} else {
 			var output []byte

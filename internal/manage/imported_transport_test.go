@@ -18,7 +18,10 @@ import (
 
 func TestImportedTrojanTransportsWithMihomo(t *testing.T) {
 	core := os.Getenv("SING_BOX_BINARY")
-	if core == "" || mihomoBinary("") == "" {
+	if core == "" || os.Getenv("MIHOMO_BINARY") == "" {
+		if os.Getenv("SBVPN_REQUIRE_CLIENT_CHECK") == "1" {
+			t.Fatal("both client cores are required in CI")
+		}
 		t.Skip("both client cores are required")
 	}
 	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))
@@ -74,7 +77,7 @@ func TestImportedTrojanTransportsWithMihomo(t *testing.T) {
 				case <-time.After(20 * time.Millisecond):
 				}
 			}
-			if err := probeNodeWithEngine(ctx, root, core, endpoint.URL, "mihomo", n); err != nil {
+			if err := probeMihomoNode(ctx, root, endpoint.URL, n); err != nil {
 				t.Fatal("converted transport failed", err)
 			}
 			if network == "ws" {
@@ -84,7 +87,7 @@ func TestImportedTrojanTransportsWithMihomo(t *testing.T) {
 			}
 			negative, stop := context.WithTimeout(ctx, 2*time.Second)
 			defer stop()
-			if err := probeNodeWithEngine(negative, root, core, endpoint.URL, "mihomo", n); err == nil {
+			if err := probeMihomoNode(negative, root, endpoint.URL, n); err == nil {
 				t.Fatal("probe did not exercise the transport")
 			}
 		})

@@ -35,7 +35,6 @@ var CommandFields = map[string][]string{
 	"bbr":               {"value"},
 	"program-upgrade":   {"value"},
 	"runtime-rollback":  {},
-	"validator-install": {},
 	"outbound-probe":    {"id", "value"},
 }
 

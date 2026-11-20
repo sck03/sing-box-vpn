@@ -60,7 +60,7 @@ var protocols = []string{"vless", "vmess", "hysteria2", "tuic", "anytls", "troja
 // every release of the named application supports every declared combination.
 var catalog = map[string]Profile{
 	"sing-box":     {"sing-box", protocols, []string{"nodes", "config"}, "config", "core-check", "1.14.4", false, Features{TUN: true, DNS: true, PortHopping: true, PublicKeyPin: true, UTLS: true}},
-	"mihomo":       {"Mihomo", protocols, []string{"nodes", "provider", "config"}, "config", "core-check", "1.19.33", false, Features{TUN: true, DNS: true, Probe: true, PortHopping: true, CertificatePin: true, UTLS: true}},
+	"mihomo":       {"Mihomo", protocols, []string{"nodes", "provider", "config"}, "config", "ci-core-check", "1.19.33", false, Features{TUN: true, DNS: true, Probe: true, PortHopping: true, CertificatePin: true, UTLS: true}},
 	"openclash":    {"OpenClash", protocols, []string{"provider", "config"}, "provider", "mihomo-core; router untested", "", true, Features{TUN: true, DNS: true, Probe: true, PortHopping: true, CertificatePin: true, UTLS: true}},
 	"surge":        {"Surge", protocols, []string{"nodes", "config"}, "config", "encoder-only", "", true, Features{DNS: true, PortHopping: true, CertificatePin: true}},
 	"surge-mac":    {"Surge Mac", protocols, []string{"nodes", "config"}, "config", "encoder-only", "", true, Features{DNS: true, PortHopping: true, CertificatePin: true}},

@@ -30,7 +30,7 @@ subscriptions/schedule.json 是截止时间与权益修订的小型投影，不�
 
 管理员 `/api/subscriptions/actions`、`/api/outbound-options` 只提供已应用对象。完整预览返回节点数量、变化和结构化 Validation；`POST /api/config/preview-output` 按 `{id,config}` 返回最多 64 KiB 的脱敏产物。公开 API 不返回原始凭据。Validation 分开记录状态、引擎、检查范围与缓存命中，不从英文消息推断结果。
 
-`subscriptions_publication.go` 隔离抓取/编译与发布：锁外运行编码器及核心检查，锁内重新检查配置、账户节点/修订和核心身份，再合并最新运行记录并原子提交。新资源失败时用旧资源重新构建健康输出。单输出检测只展开其来源图，不二次校验同一产物。Mihomo/OpenClash 和 XHTTP 使用相应连接引擎，每个节点记录实际引擎。
+`subscriptions_publication.go` 隔离抓取/编译与发布：锁外运行编码器及 sing-box 核心检查，锁内重新检查配置、账户节点/修订和核心身份，再合并最新运行记录并原子提交。新资源失败时用旧资源重新构建健康输出。单输出检测只展开其来源图，不二次校验同一产物。连接检测统一使用 sing-box；超出能力的节点返回 unsupported，不依赖目标客户端核心。
 
 `subscriptions/local.json` 已移除；账户节点从权威配置与凭据构造，内联节点来自当前来源。Snapshot 保存有效模板、节点指纹与校验结果；没有第二套本地节点真源。重名后缀计数按原名推进，策略组复用稳定名称分配；嵌套组检查范围和展开预算。
 
@@ -220,10 +220,10 @@ VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IP
 
 clientprofile/output.go 定义稳定输出身份（格式与用途）；subscription/account_output.go 负责纯兼容性规划，account_policy.go 校验模板 client/mode。manage 负责配置快照、授权、编译缓存和核心验证；HTTP 不重新定义模板业务。账户导出请求与凭据命令为不同的 application 类型。
 
-授权 profiles 精确匹配输出身份；数据库 schema=16 的 profiles 列取代旧 clients 列。平台和订阅 schema=6，CompilerVersion=4；旧数据或旧接口明确拒绝。内置默认不再复制成账户配置，远程模板发布故障不阻断不依赖它的内置输出。
+授权 profiles 精确匹配输出身份；数据库 schema=16 的 profiles 列取代旧 clients 列。平台和订阅 schema=6，CompilerVersion=5；旧数据或旧接口明确拒绝。内置默认不再复制成账户配置，远程模板发布故障不阻断不依赖它的内置输出。
 
 列表只分析节点，创建授权与下载才编译所选格式。面板配置预览、保存、导出、授权等重请求独立限制为 2 并发；每个下载监听的账户请求限制为 4 并发；状态、任务及 SSE 保持独立预算。ConfigurationState、AccountExportRequest 与 AccountExportResponse 由 Go 类型生成前端契约。只读状态递归擦除结构化秘密值，保留字段类型。
 
 loadDialog 在首次查询前占有对话框；切页、关闭或替换会取消读取并阻止迟到响应。账户保存后的绑定向导拥有独立工作流会话，允许保存触发的页面刷新。简单规则与策略组、远程规则的能力独立控制。
 
-卸载停止项目服务后调用与面板相同的网络恢复流程，成功后才删除数据库和程序。deployment/retention.go 只清理带项目所有权和成功标记的升级目录，保留最近两份；失败目录和无标记目录不自动删除。可选 Mihomo 安装独立成任务，组件页呈现可用性、版本匹配与安装入口。
+卸载停止项目服务后调用与面板相同的网络恢复流程，成功后才删除数据库和程序。deployment/retention.go 只清理带项目所有权和成功标记的升级目录，保留最近两份；失败目录和无标记目录不自动删除。服务端不安装、探测路径或启动 Mihomo；客户端原生校验与互通仅存在于测试代码和 CI。

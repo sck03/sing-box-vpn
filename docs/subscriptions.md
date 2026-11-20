@@ -2,7 +2,7 @@
 
 [使用指南](usage.md) · [架构](architecture.md) · [兼容性](compatibility.md)
 
-当前订阅配置为 **schema=6**，CompilerVersion=4、ParserVersion=1。只接受当前配置，不迁移旧数据或恢复旧管理接口。平台配置 schema=6、节点文档 schema=4、模板 version=1、数据库 schema=16 和备份容器格式 8 分别维护，不能一起机械递增。
+当前订阅配置为 **schema=6**，CompilerVersion=5、ParserVersion=1。只接受当前配置，不迁移旧数据或恢复旧管理接口。平台配置 schema=6、节点文档 schema=4、模板 version=1、数据库 schema=16 和备份容器格式 8 分别维护，不能一起机械递增。
 
 ## 普通账户分享
 
@@ -30,7 +30,7 @@
 
 用户用量返回 profiles 对象数组，包含 profile、client、mode、description、可用数量、跳过原因与验证状态。反向代理前缀通过相对 URL 保留。令牌仅保存哈希，完整链接只在创建时展示；为同一账户增加分享不会增加流量额度。
 
-列表的 pending 表示兼容性已分析、实际配置待下载时检查；unavailable 表示当前缺少校验器。passed 还要结合 scope 区分核心检查与解析往返检查。未验收的目标应用继续标记实验适配，不将参考版本当作本次检查通过。
+列表的 pending 表示兼容性已分析、实际配置待下载时检查；unavailable 只表示 sing-box 配置检查不可用。passed 结合 scope 区分 sing-box 核心检查与内置节点格式检查。parser 不代表目标应用已接受完整配置；Mihomo/OpenClash 不依赖服务器安装客户端核心。
 
 下载时重新检查授权、权益、绑定及模板，并且只生成与校验所选格式。HEAD 不计数，GET 在生成和校验后原子计数；下载次数 null 不限、0 禁止。账户状态与用量不进入编译缓存。创建分享或下载不会激活首次使用权益。
 
@@ -47,7 +47,7 @@
 
 编译缓存每服务最多 128 条、估算 16 MiB、有效期 5 分钟，并合并同输入的并发编译。键含账户及版本、实例范围、实际节点摘要、模板、跳过策略及编译/解析版本。权限、撤销、额度和文件相关的核心验证仍按请求检查。
 
-Mihomo 校验器在「系统设置 → 程序与组件更新」中安装或修复；任务只安装 versions.json 指定的验证版本，并检查固定官方地址、双架构固定 SHA256 和实际二进制版本；amd64 使用基础 v1 指令集构建。安装后使用数据目录中的 mihomo；开发环境仍可通过 MIHOMO_BINARY 指定。未安装时输出保留明确的 unavailable 状态。
+订阅转换与客户端核心安装解耦。Mihomo/OpenClash 使用内置节点解析器检查导出格式，模板结构、引用和能力在编译阶段检查；服务器不寻找或启动 Mihomo。MIHOMO_BINARY 仅供开发和 CI 客户端验收使用，测试版本与摘要位于 scripts/client-test-versions.json。
 
 ## 快速创建与高级编排
 
@@ -133,11 +133,11 @@ DNS 分为 local、remote、bootstrap；bootstrap 使用 IP，其余支持 IP �
 
 刷新在发布锁外抓取与编译，提交前重新检查配置、账户凭据和核心身份。新的模板/规则未通过输出验证时保留旧资源，并继续更新无关输出及已失效账户状态。记录与分发元数据在提交时合并，避免覆盖并发探测结果。
 
-产物缓存按订阅 schema、CompilerVersion、所选节点与有效模板摘要失效；正文摘要防止复用损坏产物。来源摘要包含 ParserVersion，解析语义升级时清空旧节点和 ETag，重新获取正文，避免 304 延续旧解析结果。sing-box/Mihomo 的校验缓存包括实际二进制身份。调度只读取 schedule.json；不再写入 subscriptions/local.json。
+产物缓存按订阅 schema、CompilerVersion、所选节点与有效模板摘要失效；正文摘要防止复用损坏产物。来源摘要包含 ParserVersion，解析语义升级时清空旧节点和 ETag，重新获取正文。sing-box 核心校验缓存包括二进制身份；其他格式的纯解析检查与编译产物一起缓存。调度只读取 schedule.json。
 
 来源有刷新间隔、最大陈旧时间和失败退避；304 合并有效元信息。必需来源不可用时撤下相关输出，可选来源过期时移除。每分钟核对账户状态，恢复额度、账户或新周期后可重新编译。
 
-立即检测只编译目标输出及其来源，不重复校验同一个产物。最多 64 节点、2 个连接核心并行，每节点 12 秒，总预算 8 分 24 秒。Mihomo/OpenClash 与 XHTTP 节点可使用 Mihomo 检测，其他节点使用 sing-box；每条结果记录实际引擎。节点连接成功仍不等于 Surge 等应用已导入。
+立即检测只编译目标输出及其来源，不重复校验同一个产物。最多 64 节点、2 个 sing-box 探测进程并行，每节点 12 秒，总预算 8 分 24 秒。检测能力由节点连接参数决定，与导出给哪个客户端无关。XHTTP 等超出 sing-box 能力的节点标记 unsupported 并计入 skipped，全部无法检测时 outcome=not_run；部分完成为 partial。不会因此安装客户端核心，也不把无法检测当成节点故障。节点连接通过不等于目标应用已导入。
 
 分发支持 HTTP PUT、WebDAV、secret Gist、私有 GitLab、Telegram。自动分发需启用；未变化产物不重复发送，失败退避。Webhook 记录最后一次发送结果，不表示目标服务实时健康。
 
@@ -147,7 +147,7 @@ DNS 分为 local、remote、bootstrap；bootstrap 使用 IP，其余支持 IP �
 
 Egern 独立渲染 IPv4 `ip_cidr` 与 IPv6 `ip_cidr6`，支持 UDP 中继、Hysteria2 跳跃端口/间隔及 salamander、VLESS/VMess TLS gRPC、WebSocket、Reality 和证书 SHA256 指纹。TUIC 未指定 ALPN 时输出 h3；显式 ALPN 仅在 TUIC 保留。TUIC 自定义拥塞控制/UDP 中继模式、gRPC 明文与未支持字段会拒绝或按输出策略跳过。该适配器仍为实验级，不能以其他客户端核心检查代替 Egern 应用导入。
 
-核心基线为 sing-box 1.14.4、Mihomo 1.19.33。Surge、Surge Mac、Loon、Quantumult X、Surfboard、Stash、Egern、Shadowrocket 仍标注应用导入未验收；OpenClash 核心路径不代替实体路由器验收。Mihomo 对部分自签证书 URI 参数的处理存在限制，优先使用原生配置。
+开发/CI 的客户端测试基线为 sing-box 1.14.4、Mihomo 1.19.33。Surge、Surge Mac、Loon、Quantumult X、Surfboard、Stash、Egern、Shadowrocket 仍标注应用导入未验收；OpenClash 核心路径不代替实体路由器验收。Mihomo 对部分自签证书 URI 参数的处理存在限制，优先使用原生配置。
 
 来源/集合/模板等每类最多 128，节点 4096，单响应与合计输出正文 8 MiB，远程模板/规则正文合计 4 MiB，单 JSON 投影 16 MiB，任务结果 256 KiB。账户覆盖最多 4096 条。模板组成员展开另有预算，不能用无限扩展或丢弃安全字段换取兼容。
 

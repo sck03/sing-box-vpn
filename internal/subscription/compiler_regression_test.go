@@ -112,6 +112,9 @@ func TestImportedNodesWithInstalledCores(t *testing.T) {
 		}
 		binary := os.Getenv(env)
 		if binary == "" {
+			if os.Getenv("SBVPN_REQUIRE_CLIENT_CHECK") == "1" {
+				t.Fatal("required acceptance core is not configured")
+			}
 			t.Skip("core not configured")
 		}
 		nodes := portableNodes()

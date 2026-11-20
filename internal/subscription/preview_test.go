@@ -56,6 +56,9 @@ func TestPreviewRedactsSecretsAndPreservesBoundaries(t *testing.T) {
 func TestXHTTPWithInstalledMihomo(t *testing.T) {
 	binary := os.Getenv("MIHOMO_BINARY")
 	if binary == "" {
+		if os.Getenv("SBVPN_REQUIRE_CLIENT_CHECK") == "1" {
+			t.Fatal("required acceptance core is not configured")
+		}
 		t.Skip("Mihomo not configured")
 	}
 	n, err := ParseURI("vless://00000000-0000-4000-8000-000000000001@example.com:443?security=tls&type=xhttp&path=%2Fx&mode=packet-up#xhttp")

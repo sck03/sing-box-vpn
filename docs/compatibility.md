@@ -12,7 +12,7 @@ Release 标签使用 `vMAJOR.MINOR.PATCH`，主版本号与数据格式无绑定
 
 支持五协议入站；direct、SOCKS、五协议代理出站、selector/urltest、WireGuard endpoint、resolved DNS 服务和受管 DNS。未注册协议拒绝配置，不静默丢字段。账户只允许数据库显式绑定；入口预设凭据不是默认用户。
 
-Mihomo 测试基线 1.19.33。原生 sing-box/Mihomo 配置和 provider 是推荐导出方式。Mihomo URI 导入器忽略 VMess insecure 和 TUIC allow_insecure；这两类自签 TLS URI 不纳入真实链路通过项，其原生配置已覆盖。OpenClash 使用 Mihomo provider 的结构与核心路径，尚不代表实体 OpenWrt/LuCI 验收。
+Mihomo 开发/CI 测试基线为 1.19.33；部署服务器无需安装它。双方协议、传输和 TLS 参数匹配时，Mihomo 客户端可连接 sing-box 服务端。原生 sing-box/Mihomo 配置和 Provider 是推荐输出。Mihomo URI 导入器忽略 VMess insecure 和 TUIC allow_insecure；这两类自签 TLS URI 不纳入真实链路通过项，其原生配置已覆盖。OpenClash 使用 Mihomo Provider 格式，尚不代表实体 OpenWrt/LuCI 验收。
 
 客户端与模式统一登记在 `internal/clientprofile`，通过 `/api/clients` 提供详细字段范围。`/api/accounts/outputs` 按账户和实例计算实际可下载格式，公开用量的 `profiles` 返回对象数组，每项同时标明客户端语法和用途。Surge、Surge Mac、Loon、Quantumult X、Surfboard、Stash、Egern、Shadowrocket 标为实验适配；范围不代表所有应用版本和组合已通过。账户模板策略明确控制是否跳过不兼容节点，并展示数量与原因。详见[订阅验证范围](subscriptions.md#验证范围与预算)。
 

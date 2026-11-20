@@ -19,11 +19,6 @@ type Metadata struct {
 		AMD64   string `json:"linux_amd64_sha256"`
 		ARM64   string `json:"linux_arm64_sha256"`
 	} `json:"sing_box"`
-	Mihomo struct {
-		Tested string `json:"tested_version"`
-		AMD64  string `json:"linux_amd64_sha256"`
-		ARM64  string `json:"linux_arm64_sha256"`
-	} `json:"mihomo"`
 }
 
 var Versions = func() Metadata {

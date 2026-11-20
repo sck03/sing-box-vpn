@@ -21,7 +21,7 @@ const (
 	// ParserVersion invalidates fetched node caches, including conditional GETs.
 	ParserVersion = 1
 	// CompilerVersion invalidates rendered artifacts and account export plans.
-	CompilerVersion = 4
+	CompilerVersion = 5
 	MaxNodes        = 4096
 	MaxBody         = 8 << 20
 	MaxObjects      = 128

@@ -1,0 +1,45 @@
+{
+  "date": "2026-11-20",
+  "timezone": "Asia/Shanghai",
+  "base_commit": "6fb0a5ecba6ff86eb1fe63d1d4e38cfa283343c1",
+  "release": "v6.0.1",
+  "compiler": 5,
+  "scope": [
+    "Remove production Mihomo installer, discovery, version probes and client process execution",
+    "Pure parser validation and cached client exports, with target application acceptance kept separate",
+    "Use sing-box for node connectivity; report unsupported separately from failed",
+    "Keep real Mihomo configuration and transport acceptance in tests and CI",
+    "Update generated contracts, UI, documentation and local cleanup"
+  ],
+  "validation": {
+    "go_full": "passed",
+    "targeted_race": "passed",
+    "frontend_suites": 10,
+    "typecheck": "passed",
+    "contracts": "passed",
+    "vet": "passed",
+    "panel_api_without_mihomo": "passed",
+    "browser": "passed: real Chrome desktop and touch/mobile, with invalid MIHOMO_BINARY",
+    "release_build": "passed: linux/amd64 and linux/arm64",
+    "github_ci": "checked separately after push"
+  },
+  "cleanup": {
+    "status": "obsolete materials consolidated; tool-owned cache cleanup and final sizes are recorded in the local delivery summary",
+    "manual_directory": ".cleanup-manual/single-core/",
+    "contents": [
+      "Stopped Linux validation VM and base image",
+      "Obsolete QEMU installation and VM keys",
+      "Previous cleanup archive",
+      "Stopped 2026-11-18 local preview, database and binaries",
+      "Old release and intermediate binaries",
+      "Old or failed panel test databases, logs and screenshots"
+    ],
+    "policy": "Automatic approval review rejected direct deletion with blocked by policy. Remaining materials are moved for manual deletion; moving them does not free disk space.",
+    "measurements": "Final measured sizes and cache cleanup result are recorded in the local delivery summary."
+  },
+  "limitations": [
+    "No production deployment, GitHub Release publication, ARM hardware run or production load benchmark",
+    "Mihomo node parsing does not certify full configuration import by every client",
+    "sing-box-unsupported nodes are not probed; unsupported is not a connectivity failure"
+  ]
+}

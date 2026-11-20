@@ -148,7 +148,6 @@ const kinds = {
   bbr: "网络设置",
   "program-upgrade": "程序升级",
   "runtime-rollback": "核心回滚",
-  "validator-install": "安装订阅校验器",
   "outbound-probe": "检测出站",
   "panel-restart": "应用面板访问",
 };
@@ -180,9 +179,8 @@ export const canViewTask = (task, session) =>
       (task.details?.actor && task.details.actor === session.id)));
 
 export function taskDetails(task, session = dialogSession(), footer = true) {
-  const failed =
-    task.state === "failed" ||
-    ["partial", "cached", "failed"].includes(task.outcome);
+  const failed = task.state === "failed" || task.outcome === "failed";
+  const incomplete = ["partial", "cached", "not_run"].includes(task.outcome);
   const details = el("dl", { class: "detail-grid" });
   for (const [label, value] of [
     ["操作", taskKind(task.kind)],
@@ -201,8 +199,18 @@ export function taskDetails(task, session = dialogSession(), footer = true) {
   session.replace(
     el("h2", {}, "任务 #" + task.id),
     badge(
-      failed ? "需要处理" : taskPhase(task.state),
-      failed ? "bad" : task.state === "succeeded" ? "good" : "warn",
+      failed
+        ? "需要处理"
+        : incomplete
+          ? "请查看检查详情"
+          : taskPhase(task.state),
+      failed
+        ? "bad"
+        : incomplete
+          ? "warn"
+          : task.state === "succeeded"
+            ? "good"
+            : "warn",
     ),
     details,
     ...(task.error
@@ -213,7 +221,9 @@ export function taskDetails(task, session = dialogSession(), footer = true) {
         ? task.phase === "rollback-failed"
           ? "请先检查服务状态与日志，确认当前配置后再重新应用。"
           : "请根据错误原因修正配置或运行环境，再重新发起操作。"
-        : "关闭窗口后，尚未完成的任务会继续运行。",
+        : incomplete
+          ? "部分检查未完成，请查看每项结果；无法检测不代表节点故障。"
+          : "关闭窗口后，尚未完成的任务会继续运行。",
     ),
     ...resultDetails(task.result),
     diagnostic,
@@ -225,9 +235,10 @@ export function tasksCard(tasks, ctx, { compact = false } = {}) {
   const outcome = (value) =>
     ({
       passed: "全部通过",
-      partial: "部分失败",
+      partial: "部分完成",
       failed: "失败",
       cached: "使用旧缓存",
+      not_run: "未进行连接检测",
     })[value] || "—";
   return card(
     "任务与应用结果",
@@ -242,12 +253,13 @@ export function tasksCard(tasks, ctx, { compact = false } = {}) {
           render: (t) =>
             badge(
               taskPhase(t.state),
-              t.state === "failed" ||
-                ["partial", "cached", "failed"].includes(t.outcome)
+              t.state === "failed" || t.outcome === "failed"
                 ? "bad"
-                : t.state === "succeeded"
-                  ? "good"
-                  : "warn",
+                : ["partial", "cached", "not_run"].includes(t.outcome)
+                  ? "warn"
+                  : t.state === "succeeded"
+                    ? "good"
+                    : "warn",
             ),
         },
         { label: "阶段", value: (t) => taskStage(t) },
@@ -309,7 +321,7 @@ function resultDetails(result) {
   if (result.artifact_validation)
     sections.push(
       help(
-        `输出格式：${validationLabel(result.artifact_validation)}。实际连接引擎见每个节点。`,
+        `输出格式：${validationLabel(result.artifact_validation)}。连接检测使用 sing-box，不代表目标客户端已实际导入。`,
       ),
     );
   if (result.target_version)
@@ -321,7 +333,7 @@ function resultDetails(result) {
   if (result.passed !== undefined)
     sections.push(
       help(
-        `已通过 ${result.passed} / ${result.total} 个节点${result.interrupted ? " · 检查中断，保留已完成结果" : ""}`,
+        `已通过 ${result.passed} / ${result.total} 个节点${result.skipped ? ` · ${result.skipped} 个超出检测能力，未判定连通性` : ""}${result.interrupted ? " · 检查中断，保留已完成结果" : ""}`,
       ),
     );
   if (Array.isArray(result.nodes))
@@ -338,9 +350,16 @@ function resultDetails(result) {
                 failed: "失败",
                 cancelled: "已中断",
                 not_run: "未执行",
+                unsupported: "无法检测（能力不支持）",
               })[n.state] || (n.success ? "通过" : "失败"),
           },
-          { label: "耗时", value: (n) => n.milliseconds + " ms" },
+          {
+            label: "耗时",
+            value: (n) =>
+              ["unsupported", "not_run"].includes(n.state)
+                ? "—"
+                : n.milliseconds + " ms",
+          },
           { key: "error", label: "说明" },
         ],
         result.nodes,

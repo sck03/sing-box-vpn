@@ -227,7 +227,6 @@ export interface ProgramComponent {
   expected: string;
   compatible: boolean;
   error?: string;
-  optional: boolean;
   available: boolean;
 }
 
@@ -517,8 +516,7 @@ export type TaskCommand =
   | { operation: "program-upgrade"; service?: never; id?: never; value?: string; config?: never; account?: never; subscription?: never }
   | { operation: "runtime-rollback"; service?: never; id?: never; value?: never; config?: never; account?: never; subscription?: never }
   | { operation: "service"; service: string; id?: never; value: "start" | "stop" | "restart" | "enable" | "disable"; config?: never; account?: never; subscription?: never }
-  | { operation: "subscription"; service?: never; id?: never; value?: never; config?: never; account?: never; subscription: SubscriptionCommand & { operation: "refresh" | "check" | "deliver" } }
-  | { operation: "validator-install"; service?: never; id?: never; value?: never; config?: never; account?: never; subscription?: never };
+  | { operation: "subscription"; service?: never; id?: never; value?: never; config?: never; account?: never; subscription: SubscriptionCommand & { operation: "refresh" | "check" | "deliver" } };
 
 export interface TaskCounts {
   failed: number;

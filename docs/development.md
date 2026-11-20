@@ -1,5 +1,11 @@
 # 开发与发布
 
+## 本地目录与体积
+
+源码不依赖旧数据库或测试运行目录。`.test/gocache`、`.test/gomodcache`、`.test/tmp` 是可重建缓存；完成验证并停止相关进程后可清理。`.test/verification` 中旧数据库、日志、截图和测试二进制也可删除，仅保留需要的验收摘要。
+
+`.tools/linux-validation.qcow2` 是可重建 Linux 测试虚拟机，可能远大于源码；不再使用时，先运行 `scripts/linux-vm.ps1 stop`，再清理该磁盘、基础镜像、QEMU 和配套测试密钥。不要删除仍在使用的主机部署目录或用户配置。`.build/release` 只需保留当前安装包与 SHA256SUMS，中间构建目录可删除。清缓存后首次构建会重新下载依赖和编译。
+
 任务 API 使用当前 `application.TaskCommand`，不接受调度器 `automatic` 或无关字段。增加操作时同步 `CommandFields`、校验和执行器，再运行 `go run ./cmd/panel-contract`；不要手工修改生成类型。调度器只通过私有入口发起自动刷新/投递。
 
 `scripts/task-contracts.ts` 随 `npm run typecheck` 检查合法单条/批量绑定、轮换和服务命令，并要求编译器拒绝调度标记、无关字段、导出参数及错误动作值。账户命令的可选字段不会因为共用导出结构而变成无意义的必填项。
@@ -65,7 +71,7 @@ shellcheck --severity=warning sb.sh install.sh lib/*.sh scripts/*.sh
 
 Linux root 专项通过 `RUN_NETNS_TESTS=1`、`RUN_FIREWALL_TESTS=1`、`RUN_SERVICE_TESTS=1`、`RUN_STORAGE_TESTS=1` 启用，测试定义明确需要的二进制环境变量。仅使用专门 VM，真实 systemd/firewall 测试会创建系统资源。
 
-`npm test` 执行十组回归，覆盖重复提交、客户端字段联动、短暂断网、用户页路径前缀、状态搜索、焦点保留、单位换算、授权分页与导航加载。Mihomo 分流使用域名/IP MRS，不依赖 Country.mmdb。CI 设置 `SBVPN_REQUIRE_CLIENT_CHECK=1`，缺少验证核心直接失败。原生核心校验与 sing-box 节点连通性检查分别报告，不以其中之一代替商业客户端验收。
+`npm test` 执行十组回归，覆盖重复提交、客户端字段联动、短暂断网、用户页路径前缀、状态搜索、焦点保留、单位换算、授权分页与导航加载。Mihomo 仅作为开发/CI 测试客户端，版本及 Linux amd64 摘要位于 scripts/client-test-versions.json，使用官方基础 amd64-v1 构建。CI 仍执行原生配置与真实链路测试；面板 API/浏览器测试刻意设置无效 MIHOMO_BINARY，证明部署功能不依赖它。
 
 本地面板使用独立目录：manager `panel --root <空目录> --core <官方核心> --runtime <受管核心> --address 127.0.0.1 --no-system init`，stdin 为 username/password JSON；随后同样参数 `recover`、`serve`。仅在 `serve` 命令之前加 `--listen 127.0.0.1:0` 自动分配开发端口，日志返回实际 URL；`init` 和 `configure` 保存的端口必须为 1–65535。`--no-system` 仅用于开发，系统动作明确拒绝。Windows 的 Unix socket 测试需要较短的 TEMP/TMP 路径，例如项目下 `.test/tmp`。
 
@@ -81,7 +87,7 @@ Windows 先加载 `scripts/dev-env.ps1`，将 `GATEWAY_BINARY` 和 `MANAGED_CORE
 
 可对该独立面板运行真实 HTTP 工作流：设置 `PANEL_TEST_URL`、`PANEL_TEST_USERNAME`（默认 reviewadmin）和 `PANEL_TEST_PASSWORD`，执行 `node scripts/test-panel-api.mjs`。脚本只接受回环 URL，并在创建数据前确认服务均处于 no-system 状态。验证绑定/导出、下载次数、跨站分享、完整候选预览和任务应用；不能指向真实安装。
 
-配置预览为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回普通服务端脱敏配置、输出节点数/变化及结构化验证。`POST /api/config/preview-output` 接受 `{id,config}`，只编译目标图并返回有界脱敏内容。旧 `/api/subscriptions/preview` 不恢复。节点文档 schema=4、订阅 schema=6、CompilerVersion=4、模板 version=1、平台 schema=6；备份容器为 8，数据库为 16，旧订阅内容明确拒绝。
+配置预览为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回普通服务端脱敏配置、输出节点数/变化及结构化验证。`POST /api/config/preview-output` 接受 `{id,config}`，只编译目标图并返回有界脱敏内容。旧 `/api/subscriptions/preview` 不恢复。节点文档 schema=4、订阅 schema=6、CompilerVersion=5、模板 version=1、平台 schema=6；备份容器为 8，数据库为 16，旧订阅内容明确拒绝。
 
 新增回归 `compiler_regression_test.go`、`preview_test.go` 覆盖 URI 认证/端口、SIP003、WS early-data、gRPC/XHTTP、名称和策略组范围、脱敏与真实核心检查。`TestImportedTrojanTransportsWithMihomo` 使用真实 sing-box 服务端和 Mihomo 客户端验证 WS/gRPC，错误路径或服务名必须失败。`TestRefreshValidationDoesNotHoldPublicationLock` 覆盖锁外编译与过期配置拒绝，`TestLimitedServerPreservesTLSAndHTTP2` 覆盖 TLS 状态及协议协商。
 
@@ -143,7 +149,7 @@ CI 的独立下载验证和全新安装步骤均显式传递该只读令牌；�
 
 订阅扩展回归为 internal/subscription/extensions_test.go，覆盖 auto/文本输入、跳过与数量边界、gRPC/HTTPUpgrade/salamander 往返、唯一名称、缓存摘要/污染、组循环/空组、VPNGate 禁止直连以及有序规则。设置 SING_BOX_BINARY 与 MIHOMO_BINARY 后，TestExtendedTemplatesWithInstalledCores 实际检查带 DNS URL、策略组和国内规则的配置。新增 HTTP 能力/管理员操作接口与无秘密投影回归位于 manage。单纯编码器测试不能替代目标应用导入。
 
-服务单元生成器测试已移至 internal/hostservice/platform_test.go，直接验证生产 renderer；删除了 service-recovery.sh 和只验证该复制夹具的测试。GitHub 全量 race 步骤强制要求 Mihomo validator，避免核心检查被静默跳过。前端仍是无构建步骤的原生模块，新高级表单与主题样式由 npm test 和隔离浏览器脚本验证。
+服务单元生成器测试位于 internal/hostservice/platform_test.go，直接验证生产 renderer。GitHub 全量 race 步骤使用 sing-box 和 Mihomo 测试客户端执行互通验收；客户端进程运行器位于 _test.go，不编入服务端。前端保持无构建步骤的原生模块。
 
 Linux systemd 恢复验收也直接使用 `hostservice.PlatformUnits`，仅将主进程替换为测试 helper，并将防火墙命令包装到隔离命名空间；重启、启动前恢复和限速策略均来自生产单元。Windows 的 `go test ./...` 不编译 `//go:build linux` 文件，交付前另行交叉编译 Linux 全部测试：设置 `GOOS=linux`、`CGO_ENABLED=0`，运行 `go test -exec <仅返回成功的本机程序> -run '^$' ./...`。该检查只证明编译成功，真实执行由 Linux CI 完成。
 
@@ -211,6 +217,6 @@ Windows 的 VPNGate 配置在构造时统一目录格式，后续校验/重载�
 
 ## 6.0 专项回归
 
-npm test 包括首次导出查询取消、替换对话框、默认模板重置、模式隔离和简单规则编辑。Go 专项为 TestAccountOutputProfilesKeepPurpose、TestNodePresetHasNoDevicePolicies、TestGrantAuthorizesExactOutputPurpose、TestPruneUpgradesPreservesFailuresAndUnownedDirectories、TestMihomoInstallerRequiresExactVerifiedAsset、TestUnpublishedRemoteTemplateOnlyBlocksItsOutput、TestRemoteTemplateSnapshotFailuresPreserveBuiltins。测试夹具中的历史版本号用于验证版本比较，不是生产兼容层。
+npm test 包括首次导出查询取消、替换对话框、默认模板重置、模式隔离和简单规则编辑。Go 专项包括输出身份、精确授权、远程模板隔离，以及 TestClientExportsDoNotNeedMihomo、TestUnsupportedProbeIsNotNodeFailure、TestProbeSummaryDistinguishesUnsupportedAndFailed、TestArtifactParsersCoverGeneratedClientModes。历史版本比较测试不是生产兼容层。
 
 变更输出结构时同时更新 clientprofile 输出目录、subscription 策略、授权 schema、面板生成契约、API/浏览器夹具和文档。验证记录单独记录实际命令与限制，历史记录保持原样。

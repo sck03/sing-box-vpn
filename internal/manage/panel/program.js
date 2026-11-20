@@ -9,19 +9,14 @@ const componentTable = (components) =>
       {
         key: "version",
         label: "当前版本",
-        value: (item) =>
-          item.version || (item.optional ? "未安装或不可用" : "无法读取"),
+        value: (item) => item.version || "无法读取",
       },
       { key: "expected", label: "本发行版验证版本" },
       {
         label: "配套状态",
         render: (item) =>
           badge(
-            item.compatible
-              ? "匹配"
-              : item.optional && !item.available
-                ? "可选 · 未启用校验"
-                : "请检查安装",
+            item.compatible ? "匹配" : "请检查安装",
             item.compatible ? "good" : "warn",
           ),
       },
@@ -98,13 +93,10 @@ export async function programCard(ctx) {
     "程序与组件更新",
     componentTable(current.components),
     help(
-      "核心与证书组件随程序发布。Mihomo 校验器可单独安装本发行版验证版本，用于检查 Mihomo / OpenClash 输出；安装会验证下载摘要和二进制版本。",
+      "代理服务使用 sing-box。订阅转换内置多平台格式适配，无需安装客户端核心。核心与证书组件随程序统一更新。",
     ),
     row(
       button("检查更新", check, "primary"),
-      button("安装 / 修复 Mihomo 校验器", () =>
-        ctx.task({ operation: "validator-install" }),
-      ),
       button(
         "回滚受管运行时",
         async () => {

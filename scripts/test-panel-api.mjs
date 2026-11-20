@@ -97,7 +97,12 @@ const invalidTask = await call("/api/tasks/detail?id=invalid");
 assert.equal(invalidTask.status, 400);
 assert.equal(invalidTask.value.error.field, "id");
 const components = ok(await call("/api/program"));
-assert.equal(components.components.length, 5);
+assert.equal(components.components.length, 4);
+assert(!components.components.some((component) => component.id === "mihomo"));
+assert.equal(
+  (await call("/api/tasks", { operation: "validator-install" })).status,
+  400,
+);
 assert(
   components.components.every(
     (component) =>
@@ -481,6 +486,8 @@ assert.equal(
   "redir-host",
 );
 assert.equal(accountExport.validation.state, "passed");
+assert.equal(accountExport.validation.scope, "parser");
+assert.equal(accountExport.validation.application_verified, false);
 
 const options = ok(await call("/api/grant-options"));
 assert.equal(options.pending, false);

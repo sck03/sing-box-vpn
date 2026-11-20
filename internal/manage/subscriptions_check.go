@@ -30,34 +30,19 @@ type subscriptionCheck struct {
 // A probe starts an isolated core for one node and makes a real HTTP request
 // through that protocol. It never edits selections, gateway state or services.
 func probeSubscriptionNode(ctx context.Context, root, core, endpoint string, node sub.Node) error {
-	if _, _, err := sub.Render([]sub.Node{node}, sub.Template{ID: "probe", Client: "sing-box", Version: 1, Mode: "nodes"}, false); err != nil {
+	if _, diagnostics, err := sub.Render([]sub.Node{node}, sub.Template{ID: "probe", Client: "sing-box", Version: 1, Mode: "nodes"}, false); err != nil {
+		for _, diagnostic := range diagnostics {
+			if diagnostic.Stage == "capability" {
+				return errors.Join(errProbeUnsupported, err)
+			}
+		}
 		return err
 	}
 	config := Object{"log": Object{"level": "error"}, "inbounds": []Object{{"type": "mixed", "listen": "127.0.0.1", "listen_port": 0}}, "outbounds": []Object{node.SingBox()}, "route": Object{"final": node.Name, "default_domain_resolver": "bootstrap"}, "dns": Object{"servers": []Object{{"type": "local", "tag": "bootstrap"}}}}
 	return probeCoreConfig(ctx, root, core, endpoint, config)
 }
 
-func probeNodeWithEngine(ctx context.Context, root, core, endpoint, engine string, node sub.Node) error {
-	if engine == "sing-box" {
-		return probeSubscriptionNode(ctx, root, core, endpoint, node)
-	}
-	binary := mihomoBinary(root)
-	if binary == "" {
-		return errors.New("Mihomo connectivity engine is unavailable")
-	}
-	if _, _, err := sub.Render([]sub.Node{node}, sub.Template{Client: "mihomo", Version: 1, Mode: "nodes"}, false); err != nil {
-		return err
-	}
-	node.Name = "probe-target"
-	config := Object{"log-level": "silent", "mode": "rule", "allow-lan": false, "bind-address": "127.0.0.1", "proxies": []Object{node.Mihomo()}, "rules": []string{"MATCH," + node.Name}}
-	return probeCoreConfigUsing(ctx, root, binary, endpoint, config, "mihomo")
-}
-
 func probeCoreConfig(ctx context.Context, root, core, endpoint string, config Object) error {
-	return probeCoreConfigUsing(ctx, root, core, endpoint, config, "sing-box")
-}
-
-func probeCoreConfigUsing(ctx context.Context, root, core, endpoint string, config Object, engine string) error {
 	child, cancel := context.WithTimeout(ctx, application.ProbeTimeout)
 	defer cancel()
 	stage, err := os.MkdirTemp(root, ".probe-")
@@ -69,19 +54,12 @@ func probeCoreConfigUsing(ctx context.Context, root, core, endpoint string, conf
 	if err != nil {
 		return err
 	}
-	if engine == "mihomo" {
-		config["mixed-port"] = port
-	} else {
-		config["inbounds"] = []Object{{"type": "mixed", "listen": "127.0.0.1", "listen_port": port}}
-	}
+	config["inbounds"] = []Object{{"type": "mixed", "listen": "127.0.0.1", "listen_port": port}}
 	path := filepath.Join(stage, "probe.json")
 	if err := AtomicJSON(path, config); err != nil {
 		return err
 	}
 	args := []string{"run", "-c", path}
-	if engine == "mihomo" {
-		args = []string{"-d", stage, "-f", path}
-	}
 	cmd := exec.CommandContext(child, core, args...)
 	cmd.Dir, cmd.Stdout, cmd.Stderr = stage, io.Discard, io.Discard
 	if err := cmd.Start(); err != nil {
@@ -177,8 +155,7 @@ func checkSubscriptionOutput(ctx context.Context, root, core, id, endpoint strin
 		}
 		for _, out := range c.Outputs {
 			if out.ID == id {
-				artifact, exists := snapshot.Artifacts[id]
-				if !exists {
+				if _, exists := snapshot.Artifacts[id]; !exists {
 					return errors.New("selected output is unavailable")
 				}
 				for _, template := range c.Templates {
@@ -190,7 +167,6 @@ func checkSubscriptionOutput(ctx context.Context, root, core, id, endpoint strin
 					if err != nil {
 						return err
 					}
-					_ = artifact
 					verification = snapshot.Validations[id]
 				}
 			}
@@ -213,21 +189,7 @@ func checkSubscriptionOutput(ctx context.Context, root, core, id, endpoint strin
 		for range application.ProbeConcurrency {
 			workers.Go(func() {
 				for i := range jobs {
-					start := time.Now()
-					engine := "sing-box"
-					if target == "mihomo" || target == "openclash" || nodes[i].Transport.Type == "xhttp" {
-						engine = "mihomo"
-					}
-					err := probeNodeWithEngine(ctx, root, core, endpoint, engine, nodes[i])
-					result := subscriptionCheck{NodeID: nodes[i].ID, Name: nodes[i].Name, Success: err == nil, State: "passed", Engine: engine, Milliseconds: time.Since(start).Milliseconds()}
-					if err != nil {
-						result.Error = err.Error()
-						result.State = "failed"
-						if ctx.Err() != nil {
-							result.State = "cancelled"
-						}
-					}
-					results[i] = result
+					results[i] = checkSubscriptionNode(ctx, root, core, endpoint, nodes[i])
 				}
 			})
 		}
@@ -241,12 +203,7 @@ func checkSubscriptionOutput(ctx context.Context, root, core, id, endpoint strin
 		}
 		close(jobs)
 		workers.Wait()
-		passed := 0
-		for _, result := range results {
-			if result.Success {
-				passed++
-			}
-		}
+		passed, skipped, outcome := summarizeSubscriptionChecks(results)
 		var recordErr error
 		if ctx.Err() == nil {
 			recordErr = withLock(root, func() error {
@@ -254,30 +211,11 @@ func checkSubscriptionOutput(ctx context.Context, root, core, id, endpoint strin
 				if err != nil {
 					return err
 				}
-				state.Record("check", id, fmt.Sprintf("%d/%d protocol HTTP probes succeeded", passed, len(results)), time.Now())
+				state.Record("check", id, fmt.Sprintf("%d/%d protocol HTTP probes succeeded; %d unsupported by sing-box", passed, len(results), skipped), time.Now())
 				return writeSubscriptionRuntime(root, current, state)
 			})
 		}
-		outcome := "passed"
-		if passed == 0 {
-			outcome = "failed"
-		} else if passed < len(results) {
-			outcome = "partial"
-		}
-		engines := map[string]bool{}
-		for _, result := range results {
-			if result.Engine != "" {
-				engines[result.Engine] = true
-			}
-		}
-		engine := "not_run"
-		for value := range engines {
-			engine = value
-		}
-		if len(engines) > 1 {
-			engine = "mixed"
-		}
-		if err := jsonEncoder(output).Encode(Object{"outcome": outcome, "interrupted": ctx.Err() != nil, "endpoint": endpoint, "client": target, "artifact_validation": verification, "connectivity_engine": engine, "diagnostics": diagnostics, "passed": passed, "total": len(results), "nodes": results}); err != nil {
+		if err := jsonEncoder(output).Encode(Object{"outcome": outcome, "interrupted": ctx.Err() != nil, "endpoint": endpoint, "client": target, "artifact_validation": verification, "connectivity_engine": "sing-box", "diagnostics": diagnostics, "passed": passed, "skipped": skipped, "total": len(results), "nodes": results}); err != nil {
 			return err
 		}
 		return errors.Join(ctx.Err(), recordErr)

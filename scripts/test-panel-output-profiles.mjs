@@ -113,12 +113,40 @@ assert.match(rules.textContent, /本地规则/);
 assert.equal(rules.querySelectorAll(".resource-navigation button").length, 1);
 assert.equal(
   validationLabel({ state: "unavailable", scope: "core-config" }),
-  "校验器未安装",
+  "sing-box 配置检查不可用",
 );
 assert.match(
   validationLabel({ state: "pending", scope: "selection" }),
   /下载时校验/,
 );
+assert.equal(
+  validationLabel({ state: "passed", engine: "mihomo", scope: "parser" }),
+  "节点格式检查通过 · 客户端导入待验证",
+);
+const { taskDetails } = await import("../internal/manage/panel/tasks.js");
+taskDetails({
+  id: 1,
+  kind: "subscription",
+  state: "succeeded",
+  outcome: "not_run",
+  result: {
+    passed: 0,
+    skipped: 1,
+    total: 1,
+    nodes: [
+      {
+        name: "XHTTP",
+        state: "unsupported",
+        engine: "sing-box",
+        milliseconds: 0,
+        success: false,
+      },
+    ],
+  },
+});
+assert.match(dialog.textContent, /无法检测/);
+assert.match(dialog.textContent, /超出检测能力/);
+assert.doesNotMatch(dialog.textContent, /需要处理|0 ms/);
 dom.window.close();
 console.log(
   "Output profiles passed: initial cancellation, dialog ownership, reset, mode isolation, simple rules and validation states.",

@@ -18,7 +18,8 @@ $projectCore = Join-Path $projectTools 'sing-box-1.14.4-windows-amd64/sing-box.e
 if (Test-Path -LiteralPath $projectCore) {
     $env:SING_BOX_BINARY = $projectCore
 }
-$projectMihomo = Join-Path $projectTools 'mihomo-1.19.33/mihomo-windows-amd64.exe'
+$clientTestVersions = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'client-test-versions.json') -Raw | ConvertFrom-Json
+$projectMihomo = Join-Path $projectTools ('mihomo-' + $clientTestVersions.mihomo.version + '/mihomo-windows-amd64.exe')
 if (Test-Path -LiteralPath $projectMihomo) {
     $env:MIHOMO_BINARY = $projectMihomo
 }

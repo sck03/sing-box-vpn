@@ -128,16 +128,7 @@ func (s AccountService) OutputOptions(ctx context.Context, id, scope string, cli
 	for _, client := range clients {
 		option, _, _ := inputs.config.PlanAccountOutput(inputs.nodes, inputs.templates, id, client)
 		option.Validation = sub.Validation{State: "pending", Scope: "selection"}
-		binary := ""
-		switch option.Client {
-		case "mihomo", "openclash":
-			binary = mihomoBinary(s.Root)
-		case "sing-box":
-			binary = s.Core
-		default:
-			binary = "parser"
-		}
-		if binary == "" {
+		if option.Client == "sing-box" && s.Core == "" {
 			option.Validation.State = "unavailable"
 		}
 		if err := ctx.Err(); err != nil {
@@ -182,7 +173,7 @@ func (s AccountService) compileAccount(ctx context.Context, inputs accountExport
 		value := accountCompilation{option: option}
 		if err == nil {
 			value.artifact, _, err = plan.Render()
-			if err == nil && parserValidatedClient(template.Client) {
+			if err == nil && template.Client != "sing-box" {
 				value.option.Validation, err = validateSubscriptionArtifact(ctx, s.Root, s.Core, template, value.artifact)
 			}
 		}
@@ -195,7 +186,7 @@ func (s AccountService) compileAccount(ctx context.Context, inputs accountExport
 		return value, err
 	})
 	compiled.option.Diagnostics = slices.Clone(compiled.option.Diagnostics)
-	if err == nil && !parserValidatedClient(template.Client) {
+	if err == nil && template.Client == "sing-box" {
 		compiled.option.Validation, err = validateSubscriptionArtifact(ctx, s.Root, s.Core, template, compiled.artifact)
 		if err != nil {
 			compiled.option.Available = false
