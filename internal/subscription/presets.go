@@ -16,6 +16,7 @@ type Preset struct {
 
 func Presets() []Preset {
 	result := []Preset{
+		{ID: "nodes", Name: "仅节点（推荐）", Description: "只输出连接信息，使用客户端自己的策略和 DNS；节点片段需由客户端导入或引用。"},
 		{ID: "proxy", Name: "全局代理", Description: "完整配置使用代理出口；通用格式提供节点列表。"},
 		{ID: "split", Name: "国内直连", Description: "国内规则和局域网直连，其他请求使用代理。"},
 		{ID: "mobile", Name: "移动端 TUN", Description: "启用 TUN，使用代理 DNS，按需测试节点。"},
@@ -30,6 +31,14 @@ func Presets() []Preset {
 		for client, profile := range clientprofile.All() {
 			t := Template{ID: "preset-" + p.ID, Name: p.Name, Client: client, Version: 1, Mode: profile.AccountMode, Preset: "proxy"}
 			switch p.ID {
+			case "nodes":
+				if slices.Contains(profile.Modes, "provider") {
+					t.Mode = "provider"
+				} else if slices.Contains(profile.Modes, "nodes") {
+					t.Mode = "nodes"
+				} else {
+					continue
+				}
 			case "split":
 				if !slices.Contains(profile.Modes, "config") {
 					continue

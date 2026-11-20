@@ -140,3 +140,22 @@ export const getProgram = (check = false, signal) =>
  * @returns {Promise<import("./contracts.js").SubscriptionTemplateImportResult>} */
 export const previewTemplateImport = (input, signal) =>
   api("/api/subscription-templates/import", input, { signal });
+/** @param {string} id @param {string} scope @param {AbortSignal} [signal] @param {typeof api} [request]
+ * @returns {Promise<import("./contracts.js").SubscriptionAccountOutputOption[]>} */
+export const getAccountOutputs = (id, scope, signal, request = api) =>
+  request(
+    "/api/accounts/outputs?id=" +
+      encodeURIComponent(id) +
+      "&scope=" +
+      encodeURIComponent(scope || ""),
+    undefined,
+    { signal },
+  );
+/** @param {import("./contracts.js").AccountExportRequest} input @param {typeof api} [request]
+ * @returns {Promise<import("./contracts.js").AccountExportResponse>} */
+export const exportAccount = (input, request = api) =>
+  request("/api/accounts/export", input);
+/** @param {boolean} secret @param {AbortSignal} [signal]
+ * @returns {Promise<import("./contracts.js").ConfigurationState>} */
+export const getConfiguration = (secret, signal) =>
+  api(secret ? "/api/config" : "/api/state", undefined, { signal });

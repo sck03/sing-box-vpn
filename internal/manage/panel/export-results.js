@@ -61,9 +61,9 @@ export function showExport(result, client) {
   dialog.replaceChildren(
     el("h2", {}, "账户专属配置"),
     help("配置包含代理凭据，请仅交给获授权的使用者。"),
-    result.client
+    result.output
       ? help(
-          `${result.client.nodes}/${result.client.input_nodes} 个节点 · ${result.client.template_name || result.client.template}${result.client.skipped ? ` · 已跳过 ${result.client.skipped} 个不兼容节点` : ""}`,
+          `${result.output.nodes}/${result.output.input_nodes} 个节点 · ${result.output.template_name || result.output.template}${result.output.skipped ? ` · 已跳过 ${result.output.skipped} 个不兼容节点` : ""}`,
         )
       : null,
     help(validationLabel(result.validation)),

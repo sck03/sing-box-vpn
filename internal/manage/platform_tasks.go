@@ -113,6 +113,8 @@ func (s *PlatformService) execute(ctx context.Context, id int64, a taskInput) er
 		return s.renewCertificate(ctx, a.ID)
 	case "bbr":
 		return s.setBBR(ctx, a.Value)
+	case "validator-install":
+		return s.installMihomo(ctx)
 	case "program-upgrade":
 		return s.upgradeProgram(ctx, id, a.Value)
 	case "runtime-rollback":

@@ -2,35 +2,52 @@
 
 [使用指南](usage.md) · [架构](architecture.md) · [兼容性](compatibility.md)
 
-当前订阅配置为 **schema=5**，CompilerVersion=3、ParserVersion=1。只接受当前配置，不迁移旧数据或恢复旧管理接口。平台配置 schema=5、节点文档 schema=4、模板 version=1、数据库 schema=15 和备份容器格式 8 分别维护，不能一起机械递增。
+当前订阅配置为 **schema=6**，CompilerVersion=4、ParserVersion=1。只接受当前配置，不迁移旧数据或恢复旧管理接口。平台配置 schema=6、节点文档 schema=4、模板 version=1、数据库 schema=16 和备份容器格式 8 分别维护，不能一起机械递增。
 
 ## 普通账户分享
 
-先在「系统设置 → 公网访问」配置 HTTPS 地址，再创建权益、绑定入站并点击「分享」。普通用户不需要建立来源、集合和输出。分享与直接导出共同读取已应用配置、账户专属凭据和下载模板。
+先在「系统设置 → 公网访问」配置 HTTPS 地址，再创建权益、绑定入站并点击「分享」。普通账户直接使用内置输出，不需要创建来源、集合或模板。默认优先提供仅节点订阅，完整配置由用户明确选择。
 
-分享表单按当前账户和实例读取实际客户端可用性，显示可用/总节点数、跳过数量和模板。切换实例会重新检查；不兼容格式不能创建成可下载链接。已有链接因绑定或模板变化而失去兼容性时，用户页显示原因并停止提供对应下载操作。下载时服务端再次检查。
+### 选择格式与用途
 
-账户授权选择客户端格式，一个账户的多个分享共用代理额度与时间。令牌只保存哈希，完整地址仅在创建时展示；撤销下载链接不会替代代理凭据轮换。创建、查看用量或下载均不激活首次使用权益。
+| 输出标识 | 内容与使用边界 |
+| --- | --- |
+| uri / base64 | 同一节点 URI 列表的明文或 Base64 编码；客户端须支持节点链接及对应协议。Base64 不是加密。 |
+| mihomo-provider / openclash-provider / stash-provider | 只有 proxies，需要在客户端配置中引用 Provider。 |
+| sing-box-nodes | 只有 outbounds；需要支持节点导入的客户端或与基础配置合并，不能当作独立代理程序的完整配置。 |
+| 客户端 ID 加 -config | 完整配置，包含模板中的策略、DNS、规则等设备设置。 |
+| 其他客户端 ID 加 -nodes | 客户端专属节点语法；具体可用标识以输出目录为准。 |
 
-用户地址为 `/user#<token>`，用量为 `/u/<token>/usage`，配置为 `/u/<token>/<client>`。反向代理前缀通过相对 URL 保留。fragment 不随 HTTP 请求或 Referrer 发送；持有完整链接即持有下载权限。
+仅节点仍保留认证、TLS、SNI、Reality 和传输等必要连接信息。通用表示节点链接格式可被多个客户端识别，不表示任何协议都能被任何客户端运行。Provider 与完整配置拥有不同地址，可以同时授权；不根据 User-Agent 静默切换语义。
 
-`usage.clients` 是对象数组，包含 `client`、`label`、`available`、`input_nodes`、`nodes`、`skipped`、`template`、`template_name`、`reason`、`diagnostics` 等字段，不再返回旧字符串数组及 `client_profiles`。代理额度耗尽或下载次数用尽仍可查看用量。
+### 现行接口
 
-下载次数 `null` 不限、0 禁止；HEAD 不消耗次数，GET 在生成和验证后原子计数。账户文件按目标使用 JSON/YAML/CONF/TXT 扩展名，并提供 `subscription-userinfo` 与 `profile-update-interval`。下载授权、权益及凭据状态始终由数据库判断。
+- GET /api/output-profiles：稳定输出目录，包含 id、client、mode、label、description。
+- GET /api/accounts/outputs?id=...&scope=...：按账户及实例分析可用节点，不启动核心、不渲染全部格式。
+- POST /api/accounts/export：请求 {id, scope, profile, tuic_port?}，返回 content、mime、extension、output 和 validation。
+- POST /api/grants：账户授权通过 profiles: ["uri", "mihomo-provider", "mihomo-config"] 精确选择用途；高级输出仍通过 outputs 选择。
+- 用户页 /user#TOKEN，用量 /u/TOKEN/usage，下载 /u/TOKEN/PROFILE。旧 clients 字段及账户客户端列表接口不再接受。
+
+用户用量返回 profiles 对象数组，包含 profile、client、mode、description、可用数量、跳过原因与验证状态。反向代理前缀通过相对 URL 保留。令牌仅保存哈希，完整链接只在创建时展示；为同一账户增加分享不会增加流量额度。
+
+列表的 pending 表示兼容性已分析、实际配置待下载时检查；unavailable 表示当前缺少校验器。passed 还要结合 scope 区分核心检查与解析往返检查。未验收的目标应用继续标记实验适配，不将参考版本当作本次检查通过。
+
+下载时重新检查授权、权益、绑定及模板，并且只生成与校验所选格式。HEAD 不计数，GET 在生成和校验后原子计数；下载次数 null 不限、0 禁止。账户状态与用量不进入编译缓存。创建分享或下载不会激活首次使用权益。
 
 ## 账户下载模板
 
-「订阅编排 → 模板与规则 → 账户下载模板与单独覆盖」管理普通账户使用的模板。账户分享与高级订阅输出共用编译器，不再另造固定的账户配置。
+「订阅编排 → 模板与规则 → 账户下载模板与单独覆盖」按输出用途管理模板：
 
-- `account_defaults`：客户端 ID 到 `{template, skip_unsupported}` 的映射。
-- `account_overrides`：`{account_id, client, template, skip_unsupported}` 数组，优先于全局默认。
-- 模板必须匹配客户端，账户下载不能使用独立 rules 模式。
-- 默认明确允许跳过不兼容节点；页面显示数量与原因。关闭 `skip_unsupported` 后，任一不兼容节点会拒绝该格式。
-- 全局或账户覆盖变更随完整配置预览、保存和应用，不通过第二套写入接口修改运行状态。
+- account_defaults 是输出 profile ID 到 {template, skip_unsupported} 的映射。
+- account_overrides 是 {account_id, profile, template, skip_unsupported} 数组，优先于全局默认。
+- 模板的 client 和 mode 必须同时匹配输出目录；节点链接不能通过换模板变成完整配置。
+- 设置中选择「内置默认」会删除该覆盖；账户单独覆盖可在列表删除。
+- 无覆盖时直接使用内置默认，不复制整套默认项进用户配置。默认允许跳过不兼容节点，并明确显示数量和原因。
+- 远程模板只使用已发布快照，下载不访问远端。尚未发布的远程模板只影响引用它的输出，内置节点订阅继续可用。
 
-首次配置为各客户端提供独立的账户默认模板。远程模板使用已发布、展开规则后的模板快照；下载过程中不请求远端模板。不可用或不匹配的模板会明确拒绝下载。
+编译缓存每服务最多 128 条、估算 16 MiB、有效期 5 分钟，并合并同输入的并发编译。键含账户及版本、实例范围、实际节点摘要、模板、跳过策略及编译/解析版本。权限、撤销、额度和文件相关的核心验证仍按请求检查。
 
-公开用量及分享检查只编译授权选择的客户端。编译缓存由每个服务持有，最多 128 条、正文和诊断的估算容量预算 16 MiB、有效期 5 分钟，并合并相同输入的并发编译。缓存键包含账户及其版本、实例范围、含实际凭据的完整节点摘要、有效模板、跳过策略、CompilerVersion 和 ParserVersion；凭据轮换、模板或地址变化会产生新键。缓存不保存授权决定或流量计数；不可变的 URI/文本解析校验随编译结果复用；每次请求重新检查账户状态以及核心身份和文件相关校验，实际下载仍原子检查授权和次数。
+Mihomo 校验器在「系统设置 → 程序与组件更新」中安装或修复；任务只安装 versions.json 指定的验证版本，并检查固定官方地址、双架构固定 SHA256 和实际二进制版本；amd64 使用基础 v1 指令集构建。安装后使用数据目录中的 mihomo；开发环境仍可通过 MIHOMO_BINARY 指定。未安装时输出保留明确的 unavailable 状态。
 
 ## 快速创建与高级编排
 
@@ -96,10 +113,11 @@ DNS 分为 local、remote、bootstrap；bootstrap 使用 IP，其余支持 IP �
 
 | 接口                                   | 用途                                          |
 | -------------------------------------- | --------------------------------------------- |
+| GET /api/output-profiles               | 账户输出身份：客户端、用途、名称与使用说明    |
 | GET /api/clients                       | 客户端、模式、扩展名及协议/传输/加密/插件范围 |
 | GET /api/subscription-capabilities     | 当前 schema、输入格式和协议                   |
 | GET /api/subscription-presets          | 可编辑的用途预设                              |
-| GET /api/accounts/clients?id=…&scope=… | 当前账户与实例的实际可下载范围                |
+| GET /api/accounts/outputs?id=…&scope=… | 当前账户与实例的实际可下载范围                |
 | POST /api/accounts/export              | 内容、MIME、扩展名、节点数量、模板与验证结果  |
 | POST /api/config/preview               | 完整草稿校验、节点数量和增删变化              |
 | POST /api/config/preview-output        | `{id, config}`，返回单个输出的脱敏预览        |

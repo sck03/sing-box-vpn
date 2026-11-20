@@ -9,16 +9,25 @@ export async function openTask(id, signal = undefined) {
   const session = dialogSession(signal);
   const content = el("div", {}, help("正在读取任务详情…"));
   session.replace(content, row(button("关闭", session.close)));
-  let timer, previous, loading = false, terminal = false;
+  let timer,
+    previous,
+    loading = false,
+    terminal = false;
   const visible = () => {
-    if (document.hidden) { clearTimeout(timer); timer = undefined; }
-    else if (!loading && !terminal && !timer) void refresh();
+    if (document.hidden) {
+      clearTimeout(timer);
+      timer = undefined;
+    } else if (!loading && !terminal && !timer) void refresh();
   };
   document.addEventListener("visibilitychange", visible);
-  session.signal.addEventListener("abort", () => {
-    clearTimeout(timer);
-    document.removeEventListener("visibilitychange", visible);
-  }, { once: true });
+  session.signal.addEventListener(
+    "abort",
+    () => {
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", visible);
+    },
+    { once: true },
+  );
   const refresh = async () => {
     if (loading || !session.active()) return;
     timer = undefined;
@@ -30,7 +39,14 @@ export async function openTask(id, signal = undefined) {
       if (signature !== previous) {
         const expanded = content.querySelector("details")?.open;
         const focused = content.contains(document.activeElement);
-        taskDetails(task, { ...session, replace: (...children) => content.replaceChildren(...children) }, false);
+        taskDetails(
+          task,
+          {
+            ...session,
+            replace: (...children) => content.replaceChildren(...children),
+          },
+          false,
+        );
         const details = content.querySelector("details");
         if (details) details.open = !!expanded;
         if (focused) details?.querySelector("summary")?.focus();
@@ -39,8 +55,14 @@ export async function openTask(id, signal = undefined) {
       terminal = !["queued", "running"].includes(task.state);
       if (!terminal && !document.hidden) timer = setTimeout(refresh, 1500);
     } catch (error) {
-      if (session.active()) content.replaceChildren(el("p", { class: "form-error", role: "alert" }, error.message), button("重试", refresh));
-    } finally { loading = false; }
+      if (session.active())
+        content.replaceChildren(
+          el("p", { class: "form-error", role: "alert" }, error.message),
+          button("重试", refresh),
+        );
+    } finally {
+      loading = false;
+    }
   };
   await refresh();
 }
@@ -50,7 +72,8 @@ export async function taskHistory(ctx) {
   let cursors = [0];
   let loading = false;
   let items = [];
-  let pending = false, signature = "";
+  let pending = false,
+    signature = "";
   let nextBefore = 0;
   const notice = el("p", { role: "status", hidden: true });
   const latest = button("返回最新记录", () => load([0]));
@@ -86,7 +109,11 @@ export async function taskHistory(ctx) {
     loading = true;
     try {
       const page = await (ctx.request
-        ? ctx.request("/api/tasks?before=" + next.at(-1) + "&limit=50", undefined, { signal: ctx.signal })
+        ? ctx.request(
+            "/api/tasks?before=" + next.at(-1) + "&limit=50",
+            undefined,
+            { signal: ctx.signal },
+          )
         : getTasks(next.at(-1), ctx.signal));
       ctx.signal?.throwIfAborted();
       items = page.items;
@@ -121,6 +148,7 @@ const kinds = {
   bbr: "网络设置",
   "program-upgrade": "程序升级",
   "runtime-rollback": "核心回滚",
+  "validator-install": "安装订阅校验器",
   "outbound-probe": "检测出站",
   "panel-restart": "应用面板访问",
 };
@@ -152,7 +180,9 @@ export const canViewTask = (task, session) =>
       (task.details?.actor && task.details.actor === session.id)));
 
 export function taskDetails(task, session = dialogSession(), footer = true) {
-  const failed = task.state === "failed" || ["partial", "cached", "failed"].includes(task.outcome);
+  const failed =
+    task.state === "failed" ||
+    ["partial", "cached", "failed"].includes(task.outcome);
   const details = el("dl", { class: "detail-grid" });
   for (const [label, value] of [
     ["操作", taskKind(task.kind)],
@@ -170,7 +200,10 @@ export function taskDetails(task, session = dialogSession(), footer = true) {
   );
   session.replace(
     el("h2", {}, "任务 #" + task.id),
-    badge(failed ? "需要处理" : taskPhase(task.state), failed ? "bad" : task.state === "succeeded" ? "good" : "warn"),
+    badge(
+      failed ? "需要处理" : taskPhase(task.state),
+      failed ? "bad" : task.state === "succeeded" ? "good" : "warn",
+    ),
     details,
     ...(task.error
       ? [el("p", { class: "form-error", role: "alert" }, task.error)]
@@ -209,7 +242,8 @@ export function tasksCard(tasks, ctx, { compact = false } = {}) {
           render: (t) =>
             badge(
               taskPhase(t.state),
-              t.state === "failed" || ["partial", "cached", "failed"].includes(t.outcome)
+              t.state === "failed" ||
+                ["partial", "cached", "failed"].includes(t.outcome)
                 ? "bad"
                 : t.state === "succeeded"
                   ? "good"
@@ -246,10 +280,7 @@ export function tasksCard(tasks, ctx, { compact = false } = {}) {
             ]
           : []),
         ...(canViewTask(t, ctx.session)
-          ? [
-              button("详情", () => openTask(t.id, ctx.signal)),
-
-            ]
+          ? [button("详情", () => openTask(t.id, ctx.signal))]
           : []),
         ...(t.state === "queued" &&
         t.kind !== "apply" &&
@@ -264,7 +295,9 @@ export function tasksCard(tasks, ctx, { compact = false } = {}) {
       ],
       { compact, pageSize: compact ? 5 : 20 },
     ),
-    ...(compact && ctx.session.role !== "viewer" ? [el("a", { href: "#maintenance/logs" }, "查看全部任务 →")] : []),
+    ...(compact && ctx.session.role !== "viewer"
+      ? [el("a", { href: "#maintenance/logs" }, "查看全部任务 →")]
+      : []),
   );
 }
 

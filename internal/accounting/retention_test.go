@@ -16,7 +16,7 @@ func TestGrantLifecycleCapacityAndPaging(t *testing.T) {
 	ctx := t.Context()
 	// Previously the lifetime cap included all 10,000 revoked records.
 	_, err = s.db.Exec(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<10000)
- INSERT INTO download_grants(id,scope,clients,outputs,hash,revoked) SELECT 'old-'||i,'','[]','["out"]','hash-'||i,1 FROM n`)
+ INSERT INTO download_grants(id,scope,profiles,outputs,hash,revoked) SELECT 'old-'||i,'','[]','["out"]','hash-'||i,1 FROM n`)
 	if err != nil {
 		t.Fatal(err)
 	}

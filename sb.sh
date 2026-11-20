@@ -119,6 +119,8 @@ uninstall_main() {
         [[ "$answer" == yes ]] || { echo '已取消卸载。'; return 0; }
     fi
     stop_owned_units sb-recovery.timer sb-recovery.service sb-panel.service sb-subscription.service sb-argo.service sb-vpngate-core.service sb-vpngate-gateway.service sb-core.service
+    # Restore while the durable recovery record and manager still exist.
+    panel restore-network
     "$MANAGER" cleanup --config "$SB_ROOT/vpngate/gateway.json" 2>/dev/null || true
     "$MANAGER" firewall --root "$SB_ROOT" --remove
     local service
@@ -132,7 +134,7 @@ uninstall_main() {
         rm -f -- "$journal_limits"
         rmdir -- /etc/systemd/journald@sb-vpn.conf.d 2>/dev/null || true
     fi
-    rm -f -- /usr/bin/sb "$MANAGER" /etc/sysctl.d/90-sing-box-vpn.conf
+    rm -f -- /usr/bin/sb "$MANAGER"
     rm -rf -- "$SB_ROOT" "$APP_HOME"
     systemctl daemon-reload
     echo 'sing-box-vpn 已卸载。系统共享的软件包已保留。'

@@ -45,7 +45,7 @@ func validateSubscriptionArtifact(ctx context.Context, root, core string, templa
 		return result, nil
 	case "mihomo", "openclash":
 		result.Engine, result.Scope = "mihomo", "core-config"
-		binary := mihomoBinary()
+		binary := mihomoBinary(root)
 		if binary == "" {
 			if os.Getenv("SBVPN_REQUIRE_CLIENT_CHECK") == "1" {
 				return result, fmt.Errorf("Mihomo validator is required")
@@ -105,9 +105,15 @@ func validateSubscriptionArtifact(ctx context.Context, root, core string, templa
 	}
 }
 
-func mihomoBinary() string {
+func mihomoBinary(root string) string {
 	if binary := os.Getenv("MIHOMO_BINARY"); binary != "" {
 		return binary
+	}
+	if root != "" {
+		candidate := filepath.Join(root, "mihomo")
+		if info, err := os.Stat(candidate); err == nil && info.Mode().IsRegular() {
+			return candidate
+		}
 	}
 	binary, _ := exec.LookPath("mihomo")
 	return binary

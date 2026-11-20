@@ -24,6 +24,7 @@ upgrade_program() (
         case "$state" in active) running+=("$unit");; inactive|failed) ;; *) echo "$unit 正在切换状态" >&2; return 1;; esac
     done
     stage=$(mktemp -d "${APP_HOME}.update.XXXXXXXX")
+    printf '%s\n' 'sing-box-vpn upgrade' > "$stage/.upgrade-owned"
     cp -a -- "$MANAGER" "$stage/manager.previous"
     cp -a -- "$RUNTIME" "$stage/runtime.previous"
     cp -a -- "$CORE" "$stage/validator.previous"
@@ -102,5 +103,9 @@ upgrade_program() (
         "$MANAGER" panel --root "$SB_ROOT" complete-upgrade
     fi
     trap - EXIT
+    if [[ "${SB_DEFER_PANEL_RESTART:-0}" != 1 || " ${running[*]} " != *' sb-panel '* ]]; then
+        printf '%s\n' 'sing-box-vpn upgrade succeeded' > "$stage/.upgrade-success"
+        SB_HOME="$APP_HOME" "$MANAGER" panel --root "$SB_ROOT" prune-upgrades || echo '旧升级留档清理失败，可稍后重试。' >&2
+    fi
     echo "程序和受管核心已更新；上一发行包保存在 $stage，账户账本和服务启用状态保留。"
 )

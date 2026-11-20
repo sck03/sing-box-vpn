@@ -1,5 +1,5 @@
 import { api } from "./api.js";
-import { accountClientDialog } from "./account-clients.js";
+import { accountOutputDialog } from "./account-outputs.js";
 import { $, el, button, row, help, notice } from "./ui.js";
 
 // Ordinary account shares inherit time and quota from the entitlement.
@@ -9,7 +9,7 @@ export async function createAccountShare(accounts, ctx) {
   );
   if (!accounts.length) throw new Error("请先创建权益并绑定入站。");
   const request = ctx.workflowRequest || api;
-  await accountClientDialog({
+  await accountOutputDialog({
     accounts,
     ctx,
     title: "创建账户分享",
@@ -18,7 +18,7 @@ export async function createAccountShare(accounts, ctx) {
       id: "share-" + crypto.randomUUID().replaceAll("-", ""),
       account_id: accounts[0].id,
       scope: "",
-      clients: ["sing-box", "mihomo", "uri"],
+      profiles: ["uri", "base64", "mihomo-provider", "sing-box-nodes"],
       expires_at: null,
       max_downloads: null,
     },

@@ -68,7 +68,7 @@ func TestUsageSurvivesExhaustedDownloadsAndRetention(t *testing.T) {
 		t.Fatal(err)
 	}
 	zero := int64(0)
-	token, err := store.CreateGrant(t.Context(), accounting.Grant{ID: "g", AccountID: "a", Clients: []string{"uri"}, MaxDownloads: &zero})
+	token, err := store.CreateGrant(t.Context(), accounting.Grant{ID: "g", AccountID: "a", Profiles: []string{"uri"}, MaxDownloads: &zero})
 	if err != nil {
 		t.Fatal(err)
 	}

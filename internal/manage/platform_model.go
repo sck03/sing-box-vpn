@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-const PlatformSchema = 5
+const PlatformSchema = 6
 
 // PlatformConfig is the single authoritative aggregate stored in control.db.
 // JSON files consumed by the gateway and compiler are generated projections.

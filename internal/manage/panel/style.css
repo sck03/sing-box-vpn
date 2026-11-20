@@ -1153,7 +1153,7 @@ progress {
     display: grid;
     grid-template-columns: 80px minmax(0, 1fr);
     gap: 12px;
-    padding: 9px 0;
+    padding: 6px 0;
     max-width: none;
     min-width: 0;
     border: 0;
@@ -1348,4 +1348,18 @@ progress {
 .setup-steps a {
   display: inline-block;
   margin-top: 0.4rem;
+}
+/* Nodes first; device policies remain an explicit advanced choice. */
+.subscription-configs { margin-top: 24px; }
+.subscription-configs > summary { cursor: pointer; padding: 14px 0; font-weight: 600; }
+.client-download h3, .client-download p { margin: 0; }
+.client-download small { color: var(--muted); line-height: 1.6; }
+.client-download .download-link { margin-top: 8px; }
+.client-download button { min-height: 44px; }
+.client-compatibility { padding: 12px 16px; border-radius: 10px; background: var(--selected); margin-bottom: 16px; }
+@media (max-width: 640px) {
+ .user-page { margin: 24px auto; padding: 0 16px; }
+ .usage-summary { padding: 18px; }
+ .client-grid { gap: 12px; }
+ .client-download { padding: 16px; }
 }

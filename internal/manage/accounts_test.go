@@ -30,7 +30,7 @@ func TestAccountCommandsAndExportsKeepIndependentCredentials(t *testing.T) {
 		if err := service.Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: id, Scope: "normal"}, new(bytes.Buffer)); err != nil {
 			t.Fatal(err)
 		}
-		output, err := service.ExportDetailed(t.Context(), application.AccountCommand{ID: id, Scope: "normal", Client: "sing-box"})
+		output, err := service.ExportDetailed(t.Context(), application.AccountExportRequest{ID: id, Scope: "normal", Profile: "sing-box-config"})
 		if err != nil {
 			t.Fatal(err)
 		}

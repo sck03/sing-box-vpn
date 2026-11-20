@@ -4,10 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"time"
-
-	"github.com/sck03/sing-box-vpn/internal/clientprofile"
 )
 
 type Usage struct {
@@ -118,18 +115,8 @@ func DefaultConfig() Config {
 			c.Templates = append(c.Templates, Template{ID: id, Version: 1, Client: target.client, Mode: target.mode, Preset: preset, TUN: target.client == "sing-box"})
 		}
 	}
-	c.AccountDefaults = map[string]AccountExportPolicy{}
-	clients := make([]string, 0, len(clientprofile.All()))
-	for client := range clientprofile.All() {
-		clients = append(clients, client)
-	}
-	slices.Sort(clients)
-	for _, client := range clients {
-		profile, _ := clientprofile.Lookup(client)
-		id := "account-" + client
-		c.Templates = append(c.Templates, Template{ID: id, Name: profile.Label + " · 账户默认", Version: 1, Client: client, Mode: profile.AccountMode, Preset: "proxy"})
-		c.AccountDefaults[client] = AccountExportPolicy{Template: id, SkipUnsupported: true}
-	}
+	// Account outputs use built-ins until explicitly overridden. Do not copy
+	// every profile into editable configuration just to express its default.
 	return c
 }
 

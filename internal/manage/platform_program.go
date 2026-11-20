@@ -17,6 +17,8 @@ type ProgramComponent struct {
 	Expected   string `json:"expected"`
 	Compatible bool   `json:"compatible"`
 	Error      string `json:"error,omitempty"`
+	Optional   bool   `json:"optional"`
+	Available  bool   `json:"available"`
 }
 type ProgramStatus struct {
 	Current         string             `json:"current"`
@@ -30,18 +32,22 @@ type ProgramStatus struct {
 func (s *PlatformService) ProgramStatus(ctx context.Context, check bool) (ProgramStatus, error) {
 	v := project.Versions
 	result := ProgramStatus{Current: v.Release, Components: []ProgramComponent{
-		{ID: "manager", Name: "面板与管理程序", Version: v.Release, Expected: v.Release, Compatible: true},
-		{ID: "certificate", Name: "证书签发组件（lego）", Version: v.CertificateManager, Expected: v.CertificateManager, Compatible: true},
+		{ID: "manager", Name: "面板与管理程序", Version: v.Release, Expected: v.Release, Compatible: true, Available: true},
+		{ID: "certificate", Name: "证书签发组件（lego）", Version: v.CertificateManager, Expected: v.CertificateManager, Compatible: true, Available: true},
 	}}
 	probe, stop := context.WithTimeout(ctx, 10*time.Second)
 	defer stop()
 	for _, target := range []struct{ id, name, path, expected string }{
 		{"runtime", "受管 sing-box 核心", s.Runtime, v.ManagedRuntime},
 		{"validator", "官方配置校验器", s.Core, v.SingBox.Tested},
+		{"mihomo", "Mihomo 配置校验器", mihomoBinary(s.Root), v.Mihomo.Tested},
 	} {
 		component := ProgramComponent{ID: target.id, Name: target.name, Expected: target.expected}
+		component.Optional = target.id == "mihomo"
 		var err error
-		if target.id == "validator" {
+		if target.id == "mihomo" {
+			component.Version, err = checkMihomo(probe, target.path)
+		} else if target.id == "validator" {
 			component.Version, err = CheckCore(probe, target.path)
 		} else {
 			var output []byte
@@ -49,6 +55,7 @@ func (s *PlatformService) ProgramStatus(ctx context.Context, check bool) (Progra
 			component.Version = strings.TrimSpace(string(output))
 		}
 		component.Compatible = err == nil && component.Version == component.Expected
+		component.Available = err == nil
 		if err != nil {
 			component.Error = "无法读取组件版本；请检查安装文件"
 			component.Version = ""

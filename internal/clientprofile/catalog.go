@@ -104,8 +104,6 @@ func All() map[string]Profile {
 	return result
 }
 
-func SupportsAccount(id string) bool { _, ok := catalog[id]; return ok }
-
 func Describe(id string) (Client, bool) {
 	p, ok := Lookup(id)
 	c := Client{Profile: p, Extension: Extension(id), Connections: map[string]Connection{}, NativeFields: TemplateFields(id)}

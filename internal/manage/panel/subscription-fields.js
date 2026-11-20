@@ -24,13 +24,9 @@ export const processorFields = [
 let selectedTemplate;
 let selectedResource = 0;
 export function templateResources(templates, catalog, change) {
-  const eligible = templates.filter(
-    (t) => t.mode === "config" && catalog[t.client]?.features.policy_groups,
-  );
+  const eligible = templates.filter((t) => t.mode === "config");
   if (!eligible.length)
-    return help(
-      "创建支持策略组的完整配置模板后，可编辑策略组和规则 Provider。",
-    );
+    return help("创建完整配置模板后，可编辑该客户端支持的规则与策略。");
   const select = el("select", { "aria-label": "编辑模板资源" });
   for (const t of eligible)
     select.append(
@@ -226,17 +222,26 @@ export function templateResources(templates, catalog, change) {
     const show = (index) => {
       selectedResource = index;
       content.replaceChildren(panes[index]());
-      [...navigation.children].forEach((control, i) =>
-        control.setAttribute("aria-pressed", String(i === index)),
+      [...navigation.children].forEach((control) =>
+        control.setAttribute(
+          "aria-pressed",
+          String(control.getAttribute("data-resource") === String(index)),
+        ),
       );
     };
-    choices.forEach((label, index) =>
-      navigation.append(
-        button(`${label} · ${counts[index]}`, () => show(index)),
-      ),
-    );
+    const features = catalog[t.client]?.features || {};
+    const enabled = [features.policy_groups, features.rule_providers, true];
+    choices.forEach((label, index) => {
+      if (enabled[index]) {
+        const control = button(`${label} · ${counts[index]}`, () =>
+          show(index),
+        );
+        control.dataset.resource = String(index);
+        navigation.append(control);
+      }
+    });
     body.replaceChildren(navigation, content);
-    show(selectedResource);
+    show(enabled[selectedResource] ? selectedResource : 2);
   }
   select.addEventListener("change", render);
   render();

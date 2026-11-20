@@ -72,7 +72,7 @@ assert.equal(
 let state = ok(await call("/api/config"));
 const config = state.config;
 assert.equal(config.app.schema, 4);
-assert.equal(config.schema, 5);
+assert.equal(config.schema, 6);
 assert(
   config.app.nodes.every((node) => !("uuid" in node) && !("password" in node)),
 );
@@ -97,7 +97,7 @@ const invalidTask = await call("/api/tasks/detail?id=invalid");
 assert.equal(invalidTask.status, 400);
 assert.equal(invalidTask.value.error.field, "id");
 const components = ok(await call("/api/program"));
-assert.equal(components.components.length, 4);
+assert.equal(components.components.length, 5);
 assert(
   components.components.every(
     (component) =>
@@ -172,11 +172,11 @@ assert.equal(rejectedTransport.status, 400);
 assert.equal(rejectedTransport.value.error.code, "invalid_field");
 assert(rejectedTransport.value.error.field.endsWith("transport.type"));
 
-assert.equal(config.subscriptions.version, 5);
+assert.equal(config.subscriptions.version, 6);
 const subscriptionCapabilities = ok(
   await call("/api/subscription-capabilities"),
 );
-assert.equal(subscriptionCapabilities.schema_version, 5);
+assert.equal(subscriptionCapabilities.schema_version, 6);
 assert(subscriptionCapabilities.formats.includes("auto"));
 assert(subscriptionCapabilities.formats.includes("loon"));
 const clients = ok(await call("/api/clients"));
@@ -306,7 +306,7 @@ assert.equal(
     await call("/api/grants", {
       id: "local-" + suffix,
       account_id: account,
-      clients: ["uri"],
+      profiles: ["uri"],
     })
   ).status,
   400,
@@ -329,7 +329,7 @@ assert(
     await call("/api/accounts/export", {
       id: account,
       scope: "normal",
-      client: "uri",
+      profile: "uri",
     }),
   ).content.includes("://"),
 );
@@ -338,7 +338,7 @@ const grant = ok(
     id: "share-" + suffix,
     account_id: account,
     scope: "normal",
-    clients: ["uri"],
+    profiles: ["uri"],
     max_downloads: 1,
   }),
 );
@@ -351,10 +351,40 @@ ok(
 );
 const usage = ok(await call("/u/" + grant.token + "/usage"));
 assert(
-  usage.clients.every(
-    (client) => typeof client.available === "boolean" && client.client,
+  usage.profiles.every(
+    (profile) => typeof profile.available === "boolean" && profile.profile,
   ),
 );
+const profiles = ok(await call("/api/output-profiles"));
+assert(profiles.some((profile) => profile.id === "sing-box-nodes"));
+for (const allowed of [
+  ["mihomo-provider"],
+  ["mihomo-provider", "mihomo-config"],
+]) {
+  const shared = ok(
+    await call("/api/grants", {
+      id: "profiles-" + suffix + "-" + allowed.length,
+      account_id: account,
+      scope: "normal",
+      profiles: allowed,
+    }),
+  );
+  const path = "/u/" + shared.token;
+  const providerResponse = await call(path + "/mihomo-provider");
+  const provider = ok(providerResponse);
+  assert.deepEqual(Object.keys(provider), ["proxies"]);
+  assert.match(providerResponse.headers.get("content-disposition"), /\.yaml/);
+  const full = await call(path + "/mihomo-config");
+  if (allowed.length === 1) assert.equal(full.status, 404);
+  else assert(ok(full)["proxy-groups"].length > 0);
+  assert.equal((await call(path + "/sing-box-config")).status, 404);
+  const snapshot = ok(await call(path + "/usage"));
+  assert.equal(snapshot.downloads, allowed.length);
+  assert.deepEqual(
+    snapshot.profiles.map((p) => p.profile),
+    allowed,
+  );
+}
 const download = await call("/u/" + grant.token + "/uri");
 ok(download);
 assert(download.headers.get("subscription-userinfo").includes("total="));
@@ -393,7 +423,7 @@ config.subscriptions.templates.push(
 config.subscriptions.account_overrides = [
   {
     account_id: account,
-    client: "mihomo",
+    profile: "mihomo-config",
     template: "account-custom",
     skip_unsupported: true,
   },
@@ -431,17 +461,18 @@ assert.equal(result.result.outputs, 1);
 const saved = ok(await call("/api/config"));
 assert.equal(saved.revision, saved.applied_revision);
 const availableClients = ok(
-  await call(`/api/accounts/clients?id=${account}&scope=normal`),
+  await call(`/api/accounts/outputs?id=${account}&scope=normal`),
 );
 assert.equal(
-  availableClients.find((client) => client.client === "mihomo").template,
+  availableClients.find((client) => client.profile === "mihomo-config")
+    .template,
   "account-custom",
 );
 const accountExport = ok(
   await call("/api/accounts/export", {
     id: account,
     scope: "normal",
-    client: "mihomo",
+    profile: "mihomo-config",
   }),
 );
 assert.equal(accountExport.extension, "yaml");
@@ -476,7 +507,7 @@ assert.equal(
     await call("/api/grants", {
       id: "unbound-" + suffix,
       account_id: limited.id,
-      clients: ["uri"],
+      profiles: ["uri"],
     })
   ).status,
   400,
@@ -498,7 +529,7 @@ const denied = ok(
   await call("/api/grants", {
     id: "limited-share-" + suffix,
     account_id: limited.id,
-    clients: ["uri"],
+    profiles: ["uri"],
   }),
 );
 const credentials = ok(

@@ -345,13 +345,6 @@ func watchTunnel(ctx context.Context, active tunnel, cancel context.CancelCauseF
 	}
 }
 
-func (m *manager) monitor(ctx context.Context, c Config, active tunnel, n Node, client *http.Client) error {
-	ctx, cancel := context.WithCancelCause(ctx)
-	defer cancel(nil)
-	go watchTunnel(ctx, active, cancel)
-	return m.monitorSession(ctx, c, active, n, client)
-}
-
 func (m *manager) monitorSession(ctx context.Context, c Config, active tunnel, n Node, client *http.Client) error {
 	tick := time.NewTicker(time.Duration(c.HealthInterval) * time.Second)
 	defer tick.Stop()

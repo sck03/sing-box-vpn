@@ -22,35 +22,30 @@ export interface Account {
   period: PeriodPolicy;
 }
 
-export interface AccountClientOption {
-  client: string;
-  label: string;
-  extension: string;
-  available: boolean;
-  input_nodes: number;
-  nodes: number;
-  skipped: number;
-  template: string;
-  template_name: string;
-  mode: string;
-  reason?: string;
-  experimental: boolean;
-  reference_version?: string;
-  validation: SubscriptionValidation;
-  diagnostics: Array<SubscriptionDiagnostic> | null;
-}
-
 export interface AccountCommand {
   operation: string;
   id?: string;
   account_ids?: Array<string> | null;
   scope?: string;
-  client?: string;
   generation?: number;
   inbound_ids?: Array<string> | null;
-  tuic_port?: number;
   uuid?: string;
   password?: string;
+}
+
+export interface AccountExportRequest {
+  id: string;
+  scope?: string;
+  profile: string;
+  tuic_port?: number;
+}
+
+export interface AccountExportResponse {
+  content: string;
+  mime: string;
+  extension: string;
+  output: SubscriptionAccountOutputOption;
+  validation: SubscriptionValidation;
 }
 
 export interface Admin {
@@ -161,7 +156,7 @@ export interface Grant {
   account_id: string;
   outputs?: Array<string> | null;
   scope: string;
-  clients: Array<string> | null;
+  profiles: Array<string> | null;
   expires_at: string | null;
   max_downloads: number | null;
   downloads: number;
@@ -197,7 +192,7 @@ export interface PeriodPolicy {
 }
 
 export interface PlatformConfig {
-  schema: 5;
+  schema: 6;
   app: App;
   vpn: VPNSettings;
   vpn_secrets: Record<string, Secrets> | null;
@@ -232,6 +227,8 @@ export interface ProgramComponent {
   expected: string;
   compatible: boolean;
   error?: string;
+  optional: boolean;
+  available: boolean;
 }
 
 export interface ProgramStatus {
@@ -285,12 +282,32 @@ export interface Session extends Admin {
 
 export interface SubscriptionAccountExportOverride extends SubscriptionAccountExportPolicy {
   account_id: string;
-  client: string;
+  profile: string;
 }
 
 export interface SubscriptionAccountExportPolicy {
   template: string;
   skip_unsupported: boolean;
+}
+
+export interface SubscriptionAccountOutputOption {
+  profile: string;
+  description: string;
+  client: string;
+  label: string;
+  extension: string;
+  available: boolean;
+  input_nodes: number;
+  nodes: number;
+  skipped: number;
+  template: string;
+  template_name: string;
+  mode: string;
+  reason?: string;
+  experimental: boolean;
+  reference_version?: string;
+  validation: SubscriptionValidation;
+  diagnostics: Array<SubscriptionDiagnostic> | null;
 }
 
 export interface SubscriptionCollection {
@@ -500,7 +517,8 @@ export type TaskCommand =
   | { operation: "program-upgrade"; service?: never; id?: never; value?: string; config?: never; account?: never; subscription?: never }
   | { operation: "runtime-rollback"; service?: never; id?: never; value?: never; config?: never; account?: never; subscription?: never }
   | { operation: "service"; service: string; id?: never; value: "start" | "stop" | "restart" | "enable" | "disable"; config?: never; account?: never; subscription?: never }
-  | { operation: "subscription"; service?: never; id?: never; value?: never; config?: never; account?: never; subscription: SubscriptionCommand & { operation: "refresh" | "check" | "deliver" } };
+  | { operation: "subscription"; service?: never; id?: never; value?: never; config?: never; account?: never; subscription: SubscriptionCommand & { operation: "refresh" | "check" | "deliver" } }
+  | { operation: "validator-install"; service?: never; id?: never; value?: never; config?: never; account?: never; subscription?: never };
 
 export interface TaskCounts {
   failed: number;

@@ -3,6 +3,7 @@ package manage
 import (
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
+	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
 type OverviewSnapshot struct {
@@ -30,4 +31,12 @@ type ConfigurationState struct {
 
 type QueuedTask struct {
 	TaskID int64 `json:"task_id"`
+}
+
+type AccountExportResponse struct {
+	Content    string                  `json:"content"`
+	MIME       string                  `json:"mime"`
+	Extension  string                  `json:"extension"`
+	Output     sub.AccountOutputOption `json:"output"`
+	Validation sub.Validation          `json:"validation"`
 }

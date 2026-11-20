@@ -19,7 +19,7 @@ type Grant struct {
 	AccountID    string     `json:"account_id"`
 	Outputs      []string   `json:"outputs,omitempty"`
 	Scope        string     `json:"scope"`
-	Clients      []string   `json:"clients"`
+	Profiles     []string   `json:"profiles"`
 	ExpiresAt    *time.Time `json:"expires_at"`
 	MaxDownloads *int64     `json:"max_downloads"`
 	Downloads    int64      `json:"downloads"`
@@ -45,15 +45,15 @@ func grantHash(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 func (s *Store) CreateGrant(ctx context.Context, g Grant) (string, error) {
-	if !domain.ResourceID.MatchString(g.ID) || !slices.Contains([]string{"", "normal", "vpngate"}, g.Scope) || len(g.Clients) > len(clientprofile.All()) {
+	if !domain.ResourceID.MatchString(g.ID) || !slices.Contains([]string{"", "normal", "vpngate"}, g.Scope) || len(g.Profiles) > len(clientprofile.Outputs()) {
 		return "", errors.New("invalid download grant")
 	}
 	if g.AccountID != "" {
-		if !domain.ResourceID.MatchString(g.AccountID) || len(g.Clients) == 0 || len(g.Outputs) != 0 {
+		if !domain.ResourceID.MatchString(g.AccountID) || len(g.Profiles) == 0 || len(g.Outputs) != 0 {
 			return "", errors.New("account grants require client formats and cannot select outputs")
 		}
 	} else {
-		if len(g.Outputs) == 0 || len(g.Outputs) > 128 || len(g.Clients) != 0 || g.Scope != "" {
+		if len(g.Outputs) == 0 || len(g.Outputs) > 128 || len(g.Profiles) != 0 || g.Scope != "" {
 			return "", errors.New("output grants require 1–128 outputs")
 		}
 		seen := map[string]bool{}
@@ -64,9 +64,9 @@ func (s *Store) CreateGrant(ctx context.Context, g Grant) (string, error) {
 			seen[id] = true
 		}
 	}
-	seenClients := make(map[string]bool, len(g.Clients))
-	for _, client := range g.Clients {
-		if !clientprofile.SupportsAccount(client) || seenClients[client] {
+	seenClients := make(map[string]bool, len(g.Profiles))
+	for _, client := range g.Profiles {
+		if _, ok := clientprofile.OutputFor(client); !ok || seenClients[client] {
 			return "", errors.New("unsupported or duplicate client")
 		}
 		seenClients[client] = true
@@ -74,7 +74,7 @@ func (s *Store) CreateGrant(ctx context.Context, g Grant) (string, error) {
 	if g.MaxDownloads != nil && (*g.MaxDownloads < 0 || *g.MaxDownloads > 1<<40) {
 		return "", errors.New("invalid download limit")
 	}
-	clients, err := json.Marshal(g.Clients)
+	profiles, err := json.Marshal(g.Profiles)
 	if err != nil {
 		return "", err
 	}
@@ -106,7 +106,7 @@ func (s *Store) CreateGrant(ctx context.Context, g Grant) (string, error) {
 			return "", ErrDenied
 		}
 	}
-	r, err := tx.ExecContext(ctx, `INSERT INTO download_grants(id,account,scope,clients,outputs,expires,max_downloads,hash) SELECT ?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM download_grants WHERE revoked=0 AND (expires IS NULL OR expires>?) AND (account IS NOT NULL OR max_downloads IS NULL OR downloads<max_downloads))<10000`, g.ID, account, g.Scope, string(clients), string(outputs), timestamp(g.ExpiresAt), g.MaxDownloads, grantHash(token), time.Now().Unix())
+	r, err := tx.ExecContext(ctx, `INSERT INTO download_grants(id,account,scope,profiles,outputs,expires,max_downloads,hash) SELECT ?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM download_grants WHERE revoked=0 AND (expires IS NULL OR expires>?) AND (account IS NOT NULL OR max_downloads IS NULL OR downloads<max_downloads))<10000`, g.ID, account, g.Scope, string(profiles), string(outputs), timestamp(g.ExpiresAt), g.MaxDownloads, grantHash(token), time.Now().Unix())
 	if err != nil {
 		return "", err
 	}
@@ -123,14 +123,14 @@ func (s *Store) CreateGrant(ctx context.Context, g Grant) (string, error) {
 	return token, tx.Commit()
 }
 func readGrant(row scanner) (g Grant, err error) {
-	var clients, outputs string
+	var profiles, outputs string
 	var account sql.NullString
 	var expires, limit sql.NullInt64
-	err = row.Scan(&g.ID, &account, &g.Scope, &clients, &outputs, &expires, &limit, &g.Downloads, &g.Revoked)
+	err = row.Scan(&g.ID, &account, &g.Scope, &profiles, &outputs, &expires, &limit, &g.Downloads, &g.Revoked)
 	if err != nil {
 		return
 	}
-	err = json.Unmarshal([]byte(clients), &g.Clients)
+	err = json.Unmarshal([]byte(profiles), &g.Profiles)
 	if err != nil {
 		return
 	}
@@ -147,7 +147,7 @@ func readGrant(row scanner) (g Grant, err error) {
 	return
 }
 
-const grantColumns = `id,account,scope,clients,outputs,expires,max_downloads,downloads,revoked`
+const grantColumns = `id,account,scope,profiles,outputs,expires,max_downloads,downloads,revoked`
 
 func (s *Store) RevokeGrant(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE download_grants SET revoked=1,updated=? WHERE id=? AND revoked=0`, time.Now().Unix(), id)
@@ -191,7 +191,7 @@ func (s *Store) CountDownload(ctx context.Context, token, client string) error {
 		return err
 	}
 	if g.AccountID != "" {
-		if !slices.Contains(g.Clients, client) {
+		if !slices.Contains(g.Profiles, client) {
 			return ErrDenied
 		}
 		if _, err := s.DownloadAccount(ctx, g.AccountID, time.Now()); err != nil {

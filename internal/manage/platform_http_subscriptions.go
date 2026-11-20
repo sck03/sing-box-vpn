@@ -28,6 +28,10 @@ func (s *PlatformService) serveGrants(w http.ResponseWriter, r *http.Request, ac
 		jsonResponse(w, sub.Capabilities())
 		return true
 	}
+	if path == "/api/output-profiles" && r.Method == "GET" {
+		jsonResponse(w, clientprofile.Outputs())
+		return true
+	}
 	if path == "/api/subscription-capabilities" && r.Method == "GET" {
 		profile, _ := clientprofile.Lookup("sing-box")
 		jsonResponse(w, Object{"schema_version": sub.SchemaVersion, "formats": sub.InputFormats(), "protocols": profile.Protocols})

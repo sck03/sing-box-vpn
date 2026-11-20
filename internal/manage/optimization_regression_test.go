@@ -157,7 +157,7 @@ func TestShareReadinessMatchesDownloadAfterUnbind(t *testing.T) {
 		t.Fatal(err)
 	}
 	handler := s.Handler(PanelOptions{PublicURL: "https://example.com"})
-	body := mustJSON(t, accounting.Grant{ID: "share", AccountID: "share", Scope: "normal", Clients: []string{"uri"}})
+	body := mustJSON(t, accounting.Grant{ID: "share", AccountID: "share", Scope: "normal", Profiles: []string{"uri"}})
 	w := httptest.NewRecorder()
 	request := panelRequest("POST", "/api/grants", body, admin)
 	request.AddCookie(&http.Cookie{Name: "__Host-sbvpn", Value: admin.Token})

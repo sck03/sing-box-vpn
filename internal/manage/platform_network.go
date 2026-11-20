@@ -22,6 +22,12 @@ func (s *PlatformService) setBBR(ctx context.Context, mode string) error {
 		if err != nil {
 			return err
 		}
+		if previous == "" {
+			if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			return errors.New("network recovery record is missing; preserve the sysctl file and restore it manually")
+		}
 		var values map[string]string
 		if err = json.Unmarshal([]byte(previous), &values); err != nil {
 			return errors.New("original BBR settings are unavailable")

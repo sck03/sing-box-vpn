@@ -59,7 +59,7 @@ func TestArchiveCapacityRevocationAndSettlement(t *testing.T) {
 	if err := s.SaveAccount(ctx, replacement); err == nil {
 		t.Fatal("capacity not enforced")
 	}
-	grant := Grant{ID: "g", AccountID: "alice", Clients: []string{"uri"}}
+	grant := Grant{ID: "g", AccountID: "alice", Profiles: []string{"uri"}}
 	token, err := s.CreateGrant(ctx, grant)
 	if err != nil {
 		t.Fatal(err)

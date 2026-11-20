@@ -1,5 +1,24 @@
 import { $, el, button } from "./dom.js";
 
+// Reserve ownership before loading. Replacing or closing the loading dialog
+// cancels reads; a late response can never open an editor over a newer dialog.
+export async function loadDialog(signal, title, load, open) {
+  const session = dialogSession(signal);
+  session.replace(
+    el("h2", {}, title),
+    el("p", { role: "status" }, "正在加载…"),
+    button("取消", session.close),
+  );
+  try {
+    const value = await load(session.signal);
+    if (!session.active()) return;
+    session.close();
+    return open(value);
+  } catch (error) {
+    if (session.active() && error.name !== "AbortError") session.fail(error);
+  }
+}
+
 // One owner for a dialog and its requests, even when another editor replaces it.
 export function dialogSession(signal) {
   signal?.throwIfAborted();
@@ -36,7 +55,11 @@ export function dialogSession(signal) {
     signal: controller.signal,
     active,
     replace,
-    fail: (error) => replace(el("p", { class: "form-error", role: "alert" }, error.message), button("关闭", abort)),
+    fail: (error) =>
+      replace(
+        el("p", { class: "form-error", role: "alert" }, error.message),
+        button("关闭", abort),
+      ),
     close: abort,
   };
 }

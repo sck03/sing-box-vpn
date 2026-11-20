@@ -17,8 +17,9 @@ dom.window.HTMLDialogElement.prototype.showModal = function () {
 dom.window.HTMLDialogElement.prototype.close = function () {
   this.open = false;
 };
-const { table, badge, formDialog, remoteTable } =
-  await import("../internal/manage/panel/ui.js");
+const { table, badge, formDialog, remoteTable } = await import(
+  "../internal/manage/panel/ui.js"
+);
 const host = document.querySelector("#content");
 document.querySelector("#shell").hidden = false;
 const list = table(
@@ -170,8 +171,9 @@ assert.equal(
   false,
 );
 
-const { createAccountShare } =
-  await import("../internal/manage/panel/sharing.js");
+const { createAccountShare } = await import(
+  "../internal/manage/panel/sharing.js"
+);
 let createdShare;
 await createAccountShare(
   [
@@ -184,10 +186,11 @@ await createAccountShare(
   ],
   {
     workflowRequest: async (path, body) => {
-      if (path.startsWith("/api/accounts/clients?"))
+      if (path.startsWith("/api/accounts/outputs?"))
         return [
           {
             client: "uri",
+            profile: "uri",
             label: "URI",
             available: true,
             nodes: 1,
@@ -255,7 +258,8 @@ const { maintenance } = await import("../internal/manage/panel/maintenance.js");
 const maintenanceContext = {
   session: { role: "operator" },
   request: async () => ({
-    items: [{ id: 42, kind: "service", state: "running", phase: "executing" }], next_before: 0,
+    items: [{ id: 42, kind: "service", state: "running", phase: "executing" }],
+    next_before: 0,
   }),
 };
 host.replaceChildren(...(await maintenance(maintenanceContext)));
@@ -316,13 +320,23 @@ controller.abort();
 await new Promise((resolve) => setTimeout(resolve, 220));
 await paged.refresh();
 assert.equal(pageCalls, beforeAbort, "aborted page kept polling");
-const compactRow = table([{key:"name",label:"名称"},{key:"expires",label:"到期",secondary:true}], [{id:1,name:"A",expires:"tomorrow"}]);
+const compactRow = table(
+  [
+    { key: "name", label: "名称" },
+    { key: "expires", label: "到期", secondary: true },
+  ],
+  [{ id: 1, name: "A", expires: "tomorrow" }],
+);
 host.replaceChildren(compactRow);
 compactRow.querySelector(".mobile-row-expand").click();
 assert(compactRow.querySelector("tr.expanded"));
 compactRow.querySelector("input").focus();
-compactRow.updateItems([{id:1,name:"B",expires:"tomorrow"}]);
-assert.equal(compactRow.querySelector(".mobile-row-expand").getAttribute("aria-expanded"),"true","live update collapsed mobile details");
+compactRow.updateItems([{ id: 1, name: "B", expires: "tomorrow" }]);
+assert.equal(
+  compactRow.querySelector(".mobile-row-expand").getAttribute("aria-expanded"),
+  "true",
+  "live update collapsed mobile details",
+);
 console.log(
   "Panel quality checks passed: task updates, sorting, pagination, focus retention, abort cleanup, status and unit conversion.",
 );

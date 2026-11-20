@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"github.com/sck03/sing-box-vpn/internal/application"
+	"github.com/sck03/sing-box-vpn/internal/deployment"
 	"io"
 	"os"
 	"path/filepath"
@@ -105,6 +106,14 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 		return options
 	}
 	switch op {
+	case "restore-network":
+		return withOperationLock(s.Root, func() error { return s.setBBR(ctx, "restore") })
+	case "prune-upgrades":
+		home := os.Getenv("SB_HOME")
+		if home == "" {
+			home = "/opt/sing-box-vpn"
+		}
+		return deployment.PruneUpgrades(home, 2)
 	case "restart-settings":
 		id, err := strconv.ParseInt(f.Arg(1), 10, 64)
 		if err != nil {

@@ -1,0 +1,135 @@
+{
+  "date": "2026-11-20",
+  "timezone": "Asia/Shanghai",
+  "base_commit": "7f92fd3902edbcc755331484ca261943882c7399",
+  "release_manifest": "v6.0.0",
+  "schemas": {
+    "database": 16,
+    "platform": 6,
+    "subscription": 6,
+    "compiler": 4,
+    "node": 4,
+    "template": 1,
+    "backup": 8
+  },
+  "managed_runtime": "1.14.4+sbvpn.6",
+  "scope": [
+    "Purpose-specific output identities, exact grants and pure node subscriptions",
+    "Subscription planning separated from management orchestration",
+    "Built-in account defaults with explicit profile/template overrides and reset",
+    "Missing, corrupt and stale remote publications isolated from local outputs",
+    "Typed configuration and export responses with recursive secret redaction",
+    "Cancellable first dialog loads, post-create binding and mobile subscription layout",
+    "Lazy output compilation, bounded caches and independent expensive-request budgets",
+    "Verified Mihomo installation using baseline x86-64-v1 and pinned ARM64 assets",
+    "Network restoration before uninstall and bounded owned successful upgrade backups",
+    "Production test-only helper removal, documentation and local artifact cleanup"
+  ],
+  "checks": [
+    {
+      "command": "SBVPN_REQUIRE_CLIENT_CHECK=1 go test ./...",
+      "status": "passed",
+      "environment": "Windows amd64, Go 1.27.3, official sing-box 1.14.4 and Mihomo 1.19.33, real managed runtime",
+      "note": "Complete suite passed; final remote-cache isolation changes also passed focused regression and race tests."
+    },
+    {
+      "command": "go vet ./...; go run ./cmd/panel-contract -check; git diff --check",
+      "status": "passed"
+    },
+    {
+      "command": "npm test; npm run typecheck",
+      "status": "passed",
+      "suites": 10,
+      "environment": "Node 24.18.0"
+    },
+    {
+      "command": "go test -race -tags with_quic,with_utls,with_wireguard,with_gvisor -count=1 ./internal/runtime",
+      "status": "passed"
+    },
+    {
+      "command": "go test -race ./internal/accounting ./internal/subscription ./internal/manage (selected grant, output, cache and remote-template regressions); go test -race ./internal/deployment (upgrade retention)",
+      "status": "passed"
+    },
+    {
+      "command": "node scripts/test-panel-local.mjs",
+      "status": "passed",
+      "environment": "Fresh disposable panel and real Chrome, desktop and touch/mobile viewports",
+      "coverage": [
+        "Same grant permits independently selected Provider and full config",
+        "Unauthorized output purpose is rejected without consuming download count",
+        "Real file extension and provider-only root fields",
+        "Current API contracts, account binding, preview/apply and quota enforcement",
+        "Pointer, keyboard, focus, page/dialog lifecycle and mobile overflow",
+        "Screenshots of user page, templates, previews, settings, services and maintenance"
+      ]
+    },
+    {
+      "command": "shellcheck --severity=warning; test-installer.sh; test-install-health.sh; test-install-ownership.sh; test-program-upgrade.sh",
+      "status": "passed",
+      "environment": "Isolated Ubuntu 24.04 VM with real systemd"
+    },
+    {
+      "command": "sb.sh install; test-platform-linux.py; test-access-maintenance-linux.py",
+      "status": "passed",
+      "coverage": [
+        "Fresh schema-16 initialization",
+        "Account export, QR and download limit",
+        "Stopped service preservation",
+        "Configuration failure rollback",
+        "Imported certificate reaches TLS listener",
+        "Independent subscription TLS",
+        "Panel listener restart and occupied-port rollback",
+        "Namespace-only log cleanup and history retention"
+      ]
+    },
+    {
+      "command": "Authenticated validator-install and bbr tasks; sb.sh upgrade; sb.sh uninstall --yes",
+      "status": "passed",
+      "environment": "Baseline amd64 QEMU CPU without x86-64-v3, isolated Ubuntu VM",
+      "coverage": [
+        "Official Mihomo v1 asset downloaded, verified and executed",
+        "BBR enabled with durable recovery record",
+        "Coordinated manager/runtime/validator upgrade",
+        "Successful upgrade marker and retained rollback",
+        "Default-directory uninstall removes the installation and restores original live qdisc/congestion parameters"
+      ],
+      "note": "Upgrade was v6.0.0 to v6.0.0 reinstall. Failure and deferred-restart paths were independently covered by shell regressions. Original VM services and network settings restored."
+    },
+    {
+      "command": "go run ./cmd/release",
+      "status": "passed",
+      "architectures": [
+        "linux/amd64",
+        "linux/arm64"
+      ]
+    }
+  ],
+  "resolved_during_validation": [
+    "Typed read-only state initially flattened structured secrets; recursive redaction now preserves the wire shape",
+    "Old schema and UI label assertions updated to the new contract",
+    "Unsuffixed official Mihomo amd64 build required x86-64-v3; installer and CI now use amd64-v1, with pinned SHA256 for both supported architectures",
+    "Unavailable templates retain their output purpose; corrupt publication files cannot disable built-in node exports"
+  ],
+  "limitations": [
+    "No production VPS throughput, latency-tail or long-duration RSS comparison was performed; no percentage performance gain is claimed",
+    "ARM64 was cross-built and asset selection tested, but not executed on ARM hardware",
+    "Experimental client adapters require actual application import testing; core validation is not universal client certification",
+    "URI/Base64 need protocol support in the target app; Provider and sing-box outbounds fragments require import or configuration integration",
+    "This local record does not represent a GitHub Release publication or production deployment",
+    "Historical validation records remain scoped to their original revisions; post-push GitHub Actions status is separate"
+  ],
+  "local_evidence": ".test/verification/refactor6/",
+  "cleanup": {
+    "status": "completed",
+    "mode": "consolidated for manual deletion after automated deletion was rejected",
+    "directory": ".cleanup-manual/refactor6/",
+    "entries": 18,
+    "bytes": 251138101,
+    "preserved": [
+      "current source and regression tests",
+      "current v6.0.0 build",
+      "current validation logs and screenshots",
+      "toolchains, dependency caches and stopped VM disk"
+    ]
+  }
+}

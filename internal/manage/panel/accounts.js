@@ -1,9 +1,9 @@
-import { api } from "./api.js";
+import { api, exportAccount } from "./api.js";
 import { createAccountShare } from "./sharing.js";
-import { accountClientDialog } from "./account-clients.js";
+import { accountOutputDialog } from "./account-outputs.js";
 import { showExport } from "./export-results.js";
 import { loadRecords } from "./details.js";
-import { dialogSession } from "./dialog-session.js";
+import { dialogSession, loadDialog } from "./dialog-session.js";
 import { disclosure } from "./sections.js";
 import {
   el,
@@ -134,52 +134,62 @@ export async function accounts(ctx) {
     },
   ];
   const edit = async (item) =>
-    formDialog(
+    loadDialog(
+      ctx.signal,
       item.revision ? "编辑权益" : "新建权益",
-      fields(
-        !!item.revision,
-        await (ctx.workflowRequest || api)("/api/subscribers"),
-      ),
-      item,
-      async (v) => {
-        const account = {};
-        for (const key of [
-          "id",
-          "name",
-          "subscriber_id",
-          "quota_bytes",
-          "expires_at",
-          "disabled",
-          "start_mode",
-          "starts_at",
-          "duration_seconds",
-          "period",
-          "revision",
-          "created_at",
-        ])
-          if (v[key] !== undefined) account[key] = v[key];
-        await api("/api/accounts", { account });
-        notice("权益已保存，相关订阅会自动更新");
-        ctx.render();
-        if (!item.revision) {
-          const dialog = /** @type {HTMLDialogElement} */ (document.querySelector("#dialog"));
-          dialog.replaceChildren(
-            el("h2", {}, "权益已创建"),
-            help("接下来绑定可用入站，再创建分享地址。"),
-            row(
-              button("绑定入站", () => bind(account), "primary"),
-              button("稍后设置", () => dialog.close()),
-            ),
-          );
-          dialog.showModal();
-        }
-      },
+      (signal) =>
+        (ctx.workflowRequest || api)("/api/subscribers", undefined, { signal }),
+      (subscribers) =>
+        formDialog(
+          item.revision ? "编辑权益" : "新建权益",
+          fields(!!item.revision, subscribers),
+          item,
+          async (v) => {
+            const account = {};
+            for (const key of [
+              "id",
+              "name",
+              "subscriber_id",
+              "quota_bytes",
+              "expires_at",
+              "disabled",
+              "start_mode",
+              "starts_at",
+              "duration_seconds",
+              "period",
+              "revision",
+              "created_at",
+            ])
+              if (v[key] !== undefined) account[key] = v[key];
+            await api("/api/accounts", { account });
+            notice("权益已保存，相关订阅会自动更新");
+            ctx.render();
+            if (!item.revision) {
+              const dialog = /** @type {HTMLDialogElement} */ (
+                document.querySelector("#dialog")
+              );
+              dialog.replaceChildren(
+                el("h2", {}, "权益已创建"),
+                help("接下来绑定可用入站，再创建分享地址。"),
+                row(
+                  button("绑定入站", () => bind(account, undefined), "primary"),
+                  button("稍后设置", () => dialog.close()),
+                ),
+              );
+              dialog.showModal();
+            }
+          },
+        ),
     );
-  const bindingFields = async () => {
+  const bindingFields = async (signal) => {
     const scopes = ["normal", "vpngate"];
     const choices = await Promise.all(
       scopes.map((scope) =>
-        (ctx.workflowRequest || api)("/api/inbound-options?scope=" + scope),
+        (ctx.workflowRequest || api)(
+          "/api/inbound-options?scope=" + scope,
+          undefined,
+          { signal },
+        ),
       ),
     );
     return [
@@ -206,25 +216,27 @@ export async function accounts(ctx) {
       },
     ];
   };
-  const bind = async (item) =>
-    formDialog(
-      "绑定入站",
-      [
-        ...(await bindingFields()),
-        { key: "uuid", label: "自定义 UUID（留空随机）", advanced: true },
-        {
-          key: "password",
-          label: "自定义密码（16–128 字节，留空随机）",
-          type: "password",
-          advanced: true,
-        },
-      ],
-      { scope: "normal", inbound_ids: [] },
-      (v) =>
-        ctx.task({
-          operation: "account",
-          account: { operation: "bind", id: item.id, ...v },
-        }),
+  const bind = async (item, signal) =>
+    loadDialog(signal, "绑定入站", bindingFields, (fields) =>
+      formDialog(
+        "绑定入站",
+        [
+          ...fields,
+          { key: "uuid", label: "自定义 UUID（留空随机）", advanced: true },
+          {
+            key: "password",
+            label: "自定义密码（16–128 字节，留空随机）",
+            type: "password",
+            advanced: true,
+          },
+        ],
+        { scope: "normal", inbound_ids: [] },
+        (v) =>
+          ctx.task({
+            operation: "account",
+            account: { operation: "bind", id: item.id, ...v },
+          }),
+      ),
     );
   const credentials = async (item) => {
     const session = dialogSession(ctx.signal);
@@ -232,17 +244,20 @@ export async function accounts(ctx) {
     let all;
     try {
       all = (
-      await Promise.all(
-        ["normal", "vpngate"].map((scope) =>
-          api(
-            `/api/credentials?id=${encodeURIComponent(item.id)}&scope=${scope}`,
-            undefined,
-            { signal: session.signal },
+        await Promise.all(
+          ["normal", "vpngate"].map((scope) =>
+            api(
+              `/api/credentials?id=${encodeURIComponent(item.id)}&scope=${scope}`,
+              undefined,
+              { signal: session.signal },
+            ),
           ),
-        ),
-      )
-    ).flat();
-    } catch (error) { session.fail(error); return; }
+        )
+      ).flat();
+    } catch (error) {
+      session.fail(error);
+      return;
+    }
     session.replace(
       el("h2", {}, "凭据绑定 · " + item.name),
       help(
@@ -342,43 +357,62 @@ export async function accounts(ctx) {
           )
         : null,
       admin
-        ? button("批量绑定入站", async () =>
-            formDialog(
-              "批量绑定（最多 100 个权益）",
-              [
-                {
-                  key: "account_ids",
-                  label: "权益（可多选，最多 100 个）",
-                  type: "multiselect",
-                  options: (
-                    await (ctx.workflowRequest || api)("/api/account-options")
-                  ).map((item) => [item.id, item.name]),
-                  required: true,
-                  wide: true,
-                },
-                ...(await bindingFields()),
-              ],
-              { account_ids: [], scope: "normal", inbound_ids: [] },
-              (v) => {
-                if (!v.account_ids.length)
-                  throw new Error("请选择至少一个权益");
-                if (v.account_ids.length > 100)
-                  throw new Error("每次最多绑定 100 个权益");
-                return ctx.task({
-                  operation: "account",
-                  account: { operation: "bind", ...v },
-                });
-              },
+        ? button("批量绑定入站", () =>
+            loadDialog(
+              ctx.signal,
+              "批量绑定入站",
+              (signal) =>
+                Promise.all([
+                  (ctx.workflowRequest || api)(
+                    "/api/account-options",
+                    undefined,
+                    { signal },
+                  ),
+                  bindingFields(signal),
+                ]),
+              ([accounts, fields]) =>
+                formDialog(
+                  "批量绑定（最多 100 个权益）",
+                  [
+                    {
+                      key: "account_ids",
+                      label: "权益（可多选，最多 100 个）",
+                      type: "multiselect",
+                      options: accounts.map((item) => [item.id, item.name]),
+                      required: true,
+                      wide: true,
+                    },
+                    ...fields,
+                  ],
+                  { account_ids: [], scope: "normal", inbound_ids: [] },
+                  (v) => {
+                    if (!v.account_ids.length)
+                      throw new Error("请选择至少一个权益");
+                    if (v.account_ids.length > 100)
+                      throw new Error("每次最多绑定 100 个权益");
+                    return ctx.task({
+                      operation: "account",
+                      account: { operation: "bind", ...v },
+                    });
+                  },
+                ),
             ),
           )
         : null,
       await remoteTable(
         [
           {
-            key: "name", label: "权益",
-            render: (a) => el("div", { class: "account-identity" },
-              el("strong", {}, a.name),
-              ...(a.name !== a.id ? [el("small", { class: "help" }, a.id)] : [])),
+            key: "name",
+            label: "权益",
+            render: (a) =>
+              el(
+                "div",
+                { class: "account-identity" },
+                el("strong", {}, a.name),
+                ...(a.name !== a.id
+                  ? [el("small", { class: "help" }, a.id)]
+                  : []),
+              ),
           },
           {
             label: "状态",
@@ -396,14 +430,32 @@ export async function accounts(ctx) {
           {
             label: "用量 / 额度",
             value: (a) => `${bytes(a.charged_bytes)} / ${bytes(a.quota_bytes)}`,
-            render: (a) => el("div", { class: "quota-cell" },
-              el("span", {}, `${bytes(a.charged_bytes)} / ${bytes(a.quota_bytes)}`),
-              ...(a.quota_bytes !== null ? [el("progress", {
-                max: 100,
-                value: a.quota_bytes > 0 ? Math.min(100, 100 * a.charged_bytes / a.quota_bytes) : 100,
-                "aria-label": a.name + " 已用额度",
-                class: a.state === "exhausted" ? "exhausted" : "",
-              })] : [])),
+            render: (a) =>
+              el(
+                "div",
+                { class: "quota-cell" },
+                el(
+                  "span",
+                  {},
+                  `${bytes(a.charged_bytes)} / ${bytes(a.quota_bytes)}`,
+                ),
+                ...(a.quota_bytes !== null
+                  ? [
+                      el("progress", {
+                        max: 100,
+                        value:
+                          a.quota_bytes > 0
+                            ? Math.min(
+                                100,
+                                (100 * a.charged_bytes) / a.quota_bytes,
+                              )
+                            : 100,
+                        "aria-label": a.name + " 已用额度",
+                        class: a.state === "exhausted" ? "exhausted" : "",
+                      }),
+                    ]
+                  : []),
+              ),
           },
           {
             label: "分享状态",
@@ -414,8 +466,16 @@ export async function accounts(ctx) {
                   ? states[a.state] || "不可分享"
                   : "可分享",
           },
-          { label: "代理到期", secondary: true, value: (a) => date(a.effective_expires_at) },
-          { label: "下次重置", secondary: true, value: (a) => date(a.next_reset) },
+          {
+            label: "代理到期",
+            secondary: true,
+            value: (a) => date(a.effective_expires_at),
+          },
+          {
+            label: "下次重置",
+            secondary: true,
+            value: (a) => date(a.next_reset),
+          },
         ],
         (params) =>
           request(
@@ -432,7 +492,7 @@ export async function accounts(ctx) {
                   ? [
                       button(
                         "绑定",
-                        () => bind(item),
+                        () => bind(item, ctx.signal),
                         item.download_denial === "no_bound_inbound"
                           ? "primary"
                           : "",
@@ -444,7 +504,7 @@ export async function accounts(ctx) {
                         () => createAccountShare([item], ctx),
                         "primary",
                       ),
-                      button("绑定", () => bind(item)),
+                      button("绑定", () => bind(item, ctx.signal)),
                     ]),
                 button("编辑", () => edit(item)),
                 button("凭据", () => credentials(item)),
@@ -467,7 +527,7 @@ export async function accounts(ctx) {
                   "danger",
                 ),
                 button("导出 / 二维码", async () =>
-                  accountClientDialog({
+                  accountOutputDialog({
                     accounts: [item],
                     ctx,
                     title: "账户专属导出",
@@ -480,13 +540,13 @@ export async function accounts(ctx) {
                     ],
                     defaults: { scope: "", tuic_port: 0 },
                     save: async (v) => {
-                      const result = await api("/api/accounts/export", {
+                      const result = await exportAccount({
                         id: item.id,
                         scope: v.scope,
-                        client: v.client,
+                        profile: v.profile,
                         tuic_port: v.tuic_port,
                       });
-                      showExport(result, v.client);
+                      showExport(result, v.profile);
                     },
                   }),
                 ),

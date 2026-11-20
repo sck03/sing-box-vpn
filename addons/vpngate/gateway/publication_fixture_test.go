@@ -87,8 +87,8 @@ func publishProtocolFixture(t *testing.T, root, core string, app *manage.App) {
 		}
 		subscriptions.Sources = append(subscriptions.Sources, sub.Source{ID: scope, Kind: "inline", Format: "nodes", Content: "[]"})
 		subscriptions.Collections = append(subscriptions.Collections, sub.Collection{ID: scope, Sources: []string{scope}})
-		for _, target := range []struct{ client, suffix, file string }{{"sing-box", "sing-box", "sbox.json"}, {"mihomo", "mihomo", "clmi.yaml"}, {"openclash", "provider", "proxies.yaml"}, {"uri", "uri", "jhsub.txt"}, {"base64", "base64", "jhsub-base64.txt"}} {
-			result, err := service.ExportDetailed(t.Context(), application.AccountCommand{ID: "export-fixture", Scope: scope, Client: target.client})
+		for _, target := range []struct{ profile, suffix, file string }{{"sing-box-config", "sing-box", "sbox.json"}, {"mihomo-config", "mihomo", "clmi.yaml"}, {"openclash-provider", "provider", "proxies.yaml"}, {"uri", "uri", "jhsub.txt"}, {"base64", "base64", "jhsub-base64.txt"}} {
+			result, err := service.ExportDetailed(t.Context(), application.AccountExportRequest{ID: "export-fixture", Scope: scope, Profile: target.profile})
 			if err != nil {
 				t.Fatal(err)
 			}

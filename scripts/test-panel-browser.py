@@ -52,7 +52,7 @@ def check(browser, base):
     assert record["expires_at"] is None and record["effective_expires_at"]
     assert record["download_denial"] == "no_bound_inbound"
     assert api.post(base + "/api/grants", headers=headers, data={
-        "id": account + "-unbound", "account_id": account, "clients": ["uri"],
+        "id": account + "-unbound", "account_id": account, "profiles": ["uri"],
     }).status == 400
     inbound = next(n for n in api.get(base + "/api/inbound-options?scope=normal").json() if "vmess" in n["id"])
     task = api.post(base + "/api/tasks", headers=headers, data={"operation": "account", "account": {
@@ -69,12 +69,12 @@ def check(browser, base):
     # The live API suite configures a shareable public origin. Open its token
     # on this loopback listener, keeping the whole test on the disposable host.
     grant = api.post(base + "/api/grants", headers=headers, data={
-        "id": account + "-share", "account_id": account, "clients": ["uri"],
+        "id": account + "-share", "account_id": account, "profiles": ["uri"],
     })
     assert grant.ok, grant.text()
     page.goto(base + "/user#" + grant.json()["token"])
     expect(page.locator(".client-grid .client-download")).to_have_count(1)
-    expect(page.get_by_role("heading", name="通用 URI", exact=True)).to_be_visible()
+    expect(page.get_by_role("heading", name="通用节点 · URI 明文", exact=True)).to_be_visible()
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     screenshots = os.getenv("PANEL_TEST_SCREENSHOT_DIR")
     if screenshots:

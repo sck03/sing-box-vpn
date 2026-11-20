@@ -77,8 +77,8 @@ jobs:
           echo "SING_BOX_BINARY=$PWD/.build/core/sing-box-1.14.4-linux-amd64/sing-box" >> "$GITHUB_ENV"
       - name: Download verified Mihomo 1.19.33 for subscription acceptance
         run: |
-          curl -fLsS --retry 2 https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-linux-amd64-v1.19.33.gz -o .build/core/mihomo.gz
-          echo '132f6f3edf9a65e62f04853aed3358472e0b2b7666daa8419edfa2ddf5bb6323  .build/core/mihomo.gz' | sha256sum -c -
+          curl -fLsS --retry 2 https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-linux-amd64-v1-v1.19.33.gz -o .build/core/mihomo.gz
+          echo '8ec92e7b2fdc6b853ba00156bab7e4e965c8b0d843b8c4ac8ab98795f02ad524  .build/core/mihomo.gz' | sha256sum -c -
           gzip -dc .build/core/mihomo.gz > .build/core/mihomo
           chmod +x .build/core/mihomo
           echo "MIHOMO_BINARY=$PWD/.build/core/mihomo" >> "$GITHUB_ENV"

@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node scripts/test-panel.mjs && node scripts/test-panel-reliability.mjs && node scripts/test-panel-quality.mjs && node scripts/test-panel-workflows.mjs && node scripts/test-panel-contracts.mjs && node scripts/test-panel-navigation.mjs && node scripts/test-panel-subscriptions.mjs && node scripts/test-panel-lifecycle.mjs && node scripts/test-panel-refactor.mjs",
+    "test": "node scripts/test-panel.mjs && node scripts/test-panel-reliability.mjs && node scripts/test-panel-quality.mjs && node scripts/test-panel-workflows.mjs && node scripts/test-panel-contracts.mjs && node scripts/test-panel-navigation.mjs && node scripts/test-panel-subscriptions.mjs && node scripts/test-panel-lifecycle.mjs && node scripts/test-panel-refactor.mjs && node scripts/test-panel-output-profiles.mjs",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {

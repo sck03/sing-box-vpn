@@ -47,8 +47,9 @@ release();
 await new Promise((resolve) => setTimeout(resolve, 0));
 assert.equal(form.querySelector("[type=submit]").disabled, false);
 
-const { templateFields, normalizeTemplate } =
-  await import("../internal/manage/panel/clients.js");
+const { templateFields, normalizeTemplate } = await import(
+  "../internal/manage/panel/clients.js"
+);
 const catalog = {
   "sing-box": {
     label: "sing-box",
@@ -235,9 +236,10 @@ globalThis.fetch = async (url) => {
       state: "active",
       quota_bytes: null,
       charged_bytes: 0,
-      clients: [
+      profiles: [
         {
           client: "mihomo",
+          profile: "mihomo-provider",
           label: "Mihomo",
           available: true,
           nodes: 1,
@@ -254,7 +256,7 @@ await tick();
 assert.equal(requested, `https://example.test/sub/u/${token}/usage`);
 assert.equal(
   document.querySelector("a").href,
-  `https://example.test/sub/u/${token}/mihomo`,
+  `https://example.test/sub/u/${token}/mihomo-provider`,
 );
 assert.equal(location.hash, `#${token}`);
 userFailure = "network";

@@ -73,33 +73,42 @@ func (s *PlatformService) signal() {
 	}
 }
 
-func (s *PlatformService) State(ctx context.Context, secret bool) (Object, error) {
+func (s *PlatformService) State(ctx context.Context, secret bool) (ConfigurationState, error) {
+	var result ConfigurationState
 	state, err := s.Store.DesiredState(ctx)
 	if err != nil {
-		return nil, err
+		return result, err
 	}
-	c, err := decodePlatform(state.Config)
+	config, err := decodePlatform(state.Config)
 	if err != nil {
-		return nil, err
+		return result, err
 	}
-	var value any = c
 	if !secret {
-		data, _ := json.Marshal(c)
+		data, err := json.Marshal(config)
+		if err != nil {
+			return result, err
+		}
 		var object any
 		if err = json.Unmarshal(data, &object); err != nil {
-			return nil, err
+			return result, err
 		}
 		redactPlatform(object)
-		value = object
+		data, err = json.Marshal(object)
+		if err != nil {
+			return result, err
+		}
+		if err = json.Unmarshal(data, &config); err != nil {
+			return result, err
+		}
 	}
-	return Object{"revision": state.Revision, "applied_revision": state.AppliedRevision, "config": value, "root": s.Root}, nil
+	return ConfigurationState{state.Revision, state.AppliedRevision, config, s.Root}, nil
 }
 func redactPlatform(v any) {
 	switch x := v.(type) {
 	case map[string]any:
 		for k, value := range x {
 			if secretField(k) {
-				x[k] = "[redacted]"
+				x[k] = redactSecretValue(value)
 			} else {
 				redactPlatform(value)
 			}
@@ -108,6 +117,27 @@ func redactPlatform(v any) {
 		for _, item := range x {
 			redactPlatform(item)
 		}
+	}
+}
+
+// Preserve the typed wire shape when hiding structured secrets such as headers
+// and per-country credentials. Values are erased recursively, never exposed.
+func redactSecretValue(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		for key, item := range v {
+			v[key] = redactSecretValue(item)
+		}
+		return v
+	case []any:
+		for i, item := range v {
+			v[i] = redactSecretValue(item)
+		}
+		return v
+	case string:
+		return "[redacted]"
+	default:
+		return nil
 	}
 }
 

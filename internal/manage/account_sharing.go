@@ -99,16 +99,14 @@ func (s *PlatformService) validateShare(ctx context.Context, g accounting.Grant)
 	if reason != "" {
 		return errors.New(reason)
 	}
-	options, err := s.accountService().ClientOptions(ctx, g.AccountID, g.Scope, append([]string{}, g.Clients...))
+	service := s.accountService()
+	inputs, err := service.exportInputs(ctx, application.AccountExportRequest{ID: g.AccountID, Scope: g.Scope})
 	if err != nil {
 		return err
 	}
-	available := map[string]bool{}
-	for _, option := range options {
-		available[option.Client] = option.Available
-	}
-	for _, client := range g.Clients {
-		if !available[client] {
+	for _, client := range g.Profiles {
+		compiled, err := service.compileAccount(ctx, inputs, g.AccountID, client)
+		if err != nil || !compiled.option.Available {
 			return fmt.Errorf("%s 没有可导出的兼容节点，请调整绑定或下载模板", client)
 		}
 	}

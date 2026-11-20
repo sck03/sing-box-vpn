@@ -20,7 +20,7 @@ func (s *Store) GrantPage(ctx context.Context, query string, offset, limit int) 
 		return p, errors.New("invalid grant pagination")
 	}
 	// The same state precedence is exposed by Grant.Status and searched here.
-	const predicate = `instr(lower(id||' '||COALESCE(account,'')||' '||outputs||' '||scope||' '||clients||' '||
+	const predicate = `instr(lower(id||' '||COALESCE(account,'')||' '||outputs||' '||scope||' '||profiles||' '||
  CASE WHEN revoked=1 THEN 'revoked 已撤销' WHEN expires<=? THEN 'expired 已到期' WHEN downloads>=max_downloads THEN 'exhausted 次数用尽' ELSE 'active 有效' END),?)>0`
 	args := []any{time.Now().Unix(), strings.ToLower(strings.TrimSpace(query))}
 	tx, err := s.db.BeginTx(ctx, nil)

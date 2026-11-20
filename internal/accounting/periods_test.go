@@ -36,7 +36,7 @@ func periodFixture(t *testing.T, mode string) (*Store, string, domain.Credential
 func TestFirstUseDownloadAndRevocation(t *testing.T) {
 	s, _, c := periodFixture(t, "first_use")
 	ctx := t.Context()
-	token, e := s.CreateGrant(ctx, Grant{ID: "g", AccountID: "alice", Clients: []string{"uri"}})
+	token, e := s.CreateGrant(ctx, Grant{ID: "g", AccountID: "alice", Profiles: []string{"uri"}})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -121,7 +121,7 @@ func TestScheduledAndConcurrentDownloadLimits(t *testing.T) {
 		t.Fatal("scheduled user activated early", e)
 	}
 	limit := int64(7)
-	token, e := s.CreateGrant(ctx, Grant{ID: "limited", AccountID: "alice", Clients: []string{"uri"}, MaxDownloads: &limit})
+	token, e := s.CreateGrant(ctx, Grant{ID: "limited", AccountID: "alice", Profiles: []string{"uri"}, MaxDownloads: &limit})
 	if e != nil {
 		t.Fatal(e)
 	}

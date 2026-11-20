@@ -16,7 +16,7 @@ const accountCacheTTL = 5 * time.Minute
 
 type accountCompilation struct {
 	artifact sub.Artifact
-	option   AccountClientOption
+	option   sub.AccountOutputOption
 }
 
 type accountCacheEntry struct {

@@ -32,14 +32,18 @@ const click = (name, root = document) => {
   button.click();
 };
 
-const { formDialog, resourceEditor } =
-  await import("../internal/manage/panel/ui.js");
-const { templateFields, normalizeTemplate } =
-  await import("../internal/manage/panel/clients.js");
-const { accountClientDialog } =
-  await import("../internal/manage/panel/account-clients.js");
-const { subscriptionWizard } =
-  await import("../internal/manage/panel/subscription-wizard.js");
+const { formDialog, resourceEditor } = await import(
+  "../internal/manage/panel/ui.js"
+);
+const { templateFields, normalizeTemplate } = await import(
+  "../internal/manage/panel/clients.js"
+);
+const { accountOutputDialog } = await import(
+  "../internal/manage/panel/account-outputs.js"
+);
+const { subscriptionWizard } = await import(
+  "../internal/manage/panel/subscription-wizard.js"
+);
 const { notice } = await import("../internal/manage/panel/dom.js");
 
 const catalog = {
@@ -68,21 +72,48 @@ assert.equal(
 field("代理 DNS").value = "https://dns.google/dns-query";
 submit();
 await tick();
-assert.equal(saved.dns_policy.fake_ip, undefined, "editing DNS must preserve inheritance");
+assert.equal(
+  saved.dns_policy.fake_ip,
+  undefined,
+  "editing DNS must preserve inheritance",
+);
 assert.deepEqual(saved.dns_policy.remote, ["https://dns.google/dns-query"]);
-formDialog("关闭 Fake-IP", templateFields(catalog), saved, (value) => { saved = normalizeTemplate(value, catalog); }, true);
+formDialog(
+  "关闭 Fake-IP",
+  templateFields(catalog),
+  saved,
+  (value) => {
+    saved = normalizeTemplate(value, catalog);
+  },
+  true,
+);
 field("Fake-IP").value = "false";
 submit();
 await tick();
 assert.equal(saved.dns_policy.fake_ip, false, "explicit disable was discarded");
-formDialog("继承 Fake-IP", templateFields(catalog), saved, (value) => { saved = normalizeTemplate(value, catalog); }, true);
+formDialog(
+  "继承 Fake-IP",
+  templateFields(catalog),
+  saved,
+  (value) => {
+    saved = normalizeTemplate(value, catalog);
+  },
+  true,
+);
 field("Fake-IP").value = "";
 submit();
 await tick();
 assert.equal(Object.hasOwn(saved.dns_policy, "fake_ip"), false);
-assert.throws(() => normalizeTemplate({ client: "mihomo", mode: "config", native: { dns: {} } }, {
-  mihomo: { ...catalog.mihomo, native_fields: { managed: ["dns"] } },
-}), /native.dns/);
+assert.throws(
+  () =>
+    normalizeTemplate(
+      { client: "mihomo", mode: "config", native: { dns: {} } },
+      {
+        mihomo: { ...catalog.mihomo, native_fields: { managed: ["dns"] } },
+      },
+    ),
+  /native.dns/,
+);
 
 const calls = [];
 const account = {
@@ -91,6 +122,7 @@ const account = {
   download_scopes: ["normal", "vpngate"],
 };
 const uri = {
+  profile: "uri",
   client: "uri",
   label: "URI",
   available: true,
@@ -99,7 +131,7 @@ const uri = {
   skipped: 1,
   template: "account-uri",
 };
-await accountClientDialog({
+await accountOutputDialog({
   accounts: [account],
   ctx: {
     workflowRequest: async (path) => {
@@ -108,6 +140,7 @@ await accountClientDialog({
         ? [
             {
               client: "mihomo",
+              profile: "mihomo-provider",
               label: "Mihomo",
               available: true,
               nodes: 1,
@@ -119,6 +152,7 @@ await accountClientDialog({
             uri,
             {
               client: "loon",
+              profile: "loon-config",
               label: "Loon",
               available: false,
               nodes: 0,
@@ -135,7 +169,7 @@ await accountClientDialog({
   },
 });
 assert.deepEqual(
-  [...field("允许客户端格式（可多选）").options].map((o) => o.value),
+  [...field("允许的订阅格式与用途（可多选）").options].map((o) => o.value),
   ["uri"],
 );
 assert.match(
@@ -147,20 +181,20 @@ field("运行实例").dispatchEvent(new Event("change", { bubbles: true }));
 await tick();
 assert.equal(calls.length, 2);
 assert.deepEqual(
-  [...field("允许客户端格式（可多选）").options].map((o) => o.value),
-  ["mihomo"],
+  [...field("允许的订阅格式与用途（可多选）").options].map((o) => o.value),
+  ["mihomo-provider"],
 );
-field("允许客户端格式（可多选）").options[0].selected = true;
+field("允许的订阅格式与用途（可多选）").options[0].selected = true;
 submit();
 await tick();
-assert.deepEqual(saved.clients, ["mihomo"]);
+assert.deepEqual(saved.profiles, ["mihomo-provider"]);
 
 let resolveOld;
 const old = new Promise((resolve) => {
   resolveOld = resolve;
 });
 let loads = 0;
-await accountClientDialog({
+await accountOutputDialog({
   accounts: [account],
   ctx: { workflowRequest: async () => (++loads === 2 ? old : [uri]) },
   title: "延迟响应",
@@ -174,7 +208,7 @@ await tick();
 resolveOld([{ client: "old", label: "过期结果", available: true }]);
 await tick();
 assert.equal(
-  field("格式").options[0].value,
+  field("订阅格式与用途").options[0].value,
   "uri",
   "stale scope request replaced current choices",
 );
@@ -182,7 +216,7 @@ document.querySelector("dialog").close();
 
 const config = {
   subscriptions: {
-    version: 5,
+    version: 6,
     sources: [],
     collections: [],
     templates: [],
@@ -278,20 +312,32 @@ assert.equal(editor.querySelector(".search"), search);
 assert.equal(search.value, "Alpha");
 assert.match(editor.textContent, /Alpha updated/);
 
-const { requestConfiguration, showConfiguration } = await import("../internal/manage/panel/config-preview.js");
+const { requestConfiguration, showConfiguration } = await import(
+  "../internal/manage/panel/config-preview.js"
+);
 const dialog = document.querySelector("dialog");
 let resolvePreview, previewSignal;
 const previewController = new AbortController();
-const pendingPreview = requestConfiguration((signal) => {
-  previewSignal = signal;
-  return new Promise((resolve) => { resolvePreview = resolve; });
-}, [], { signal: previewController.signal });
+const pendingPreview = requestConfiguration(
+  (signal) => {
+    previewSignal = signal;
+    return new Promise((resolve) => {
+      resolvePreview = resolve;
+    });
+  },
+  [],
+  { signal: previewController.signal },
+);
 formDialog("新的编辑窗口", [{ key: "name", label: "新名称" }], {}, () => {});
 await tick();
 assert(previewSignal.aborted, "replacing a preview must abort its request");
 resolvePreview({ outputs: [] });
 await pendingPreview;
-assert.match(dialog.textContent, /新的编辑窗口/, "late preview replaced a newer editor");
+assert.match(
+  dialog.textContent,
+  /新的编辑窗口/,
+  "late preview replaced a newer editor",
+);
 
 let resolveDetail, detailSignal;
 const page = new AbortController();
@@ -299,7 +345,9 @@ showConfiguration({ outputs: [{ id: "out", available: true }] }, [], {
   signal: page.signal,
   loadOutput: (id, signal) => {
     detailSignal = signal;
-    return new Promise((resolve) => { resolveDetail = resolve; });
+    return new Promise((resolve) => {
+      resolveDetail = resolve;
+    });
   },
 });
 click("查看配置", dialog);

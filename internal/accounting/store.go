@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS subscribers (
  revision INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE IF NOT EXISTS download_grants (
  id TEXT PRIMARY KEY,account TEXT REFERENCES accounts(id),scope TEXT NOT NULL,
- clients TEXT NOT NULL,outputs TEXT NOT NULL,expires INTEGER,max_downloads INTEGER,hash TEXT NOT NULL UNIQUE,
+ profiles TEXT NOT NULL,outputs TEXT NOT NULL,expires INTEGER,max_downloads INTEGER,hash TEXT NOT NULL UNIQUE,
  downloads INTEGER NOT NULL DEFAULT 0,revoked INTEGER NOT NULL DEFAULT 0,
  created INTEGER NOT NULL DEFAULT (unixepoch()), updated INTEGER NOT NULL DEFAULT (unixepoch()));
 CREATE INDEX IF NOT EXISTS grant_retention ON download_grants(updated);

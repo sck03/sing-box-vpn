@@ -228,10 +228,10 @@ func TestAccountDownloadsUseSharedClientCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	var clients []string
-	for id := range clientprofile.All() {
-		clients = append(clients, id)
+	for _, output := range clientprofile.Outputs() {
+		clients = append(clients, output.ID)
 	}
-	token, err := store.CreateGrant(t.Context(), accounting.Grant{ID: "catalog", AccountID: "all", Scope: "normal", Clients: clients})
+	token, err := store.CreateGrant(t.Context(), accounting.Grant{ID: "catalog", AccountID: "all", Scope: "normal", Profiles: clients})
 	if err != nil {
 		t.Fatal(err)
 	}

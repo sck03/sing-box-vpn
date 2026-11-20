@@ -90,19 +90,33 @@ async function load(token, signal, current) {
   }
   target.append(
     element("h2", "添加到客户端"),
-    element("p", "选择对应客户端，复制订阅链接导入，或直接下载配置。"),
+    element(
+      "p",
+      "先选择客户端支持的节点格式，再复制订阅链接导入。仅节点订阅沿用客户端自己的策略和 DNS。",
+    ),
   );
   const grid = element("div", "");
   grid.className = "client-grid";
   target.append(grid);
-  for (const profile of u.clients) {
-    const client = profile.client;
+  const advanced = document.createElement("details");
+  advanced.className = "advanced subscription-configs";
+  advanced.append(element("summary", "完整配置 · 同时管理策略、规则和 DNS"));
+  const configs = element("div", "");
+  configs.className = "client-grid";
+  advanced.append(configs);
+  if (u.profiles.some((p) => p.mode === "config")) target.append(advanced);
+  if (u.profiles.every((p) => p.mode === "config")) advanced.open = true;
+  for (const profile of u.profiles) {
+    const destination = profile.mode === "config" ? configs : grid;
+    const client = profile.profile;
     const label = profile.label;
     const wrap = document.createElement("div");
     wrap.className = "client-download";
     const address = new URL("u/" + token + "/" + client, base).href;
     wrap.append(
       element("h3", label),
+      element("p", profile.description),
+      element("small", validationLabel(profile.validation)),
       element(
         "small",
         profile.experimental
@@ -132,7 +146,7 @@ async function load(token, signal, current) {
           profile.reason || "当前绑定与下载模板不兼容，请联系管理员。",
         ),
       );
-      grid.append(wrap);
+      destination.append(wrap);
       continue;
     }
     const link = element("a", "下载 " + label);
@@ -156,13 +170,15 @@ async function load(token, signal, current) {
       }
     });
     wrap.append(link, document.createTextNode(" "), copy);
-    grid.append(wrap);
+    destination.append(wrap);
   }
 }
 let loading = false,
   generation = 0,
   request;
-const refresh = /** @type {HTMLButtonElement} */ (document.querySelector("#user-refresh")),
+const refresh = /** @type {HTMLButtonElement} */ (
+    document.querySelector("#user-refresh")
+  ),
   updated = document.querySelector("#user-updated");
 async function reloadUsage(force = false) {
   if (loading && !force) return;
@@ -202,3 +218,4 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden) void reloadUsage();
 });
 void reloadUsage();
+import { validationLabel } from "./validation.js";

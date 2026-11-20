@@ -35,6 +35,7 @@ var CommandFields = map[string][]string{
 	"bbr":               {"value"},
 	"program-upgrade":   {"value"},
 	"runtime-rollback":  {},
+	"validator-install": {},
 	"outbound-probe":    {"id", "value"},
 }
 
@@ -61,9 +62,6 @@ func (c TaskCommand) Validate() error {
 	case "account":
 		if !slices.Contains([]string{"bind", "unbind", "rotate"}, c.Account.Operation) {
 			return errors.New("account task must bind, unbind or rotate credentials")
-		}
-		if c.Account.Client != "" || c.Account.TUICPort != 0 {
-			return errors.New("account task cannot contain export options")
 		}
 		if c.Account.Operation != "bind" && (len(c.Account.AccountIDs) != 0 || len(c.Account.InboundIDs) != 0) {
 			return errors.New("account selection is only valid when binding")

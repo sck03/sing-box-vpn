@@ -6,9 +6,7 @@ import { resourceID } from "./template-settings.js";
 
 export function subscriptionWizard(ctx, config, catalog, presets) {
   const request = ctx.request || api;
-  const defaultClient = catalog["sing-box"]
-    ? "sing-box"
-    : Object.keys(catalog)[0];
+  const defaultClient = catalog["uri"] ? "uri" : Object.keys(catalog)[0];
   formDialog(
     "快速创建订阅 · 来源与客户端",
     [
@@ -66,7 +64,7 @@ export function subscriptionWizard(ctx, config, catalog, presets) {
       url: "",
       content: "",
       client: defaultClient,
-      preset: "proxy",
+      preset: "nodes",
       skip_unsupported: true,
     },
     async (value) => {
@@ -117,21 +115,31 @@ export function subscriptionWizard(ctx, config, catalog, presets) {
             "预览期间草稿发生变化，请重新创建，避免覆盖其他修改。",
           );
       };
-      await requestConfiguration(async (signal) => {
-        const result = await request("/api/config/preview", candidate, { signal });
-        await current();
-        return result;
-      }, [], {
-        signal: ctx.signal,
-        loadOutput: (id, signal) =>
-          request("/api/config/preview-output", { id, config: candidate }, { signal }),
-        applyDraft: async () => {
+      await requestConfiguration(
+        async (signal) => {
+          const result = await request("/api/config/preview", candidate, {
+            signal,
+          });
           await current();
-          config.subscriptions = candidate.subscriptions;
-          ctx.changed();
-          ctx.render();
+          return result;
         },
-      });
+        [],
+        {
+          signal: ctx.signal,
+          loadOutput: (id, signal) =>
+            request(
+              "/api/config/preview-output",
+              { id, config: candidate },
+              { signal },
+            ),
+          applyDraft: async () => {
+            await current();
+            config.subscriptions = candidate.subscriptions;
+            ctx.changed();
+            ctx.render();
+          },
+        },
+      );
     },
   );
 }

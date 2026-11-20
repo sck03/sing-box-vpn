@@ -130,6 +130,7 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 	proxy, _ := publicaccess.NewProxyPolicy(options.TrustedProxy)
 	loginSlots := make(chan struct{}, 2)
 	requests, streams := make(httpserver.Gate, 32), make(httpserver.Gate, 32)
+	expensive := make(httpserver.Gate, 2)
 	downloads := unifiedDownloadHandler(s.accountService())
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -254,6 +255,14 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 		}
 		ctx := r.Context()
 		access := panelAccess{actor: session.ID, publicURL: options.PublicURL, admin: admin, operator: operator, require: require, audit: audit}
+		if expensivePanelRequest(path, r.Method) {
+			release, ok := expensive.TryEnter()
+			if !ok {
+				apiFailure(w, 503, "temporarily_unavailable", "配置处理繁忙，请稍后重试", true)
+				return
+			}
+			defer release()
+		}
 		if s.servePanelRestart(w, r, access, options) || s.servePanelSettings(w, r, access, options) {
 			return
 		}

@@ -1,4 +1,10 @@
-import { api, setCSRF, saveConfiguration, submitTask } from "./api.js";
+import {
+  api,
+  setCSRF,
+  saveConfiguration,
+  submitTask,
+  getConfiguration,
+} from "./api.js";
 import { openTask } from "./tasks.js";
 import { secretField } from "./secret-field.js";
 import { overviewStream } from "./live.js";
@@ -48,9 +54,7 @@ const ctx = {
   async config() {
     if (!draft) {
       const generation = draftGeneration;
-      configLoad ??= api(
-        ctx.session.role === "admin" ? "/api/config" : "/api/state",
-      )
+      configLoad ??= getConfiguration(ctx.session.role === "admin")
         .then((response) => {
           if (generation !== draftGeneration)
             throw new DOMException("草稿已重新载入", "AbortError");

@@ -600,7 +600,7 @@ export async function subscriptions(ctx) {
             disclosure("共享规则资源", views.rules, ctx.signal),
             disclosure(
               "账户默认模板与覆盖",
-              () => accountTemplateSettings(s, catalog, ctx, change),
+              () => accountTemplateSettings(s, ctx, change),
               ctx.signal,
             ),
           ];

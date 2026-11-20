@@ -59,7 +59,7 @@ func TestPublicShareNavigationRetainsManagementOriginProtection(t *testing.T) {
 	if err := service.Accounts.SaveAccount(t.Context(), domain.Account{ID: "shared", Name: "Shared"}); err != nil {
 		t.Fatal(err)
 	}
-	token, err := service.Accounts.CreateGrant(t.Context(), accounting.Grant{ID: "share", AccountID: "shared", Clients: []string{"uri"}})
+	token, err := service.Accounts.CreateGrant(t.Context(), accounting.Grant{ID: "share", AccountID: "shared", Profiles: []string{"uri"}})
 	if err != nil {
 		t.Fatal(err)
 	}

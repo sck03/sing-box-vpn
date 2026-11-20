@@ -82,7 +82,7 @@ func TestAccountExportCacheRespectsGrantAndCredentialChanges(t *testing.T) {
 	if err := service.Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: "a", Scope: "normal"}, new(bytes.Buffer)); err != nil {
 		t.Fatal(err)
 	}
-	token, err := store.CreateGrant(t.Context(), accounting.Grant{ID: "grant", AccountID: "a", Scope: "normal", Clients: []string{"uri"}})
+	token, err := store.CreateGrant(t.Context(), accounting.Grant{ID: "grant", AccountID: "a", Scope: "normal", Profiles: []string{"uri"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,15 +90,15 @@ func TestAccountExportCacheRespectsGrantAndCredentialChanges(t *testing.T) {
 	usage := httptest.NewRecorder()
 	handler.ServeHTTP(usage, httptest.NewRequest("GET", "/u/"+token+"/usage", nil))
 	var page struct {
-		Clients []AccountClientOption `json:"clients"`
+		Profiles []sub.AccountOutputOption `json:"profiles"`
 	}
 	if err := json.Unmarshal(usage.Body.Bytes(), &page); err != nil {
 		t.Fatal(usage.Code, err, usage.Body.String())
 	}
-	if len(page.Clients) != 1 || page.Clients[0].Client != "uri" || len(cache.entries) != 1 {
-		t.Fatal("compiled clients outside grant", page.Clients, len(cache.entries))
+	if len(page.Profiles) != 1 || page.Profiles[0].Profile != "uri" || len(cache.entries) != 0 {
+		t.Fatal("listing profiles must not compile outputs", page.Profiles, len(cache.entries))
 	}
-	command := application.AccountCommand{ID: "a", Scope: "normal", Client: "uri"}
+	command := application.AccountExportRequest{ID: "a", Scope: "normal", Profile: "uri"}
 	first, err := service.ExportDetailed(t.Context(), command)
 	if err != nil {
 		t.Fatal(err)
@@ -151,12 +151,12 @@ func TestCachedAccountExportRequiresConfiguredValidator(t *testing.T) {
 		nodes: []sub.Node{{Name: "node", Protocol: "trojan", Server: "example.com", Port: 443, Password: "secret", TLS: sub.TLS{Enabled: true}}},
 	}
 	service := AccountService{Root: t.TempDir(), exports: &accountExportCache{}}
-	first, err := service.compileAccount(t.Context(), inputs, "account", "sing-box")
+	first, err := service.compileAccount(t.Context(), inputs, "account", "sing-box-config")
 	if err != nil || first.option.Validation.State != "unavailable" || len(service.exports.entries) != 1 {
 		t.Fatal(first.option, err)
 	}
 	t.Setenv("SBVPN_REQUIRE_CLIENT_CHECK", "1")
-	strict, err := service.compileAccount(t.Context(), inputs, "account", "sing-box")
+	strict, err := service.compileAccount(t.Context(), inputs, "account", "sing-box-config")
 	if err == nil || strict.option.Available || strict.option.Validation.State != "failed" {
 		t.Fatal("cached export bypassed required core validation", strict.option, err)
 	}

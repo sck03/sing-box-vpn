@@ -24,6 +24,8 @@ flock -w 60 8
 [[ -d "$stage/previous" && -f "$stage/manager.previous" && -f "$stage/runtime.previous" && -f "$app/.managed" ]]
 if systemctl restart sb-panel && "$manager" panel --root "$root" wait-panel && sleep 5 && systemctl is-active --quiet sb-panel && [[ "$task" == 0 || "v$("$manager" --version)" == "$target" ]]; then
     phase=succeeded outcome=passed
+    printf '%s\n' 'sing-box-vpn upgrade succeeded' > "$stage/.upgrade-success"
+    SB_HOME="$app" "$manager" panel --root "$root" prune-upgrades || echo '旧升级留档清理失败，可稍后重试。' >&2
     echo 'Updated panel is running.'
     exit 0
 fi

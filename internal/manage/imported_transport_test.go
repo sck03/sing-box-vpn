@@ -18,7 +18,7 @@ import (
 
 func TestImportedTrojanTransportsWithMihomo(t *testing.T) {
 	core := os.Getenv("SING_BOX_BINARY")
-	if core == "" || mihomoBinary() == "" {
+	if core == "" || mihomoBinary("") == "" {
 		t.Skip("both client cores are required")
 	}
 	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))

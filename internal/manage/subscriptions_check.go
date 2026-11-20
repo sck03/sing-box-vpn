@@ -41,7 +41,7 @@ func probeNodeWithEngine(ctx context.Context, root, core, endpoint, engine strin
 	if engine == "sing-box" {
 		return probeSubscriptionNode(ctx, root, core, endpoint, node)
 	}
-	binary := mihomoBinary()
+	binary := mihomoBinary(root)
 	if binary == "" {
 		return errors.New("Mihomo connectivity engine is unavailable")
 	}

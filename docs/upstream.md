@@ -27,7 +27,7 @@ s-ui 的在线用户更新依赖其协议适配实现。本项目使用固定 si
 
 采用的方向包括：逐节点解析与诊断、等价 cipher 拼写标准化、显式能力筛选、重名处理、策略组/测速/规则 Provider、分角色 DNS 和有界编译缓存。VMess auto 的文本输出按目标格式处理，不能表达的 zero 等显式参数直接拒绝；TLS/传输等安全字段不通过删除来实现“兼容”。
 
-订阅 schema=5 继续依据相同固定提交核对 Hysteria2 默认端口/认证/跳跃地址、SIP003、WS early-data、gRPC 参数和 XHTTP 输出范围。sing-box 1.14.4 源码未注册 XHTTP，因此不会生成该核心无法接受的传输；Mihomo 输出经过真实核心检查。客户端连接选项与编码器通过显式目录和注册表连接，目标应用未验收仍标为实验。MiniSubConvert/Sub-Store 的部署插件不是可直接套用的通用分流模板；本项目的七种用途预设、账户默认/覆盖和规则映射由 Go 独立实现。
+订阅 schema=6 继续依据相同固定提交核对 Hysteria2 默认端口/认证/跳跃地址、SIP003、WS early-data、gRPC 参数和 XHTTP 输出范围。sing-box 1.14.4 源码未注册 XHTTP，因此不会生成该核心无法接受的传输；Mihomo 输出经过真实核心检查。客户端连接选项与编码器通过显式目录和注册表连接，目标应用未验收仍标为实验。MiniSubConvert/Sub-Store 的部署插件不是可直接套用的通用分流模板；本项目的八种用途预设、账户默认/覆盖和规则映射由 Go 独立实现。
 
 当前两个参考提交使用 AGPL-3.0；本项目只做行为和结构参考，独立实现 Go 逻辑，没有复制其 JavaScript 源码、运行时或整套模板。重新读取历史固定提交的 LICENSE 后，也将 NOTICE 中错误的 Sub-Store MIT 标注修正为 AGPL-3.0。完整原生模板不直接搬入服务端，使用声明式资源与受管根字段生成，客户端最终导入仍按实际应用验收。
 
@@ -39,11 +39,10 @@ s-ui 的在线用户更新依赖其协议适配实现。本项目使用固定 si
 
 ## sing-box（2026-11-10 核对基线）
 
-最新稳定版仍为 [1.14.4](https://github.com/SagerNet/sing-box/releases/tag/v1.14.4)，
-最新预发布为 [1.15.0-alpha.13](https://github.com/SagerNet/sing-box/releases/tag/v1.15.0-alpha.13)。
+截至 2026-11-10 的核对结果：稳定版为 [1.14.4](https://github.com/SagerNet/sing-box/releases/tag/v1.14.4)，
+预发布为 [1.15.0-alpha.13](https://github.com/SagerNet/sing-box/releases/tag/v1.15.0-alpha.13)。
 本项目安装与更新使用稳定渠道，当前验收基线不变，不为旧配置增加迁移层。
-本轮重新查询官方 Releases API，稳定版与预发布均未变化；Go 官方下载列表的最新稳定工具链
-仍为 [Go 1.27.3](https://go.dev/dl/)，无需修改现有锁定版本。
+该日重新查询官方 Releases API，稳定版与预发布均未变化；当时的 Go 官方稳定工具链为 [Go 1.27.3](https://go.dev/dl/)，无需修改现有锁定版本。
 
 [1.14 官方变更记录](https://github.com/SagerNet/sing-box/blob/v1.14.4/docs/changelog.md)
 中与本项目相关的新增能力：

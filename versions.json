@@ -1,5 +1,5 @@
 {
-  "release": "v5.1.0",
+  "release": "v6.0.0",
   "go": "1.27.3",
   "sing_box": {
     "channel": "stable",
@@ -10,13 +10,14 @@
   },
   "mihomo": {
     "tested_version": "1.19.33",
-    "linux_amd64_sha256": "132f6f3edf9a65e62f04853aed3358472e0b2b7666daa8419edfa2ddf5bb6323"
+    "linux_amd64_sha256": "8ec92e7b2fdc6b853ba00156bab7e4e965c8b0d843b8c4ac8ab98795f02ad524",
+    "linux_arm64_sha256": "ba408b317080ee265c46cb923a50018c1b82cbd708551cdd46a1e3e307396187"
   },
   "upstream": {
     "sing_box_yg": "b13f9435c4792fccf04d4fbc73e24a1948abff1b",
     "fanout": "d7ce5224caf3469b19876982abdf8d1be16c4a8b",
     "conduitvpn": "4afc89bb9647fc1ccd8c240ab88e6e84e879398e"
   },
-  "managed_runtime": "1.14.4+sbvpn.5",
+  "managed_runtime": "1.14.4+sbvpn.6",
   "certificate_manager": "5.6.0"
 }

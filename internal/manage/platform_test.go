@@ -44,7 +44,7 @@ func TestEncryptedPlatformBackupDisasterLedger(t *testing.T) {
 	if _, e := s.Accounts.Reserve(ctx, "lease", "a", "normal", 1000, time.Now()); e != nil {
 		t.Fatal(e)
 	}
-	token, e := s.Accounts.CreateGrant(ctx, accounting.Grant{ID: "g", AccountID: "a", Clients: []string{"uri"}})
+	token, e := s.Accounts.CreateGrant(ctx, accounting.Grant{ID: "g", AccountID: "a", Profiles: []string{"uri"}})
 	if e != nil {
 		t.Fatal(e)
 	}

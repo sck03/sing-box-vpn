@@ -70,11 +70,11 @@ func (s *PlatformService) serveAccounts(w http.ResponseWriter, r *http.Request, 
 		jsonResponse(w, Object{"image": "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)})
 		return true
 	}
-	if path == "/api/accounts/clients" && r.Method == "GET" {
+	if path == "/api/accounts/outputs" && r.Method == "GET" {
 		if !require(admin) {
 			return true
 		}
-		options, e := s.accountService().ClientOptions(ctx, r.URL.Query().Get("id"), r.URL.Query().Get("scope"), nil)
+		options, e := s.accountService().OutputOptions(ctx, r.URL.Query().Get("id"), r.URL.Query().Get("scope"), nil)
 		if e != nil {
 			platformError(w, e)
 		} else {
@@ -86,18 +86,17 @@ func (s *PlatformService) serveAccounts(w http.ResponseWriter, r *http.Request, 
 		if !require(admin) || !audit("account-export", "") {
 			return true
 		}
-		var v application.AccountCommand
+		var v application.AccountExportRequest
 		if err = decodeRequest(w, r, &v, 8192); err != nil {
 			platformError(w, err)
 			return true
 		}
-		v.Operation = "export"
 		result, e := s.accountService().ExportDetailed(ctx, v)
 		if e != nil {
 			platformError(w, e)
 			return true
 		}
-		jsonResponse(w, Object{"content": string(result.Artifact.Data), "mime": result.Artifact.MIME, "extension": result.Artifact.Extension, "client": result.Client, "validation": result.Validation})
+		jsonResponse(w, AccountExportResponse{Content: string(result.Artifact.Data), MIME: result.Artifact.MIME, Extension: result.Artifact.Extension, Output: result.Output, Validation: result.Validation})
 		return true
 	}
 	if path == "/api/account-options" && r.Method == "GET" {

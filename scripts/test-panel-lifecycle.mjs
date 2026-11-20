@@ -13,10 +13,13 @@ dom.window.HTMLDialogElement.prototype.close = function () {
   this.open = false;
   this.dispatchEvent(new Event("close"));
 };
-const { tasksCard, taskHistory, openTask } = await import("../internal/manage/panel/tasks.js");
+const { tasksCard, taskHistory, openTask } = await import(
+  "../internal/manage/panel/tasks.js"
+);
 const { api, RequestError } = await import("../internal/manage/panel/api.js");
-const { templateResources } =
-  await import("../internal/manage/panel/subscription-fields.js");
+const { templateResources } = await import(
+  "../internal/manage/panel/subscription-fields.js"
+);
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const dialog = document.querySelector("dialog");
 let pending = [];
@@ -106,7 +109,12 @@ const resources = templateResources(
       rules: [],
     },
   ],
-  { mihomo: { label: "Mihomo", features: { policy_groups: true } } },
+  {
+    mihomo: {
+      label: "Mihomo",
+      features: { policy_groups: true, rule_providers: true },
+    },
+  },
   () => {},
 );
 document.querySelector("main").replaceChildren(resources);
@@ -136,15 +144,34 @@ for (const label of ["凭据", "历史"]) {
   const navigation = new AbortController();
   const context = {
     signal: navigation.signal,
-    session: { role: "admin" }, render() {}, task() {},
-    request: async (path) => path.startsWith("/api/accounts?")
-      ? { items: [{ id: "demo", name: "Demo", state: "active", revision: 1, quota_bytes: null }], total: 1, offset: 0, limit: 20 }
-      : [],
+    session: { role: "admin" },
+    render() {},
+    task() {},
+    request: async (path) =>
+      path.startsWith("/api/accounts?")
+        ? {
+            items: [
+              {
+                id: "demo",
+                name: "Demo",
+                state: "active",
+                revision: 1,
+                quota_bytes: null,
+              },
+            ],
+            total: 1,
+            offset: 0,
+            limit: 20,
+          }
+        : [],
   };
-  document.querySelector("main").replaceChildren(...await accounts(context));
+  document.querySelector("main").replaceChildren(...(await accounts(context)));
   pending = [];
-  globalThis.fetch = (path) => new Promise((resolve) => pending.push({ path, resolve }));
-  [...document.querySelectorAll("main button")].find((button) => button.textContent === label).click();
+  globalThis.fetch = (path) =>
+    new Promise((resolve) => pending.push({ path, resolve }));
+  [...document.querySelectorAll("main button")]
+    .find((button) => button.textContent === label)
+    .click();
   await tick();
   assert(dialog.open);
   navigation.abort();
@@ -157,68 +184,146 @@ for (const label of ["凭据", "历史"]) {
 }
 
 const { formDialog } = await import("../internal/manage/panel/ui.js");
-formDialog("字段错误", [{ key: "port", label: "端口", type: "number" }], { port: 443 }, async () => {
-  throw new RequestError("端口无效", 400, { code: "invalid_field", message: "端口无效", field: "app.nodes[test].port", retryable: false });
-});
-dialog.querySelector("form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+formDialog(
+  "字段错误",
+  [{ key: "port", label: "端口", type: "number" }],
+  { port: 443 },
+  async () => {
+    throw new RequestError("端口无效", 400, {
+      code: "invalid_field",
+      message: "端口无效",
+      field: "app.nodes[test].port",
+      retryable: false,
+    });
+  },
+);
+dialog
+  .querySelector("form")
+  .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
 await tick();
-assert.equal(dialog.querySelector('input[aria-invalid="true"]'), document.activeElement);
+assert.equal(
+  dialog.querySelector('input[aria-invalid="true"]'),
+  document.activeElement,
+);
 assert(dialog.textContent.includes("端口无效"));
 dialog.close();
 let pageReads = [];
 const pageContext = {
   ...active,
-  request: (path) => new Promise((resolve, reject) => pageReads.push({ path, resolve, reject })),
+  request: (path) =>
+    new Promise((resolve, reject) => pageReads.push({ path, resolve, reject })),
 };
 const historyPromise = taskHistory(pageContext);
-pageReads.shift().resolve({ items: [{ id: 100, state: "succeeded" }], next_before: 100 });
+pageReads
+  .shift()
+  .resolve({ items: [{ id: 100, state: "succeeded" }], next_before: 100 });
 const history = await historyPromise;
 document.querySelector("main").replaceChildren(history);
-const historyButton = (label) => [...history.querySelectorAll("button")].find((item) => item.textContent === label);
-pageContext.updateOverview({ tasks: [{id:101, state:"running"}], task_counts:{active:1,attention:0} });
+const historyButton = (label) =>
+  [...history.querySelectorAll("button")].find(
+    (item) => item.textContent === label,
+  );
+pageContext.updateOverview({
+  tasks: [{ id: 101, state: "running" }],
+  task_counts: { active: 1, attention: 0 },
+});
 assert.equal(pageReads.length, 1);
-pageContext.updateOverview({ tasks: [{id:101, state:"succeeded"}], task_counts:{active:0,attention:0} });
+pageContext.updateOverview({
+  tasks: [{ id: 101, state: "succeeded" }],
+  task_counts: { active: 0, attention: 0 },
+});
 assert.equal(pageReads.length, 1, "snapshot requests were not coalesced");
-pageReads.shift().resolve({items:[{id:101,state:"running"},{id:100,state:"succeeded"}],next_before:100});
+pageReads.shift().resolve({
+  items: [
+    { id: 101, state: "running" },
+    { id: 100, state: "succeeded" },
+  ],
+  next_before: 100,
+});
 await tick();
-pageReads.shift().resolve({items:[{id:101,state:"succeeded"},{id:100,state:"succeeded"}],next_before:100});
+pageReads.shift().resolve({
+  items: [
+    { id: 101, state: "succeeded" },
+    { id: 100, state: "succeeded" },
+  ],
+  next_before: 100,
+});
 await tick();
-assert(history.textContent.includes("101"), "new task never entered first page");
+assert(
+  history.textContent.includes("101"),
+  "new task never entered first page",
+);
 historyButton("较早记录").click();
 pageReads.shift().reject(new Error("temporary page failure"));
 await tick();
-assert(history.textContent.includes("第 1 页"), "failed history request advanced cursor");
+assert(
+  history.textContent.includes("第 1 页"),
+  "failed history request advanced cursor",
+);
 historyButton("较早记录").click();
 assert(pageReads[0].path.includes("before=100"));
-pageReads.shift().resolve({ items: [{ id: 80, state: "succeeded" }], next_before: 80 });
+pageReads
+  .shift()
+  .resolve({ items: [{ id: 80, state: "succeeded" }], next_before: 80 });
 await tick();
 historyButton("较早记录").click();
 historyButton("较新记录").click();
-assert.equal(pageReads.length, 1, "competing history navigation issued multiple reads");
-pageReads.shift().resolve({ items: [{ id: 60, state: "succeeded" }], next_before: 0 });
+assert.equal(
+  pageReads.length,
+  1,
+  "competing history navigation issued multiple reads",
+);
+pageReads
+  .shift()
+  .resolve({ items: [{ id: 60, state: "succeeded" }], next_before: 0 });
 await tick();
-assert(history.textContent.includes("第 3 页"), "competing navigation corrupted cursor");
+assert(
+  history.textContent.includes("第 3 页"),
+  "competing navigation corrupted cursor",
+);
 historyButton("较新记录").click();
 assert(pageReads[0].path.includes("before=100"));
-pageReads.shift().resolve({ items: [{ id: 80, state: "succeeded" }], next_before: 80 });
+pageReads
+  .shift()
+  .resolve({ items: [{ id: 80, state: "succeeded" }], next_before: 80 });
 await tick();
 assert(history.textContent.includes("第 2 页"));
-pageContext.updateOverview({tasks:[{id:102,state:"running"}],task_counts:{active:1,attention:0}});
-assert.equal(pageReads.length,0,"live update replaced a historical page");
+pageContext.updateOverview({
+  tasks: [{ id: 102, state: "running" }],
+  task_counts: { active: 1, attention: 0 },
+});
+assert.equal(pageReads.length, 0, "live update replaced a historical page");
 assert(history.textContent.includes("当前历史页保持不变"));
 let detailReads = 0;
-globalThis.fetch = async () => ({ok:true,json:async()=>({id:103,kind:"service",state:++detailReads===1?"running":"succeeded",phase:detailReads===1?"executing":"succeeded"})});
+globalThis.fetch = async () => ({
+  ok: true,
+  json: async () => ({
+    id: 103,
+    kind: "service",
+    state: ++detailReads === 1 ? "running" : "succeeded",
+    phase: detailReads === 1 ? "executing" : "succeeded",
+  }),
+});
 await openTask(103);
 dialog.querySelector("details").open = true;
-const closeControl = [...dialog.querySelectorAll("button")].find(b=>b.textContent==="关闭");
+const closeControl = [...dialog.querySelectorAll("button")].find(
+  (b) => b.textContent === "关闭",
+);
 closeControl.focus();
-await new Promise(resolve=>setTimeout(resolve,1650));
-assert(dialog.textContent.includes("已完成"),"running task detail never refreshed");
-assert(dialog.querySelector("details").open,"refresh collapsed diagnostics");
-assert.equal(document.activeElement,closeControl,"refresh stole close-button focus");
+await new Promise((resolve) => setTimeout(resolve, 1650));
+assert(
+  dialog.textContent.includes("已完成"),
+  "running task detail never refreshed",
+);
+assert(dialog.querySelector("details").open, "refresh collapsed diagnostics");
+assert.equal(
+  document.activeElement,
+  closeControl,
+  "refresh stole close-button focus",
+);
 dialog.close();
-await new Promise(resolve=>setTimeout(resolve,1550));
-assert.equal(detailReads,2,"terminal or closed task kept polling");
+await new Promise((resolve) => setTimeout(resolve, 1550));
+assert.equal(detailReads, 2, "terminal or closed task kept polling");
 dom.window.close();
 console.log(
   "Panel lifecycle checks passed: navigation abort, competing dialogs, typed errors and contextual resource editors.",

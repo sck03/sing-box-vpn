@@ -43,7 +43,7 @@ func seedOutputGrant(t *testing.T, root, token string, outputs []string, limit *
 	}
 	defer db.Close()
 	raw, _ := json.Marshal(outputs)
-	_, err = db.Exec(`INSERT INTO download_grants(id,scope,clients,outputs,max_downloads,hash) VALUES('fixture','','[]',?,?,?) ON CONFLICT(id) DO UPDATE SET outputs=excluded.outputs,max_downloads=excluded.max_downloads,hash=excluded.hash`, string(raw), limit, sub.Digest([]byte(token)))
+	_, err = db.Exec(`INSERT INTO download_grants(id,scope,profiles,outputs,max_downloads,hash) VALUES('fixture','','[]',?,?,?) ON CONFLICT(id) DO UPDATE SET outputs=excluded.outputs,max_downloads=excluded.max_downloads,hash=excluded.hash`, string(raw), limit, sub.Digest([]byte(token)))
 	if err != nil {
 		t.Fatal(err)
 	}

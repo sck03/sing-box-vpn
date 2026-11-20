@@ -77,10 +77,10 @@ identifier = "linux-" + str(time.time_ns())
 account = {"id": identifier, "name": "Linux acceptance", "quota_bytes": 1048576, "revision": 0, "start_mode": "first_use", "period": {"kind": "monthly", "day": 31, "timezone": "Asia/Shanghai"}}
 api("/api/accounts", {"account": account})
 task(operation="account", account={"operation": "bind", "id": account["id"], "scope": "normal"})
-export = api("/api/accounts/export", {"id": account["id"], "client": "uri", "scope": "normal"})
+export = api("/api/accounts/export", {"id": account["id"], "profile": "uri", "scope": "normal"})
 assert len(export["content"].strip().splitlines()) == 5
 assert api("/api/qr", {"content": export["content"].splitlines()[0]})["image"].startswith("data:image/png;base64,")
-share = {"id": identifier, "account_id": account["id"], "scope": "normal", "clients": ["uri"], "max_downloads": 1}
+share = {"id": identifier, "account_id": account["id"], "scope": "normal", "profiles": ["uri"], "max_downloads": 1}
 try:
     api("/api/grants", share)
     raise AssertionError("loopback installation generated an unusable share")

@@ -1,12 +1,12 @@
 # 兼容性与验证边界
 
-本版只接受新数据库 schema 15 / 备份格式 8，不迁移旧账户或管理接口。平台配置 schema 5 与数据库版本独立。Linux Debian/Ubuntu + systemd，amd64/arm64；Windows 用于开发与本机测试。数据目录由 root 独占，面板默认回环。
+本版只接受新数据库 schema 16 / 备份格式 8，不迁移旧账户或管理接口。平台配置 schema 6 与数据库版本独立。Linux Debian/Ubuntu + systemd，amd64/arm64；Windows 用于开发与本机测试。数据目录由 root 独占，面板默认回环。
 
-订阅配置 schema=5，不接受旧订阅配置。模板 version=1、平台 schema=5、数据库 schema=15 与备份容器 8 保持独立；同数据库版本中的旧订阅内容也会被拒绝。转换新增受控 SIP003、WS early-data、gRPC 参数、VLESS XHTTP 和 Hysteria2 地址规范化，按客户端/协议/传输/加密方式筛选。sing-box 1.14.4 不接受 XHTTP，相关输出或探测使用支持它的目标；未知 XHTTP extra 字段明确拒绝。
+订阅配置 schema=6，不接受旧订阅配置。模板 version=1、平台 schema=6、数据库 schema=16 与备份容器 8 保持独立；同数据库版本中的旧订阅内容也会被拒绝。转换新增受控 SIP003、WS early-data、gRPC 参数、VLESS XHTTP 和 Hysteria2 地址规范化，按客户端/协议/传输/加密方式筛选。sing-box 1.14.4 不接受 XHTTP，相关输出或探测使用支持它的目标；未知 XHTTP extra 字段明确拒绝。
 
 Release 标签使用 `vMAJOR.MINOR.PATCH`，主版本号与数据格式无绑定：v5.0.0 等正式标签可安装，但包内容必须满足当前平台约定。版本号变化不会自动迁移数据库。证书提供方接受 `acme` / `import` / `generated`（自签名测试证书），旧 `certbot` 标记不兼容。
 
-受管核心固定 sing-box 1.14.4，适配版本 1.14.4+sbvpn.5。官方二进制用于生成配置验证；不能用任意官方核心替换受管运行时，否则丢失认证后账户计量。更新需管理程序、受管运行时和对应官方校验器一起验证并切换；lego 随管理程序更新。组件版本来自 versions.json，并由测试核对 Go 依赖。
+受管核心固定 sing-box 1.14.4，适配版本 1.14.4+sbvpn.6。官方二进制用于生成配置验证；不能用任意官方核心替换受管运行时，否则丢失认证后账户计量。更新需管理程序、受管运行时和对应官方校验器一起验证并切换；lego 随管理程序更新。组件版本来自 versions.json，并由测试核对 Go 依赖。
 
 稳定依赖核对已升级 YAML 3.0.6、x/crypto 0.59.0、SQLite 1.62.0 等。sing-box 的协议 fork 与未发布 tag 的依赖保持上游配套版本，精确版本见 go.mod/go.sum。所有链接模块的可用许可证声明位于 third_party/modules，免费开源不等于外部 VPS/域名/服务永久免费。
 
@@ -14,7 +14,7 @@ Release 标签使用 `vMAJOR.MINOR.PATCH`，主版本号与数据格式无绑定
 
 Mihomo 测试基线 1.19.33。原生 sing-box/Mihomo 配置和 provider 是推荐导出方式。Mihomo URI 导入器忽略 VMess insecure 和 TUIC allow_insecure；这两类自签 TLS URI 不纳入真实链路通过项，其原生配置已覆盖。OpenClash 使用 Mihomo provider 的结构与核心路径，尚不代表实体 OpenWrt/LuCI 验收。
 
-客户端与模式统一登记在 `internal/clientprofile`，通过 `/api/clients` 提供详细字段范围。`/api/accounts/clients` 按账户和实例计算实际可下载格式，公开用量的 `clients` 改为对象数组。Surge、Surge Mac、Loon、Quantumult X、Surfboard、Stash、Egern、Shadowrocket 标为实验适配；范围不代表所有应用版本和组合已通过。账户模板策略明确控制是否跳过不兼容节点，并展示数量与原因。详见[订阅验证范围](subscriptions.md#验证范围与预算)。
+客户端与模式统一登记在 `internal/clientprofile`，通过 `/api/clients` 提供详细字段范围。`/api/accounts/outputs` 按账户和实例计算实际可下载格式，公开用量的 `profiles` 返回对象数组，每项同时标明客户端语法和用途。Surge、Surge Mac、Loon、Quantumult X、Surfboard、Stash、Egern、Shadowrocket 标为实验适配；范围不代表所有应用版本和组合已通过。账户模板策略明确控制是否跳过不兼容节点，并展示数量与原因。详见[订阅验证范围](subscriptions.md#验证范围与预算)。
 
 域名解析优先级使用 resolve/prefer_ipv4/prefer_ipv6，保留其他地址族回退；IP 请求不会被 SNI/HTTP Host 隐式替换。现代 DNS 与 SRS 规则集有效，旧 geosite/geoip 和 DNS 格式不兼容。
 

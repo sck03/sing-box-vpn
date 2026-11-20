@@ -174,7 +174,7 @@ func TestShareRejectsLoopbackBeforeCreatingGrant(t *testing.T) {
 	}
 	for _, origin := range []string{"http://127.0.0.1:2096", "http://localhost:2096", "http://[::1]:2096", "http://0.0.0.0:2096"} {
 		handler := s.Handler(PanelOptions{PublicURL: origin})
-		r := panelRequest("POST", "/api/grants", mustJSON(t, Object{"id": "share", "account_id": "a", "clients": []string{"uri"}}), admin)
+		r := panelRequest("POST", "/api/grants", mustJSON(t, Object{"id": "share", "account_id": "a", "profiles": []string{"uri"}}), admin)
 		u, _ := url.Parse(origin)
 		r.Host = u.Host
 		w := httptest.NewRecorder()

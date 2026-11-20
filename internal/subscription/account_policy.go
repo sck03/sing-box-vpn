@@ -3,7 +3,6 @@ package subscription
 import (
 	"errors"
 	"fmt"
-	"slices"
 
 	"github.com/sck03/sing-box-vpn/internal/clientprofile"
 )
@@ -15,7 +14,7 @@ type AccountExportPolicy struct {
 
 type AccountExportOverride struct {
 	Account string `json:"account_id"`
-	Client  string `json:"client"`
+	Profile string `json:"profile"`
 	AccountExportPolicy
 }
 
@@ -25,9 +24,9 @@ func validateAccountExports(c Config) error {
 		templates[t.ID] = t
 	}
 	check := func(client string, p AccountExportPolicy) error {
-		profile, ok := clientprofile.Lookup(client)
+		profile, ok := clientprofile.OutputFor(client)
 		t, exists := templates[p.Template]
-		if !ok || !exists || t.Client != client || t.Mode == "rules" || !slices.Contains(profile.Modes, t.Mode) {
+		if !ok || !exists || t.Client != profile.Client || t.Mode != profile.Mode {
 			return fmt.Errorf("invalid account template for %s", client)
 		}
 		return nil
@@ -42,12 +41,12 @@ func validateAccountExports(c Config) error {
 	}
 	seen := map[string]bool{}
 	for _, override := range c.AccountOverrides {
-		key := override.Account + ":" + override.Client
+		key := override.Account + ":" + override.Profile
 		if !ValidID(override.Account) || seen[key] {
 			return errors.New("invalid or duplicate account template override")
 		}
 		seen[key] = true
-		if err := check(override.Client, override.AccountExportPolicy); err != nil {
+		if err := check(override.Profile, override.AccountExportPolicy); err != nil {
 			return err
 		}
 	}
@@ -59,20 +58,21 @@ func validateAccountExports(c Config) error {
 func (c Config) AccountTemplate(account, client string, effective map[string]Template) (Template, bool, error) {
 	p, ok := c.AccountDefaults[client]
 	for _, override := range c.AccountOverrides {
-		if override.Account == account && override.Client == client {
+		if override.Account == account && override.Profile == client {
 			p, ok = override.AccountExportPolicy, true
 			break
 		}
 	}
 	if !ok {
-		profile, found := clientprofile.Lookup(client)
+		profile, found := clientprofile.OutputFor(client)
 		if !found {
 			return Template{}, false, errors.New("unknown account client")
 		}
-		return Template{ID: "account-" + client, Name: profile.Label, Client: client, Version: 1, Mode: profile.AccountMode, Preset: "proxy"}, true, nil
+		return Template{ID: "account-" + client, Name: profile.Label, Client: profile.Client, Version: 1, Mode: profile.Mode, Preset: "proxy"}, true, nil
 	}
 	t, found := effective[p.Template]
-	if !found || t.Client != client || t.Mode == "rules" {
+	profile, known := clientprofile.OutputFor(client)
+	if !known || !found || t.Client != profile.Client || t.Mode != profile.Mode {
 		return Template{}, false, errors.New("account template unavailable")
 	}
 	return t, p.SkipUnsupported, nil

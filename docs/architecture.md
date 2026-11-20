@@ -1,6 +1,6 @@
 # 架构与维护
 
-`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 15；平台配置 schema=5、节点文档 schema=4、订阅配置 schema=5、模板 version=1 是各自独立的格式版本。只接受当前配置，不提供旧数据库、订阅内容、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责。
+`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 16；平台配置 schema=6、节点文档 schema=4、订阅配置 schema=6、模板 version=1 是各自独立的格式版本。只接受当前配置，不提供旧数据库、订阅内容、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责。
 
 公网传输由 `internal/publicaccess` 管理，共用 `internal/tlsconfig`；服务登记位于 `internal/servicecatalog`。主机操作按 service/deployment/units/gateway/network/journal 分文件，日志系统适配位于 `internal/hostservice`。任务保留策略与执行终态分离；面板访问重启由独立助手和持久收据完成。账户服务不再回退读取旧 JSON 配置，调用者必须注入配置/控制仓库，或读取当前数据库。
 
@@ -26,7 +26,7 @@
 
 subscriptions/schedule.json 是截止时间与权益修订的小型投影，不包含节点、远端凭据或内联正文；运行缓存与调度投影通过同一发布日志提交。常规空闲调度只读此文件，缺失时可从当前配置/运行元信息恢复。subscriptions/output-status.json 记录输出节点数量、实际验证和最多 20 条诊断，避免状态查询解码整个已发布节点正文。这些文件都可重建，配置权威仍为数据库。
 
-认证后的 `/api/subscription-capabilities` 返回 schema、格式和协议，`/api/clients` 返回详细字段范围，`/api/subscription-presets` 返回用途预设。`/api/accounts/clients` 按账户和实例生成实际可下载范围；用量接口的 clients 是对象数组。`account_exports.go` 共用同一配置快照、凭据、账户模板和 PreparedOutput，供分享验证、可用性、直接导出及公开下载使用。`account_defaults` / `account_overrides` 仍由统一配置管理。
+认证后的 `/api/subscription-capabilities` 返回 schema、格式和协议，`/api/clients` 返回详细字段范围，`/api/subscription-presets` 返回用途预设。`/api/accounts/outputs` 按账户和实例生成实际可下载范围；用量接口的 profiles 是对象数组。`account_exports.go` 共用同一配置快照、凭据、账户模板和 PreparedOutput，供分享验证、可用性、直接导出及公开下载使用。`account_defaults` / `account_overrides` 仍由统一配置管理。
 
 管理员 `/api/subscriptions/actions`、`/api/outbound-options` 只提供已应用对象。完整预览返回节点数量、变化和结构化 Validation；`POST /api/config/preview-output` 按 `{id,config}` 返回最多 64 KiB 的脱敏产物。公开 API 不返回原始凭据。Validation 分开记录状态、引擎、检查范围与缓存命中，不从英文消息推断结果。
 
@@ -178,7 +178,7 @@ VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IP
 
 `sections.js` 统一可选内容的延迟创建、并发合并、页面内复用、取消和失败重试，`workspace.js` 管理可键盘操作的标签。权益页只先读取分页权益，用户分组展开时读取，客户端目录在导出时读取；出站、维护、订阅按标签创建内容。查看省略可选字段的订阅配置不会改写草稿。`capabilities.js` 缓存公开约束，`outbound-fields.js` 维护协议字段规则。订阅表单、分享和直接导出使用同一客户端目录。账户操作按策略 revision 判断是否过时，单纯流量变化不会禁用按钮。SSE 在会话建立后启动，内容不变时只发送小型 tick；权益页至少间隔 5 秒刷新用量并合并并发刷新，概览不重复重绘。
 
-来源、集合、输出、分发编辑通过 resourceEditor.updateItems 局部更新，保留搜索、排序和分页；workspace 使其他标签按需失效，避免旧选项残留。分享与导出使用 account-clients.js，实例切换取消旧检查并隔离迟到响应。subscription-wizard.js 先生成完整候选、预览，再核对草稿后加入；template-settings.js 负责预设、全局默认及账户覆盖。前端仍为原生 ES modules。
+来源、集合、输出、分发编辑通过 resourceEditor.updateItems 局部更新，保留搜索、排序和分页；workspace 使其他标签按需失效，避免旧选项残留。分享与导出使用 account-outputs.js，实例切换取消旧检查并隔离迟到响应。subscription-wizard.js 先生成完整候选、预览，再核对草稿后加入；template-settings.js 负责预设、全局默认及账户覆盖。前端仍为原生 ES modules。
 
 服务单元先全量检查归属再写入，符号链接和非项目单元拒绝覆盖。安装失败和卸载只停用、删除确认为本项目所有的单元。旧配置/凭据/端口写入辅助函数及旧预览适配器只存在于测试夹具，协议实测通过现行账户导出 API 取得材料。
 
@@ -188,7 +188,7 @@ VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IP
 
 ## 强类型配置与任务边界（2026-11-19）
 
-`internal/serverconfig` 独立定义托管 Node、TLS、WebSocket 传输和字段约束，不依赖 HTTP、SQLite 或主机服务。`App.Nodes` 是内存与数据库中的唯一节点来源，正常节点不再保存 Profile / 动态 Inbounds 副本。`App.Inbounds()` 返回独立核心投影；VPNGate Profile 在初始化边界经 `MakeNodes` 转为同一节点契约。节点文档 schema=4，数据库 schema=15，旧数据直接拒绝。
+`internal/serverconfig` 独立定义托管 Node、TLS、WebSocket 传输和字段约束，不依赖 HTTP、SQLite 或主机服务。`App.Nodes` 是内存与数据库中的唯一节点来源，正常节点不再保存 Profile / 动态 Inbounds 副本。`App.Inbounds()` 返回独立核心投影；VPNGate Profile 在初始化边界经 `MakeNodes` 转为同一节点契约。节点文档 schema=4，数据库 schema=16，旧数据直接拒绝。
 
 托管 VMess 只接受 WS，支持 path/host/early_data/early_data_header；不支持的传输与未知字段明确拒绝，不能接受后丢弃。新节点默认关闭 early-data，用户开启后按真实目标客户端能力判断。关闭时核心投影显式选择 WS 请求头模式，避免上游按编码后的 RequestURI 比较中文路径；开启 early-data 且路径含非 ASCII 字符时必须指定请求头。Reality 私钥、short ID、flow 与握手信息可通过表单编辑。订阅导入模型仍单独支持更广的协议与传输，不与受管服务端模型混用。
 
@@ -216,3 +216,14 @@ VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IP
 未使用的官方校验器 activate 路径已删除，其专属实现测试同步移除。旧工作流测试需要的 systemServices helper 只放在 \_test.go，不再进入生产二进制。DNS independent_cache 已从表单移除，后端明确拒绝该已废弃字段。
 
 续期调度先读取两个 revision；版本不变且未到十分钟检查时间时，不读取完整配置或 PEM。失败可重试，配置变化绕过等待。额度账本 WAL/FULL、预留和撤销保证保持原语义。
+## 输出用途与维护边界（6.0）
+
+clientprofile/output.go 定义稳定输出身份（格式与用途）；subscription/account_output.go 负责纯兼容性规划，account_policy.go 校验模板 client/mode。manage 负责配置快照、授权、编译缓存和核心验证；HTTP 不重新定义模板业务。账户导出请求与凭据命令为不同的 application 类型。
+
+授权 profiles 精确匹配输出身份；数据库 schema=16 的 profiles 列取代旧 clients 列。平台和订阅 schema=6，CompilerVersion=4；旧数据或旧接口明确拒绝。内置默认不再复制成账户配置，远程模板发布故障不阻断不依赖它的内置输出。
+
+列表只分析节点，创建授权与下载才编译所选格式。面板配置预览、保存、导出、授权等重请求独立限制为 2 并发；每个下载监听的账户请求限制为 4 并发；状态、任务及 SSE 保持独立预算。ConfigurationState、AccountExportRequest 与 AccountExportResponse 由 Go 类型生成前端契约。只读状态递归擦除结构化秘密值，保留字段类型。
+
+loadDialog 在首次查询前占有对话框；切页、关闭或替换会取消读取并阻止迟到响应。账户保存后的绑定向导拥有独立工作流会话，允许保存触发的页面刷新。简单规则与策略组、远程规则的能力独立控制。
+
+卸载停止项目服务后调用与面板相同的网络恢复流程，成功后才删除数据库和程序。deployment/retention.go 只清理带项目所有权和成功标记的升级目录，保留最近两份；失败目录和无标记目录不自动删除。可选 Mihomo 安装独立成任务，组件页呈现可用性、版本匹配与安装入口。

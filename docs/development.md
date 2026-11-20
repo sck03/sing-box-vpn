@@ -6,7 +6,7 @@
 
 按入站重载的回归入口为 `TestManagedCredentialReload`（真实五协议、跨入站 TCP/UDP 连接、核心启动标识），`internal/runtime/reload_test.go` 还覆盖构造/启动恢复和失败关闭。修改凭据生命周期必须同时运行带四个发布标签的 runtime 竞态测试；单独 `go test ./...` 不替代该检查。
 
-当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载、订阅模板与预览、弹窗生命周期八组。数据库使用 schema 15，所有旧数据库及其备份明确拒绝。
+当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载、订阅模板与预览、弹窗生命周期、组件流程及输出身份十组。数据库使用 schema 16，所有旧数据库及其备份明确拒绝。
 
 `scripts/test-panel-navigation.mjs` 覆盖角色过滤、搜索定位、空/非法路由、同页标签的前进/返回与表单复用、延迟读取合并与取消、错误重试、权益初始读取预算、稀疏订阅草稿和 SSE 启动。`TestPanelEphemeralDevelopmentListener` 实际启动回环随机端口、请求能力接口并关闭服务，同时拒绝公网随机端口；设置校验仍拒绝保存端口 0。`TestPanelHealthSurvivesSaturatedRequests` 验证 32 个业务请求占满限额时，本机健康检查仍能准确判断 worker 就绪状态。
 
@@ -44,7 +44,7 @@ sudo bash install.sh --local
 
 正式发行需包含完整压缩包及 `SHA256SUMS`。安装器验证唯一校验值、归档路径/类型，以及当前架构的管理器、受管核心和维护脚本；本地包安装也检查同一内容约定。数据格式继续由平台验证，不提供旧数据迁移。无参数打开菜单，`install`/`upgrade` 可直接执行，`uninstall --yes` 用于显式无交互卸载。`SB_ADDRESS` 和 `SB_ADMIN_JSON_FILE` 保留自动化安装支持；JSON 文件须由管理员以 0600 权限保护并在使用后删除。
 
-菜单从管理器 `--version` 读取已安装版本，并限制版本查询等待时间。在线安装将当前入口的函数与固定仓库地址保存到解压目录，再交由发行包安装；不会从已消费的管道重新读取脚本，也不会把管理员输入或环境中的秘密写进入口。`.platform-v5` 和 systemd 所有权标记标识平台格式，与 Release 主版本无关。
+菜单从管理器 `--version` 读取已安装版本，并限制版本查询等待时间。在线安装将当前入口的函数与固定仓库地址保存到解压目录，再交由发行包安装；不会从已消费的管道重新读取脚本，也不会把管理员输入或环境中的秘密写进入口。`.platform-v5` 和 systemd 所有权标记只用于安装所有权；实际数据版本由数据库与配置 schema 校验。
 
 交互管理员输入通过 `panel --admin-stdin init/reset-admin` 读取两个 NUL 分隔字段，账号密码不经命令参数、环境变量或 Python 转义。默认 CLI 仍接受原来的 stdin JSON。
 
@@ -65,7 +65,7 @@ shellcheck --severity=warning sb.sh install.sh lib/*.sh scripts/*.sh
 
 Linux root 专项通过 `RUN_NETNS_TESTS=1`、`RUN_FIREWALL_TESTS=1`、`RUN_SERVICE_TESTS=1`、`RUN_STORAGE_TESTS=1` 启用，测试定义明确需要的二进制环境变量。仅使用专门 VM，真实 systemd/firewall 测试会创建系统资源。
 
-`npm test` 执行八组回归，覆盖重复提交、客户端字段联动、短暂断网、用户页路径前缀、状态搜索、焦点保留、单位换算、授权分页与导航加载。Mihomo 分流使用域名/IP MRS，不依赖 Country.mmdb。CI 设置 `SBVPN_REQUIRE_CLIENT_CHECK=1`，缺少验证核心直接失败。原生核心校验与 sing-box 节点连通性检查分别报告，不以其中之一代替商业客户端验收。
+`npm test` 执行十组回归，覆盖重复提交、客户端字段联动、短暂断网、用户页路径前缀、状态搜索、焦点保留、单位换算、授权分页与导航加载。Mihomo 分流使用域名/IP MRS，不依赖 Country.mmdb。CI 设置 `SBVPN_REQUIRE_CLIENT_CHECK=1`，缺少验证核心直接失败。原生核心校验与 sing-box 节点连通性检查分别报告，不以其中之一代替商业客户端验收。
 
 本地面板使用独立目录：manager `panel --root <空目录> --core <官方核心> --runtime <受管核心> --address 127.0.0.1 --no-system init`，stdin 为 username/password JSON；随后同样参数 `recover`、`serve`。仅在 `serve` 命令之前加 `--listen 127.0.0.1:0` 自动分配开发端口，日志返回实际 URL；`init` 和 `configure` 保存的端口必须为 1–65535。`--no-system` 仅用于开发，系统动作明确拒绝。Windows 的 Unix socket 测试需要较短的 TEMP/TMP 路径，例如项目下 `.test/tmp`。
 
@@ -81,17 +81,17 @@ Windows 先加载 `scripts/dev-env.ps1`，将 `GATEWAY_BINARY` 和 `MANAGED_CORE
 
 可对该独立面板运行真实 HTTP 工作流：设置 `PANEL_TEST_URL`、`PANEL_TEST_USERNAME`（默认 reviewadmin）和 `PANEL_TEST_PASSWORD`，执行 `node scripts/test-panel-api.mjs`。脚本只接受回环 URL，并在创建数据前确认服务均处于 no-system 状态。验证绑定/导出、下载次数、跨站分享、完整候选预览和任务应用；不能指向真实安装。
 
-配置预览为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回普通服务端脱敏配置、输出节点数/变化及结构化验证。`POST /api/config/preview-output` 接受 `{id,config}`，只编译目标图并返回有界脱敏内容。旧 `/api/subscriptions/preview` 不恢复。节点文档 schema=4、订阅 schema=5、CompilerVersion=3、模板 version=1、平台 schema=5；备份容器为 8，数据库为 15，旧订阅内容明确拒绝。
+配置预览为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回普通服务端脱敏配置、输出节点数/变化及结构化验证。`POST /api/config/preview-output` 接受 `{id,config}`，只编译目标图并返回有界脱敏内容。旧 `/api/subscriptions/preview` 不恢复。节点文档 schema=4、订阅 schema=6、CompilerVersion=4、模板 version=1、平台 schema=6；备份容器为 8，数据库为 16，旧订阅内容明确拒绝。
 
 新增回归 `compiler_regression_test.go`、`preview_test.go` 覆盖 URI 认证/端口、SIP003、WS early-data、gRPC/XHTTP、名称和策略组范围、脱敏与真实核心检查。`TestImportedTrojanTransportsWithMihomo` 使用真实 sing-box 服务端和 Mihomo 客户端验证 WS/gRPC，错误路径或服务名必须失败。`TestRefreshValidationDoesNotHoldPublicationLock` 覆盖锁外编译与过期配置拒绝，`TestLimitedServerPreservesTLSAndHTTP2` 覆盖 TLS 状态及协议协商。
 
-`test-panel-subscriptions.mjs` 是第七组前端回归，覆盖默认 DNS 与显式关闭、动态客户端范围、迟到响应、候选向导和局部列表更新。真实 API 套件检查订阅 schema=5、账户模板覆盖、可用性、扩展名、下载元信息和脱敏预览；浏览器套件沿用隔离目录与真实事件。
+`test-panel-subscriptions.mjs` 是第七组前端回归，覆盖默认 DNS 与显式关闭、动态客户端范围、迟到响应、候选向导和局部列表更新。真实 API 套件检查订阅 schema=6、账户模板覆盖、可用性、扩展名、下载元信息和脱敏预览；浏览器套件沿用隔离目录与真实事件。
 
 `template_contract_test.go` 覆盖 DNS 三态与空排除数组、原生字段归属、Egern IPv6/TLS 和端口跳跃间隔。`account_export_cache_test.go` 覆盖容量/过期/并发合并、凭据轮换、授权撤销、正文隔离、严格核心校验和 ParserVersion 升级后的完整抓取。运行 `go test ./internal/manage -run '^$' -bench '^BenchmarkAccountCompilation$' -benchtime=300ms -count=3 -benchmem` 可复测缓存，测量范围见[验证记录](validation/2026-11-19-subscription-quality.json)。
 
-`GET /api/accounts/clients?id=…&scope=…` 和用户用量的 clients 对象数组共用实际导出计划；`GET /api/outbound-options` 返回已应用出站。新字段与契约直接更新，不增加旧数组或旧接口适配器。完整订阅说明见 [订阅](subscriptions.md)。
+`GET /api/accounts/outputs?id=…&scope=…` 和用户用量的 profiles 对象数组共用实际导出计划；`GET /api/outbound-options` 返回已应用出站。新字段与契约直接更新，不增加旧数组或旧接口适配器。完整订阅说明见 [订阅](subscriptions.md)。
 
-当前数据库 schema 15、备份格式 8。不复用早期开发目录或旧数据库；应用配置 schema 与数据库版本分别维护。对外 CLI 保留 panel、核心 prepare/check、firewall、下载监听和网关运行模式，旧 config/accounts/subscriptions/asset/remote 命令不再暴露。
+当前数据库 schema 16、备份格式 8。不复用早期开发目录或旧数据库；应用配置 schema 与数据库版本分别维护。对外 CLI 保留 panel、核心 prepare/check、firewall、下载监听和网关运行模式，旧 config/accounts/subscriptions/asset/remote 命令不再暴露。
 
 账户策略存储为独立字段，备份结构校验随 schema 更新；所有旧 schema 数据库及其备份明确拒绝。新增回归覆盖配置快照、纯账户订阅自动恢复、模板省略字段、Argo 日志滚动、BBR 部分失败重试、任务详情权限、分页边界、日期精度及分享结果窗口。`Task.details` 是服务端生成的详情访问描述，前端不再维护任务类型白名单。
 
@@ -172,7 +172,7 @@ python3 -m playwright install --with-deps chromium
 PANEL_BROWSER_TEST=1 PYTHON_BINARY=python3 GATEWAY_BINARY=... MANAGED_CORE_BINARY=... SING_BOX_BINARY=... node scripts/test-panel-local.mjs
 ```
 
-前端共八组回归，新增跨页面任务详情、并发弹窗归属、错误契约和按需资源编辑器检查。CI 先运行严格协议夹具预检，再运行完整 race/协议矩阵；实际 API 与桌面/手机浏览器验收均启用。浏览器只属于开发/CI 依赖，VPS 运行不安装 Node、TypeScript、Playwright 或 Python。
+前端共十组回归，新增跨页面任务详情、并发弹窗归属、错误契约和按需资源编辑器检查。CI 先运行严格协议夹具预检，再运行完整 race/协议矩阵；实际 API 与桌面/手机浏览器验收均启用。浏览器只属于开发/CI 依赖，VPS 运行不安装 Node、TypeScript、Playwright 或 Python。
 
 更改 Go 面板边界模型后运行 `go run ./cmd/panel-contract`，同时提交生成类型。`tsconfig.json` 检查全部前端 JS 模块，采用非严格 `checkJs`，不声称 UI 已迁移到严格 TypeScript。边界测试夹具与已移除的旧 CLI 回归辅助函数只编译进 `_test.go`，生产程序没有旧接口兼容层。
 
@@ -208,3 +208,9 @@ Windows 的 VPNGate 配置在构造时统一目录格式，后续校验/重载�
 推送 main 只更新源码并触发 CI；发布可安装包继续使用现有 tag 或 workflow_dispatch publish 流程。无需建立或保留额外开发分支。
 
 安装脚本的 `verify_installation` 逐个确认 sb-core / sb-panel，然后等待新核心心跳和面板 worker 就绪。不要用 `systemctl is-active --quiet sb-core sb-panel` 作为「两个均正常」条件：该命令任一个活动就可能成功。CI 的 `test-install-health.sh` 覆盖单服务失败、心跳失败和面板未就绪。
+
+## 6.0 专项回归
+
+npm test 包括首次导出查询取消、替换对话框、默认模板重置、模式隔离和简单规则编辑。Go 专项为 TestAccountOutputProfilesKeepPurpose、TestNodePresetHasNoDevicePolicies、TestGrantAuthorizesExactOutputPurpose、TestPruneUpgradesPreservesFailuresAndUnownedDirectories、TestMihomoInstallerRequiresExactVerifiedAsset、TestUnpublishedRemoteTemplateOnlyBlocksItsOutput、TestRemoteTemplateSnapshotFailuresPreserveBuiltins。测试夹具中的历史版本号用于验证版本比较，不是生产兼容层。
+
+变更输出结构时同时更新 clientprofile 输出目录、subscription 策略、授权 schema、面板生成契约、API/浏览器夹具和文档。验证记录单独记录实际命令与限制，历史记录保持原样。
