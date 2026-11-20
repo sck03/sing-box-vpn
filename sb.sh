@@ -29,9 +29,17 @@ administrator_input() {
     printf '%s\0%s\0' "${username:-admin}" "$password"
     unset password
 }
+verify_installation() {
+    local started=$1 unit
+    # systemctl is-active with several names succeeds when any one is active.
+    # Require each service and actual application readiness independently.
+    for unit in sb-core sb-panel; do systemctl is-active --quiet "$unit" || return 1; done
+    printf '{"instance":"normal","started":%s}\n' "$started" | panel wait-runtime || return 1
+    panel wait-panel
+}
 install_main() (
     require_system
-    local arch address
+    local arch address started
     arch=$(arch_name)
     [[ ! -e "$APP_HOME" ]] || { echo '程序目录已存在；首次安装请使用空目录，已有安装请使用升级' >&2; return 1; }
     if [[ -d "$SB_ROOT" && -n $(find "$SB_ROOT" -mindepth 1 -maxdepth 1 -print -quit) ]]; then
@@ -51,7 +59,7 @@ install_main() (
         local code=$?
         trap - EXIT
         if ((code != 0 && created)); then
-            if ((units)); then stop_owned_units sb-recovery.timer sb-core.service sb-panel.service; fi
+            if ((units)); then stop_owned_units sb-recovery.timer sb-recovery.service sb-core.service sb-panel.service; fi
             [[ ! -d "$APP_HOME" ]] || mv -- "$APP_HOME" "${APP_HOME}.install-failed.$failure_stamp"
             [[ ! -d "$SB_ROOT" ]] || mv -- "$SB_ROOT" "${SB_ROOT}.install-failed.$failure_stamp"
             echo "安装失败，诊断材料保留在 .install-failed.$failure_stamp 目录；可重新运行安装。" >&2
@@ -68,7 +76,7 @@ install_main() (
     mv -f -- "$MANAGER.new" "$MANAGER"
     install -m 0755 "$APP_HOME/.bin/linux-$arch/managed-core" "$RUNTIME"
     # The official binary validates generated configurations only.
-    "$MANAGER" core --root "$SB_ROOT" prepare --version 1.14.4 --output "$CORE.candidate" >/dev/null
+    "$MANAGER" core --root "$SB_ROOT" prepare --output "$CORE.candidate" >/dev/null
     mv -- "$CORE.candidate" "$CORE"
     if [[ -n "${SB_ADMIN_JSON_FILE:-}" ]]; then
         panel --address "$address" init < "$SB_ADMIN_JSON_FILE"
@@ -80,12 +88,19 @@ install_main() (
     units=1
     panel install-services
     ln -sfn "$APP_HOME/sb.sh" /usr/bin/sb
+    started=$(date +%s%N)
     systemctl enable --now sb-core sb-panel
-    systemctl is-active --quiet sb-core sb-panel
+    verify_installation "$started"
     printf '已安装：%s\n' "$("$MANAGER" --version)"
     echo '面板默认仅监听 127.0.0.1:2096。'
-    echo '本机执行 SSH 端口转发：ssh -L 2096:127.0.0.1:2096 root@VPS，然后打开 http://127.0.0.1:2096'
-    echo '在面板创建权益并绑定入站后才允许代理认证。公开访问需在 panel.json 配置 TLS 或可信 HTTPS 反向代理。'
+    echo '在你自己的电脑终端执行（将 VPS 替换为服务器 IP）：'
+    echo '  ssh -N -L 2096:127.0.0.1:2096 root@VPS'
+    echo '保持 SSH 连接，在电脑浏览器打开 http://127.0.0.1:2096 并登录。'
+    echo '1. 用户与分享 → 权益与用量：创建用户权益并绑定入站，再复制订阅到客户端。'
+    echo '2. 需要公网 HTTPS：节点管理 → 证书管理，申请或导入域名证书并应用。'
+    echo '3. 系统设置 → 公网访问 → 面板访问：选择直接 HTTPS 和已有证书，保存后重启。'
+    echo '直接 HTTPS 无需 Nginx/Caddy；已有 HTTPS 反向代理也可在同一界面配置。'
+    printf '日常配置均可在面板完成；排障配置文件位置：%s/panel.json\n' "$SB_ROOT"
     echo '以后输入 sb 打开维护菜单；sb upgrade 升级；sb uninstall 卸载。'
     trap - EXIT
 )

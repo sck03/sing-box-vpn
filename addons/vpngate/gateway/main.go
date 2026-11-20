@@ -26,6 +26,7 @@ func init() {
 	if version == "" {
 		version = strings.TrimPrefix(project.Versions.Release, "v")
 	}
+	project.Versions.Release = "v" + version
 }
 
 const defaultConfig = "/etc/s-box/vpngate/gateway.json"
@@ -39,6 +40,10 @@ func main() {
 func entry(args []string) error {
 	if len(args) == 0 || args[0] == "--help" {
 		fmt.Println("yg-vpngate panel|daemon|ctl|worker|cleanup|core|firewall|subscription|--version\nctl: status, nodes, swap, reload, refresh\nUse panel tasks/configuration for persistent changes.")
+		return nil
+	}
+	if args[0] == "--runtime-version" {
+		fmt.Println(project.Versions.ManagedRuntime)
 		return nil
 	}
 	if args[0] == "--version" {

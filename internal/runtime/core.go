@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	project "github.com/sck03/sing-box-vpn"
 	"strconv"
 
 	box "github.com/sagernet/sing-box"
@@ -34,7 +35,7 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/runtimeconfig"
 )
 
-const Version = "1.14.4+sbvpn.5"
+var Version = project.Versions.ManagedRuntime
 
 func guarded[T any](meter *accounting.Meter, constructor inbound.ConstructorFunc[T]) inbound.ConstructorFunc[T] {
 	return func(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options T) (adapter.Inbound, error) {

@@ -26,18 +26,22 @@ upgrade_program() (
     stage=$(mktemp -d "${APP_HOME}.update.XXXXXXXX")
     cp -a -- "$MANAGER" "$stage/manager.previous"
     cp -a -- "$RUNTIME" "$stage/runtime.previous"
+    cp -a -- "$CORE" "$stage/validator.previous"
     install -d -m 0755 "$stage/program"
     cp -a -- "$SCRIPT_ROOT/." "$stage/program/"
     printf '%s\n' 'sck03/sing-box-vpn v4' > "$stage/program/.managed"
     local candidate="$stage/program/.bin/linux-$arch"
     "$candidate/yg-vpngate" --version
-    "$candidate/managed-core" --version
+    [[ "$("$candidate/managed-core" --version)" == "$("$candidate/yg-vpngate" --runtime-version)" ]] || {
+        echo '发行包的受管核心与管理程序不配套' >&2; return 1;
+    }
     if [[ "$task" != 0 ]]; then
         [[ "$task" =~ ^[1-9][0-9]*$ && "$target" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ && "v$("$candidate/yg-vpngate" --version)" == "$target" ]] || {
             echo '发行包版本与升级任务不一致' >&2; return 1;
         }
     fi
-    "$candidate/yg-vpngate" panel --root "$SB_ROOT" --core "$CORE" --runtime "$candidate/managed-core" validate
+    "$candidate/yg-vpngate" core --root "$SB_ROOT" prepare --output "$stage/validator.candidate" >/dev/null
+    "$candidate/yg-vpngate" panel --root "$SB_ROOT" --core "$stage/validator.candidate" --runtime "$candidate/managed-core" validate
     rollback_program() {
         local code=$?
         trap - EXIT
@@ -47,6 +51,8 @@ upgrade_program() (
                 mv -f -- "$MANAGER.new" "$MANAGER"
                 install -m 0755 "$stage/runtime.previous" "$RUNTIME.new"
                 mv -f -- "$RUNTIME.new" "$RUNTIME"
+                install -m 0755 "$stage/validator.previous" "$CORE.new"
+                mv -f -- "$CORE.new" "$CORE"
             fi
             if ((switched)); then
                 if [[ -e "$APP_HOME" ]]; then mv -- "$APP_HOME" "$stage/rejected"; fi
@@ -71,6 +77,8 @@ upgrade_program() (
     mv -f -- "$MANAGER.new" "$MANAGER"
     install -m 0755 "$APP_HOME/.bin/linux-$arch/managed-core" "$RUNTIME.new"
     mv -f -- "$RUNTIME.new" "$RUNTIME"
+    install -m 0755 "$stage/validator.candidate" "$CORE.new"
+    mv -f -- "$CORE.new" "$CORE"
     for unit in "${running[@]}"; do
         if [[ "$unit" == sb-panel && "${SB_DEFER_PANEL_RESTART:-0}" == 1 ]]; then continue; fi
         started=$(date +%s%N)

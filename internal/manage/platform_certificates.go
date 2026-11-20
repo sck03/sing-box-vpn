@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/sck03/sing-box-vpn/internal/application"
+	"github.com/sck03/sing-box-vpn/internal/certificates"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	"net/mail"
 	"os"
@@ -17,17 +18,28 @@ import (
 )
 
 func (s *PlatformService) scheduleCertificates(ctx context.Context) error {
-	state, err := s.Store.State(ctx)
+	s.certificateMu.Lock()
+	defer s.certificateMu.Unlock()
+	revisions, err := s.Store.Revisions(ctx)
 	if err != nil {
 		return err
 	}
-	if state.Revision != state.AppliedRevision {
+	if revisions.Revision != revisions.AppliedRevision {
 		return nil
 	}
-	c, err := decodePlatform(state.Applied)
+	if revisions.AppliedRevision == s.certificateRevision && time.Now().Before(s.certificateNext) {
+		return nil
+	}
+	data, err := s.Store.AppliedConfig(ctx)
 	if err != nil {
 		return err
 	}
+	c, err := decodePlatform(data)
+	if err != nil {
+		return err
+	}
+	// Recheck at most every ten minutes while unchanged. Revision changes bypass
+	// the deadline, and failed scheduling retries on the next worker tick.
 	for _, asset := range c.Certificates {
 		if !automaticCertificate(asset) {
 			continue
@@ -40,17 +52,23 @@ func (s *PlatformService) scheduleCertificates(ctx context.Context) error {
 		if time.Now().Unix()-attempt < int64((12 * time.Hour).Seconds()) {
 			continue
 		}
-		material, err := readCertificateMaterial(asset)
+		material, err := certificates.Read(asset)
 		now := time.Now()
-		if err == nil && material.validateTime(now) == nil && material.leaf.NotAfter.Sub(now) > acmeRenewBefore &&
+		if err == nil && material.ValidAt(now) == nil && material.Leaf.NotAfter.Sub(now) > acmeRenewBefore &&
 			acmeRegistrationReady(s.Root, asset, material) {
 			continue
 		}
 		if _, err = s.Queue(ctx, application.TaskCommand{Operation: "certificate-renew", ID: asset.ID}, "scheduler"); err != nil {
+			s.certificateNext = time.Time{}
 			return err
 		}
-		return s.Store.Observe(ctx, "certificate-attempt/"+asset.ID, strconv.FormatInt(time.Now().Unix(), 10))
+		if err = s.Store.Observe(ctx, "certificate-attempt/"+asset.ID, strconv.FormatInt(time.Now().Unix(), 10)); err != nil {
+			s.certificateNext = time.Time{}
+			return err
+		}
 	}
+	s.certificateRevision = revisions.AppliedRevision
+	s.certificateNext = time.Now().Add(10 * time.Minute)
 	return nil
 }
 
@@ -62,10 +80,16 @@ type CertificateImport struct {
 }
 
 func (s *PlatformService) ImportCertificate(ctx context.Context, v CertificateImport) (CertificateAsset, error) {
-	if !domain.ResourceID.MatchString(v.ID) || len(v.Certificate) > 256<<10 || len(v.Key) > 64<<10 {
+	if err := s.certificateIDAvailable(ctx, v.ID); err != nil {
+		return CertificateAsset{}, err
+	}
+	if err := validateDomain(v.Domain); err != nil {
+		return CertificateAsset{}, err
+	}
+	if len(v.Certificate) > 256<<10 || len(v.Key) > 64<<10 {
 		return CertificateAsset{}, errors.New("invalid certificate ID or PEM size")
 	}
-	if _, err := validatePEM([]byte(v.Certificate), []byte(v.Key), v.Domain); err != nil {
+	if _, err := certificates.ValidatePEM([]byte(v.Certificate), []byte(v.Key), v.Domain); err != nil {
 		return CertificateAsset{}, err
 	}
 	digest := sha256.Sum256([]byte(v.Certificate + v.Key))
@@ -123,8 +147,8 @@ func (s *PlatformService) CertificateStatus(ctx context.Context) ([]Object, erro
 		if uses == nil {
 			uses = []string{}
 		}
-		v := Object{"id": asset.ID, "domain": asset.Domain, "provider": asset.Provider, "used_by": uses}
-		material, err := readCertificateMaterial(asset)
+		v := Object{"id": asset.ID, "domain": asset.Domain, "provider": asset.Provider, "used_by": uses, "ready": false}
+		material, err := certificates.Read(asset)
 		v["renewal_state"] = "manual"
 		if automaticCertificate(asset) {
 			v["renewal_state"] = "automatic"
@@ -134,10 +158,13 @@ func (s *PlatformService) CertificateStatus(ctx context.Context) ([]Object, erro
 		}
 		if err == nil {
 			now := time.Now()
-			err = material.validateTime(now)
+			err = material.ValidAt(now)
 			if err == nil {
-				v["expires_at"] = material.leaf.NotAfter
-				v["days_left"] = int(material.leaf.NotAfter.Sub(now).Hours() / 24)
+				v["ready"] = true
+				v["dns_names"] = material.Leaf.DNSNames
+				v["not_before"] = material.Leaf.NotBefore
+				v["expires_at"] = material.Leaf.NotAfter
+				v["days_left"] = int(material.Leaf.NotAfter.Sub(now).Hours() / 24)
 			}
 		}
 		if err != nil {
@@ -177,7 +204,7 @@ func (s *PlatformService) renewCertificate(ctx context.Context, id string) error
 		return fmt.Errorf("ACME issuance failed; check domain resolution and port 80 reachability: %w", err)
 	}
 	cert, key := resource.Certificate, resource.PrivateKey
-	if _, err = validatePEM(cert, key, asset.Domain); err != nil {
+	if _, err = certificates.ValidatePEM(cert, key, asset.Domain); err != nil {
 		return err
 	}
 	// Restored assets retain their provider and renew in their staged directory.

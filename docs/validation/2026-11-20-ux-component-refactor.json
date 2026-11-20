@@ -1,0 +1,121 @@
+{
+  "date": "2026-11-20",
+  "timezone": "Asia/Shanghai",
+  "base_commit": "b63ca06df547bac79bbec29f5b7cac71c8e0603c",
+  "release_manifest": "v5.1.0",
+  "scope": [
+    "secret visibility and form lifecycle",
+    "certificate registry and shared binding UI",
+    "component versions and coordinated update rollback",
+    "declarative template imports and provenance",
+    "installer guidance and readiness",
+    "dead production code removal and bounded maintenance"
+  ],
+  "checks": [
+    {
+      "command": "go run ./cmd/panel-contract -check",
+      "status": "passed"
+    },
+    {
+      "command": "npm run typecheck",
+      "status": "passed"
+    },
+    {
+      "command": "npm test",
+      "status": "passed",
+      "suites": 9
+    },
+    {
+      "command": "go test -p 2 ./...",
+      "environment": "Windows with official sing-box, Mihomo and built managed runtime",
+      "status": "passed"
+    },
+    {
+      "command": "go vet ./...",
+      "status": "passed"
+    },
+    {
+      "command": "go test -tags with_quic,with_utls,with_wireguard,with_gvisor ./internal/runtime",
+      "status": "passed"
+    },
+    {
+      "command": "go test -race ./internal/deployment ./internal/subscription",
+      "status": "passed"
+    },
+    {
+      "command": "node scripts/test-panel-local.mjs",
+      "environment": "Real disposable panel, Chromium desktop and touch/mobile",
+      "status": "passed",
+      "coverage": [
+        "new component API",
+        "certificate preparation and generated inventory",
+        "template import API and lossy-rule rejection",
+        "Reality show/hide",
+        "template import preview",
+        "existing account/share/configuration workflows"
+      ]
+    },
+    {
+      "command": "bash -n; shellcheck --severity=warning; test-program-upgrade.sh; test-install-ownership.sh; test-installer.sh; test-install-health.sh",
+      "environment": "isolated Ubuntu 24.04 VM",
+      "status": "passed"
+    },
+    {
+      "command": "manage.test platform/certificate/access/program/runtime/account tests; TestLinuxServiceStartupRecovery; TestLinuxMultiportFirewall",
+      "environment": "isolated Ubuntu VM",
+      "status": "passed"
+    },
+    {
+      "command": "gateway.test TestManagedAccountIsolation; TestManagedCredentialReload; TestRealFiveProtocolsTCPUDP; TestLinuxNamespaceIsolation",
+      "environment": "isolated Ubuntu VM",
+      "status": "passed",
+      "limits": "Native sing-box paths exercised; Linux Mihomo/provider/URI cases skipped without MIHOMO_BINARY. Windows full suite had both official validators configured."
+    },
+    {
+      "command": "sb.sh install; test-platform-linux.py; test-access-maintenance-linux.py; sb.sh upgrade",
+      "environment": "isolated Ubuntu VM with real systemd services and the built v5.1.0 bundle",
+      "status": "passed",
+      "coverage": [
+        "fresh installation with separate service health and readiness checks",
+        "account binding, subscription export, QR and first-use grant",
+        "configuration apply and failure rollback preserving service states",
+        "direct panel TLS and independent subscription TLS",
+        "panel listener changes and occupied-port recovery",
+        "task retention and namespace-only journal maintenance",
+        "coordinated manager/runtime/validator package update and readiness"
+      ],
+      "limits": "Real update exercised v5.1.0 → v5.1.0 reinstall; rollback and deferred restart recovery also passed separate shell regressions. This does not claim arbitrary future release compatibility.",
+      "restoration": "Original VM service files, manager and active/enabled states restored; VM confirmed stopped after success."
+    },
+    {
+      "command": "go run ./cmd/release",
+      "status": "passed",
+      "architectures": ["linux/amd64", "linux/arm64"]
+    }
+  ],
+  "findings_resolved": [
+    "Gateway path separator normalization on Windows",
+    "Async public access dialog ownership and draft loss",
+    "Missing copied Reality fields",
+    "Partial installation health accepted by multi-unit is-active",
+    "Update did not stage or restore official validator"
+  ],
+  "limits": [
+    "No claim of every future upstream version compatibility",
+    "No production VPS modified",
+    "No real public CA issuance against a user domain",
+    "No exhaustive third-party mobile-client device matrix or long-duration load test"
+  ],
+  "cleanup": {
+    "status": "obsolete ignored artifacts moved to one directory for manual deletion",
+    "manual_directory": ".cleanup-manual/2026-11-20",
+    "evidence_directory": ".test/verification/2026-11-20",
+    "reason": "Automatic approval rejected bulk recursive deletion with \"blocked by policy\"; used the user-authorized non-destructive move fallback.",
+    "retained": [
+      "current verification logs and browser screenshots",
+      "current v5.1.0 package and checksums",
+      "development toolchains and reusable module/build caches",
+      "historical tracked validation records"
+    ]
+  }
+}

@@ -466,11 +466,21 @@ footer {
   background: color-mix(in srgb, var(--danger) 8%, var(--panel));
   border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
 }
-.mobile-details-toggle { display: none; }
+.mobile-details-toggle {
+  display: none;
+}
 @media (max-width: 600px) {
-  .data-table tbody tr:not(.expanded) .secondary-cell { display: none; }
-  .data-table tbody .mobile-details-toggle { display: block; }
-  .mobile-row-expand { width: 100%; font-size: 12px; padding: 6px 10px; }
+  .data-table tbody tr:not(.expanded) .secondary-cell {
+    display: none;
+  }
+  .data-table tbody .mobile-details-toggle {
+    display: block;
+  }
+  .mobile-row-expand {
+    width: 100%;
+    font-size: 12px;
+    padding: 6px 10px;
+  }
 }
 .workspace-tabs {
   display: flex;
@@ -1260,13 +1270,82 @@ progress {
 }
 
 /* Compact identity and honest quota feedback, shared across desktop/mobile. */
-.account-identity { display: grid; gap: 2px; }
-.account-identity small { margin: 0; font-size: 11px; overflow-wrap: anywhere; }
-.quota-cell { display: grid; gap: 6px; min-width: 140px; font-variant-numeric: tabular-nums; }
-.quota-cell progress { --quota-color: var(--accent); appearance: none; width: 100%; height: 6px; border: 0; border-radius: 8px; overflow: hidden; background: var(--line); }
-.quota-cell progress.exhausted { --quota-color: var(--danger); }
-.quota-cell progress::-webkit-progress-bar { background: var(--line); }
-.quota-cell progress::-webkit-progress-value { background: var(--quota-color); }
-.quota-cell progress::-moz-progress-bar { background: var(--quota-color); }
-[aria-invalid="true"] { border-color: var(--danger); outline: 2px solid color-mix(in srgb, var(--danger) 25%, transparent); }
-#notice button { margin-inline-start: 12px; padding: 3px 10px; }
+.account-identity {
+  display: grid;
+  gap: 2px;
+}
+.account-identity small {
+  margin: 0;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.quota-cell {
+  display: grid;
+  gap: 6px;
+  min-width: 140px;
+  font-variant-numeric: tabular-nums;
+}
+.quota-cell progress {
+  --quota-color: var(--accent);
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--line);
+}
+.quota-cell progress.exhausted {
+  --quota-color: var(--danger);
+}
+.quota-cell progress::-webkit-progress-bar {
+  background: var(--line);
+}
+.quota-cell progress::-webkit-progress-value {
+  background: var(--quota-color);
+}
+.quota-cell progress::-moz-progress-bar {
+  background: var(--quota-color);
+}
+[aria-invalid="true"] {
+  border-color: var(--danger);
+  outline: 2px solid color-mix(in srgb, var(--danger) 25%, transparent);
+}
+#notice button {
+  margin-inline-start: 12px;
+  padding: 3px 10px;
+}
+
+/* Shared secret controls and first-run guidance. */
+.secret-field {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+  min-width: 0;
+}
+.secret-field input {
+  flex: 1;
+  min-width: 0;
+}
+.secret-field .secret-toggle {
+  flex: 0 0 auto;
+  align-self: stretch;
+  margin: 0;
+  min-width: 3.8rem;
+}
+.setup-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.8rem;
+  padding: 0;
+  list-style: none;
+}
+.setup-steps li {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.setup-steps a {
+  display: inline-block;
+  margin-top: 0.4rem;
+}

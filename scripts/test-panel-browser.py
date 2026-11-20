@@ -18,7 +18,7 @@ def check(browser, base):
     page.locator('[name="username"]').fill(os.getenv("PANEL_TEST_USERNAME", "reviewadmin"))
     page.locator('[name="password"]').fill(os.environ["PANEL_TEST_PASSWORD"])
     with page.expect_response(lambda r: r.url.endswith("/api/auth/login")) as login:
-        page.locator("#login-form button").click()
+        page.locator("#login-form button[type=submit]").click()
     headers = {"X-CSRF-Token": login.value.json()["csrf"]}
     api = context.request
     services = api.get(base + "/api/overview").json()["services"]
@@ -130,12 +130,37 @@ def check(browser, base):
     page.get_by_role("button", name="配置独立下载监听", exact=True).click()
     assert page.get_by_label("访问方式", exact=True).locator("option").count() == 2
     page.keyboard.press("Escape")
+    page.goto(base + "/#inbounds")
+    reality_row = page.locator("tr").filter(has_text="vless").first
+    reality_row.locator("summary").click()
+    reality_row.get_by_role("button", name="编辑", exact=True).click()
+    private_key = page.get_by_label("Reality 私钥", exact=True)
+    expect(private_key).to_have_attribute("type", "password")
+    page.get_by_role("button", name="显示Reality 私钥", exact=True).click()
+    expect(private_key).to_have_attribute("type", "text")
+    page.get_by_role("button", name="隐藏Reality 私钥", exact=True).click()
+    expect(private_key).to_have_attribute("type", "password")
+    if screenshots:
+        page.screenshot(path=os.path.join(screenshots, "reality-secret.png"), full_page=True)
+    page.keyboard.press("Escape")
+    page.goto(base + "/#maintenance/upgrade")
+    expect(page.get_by_role("button", name="检查更新", exact=True)).to_be_visible()
+    expect(page.get_by_text("证书签发组件（lego）", exact=True)).to_be_visible()
+    if screenshots:
+        page.screenshot(path=os.path.join(screenshots, "components.png"), full_page=True)
     page.goto(base + "/#maintenance/logs")
     expect(page.get_by_role("button", name="保留策略", exact=True)).to_be_visible()
     expect(page.get_by_role("button", name="清理运行日志", exact=True)).to_be_visible()
     if screenshots:
         page.screenshot(path=os.path.join(screenshots, "maintenance.png"), full_page=True)
     page.goto(base + "/#subscriptions/templates")
+    page.get_by_role("button", name="导入模板 / 路由规则", exact=True).click()
+    page.get_by_label("模板名称", exact=True).fill("外部规则示例")
+    page.get_by_label("模板内容", exact=True).fill("DOMAIN-SUFFIX,example.com,DIRECT")
+    page.locator("#dialog").get_by_role("button", name="保存", exact=True).click()
+    expect(page.get_by_role("heading", name="确认导入模板", exact=True)).to_be_visible()
+    page.get_by_role("button", name="加入草稿", exact=True).click()
+    expect(page.get_by_text("外部规则示例", exact=True)).to_be_visible()
     page.get_by_role("button", name="从预设添加", exact=True).click()
     page.get_by_label("客户端", exact=True).select_option("mihomo")
     page.get_by_label("用途", exact=True).select_option("automatic")

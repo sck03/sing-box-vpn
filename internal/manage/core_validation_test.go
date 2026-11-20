@@ -80,34 +80,6 @@ func TestCoreValidationCancellation(t *testing.T) {
 	}
 }
 
-type cancelActiveServices struct {
-	cancel context.CancelFunc
-	fakeServices
-}
-
-func (s *cancelActiveServices) active(context.Context) ([]string, error) {
-	s.cancel()
-	return nil, nil
-}
-
-func TestCoreCancellationBeforeActivationKeepsCurrent(t *testing.T) {
-	root, candidate, updater, _ := updaterFixture(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	updater.services = &cancelActiveServices{cancel: cancel}
-	previous := filepath.Join(root, "sing-box.previous")
-	if err := os.WriteFile(previous, []byte("previous"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	_, err := updater.activate(ctx, root, candidate, true)
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("canceled activation returned %v", err)
-	}
-	if string(readBytes(t, filepath.Join(root, "sing-box"))) != "old" || string(readBytes(t, previous)) != "previous" {
-		t.Fatal("canceled update replaced current or previous core")
-	}
-}
-
 func BenchmarkCoreConfigValidation(b *testing.B) {
 	root := b.TempDir()
 	data := append(bytes.Repeat([]byte(" "), (4<<20)-2), '{', '}')
@@ -122,5 +94,18 @@ func BenchmarkCoreConfigValidation(b *testing.B) {
 		if err := validateConfigs(context.Background(), root, "candidate", check); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+func TestConfigChangesDuringValidationAreDetected(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "sb.json"), []byte(`{"log":{"level":"info"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	err := validateConfigs(t.Context(), root, "candidate", func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		return nil, os.WriteFile(filepath.Join(root, "sb.json"), []byte(`{}`), 0600)
+	})
+	if err == nil {
+		t.Fatal("concurrent configuration edit accepted")
 	}
 }

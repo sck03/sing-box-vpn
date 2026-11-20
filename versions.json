@@ -1,5 +1,5 @@
 {
-  "release": "v4.0.0",
+  "release": "v5.1.0",
   "go": "1.27.3",
   "sing_box": {
     "channel": "stable",
@@ -16,5 +16,7 @@
     "sing_box_yg": "b13f9435c4792fccf04d4fbc73e24a1948abff1b",
     "fanout": "d7ce5224caf3469b19876982abdf8d1be16c4a8b",
     "conduitvpn": "4afc89bb9647fc1ccd8c240ab88e6e84e879398e"
-  }
+  },
+  "managed_runtime": "1.14.4+sbvpn.5",
+  "certificate_manager": "5.6.0"
 }

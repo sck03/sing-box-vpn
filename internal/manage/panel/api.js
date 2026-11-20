@@ -15,9 +15,13 @@ let csrf = "";
 /** @param {RequestError | Error} error */
 export function errorMessage(error) {
   if (error instanceof RequestError) {
-    if (error.code === "revision_conflict") return "服务器内容已更新。请保留当前修改，重新载入并核对后保存。";
+    if (error.code === "revision_conflict")
+      return "服务器内容已更新。请保留当前修改，重新载入并核对后保存。";
     if (error.code === "unauthorized") return "登录已失效，请重新登录。";
-    return error.message + (error.retryable ? " 可稍后重试；提交前请先确认上一次操作结果。" : "");
+    return (
+      error.message +
+      (error.retryable ? " 可稍后重试；提交前请先确认上一次操作结果。" : "")
+    );
   }
   return error.message;
 }
@@ -93,13 +97,16 @@ export const saveConfiguration = (input) => api("/api/config", input);
 export const submitTask = (input) => api("/api/tasks", input);
 /** @param {number} id @param {AbortSignal} [signal]
  * @returns {Promise<import("./contracts.js").Task>} */
-export const getTask = (id, signal) => api("/api/tasks/detail?id=" + id, undefined, { signal });
+export const getTask = (id, signal) =>
+  api("/api/tasks/detail?id=" + id, undefined, { signal });
 /** @param {number} [before] @param {AbortSignal} [signal]
  * @returns {Promise<import("./contracts.js").TaskPage>} */
-export const getTasks = (before = 0, signal) => api("/api/tasks?before=" + before + "&limit=50", undefined, { signal });
+export const getTasks = (before = 0, signal) =>
+  api("/api/tasks?before=" + before + "&limit=50", undefined, { signal });
 /** @param {AbortSignal} [signal]
  * @returns {Promise<import("./contracts.js").OverviewSnapshot>} */
-export const getOverview = (signal) => api("/api/overview", undefined, { signal });
+export const getOverview = (signal) =>
+  api("/api/overview", undefined, { signal });
 /** @param {Blob} blob @param {string} name */
 export function download(blob, name) {
   const url = URL.createObjectURL(blob),
@@ -121,3 +128,15 @@ export function restoreForm(file, password, revision) {
   }
   return form;
 }
+
+/** @param {boolean} [check] @param {AbortSignal} [signal]
+ * @returns {Promise<import("./contracts.js").ProgramStatus>} */
+export const getProgram = (check = false, signal) =>
+  api("/api/program" + (check ? "?check=true" : ""), undefined, {
+    signal,
+    timeout: 45000,
+  });
+/** @param {import("./contracts.js").SubscriptionTemplateImport} input @param {AbortSignal} [signal]
+ * @returns {Promise<import("./contracts.js").SubscriptionTemplateImportResult>} */
+export const previewTemplateImport = (input, signal) =>
+  api("/api/subscription-templates/import", input, { signal });

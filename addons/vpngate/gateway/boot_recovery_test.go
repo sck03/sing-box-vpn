@@ -37,7 +37,9 @@ func TestStartupUsesSavedNodeWithoutWaitingForSource(t *testing.T) {
 			done := make(chan struct{})
 			go func() { defer close(done); m.run(ctx) }()
 			defer func() { cancel(); <-done }()
-			deadline := time.Now().Add(time.Second)
+			// Source retrieval blocks until cancellation; this deadline only bounds local
+			// scheduling and filesystem latency on busy/race-enabled hosts.
+			deadline := time.Now().Add(5 * time.Second)
 			for time.Now().Before(deadline) {
 				if m.snapshot().State == "ready" {
 					return

@@ -257,14 +257,12 @@ func getJSON(ctx context.Context, client *http.Client, url string, target any) e
 }
 
 type coreUpdater struct {
-	client   *http.Client
-	check    func(context.Context, string) (string, error)
-	validate func(context.Context, string, string) error
-	services serviceManager
+	client *http.Client
+	check  func(context.Context, string) (string, error)
 }
 
 func newCoreUpdater() *coreUpdater {
-	return &coreUpdater{client: newHTTPClient(90 * time.Second), check: CheckCore, validate: checkConfigs, services: systemServices{}}
+	return &coreUpdater{client: newHTTPClient(90 * time.Second), check: CheckCore}
 }
 func (u *coreUpdater) release(ctx context.Context, version string) (verifiedAsset, error) {
 	endpoint := "https://api.github.com/repos/SagerNet/sing-box/releases/latest"
@@ -346,96 +344,6 @@ func (u *coreUpdater) download(ctx context.Context, asset verifiedAsset, destina
 	return os.Rename(candidate, destination)
 }
 
-func (u *coreUpdater) activate(ctx context.Context, root, candidate string, restart bool) (string, error) {
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
-	stage, err := os.MkdirTemp(root, ".core-activate-")
-	if err != nil {
-		return "", err
-	}
-	defer os.RemoveAll(stage)
-	next := filepath.Join(stage, "next")
-	if err = copyBinary(candidate, next); err != nil {
-		return "", err
-	}
-	var version string
-	var active []string
-	current, previous := filepath.Join(root, "sing-box"), filepath.Join(root, "sing-box.previous")
-	hadCurrent := false
-	err = withStartupLock(ctx, root, func() error {
-		version, err = u.check(ctx, next)
-		if err != nil {
-			return err
-		}
-		if err = u.validate(ctx, root, next); err != nil {
-			return err
-		}
-		if restart {
-			active, err = u.services.active(ctx)
-			if err != nil {
-				return err
-			}
-		}
-		if err = ctx.Err(); err != nil {
-			return err
-		}
-		_, currentErr := os.Stat(current)
-		hadCurrent = currentErr == nil
-		if currentErr != nil && !errors.Is(currentErr, os.ErrNotExist) {
-			return currentErr
-		}
-		if hadCurrent {
-			backup := filepath.Join(stage, "previous")
-			if err = copyBinary(current, backup); err != nil {
-				return err
-			}
-			if err = ctx.Err(); err != nil {
-				return err
-			}
-			if err = os.Rename(backup, previous); err != nil {
-				return err
-			}
-		}
-		return os.Rename(next, current)
-	})
-	if err != nil {
-		return "", err
-	}
-	for _, name := range active {
-		if err = u.services.restart(ctx, name); err == nil {
-			continue
-		}
-		rollback := context.Background()
-		if hadCurrent {
-			restore := filepath.Join(stage, "restore")
-			if restoreErr := withStartupLock(rollback, root, func() error {
-				if restoreErr := copyBinary(previous, restore); restoreErr != nil {
-					return restoreErr
-				}
-				return os.Rename(restore, current)
-			}); restoreErr != nil {
-				return "", errors.Join(err, restoreErr)
-			}
-			var recoveryErr error
-			for _, service := range active {
-				if restoreErr := u.services.restart(rollback, service); restoreErr != nil {
-					recoveryErr = errors.Join(recoveryErr, fmt.Errorf("%s 恢复失败: %w", service, restoreErr))
-				}
-			}
-			if recoveryErr != nil {
-				return "", fmt.Errorf("原核心已恢复，但服务恢复失败: %w", errors.Join(err, recoveryErr))
-			}
-		} else {
-			if restoreErr := withStartupLock(rollback, root, func() error { return os.Remove(current) }); restoreErr != nil {
-				return "", errors.Join(err, restoreErr)
-			}
-		}
-		return "", fmt.Errorf("新核心服务启动失败，已恢复原核心: %w", err)
-	}
-	return version, nil
-}
-
 func RunCore(ctx context.Context, args []string, output io.Writer) error {
 	f := flag.NewFlagSet("core", flag.ContinueOnError)
 	f.SetOutput(output)
@@ -453,7 +361,7 @@ func RunCore(ctx context.Context, args []string, output io.Writer) error {
 	}
 	options := flag.NewFlagSet(operation, flag.ContinueOnError)
 	options.SetOutput(output)
-	version := options.String("version", "", "stable version")
+	version := options.String("version", project.Versions.SingBox.Tested, "validated release version")
 	destination := options.String("output", "", "candidate path")
 	format := options.String("format", "json", "output: json or text")
 	if err := parseOptions(options, args[1:]); err != nil {

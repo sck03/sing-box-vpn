@@ -196,3 +196,15 @@ go vet ./...
 任务历史新增 `GET /api/tasks?before=<id>&limit=50`，响应 `{items,next_before}`，`limit` 为 1–100；0 的 `next_before` 表示没有下一页。概览任务数量固定上界，`task_counts.failed` 是未标记处理的失败总数，`attention` 是未处理失败或 partial/cached/failed 业务结果总数，`active` 是排队/运行中总数。顶部告警与概览统计使用聚合值，不依赖最近 12 条摘要。任务详情权限独立检查。
 
 备份读取返回私有暂存文件路径，调用者必须 `Close` 释放；失败读取自动清理。不要重新把所有条目读回一个内存集合，也不要在密文认证完成前信任数据库。当前备份格式 8、数据库 15、平台 5、节点 4，需新初始化目录。
+
+## 5.1 重构回归
+
+前端回归增加 `scripts/test-panel-refactor.mjs`，覆盖密钥可见性、证书回选、访问预览草稿、迟到响应与复制协议字段；现在共有九组。浏览器验收新增按钮后使用明确的提交按钮定位，避免把显示密码按钮当作登录操作。
+
+`manifest_test.go` 要求组件版本与 go.mod 一致。模板导入测试拒绝有损逻辑条件、非末尾 MATCH、脚本、未知字段和过量输入。发行包选择测试拒绝草稿、预发行、错误资产地址/摘要和重复资产；升级 Shell 测试同时断言校验器回滚。
+
+Windows 的 VPNGate 配置在构造时统一目录格式，后续校验/重载不因路径分隔符差异误判为修改目录。离线启动测试使用五秒本地调度上限，节点来源一直阻塞到取消，仍验证启动不等待来源请求完成。
+
+推送 main 只更新源码并触发 CI；发布可安装包继续使用现有 tag 或 workflow_dispatch publish 流程。无需建立或保留额外开发分支。
+
+安装脚本的 `verify_installation` 逐个确认 sb-core / sb-panel，然后等待新核心心跳和面板 worker 就绪。不要用 `systemctl is-active --quiet sb-core sb-panel` 作为「两个均正常」条件：该命令任一个活动就可能成功。CI 的 `test-install-health.sh` 覆盖单服务失败、心跳失败和面板未就绪。

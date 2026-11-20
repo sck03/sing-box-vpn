@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/sck03/sing-box-vpn/internal/certificates"
 	"net"
 	"net/http"
 	"net/url"
@@ -130,12 +131,12 @@ func (s *PlatformService) waitPanel(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		material, err := readCertificateMaterial(CertificateAsset{Domain: origin.Hostname(), Certificate: options.Certificate, Key: options.Key})
+		material, err := certificates.Read(CertificateAsset{Domain: origin.Hostname(), Certificate: options.Certificate, Key: options.Key})
 		if err != nil {
 			return err
 		}
 		roots := x509.NewCertPool()
-		roots.AppendCertsFromPEM(material.certificate)
+		roots.AppendCertsFromPEM(material.Certificate)
 		transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12, ServerName: origin.Hostname(), RootCAs: roots}
 		endpoint = "https://" + net.JoinHostPort(host, port)
 	}

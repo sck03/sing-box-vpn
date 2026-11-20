@@ -36,39 +36,39 @@ subscriptions/schedule.json 是截止时间与权益修订的小型投影，不�
 
 主机服务单元由 internal/hostservice 的纯 PlatformUnits 函数生成，manage/platform_units_install.go 负责所有权检查、写入与 systemctl。恢复测试直接检查生产生成器及运行恢复边界，不再维护一份过时 shell 单元夹具。
 
-| 模块                                                             | 职责                                                                                    |
-| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| internal/domain                                                  | 稳定身份、权益/周期规则，不依赖 HTTP 或 SQLite                                          |
-| internal/application                                             | 类型化命令、账户批量绑定及轮换/解绑用例、任务详情访问规则与仓储边界；不解析 HTTP 或操作 systemd    |
-| internal/backuparchive                                           | 有界 tar 格式、age 认证加密与磁盘暂存；不依赖配置、SQL schema 或证书提供方                       |
-| internal/clientprofile                                           | 无存储/HTTP 依赖的客户端、模式与特性目录，统一表单、授权和渲染能力                      |
-| internal/manage/accounts_queries                                 | 返回结构化账户查询、凭据摘要和渲染产物；传输层负责编码                                  |
-| internal/manage/account_sharing                                  | 根据已应用入口、无秘密的绑定摘要和权益状态计算可下载范围；列表、创建授权和用量共用      |
-| internal/encoding                                                | 按调用场景限制大小的严格 JSON 解码                                                      |
-| internal/database                                                | 连接策略、schema 版本与文件权限                                                         |
-| internal/gatewayconfig                                           | 网关类型、默认值、数值边界、URL/DNS/路径校验；供管理器和独立网关共同使用                |
-| internal/adminauth                                               | bcrypt、Cookie 会话、CSRF、角色、限速、TOTP、审计                                       |
-| internal/accounting                                              | 权益激活、日历账期、凭据代次、预留/检查点、下载计数                                     |
-| internal/controlstore                                            | desired/applied revision、持久任务、运行心跳、观测状态                                  |
-| internal/manage/platform\_\*                                     | 应用编排、配置图校验、备份、证书、主机服务、HTTP/CLI                                    |
-| internal/servicecatalog                                          | 统一服务登记：systemd 名称、职责、对应工作区、受管核心实例；供状态、能力目录和恢复共用  |
-| internal/publicaccess                                            | 面板/订阅共享传输策略、URL/Host 校验与可信代理链，不依赖平台存储                        |
-| internal/manage/platform_panel_settings                          | 启动访问配置的验证、预览、并发版本核对和原子保存；不参与权益计量                        |
-| internal/manage/panel_restart                                    | 独立 systemd 助手应用面板设置、健康探测、自动回滚与持久终态                             |
-| internal/manage/platform_compile                                 | 候选准备、运行恢复编译、完整草稿预览及输出诊断                                          |
-| internal/manage/platform_acme                                    | 内置 lego 客户端、HTTP-01 验证、账户与签发结果持久化；复用平台任务调度与证书发布        |
-| internal/manage/certificate_material                             | 独立的 PEM 匹配、域名验证与有效期检查；已解析材料供状态、续期和导入复用，无共享过期缓存 |
-| internal/tlsconfig                                               | 面板与订阅共用 TLS 证书对的 30 秒刷新缓存；刷新失败仅保留未过期材料                     |
-| internal/manage/program_upgrade_result                           | 升级助手结果收据、监听健康探测及任务终态；不重放升级副作用                              |
-| internal/manage/platform_task_output                             | 有界结果落盘、秘密隐藏以及取消后的部分结果保留                                          |
-| internal/manage/subscriptions_status、subscriptions_notification | 只读运行状态投影、独立通知活动记录；状态查询跳过缓存中的节点和模板正文                  |
-| internal/manage/panel                                            | 原生 ES 模块 SPA，共享表单/列表/草稿，静态嵌入二进制                                    |
-| internal/subscription                                            | 纯配置处理、解析、集合预算、节点选择与客户端渲染                                        |
-| internal/runtime                                                 | 受管 sing-box 注册、认证后计量守卫                                                      |
-| addons/vpngate/gateway                                           | 独立 VPNGate 后端、netns/OpenVPN、出口验证和 SOCKS 转发                                 |
-| internal/command                                                 | 子进程期限、取消、有界输出                                                              |
-| internal/hostservice                                             | 不依赖数据库的失败服务恢复、Argo 运行观察、可重试网络设置恢复，通过命令适配器访问主机   |
-| internal/httpserver                                              | HTTP 生命周期、连接上限、独立请求并发准入，不依赖业务或数据库                           |
+| 模块                                                             | 职责                                                                                            |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| internal/domain                                                  | 稳定身份、权益/周期规则，不依赖 HTTP 或 SQLite                                                  |
+| internal/application                                             | 类型化命令、账户批量绑定及轮换/解绑用例、任务详情访问规则与仓储边界；不解析 HTTP 或操作 systemd |
+| internal/backuparchive                                           | 有界 tar 格式、age 认证加密与磁盘暂存；不依赖配置、SQL schema 或证书提供方                      |
+| internal/clientprofile                                           | 无存储/HTTP 依赖的客户端、模式与特性目录，统一表单、授权和渲染能力                              |
+| internal/manage/accounts_queries                                 | 返回结构化账户查询、凭据摘要和渲染产物；传输层负责编码                                          |
+| internal/manage/account_sharing                                  | 根据已应用入口、无秘密的绑定摘要和权益状态计算可下载范围；列表、创建授权和用量共用              |
+| internal/encoding                                                | 按调用场景限制大小的严格 JSON 解码                                                              |
+| internal/database                                                | 连接策略、schema 版本与文件权限                                                                 |
+| internal/gatewayconfig                                           | 网关类型、默认值、数值边界、URL/DNS/路径校验；供管理器和独立网关共同使用                        |
+| internal/adminauth                                               | bcrypt、Cookie 会话、CSRF、角色、限速、TOTP、审计                                               |
+| internal/accounting                                              | 权益激活、日历账期、凭据代次、预留/检查点、下载计数                                             |
+| internal/controlstore                                            | desired/applied revision、持久任务、运行心跳、观测状态                                          |
+| internal/manage/platform\_\*                                     | 应用编排、配置图校验、备份、证书、主机服务、HTTP/CLI                                            |
+| internal/servicecatalog                                          | 统一服务登记：systemd 名称、职责、对应工作区、受管核心实例；供状态、能力目录和恢复共用          |
+| internal/publicaccess                                            | 面板/订阅共享传输策略、URL/Host 校验与可信代理链，不依赖平台存储                                |
+| internal/manage/platform_panel_settings                          | 启动访问配置的验证、预览、并发版本核对和原子保存；不参与权益计量                                |
+| internal/manage/panel_restart                                    | 独立 systemd 助手应用面板设置、健康探测、自动回滚与持久终态                                     |
+| internal/manage/platform_compile                                 | 候选准备、运行恢复编译、完整草稿预览及输出诊断                                                  |
+| internal/manage/platform_acme                                    | 内置 lego 客户端、HTTP-01 验证、账户与签发结果持久化；复用平台任务调度与证书发布                |
+| internal/manage/certificate_material                             | 独立的 PEM 匹配、域名验证与有效期检查；已解析材料供状态、续期和导入复用，无共享过期缓存         |
+| internal/tlsconfig                                               | 面板与订阅共用 TLS 证书对的 30 秒刷新缓存；刷新失败仅保留未过期材料                             |
+| internal/manage/program_upgrade_result                           | 升级助手结果收据、监听健康探测及任务终态；不重放升级副作用                                      |
+| internal/manage/platform_task_output                             | 有界结果落盘、秘密隐藏以及取消后的部分结果保留                                                  |
+| internal/manage/subscriptions_status、subscriptions_notification | 只读运行状态投影、独立通知活动记录；状态查询跳过缓存中的节点和模板正文                          |
+| internal/manage/panel                                            | 原生 ES 模块 SPA，共享表单/列表/草稿，静态嵌入二进制                                            |
+| internal/subscription                                            | 纯配置处理、解析、集合预算、节点选择与客户端渲染                                                |
+| internal/runtime                                                 | 受管 sing-box 注册、认证后计量守卫                                                              |
+| addons/vpngate/gateway                                           | 独立 VPNGate 后端、netns/OpenVPN、出口验证和 SOCKS 转发                                         |
+| internal/command                                                 | 子进程期限、取消、有界输出                                                                      |
+| internal/hostservice                                             | 不依赖数据库的失败服务恢复、Argo 运行观察、可重试网络设置恢复，通过命令适配器访问主机           |
+| internal/httpserver                                              | HTTP 生命周期、连接上限、独立请求并发准入，不依赖业务或数据库                                   |
 
 面板、普通核心、VPNGate 核心、VPNGate 网关和可选下载/Argo 服务分进程运行。一个权益不创建一个进程或端口。普通与 VPNGate 同库共享额度池，网关后端不重复计费。
 
@@ -201,3 +201,18 @@ VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IP
 `go run ./cmd/panel-contract` 从 Go 导出面板边界类型到 `contracts.d.ts`，CI 用 `-check` 拒绝漂移并检查 API 客户端类型。业务错误统一为 `{error:{code,message,field?,retryable}}`；版本冲突为 409，字段错误为 400，存储故障为 500，临时不可用为 503。前端 RequestError 保留状态、代码与字段信息。
 
 任务详情使用页面取消信号及 dialog-session 归属判断，关闭、切页或打开新详情后，旧响应不能覆盖当前对话框。模板资源按策略组/远程规则/本地规则选择展示，非活动编辑器不创建 DOM；空列表与短资源列表隐藏冗余搜索分页。
+
+## 访问与组件维护的模块边界（5.1）
+
+- `internal/certificates` 持有证书资产模型和有界 PEM 读取/解析；材料的域名匹配与有效期仍交给 `tlsconfig`。配置登记、持久化、ACME 任务和服务恢复留在应用编排层。
+- `internal/deployment` 校验正式发行标签、固定仓库资产地址、SHA256 元数据和数值版本顺序。HTTP 层只调用组件状态/更新用例，外部查询不自动触发安装。
+- `versions.json` 统一记录受管核心、官方校验器和 lego 版本，测试校对 Go 依赖。管理器提供 `--runtime-version`；发行安装使用候选管理器默认的已验证校验器版本。
+- 程序升级先准备对应校验器，再用候选管理器、受管核心和校验器验证当前配置；切换失败或面板健康检查失败同时恢复三个二进制。运行/开机状态保持既有语义。
+- `secret-field.js`、`certificate-fields.js`、`certificate-editor.js` 共享表单控件；`program.js` 负责组件维护视图。访问预览使用 `dialogSession` 绑定请求生命周期，关闭/替换弹窗后旧请求不能写入新窗口。
+- 模板导入位于 `subscription/template_import.go`，不引入第二套渲染器。受支持输入转成现有 Template，保留来源，再经过原有能力校验、编译和发布。
+
+新增接口：管理员 `GET /api/program`、`GET /api/program?check=true`、`POST /api/certificates/prepare`、`POST /api/subscription-templates/import`。对应模型由 panel-contract 生成到前端。版本查询失败返回 check_error，不把失败描述为没有更新。
+
+未使用的官方校验器 activate 路径已删除，其专属实现测试同步移除。旧工作流测试需要的 systemServices helper 只放在 \_test.go，不再进入生产二进制。DNS independent_cache 已从表单移除，后端明确拒绝该已废弃字段。
+
+续期调度先读取两个 revision；版本不变且未到十分钟检查时间时，不读取完整配置或 PEM。失败可重试，配置变化绕过等待。额度账本 WAL/FULL、预留和撤销保证保持原语义。

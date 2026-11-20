@@ -9,9 +9,11 @@ import (
 var manifest []byte
 
 type Metadata struct {
-	Release string `json:"release"`
-	Go      string `json:"go"`
-	SingBox struct {
+	Release            string `json:"release"`
+	ManagedRuntime     string `json:"managed_runtime"`
+	CertificateManager string `json:"certificate_manager"`
+	Go                 string `json:"go"`
+	SingBox            struct {
 		Minimum string `json:"minimum_version"`
 		Tested  string `json:"tested_version"`
 		AMD64   string `json:"linux_amd64_sha256"`

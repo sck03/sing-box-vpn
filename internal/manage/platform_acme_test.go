@@ -15,6 +15,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/sck03/sing-box-vpn/internal/certificates"
 	"io"
 	"math/big"
 	"net"
@@ -274,7 +275,7 @@ func TestLegoIssueReuseRenewAndFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = validatePEM(first.Certificate, first.PrivateKey, asset.Domain); err != nil {
+	if _, err = certificates.ValidatePEM(first.Certificate, first.PrivateKey, asset.Domain); err != nil {
 		t.Fatal(err)
 	}
 	reused, err := obtainACMECertificate(t.Context(), root, asset, options)
@@ -336,7 +337,7 @@ func TestACMERegistrationTracksPublishedPair(t *testing.T) {
 	ca, root := newLocalACMECA(t), t.TempDir()
 	asset := acmeTestAsset(root)
 	registrationReady := func() bool {
-		material, err := readCertificateMaterial(asset)
+		material, err := certificates.Read(asset)
 		return err == nil && acmeRegistrationReady(root, asset, material)
 	}
 	key, err := certcrypto.GeneratePrivateKey(certcrypto.EC256)

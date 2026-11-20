@@ -57,7 +57,7 @@ func (s *PlatformService) initialize(ctx context.Context, address, name, admin, 
 				return err
 			}
 			subscriptions := sub.DefaultConfig()
-			config = PlatformConfig{Schema: PlatformSchema, App: app, VPN: VPNSettings{ProxyPort: 7928, Profiles: map[string]Profile{}}, VPNSecrets: map[string]Secrets{}, Gateway: Object{}, Subscriptions: subscriptions, Certificates: []CertificateAsset{}, Argo: TunnelSettings{Mode: "off"}, Listener: subscriptionSettings{Listen: "127.0.0.1", Port: 2097}}
+			config = PlatformConfig{Schema: PlatformSchema, App: app, VPN: VPNSettings{ProxyPort: 7928, Profiles: map[string]Profile{}}, VPNSecrets: map[string]Secrets{}, Gateway: Object{}, Subscriptions: subscriptions, Certificates: initialCertificates(app), Argo: TunnelSettings{Mode: "off"}, Listener: subscriptionSettings{Listen: "127.0.0.1", Port: 2097}}
 		}
 		if err := panelPortAvailable(config, options.port()); err != nil {
 			return err

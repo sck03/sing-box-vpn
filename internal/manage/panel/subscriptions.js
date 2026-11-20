@@ -11,6 +11,7 @@ import {
   resourceID,
 } from "./template-settings.js";
 import { subscriptionWizard } from "./subscription-wizard.js";
+import { importTemplate } from "./template-import.js";
 import {
   showClientCapabilities,
   verificationLabel,
@@ -310,8 +311,17 @@ export async function subscriptions(ctx) {
         extraActions: (template) =>
           template.mode === "config" &&
           catalog[template.client]?.features.policy_groups
-            ? [button("策略与规则", () => selectTemplate?.(template.id))]
-            : [],
+            ? [
+                button("策略与规则", () => selectTemplate?.(template.id)),
+                button("来源与版本", () =>
+                  showResult("模板来源", template.origin || "本地自定义模板"),
+                ),
+              ]
+            : [
+                button("来源与版本", () =>
+                  showResult("模板来源", template.origin || "本地自定义模板"),
+                ),
+              ],
         items: s.templates,
         fields: templateFields(catalog),
         normalize: (v) => normalizeTemplate(v, catalog),
@@ -576,6 +586,11 @@ export async function subscriptions(ctx) {
           };
           return [
             presetTools(s, catalog, await getPresets(), change),
+            row(
+              button("导入模板 / 路由规则", () =>
+                importTemplate(ctx, s, catalog, change),
+              ),
+            ),
             el(
               "div",
               { class: "template-workspace" },

@@ -94,6 +94,19 @@ export interface CertificateAsset {
   email?: string;
 }
 
+export interface CertificateImport {
+  id: string;
+  domain: string;
+  certificate: string;
+  key: string;
+}
+
+export interface CertificatePreparation {
+  id: string;
+  domain: string;
+  email: string;
+}
+
 export interface ConfigurationSave {
   revision: number;
   config: PlatformConfig;
@@ -210,6 +223,24 @@ export interface Profile {
   tuic_ports?: Array<string> | null;
   handshake_host?: string;
   handshake_port?: number;
+}
+
+export interface ProgramComponent {
+  id: string;
+  name: string;
+  version: string;
+  expected: string;
+  compatible: boolean;
+  error?: string;
+}
+
+export interface ProgramStatus {
+  current: string;
+  components: Array<ProgramComponent> | null;
+  latest?: string;
+  release_url?: string;
+  update_available: boolean;
+  check_error?: string;
 }
 
 export interface QueuedTask {
@@ -388,6 +419,7 @@ export interface SubscriptionSource {
 }
 
 export interface SubscriptionTemplate {
+  origin?: SubscriptionTemplateOrigin | null;
   id: string;
   name?: string;
   client: string;
@@ -406,6 +438,29 @@ export interface SubscriptionTemplate {
   native?: Record<string, unknown> | null;
   final?: string;
   private_network?: boolean;
+}
+
+export interface SubscriptionTemplateImport {
+  id: string;
+  name: string;
+  client: string;
+  format: string;
+  content: string;
+  source_url: string;
+  revision: string;
+  default_target: string;
+}
+
+export interface SubscriptionTemplateImportResult {
+  template: SubscriptionTemplate;
+  warnings: Array<string> | null;
+}
+
+export interface SubscriptionTemplateOrigin {
+  source_url?: string;
+  revision?: string;
+  format: string;
+  digest?: string;
 }
 
 export interface SubscriptionValidation {

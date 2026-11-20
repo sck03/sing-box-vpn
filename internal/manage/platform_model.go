@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/sck03/sing-box-vpn/internal/certificates"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	strict "github.com/sck03/sing-box-vpn/internal/encoding"
 	"github.com/sck03/sing-box-vpn/internal/gatewayconfig"
@@ -28,14 +29,7 @@ type PlatformConfig struct {
 	Certificates  []CertificateAsset   `json:"certificates"`
 	Argo          TunnelSettings       `json:"tunnel"`
 }
-type CertificateAsset struct {
-	ID          string `json:"id"`
-	Domain      string `json:"domain"`
-	Certificate string `json:"certificate"`
-	Key         string `json:"key"`
-	Provider    string `json:"provider"`
-	Email       string `json:"email,omitempty"`
-}
+type CertificateAsset = certificates.CertificateAsset
 type TunnelSettings struct {
 	Mode    string `json:"mode"`
 	Domain  string `json:"domain"`
@@ -151,6 +145,9 @@ func (c PlatformConfig) Validate() error {
 			return fmt.Errorf("VPNGate: %w", err)
 		}
 	}
+	if len(c.Certificates) > 256 {
+		return errors.New("at most 256 certificate assets")
+	}
 	seen := map[string]bool{}
 	for _, asset := range c.Certificates {
 		if !domain.ResourceID.MatchString(asset.ID) || seen[asset.ID] {
@@ -160,8 +157,8 @@ func (c PlatformConfig) Validate() error {
 		if err = validateDomain(asset.Domain); err != nil {
 			return err
 		}
-		if asset.Provider != "import" && !automaticCertificate(asset) {
-			return errors.New("certificate provider must be import or acme")
+		if asset.Provider != "import" && asset.Provider != "generated" && !automaticCertificate(asset) {
+			return errors.New("certificate provider must be import, generated or acme")
 		}
 	}
 	gateway := Object{}
@@ -198,6 +195,9 @@ func (c PlatformConfig) Validate() error {
 }
 
 func validateServerResources(c CoreSettings) error {
+	if _, exists := c.DNS["independent_cache"]; exists {
+		return errors.New("DNS independent_cache is obsolete; remove it from DNS settings")
+	}
 	if len(c.Outbounds) > 256 || len(c.Endpoints) > 32 || len(c.Services) > 16 || len(objects(c.Route["rules"])) > 1000 {
 		return errors.New("server resource budget exceeded")
 	}

@@ -46,6 +46,7 @@ func BenchmarkCertificateStatus(b *testing.B) {
 	if err = AtomicJSON(acmeAccountPath(root, account.Directory, email), account); err != nil {
 		b.Fatal(err)
 	}
+	config.Certificates = nil
 	for i := 0; i < 32; i++ {
 		asset := CertificateAsset{ID: fmt.Sprintf("cert-%02d", i), Provider: "acme", Domain: config.App.fixtureProfile().TLSSNI,
 			Email: email, Certificate: config.App.fixtureProfile().Certificate, Key: config.App.fixtureProfile().Key}

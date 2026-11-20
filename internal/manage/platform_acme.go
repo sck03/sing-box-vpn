@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/sck03/sing-box-vpn/internal/certificates"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -49,7 +50,7 @@ type acmeCertificateRecord struct {
 	Resource    certificate.Resource `json:"resource"`
 	Certificate []byte               `json:"certificate"`
 	PrivateKey  []byte               `json:"private_key"`
-	material    certificateMaterial
+	material    certificates.Material
 }
 
 func acmeAccountPath(root, directory, email string) string {
@@ -105,7 +106,7 @@ func readACMECertificate(root, directory string, asset CertificateAsset) (*acmeC
 	if err != nil || record == nil {
 		return nil, err
 	}
-	record.material, err = parseCertificateMaterial(record.Certificate, record.PrivateKey, asset.Domain)
+	record.material, err = certificates.Parse(record.Certificate, record.PrivateKey, asset.Domain)
 	if err != nil {
 		return nil, fmt.Errorf("invalid ACME certificate cache: %w", err)
 	}
@@ -114,8 +115,8 @@ func readACMECertificate(root, directory string, asset CertificateAsset) (*acmeC
 	return record, nil
 }
 
-func acmeRegistrationReady(root string, asset CertificateAsset, material certificateMaterial) bool {
-	if material.leaf == nil {
+func acmeRegistrationReady(root string, asset CertificateAsset, material certificates.Material) bool {
+	if material.Leaf == nil {
 		return false
 	}
 	record, err := readACMERecord(root, lego.DirectoryURLLetsEncrypt, asset)
@@ -124,7 +125,7 @@ func acmeRegistrationReady(root string, asset CertificateAsset, material certifi
 	}
 	// Equal bytes reuse the caller's verified pair; no second file read or
 	// private-key/certificate parsing is needed for this status check.
-	if !bytes.Equal(material.certificate, record.Certificate) || !bytes.Equal(material.key, record.PrivateKey) {
+	if !bytes.Equal(material.Certificate, record.Certificate) || !bytes.Equal(material.Key, record.PrivateKey) {
 		return false
 	}
 	var account acmeAccount
@@ -216,7 +217,7 @@ func obtainACMECertificate(ctx context.Context, root string, asset CertificateAs
 		sameAccount := previous != nil && account.Registration != nil && previous.AccountURL == account.Registration.Location
 		if sameAccount {
 			now := time.Now()
-			if previous.material.validateTime(now) == nil && previous.material.leaf.NotAfter.Sub(now) > acmeRenewBefore {
+			if previous.material.ValidAt(now) == nil && previous.material.Leaf.NotAfter.Sub(now) > acmeRenewBefore {
 				result = &previous.Resource
 				return nil
 			}
@@ -257,7 +258,7 @@ func obtainACMECertificate(ctx context.Context, root string, asset CertificateAs
 		if err != nil {
 			return err
 		}
-		if _, err = validatePEM(result.Certificate, result.PrivateKey, asset.Domain); err != nil {
+		if _, err = certificates.ValidatePEM(result.Certificate, result.PrivateKey, asset.Domain); err != nil {
 			return err
 		}
 		// Keep a verified result even if the later service reload fails, so

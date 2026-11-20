@@ -32,6 +32,9 @@ type PlatformService struct {
 	status              []byte
 	statusVersion       uint64
 	statusLoading       chan struct{}
+	certificateMu       sync.Mutex
+	certificateRevision int64
+	certificateNext     time.Time
 	backupBusy          atomic.Bool
 	panelMu             sync.RWMutex
 	activePanel         *PanelOptions
@@ -209,6 +212,9 @@ func (s *PlatformService) PrepareCountry(ctx context.Context, c PlatformConfig, 
 		p.Secrets = Secrets{}
 		p.Country = cc
 		c.VPN.Profiles[cc] = p
+		for _, asset := range initialCertificates(App{Nodes: MakeNodes(p, "vpngate-"+cc+"-")}) {
+			c.Certificates = append(c.Certificates, asset)
+		}
 		c.VPNSecrets[cc] = secret
 		c.VPN.Order = append(c.VPN.Order, cc)
 	}

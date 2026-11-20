@@ -82,11 +82,11 @@ DNS 分为 local、remote、bootstrap；bootstrap 使用 IP，其余支持 IP �
 
 `native` 补充未受管的根字段，可覆盖日志、混合端口等基础默认值。受管理字段及禁止字段在保存/预览时报出 `native.<字段>` 错误，不再静默覆盖。规则同时由 `/api/clients.native_fields` 提供给前端。模板不是任意脚本入口。
 
-| 客户端 | 可覆盖默认值 | 编译器管理 | 禁止额外注入 |
-| --- | --- | --- | --- |
-| sing-box | log | inbounds、outbounds、route、dns | endpoints、services |
-| Mihomo/OpenClash/Stash | mixed-port、allow-lan、mode、log-level | proxies、proxy-groups、rules、rule-providers、dns、tun | proxy-providers |
-| Egern | 其他非受管根字段直接保留 | proxies、policy_groups、rules | proxy_providers、policy_group_providers、rule_providers |
+| 客户端                 | 可覆盖默认值                           | 编译器管理                                             | 禁止额外注入                                            |
+| ---------------------- | -------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------- |
+| sing-box               | log                                    | inbounds、outbounds、route、dns                        | endpoints、services                                     |
+| Mihomo/OpenClash/Stash | mixed-port、allow-lan、mode、log-level | proxies、proxy-groups、rules、rule-providers、dns、tun | proxy-providers                                         |
+| Egern                  | 其他非受管根字段直接保留               | proxies、policy_groups、rules                          | proxy_providers、policy_group_providers、rule_providers |
 
 表中以外的原生字段由目标客户端校验；实验适配器未通过实体应用验收，不能把“已编码”理解为客户端已接受。
 
@@ -134,3 +134,20 @@ Egern 独立渲染 IPv4 `ip_cidr` 与 IPv6 `ip_cidr6`，支持 UDP 中继、Hyst
 来源/集合/模板等每类最多 128，节点 4096，单响应与合计输出正文 8 MiB，远程模板/规则正文合计 4 MiB，单 JSON 投影 16 MiB，任务结果 256 KiB。账户覆盖最多 4096 条。模板组成员展开另有预算，不能用无限扩展或丢弃安全字段换取兼容。
 
 设计参考 [MiniSubConvert](https://github.com/bestruirui/MiniSubConvert) 与 [Sub-Store](https://github.com/sub-store-org/Sub-Store)。MiniSubConvert 复用 Sub-Store 核心，两者不是独立的兼容性证明；本项目独立实现 Go 转换器，固定提交与许可证范围见[上游说明](upstream.md#订阅转换设计参考2026-11-19)。
+
+## 从现有模板和规则导入
+
+在「订阅编排 → 模板 → 导入模板 / 路由规则」粘贴内容，选择目标客户端并预览，再加入草稿。支持：
+
+| 输入                       | 保留内容                                         | 明确限制                                                             |
+| -------------------------- | ------------------------------------------------ | -------------------------------------------------------------------- |
+| 本项目声明式 JSON          | 已支持的模板字段                                 | 目标客户端必须一致；未知字段拒绝；远程 URL 不自动继承                |
+| ACL4SSR 等规则项目的 .list | DOMAIN、DOMAIN-SUFFIX、IP-CIDR、IP-CIDR6         | 可选择默认目标；不直接导入 INI、脚本或动态策略名称                   |
+| Mihomo YAML                | rules 中上述简单规则及末尾 MATCH,PROXY           | 不导入节点、组、DNS、监听或脚本；不能映射的规则明确报错              |
+| sing-box JSON              | 单一匹配字段的 domain/domain_suffix/ip_cidr 路由 | 保留 route/reject 行为；多条件、逻辑规则和自定义 outbound 需手动配置 |
+
+导入只允许 PROXY、DIRECT、REJECT（block 对应 REJECT）目标，不猜测其他项目策略组的含义。多条件的 AND 语义不会被错误拆成 OR。遇到不支持的规则会拒绝整次导入，不静默漏掉规则。输入限 512 KiB，继续执行客户端能力、规则数和原生字段限制。
+
+来源 URL、版本/提交号、格式和内容 SHA256 保存到 origin，可从模板行内「来源与版本」查看。来源信息用于追溯，不表示上游官方认可或已完成实机验证。内置预设记录本项目发行版本，sing-box/Mihomo 预设附官方格式参考。模板与外部规则项目的许可证仍应分别遵守。
+
+加入草稿之后须关联输出并预览，通过配置校验后再应用。现有远程模板刷新仍只接受本项目声明式 JSON，并保留既有缓存与发布校验机制。其他客户端的实验适配标签继续保留，不将核心格式检查等同于手机客户端实机连接测试。

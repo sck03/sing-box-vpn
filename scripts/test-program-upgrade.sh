@@ -18,8 +18,19 @@ for scenario in stopped active fail; do
     printf 'old\n' > "$APP_HOME/version"
     printf '#!/bin/sh\necho old\n' > "$MANAGER"
     printf 'new\n' > "$SCRIPT_ROOT/version"
-    printf '#!/bin/sh\necho new\n' > "$SCRIPT_ROOT/.bin/linux-amd64/yg-vpngate"
+    cat > "$SCRIPT_ROOT/.bin/linux-amd64/yg-vpngate" <<'MANAGER'
+#!/usr/bin/env bash
+if [[ "${1:-}" == core ]]; then
+    while (($#)); do
+        if [[ "$1" == --output ]]; then printf '#!/bin/sh\necho new-validator\n' > "$2"; chmod +x "$2"; exit 0; fi
+        shift
+    done
+    exit 1
+fi
+echo new
+MANAGER
     cp "$MANAGER" "$RUNTIME"
+    cp "$MANAGER" "$CORE"
     cp "$SCRIPT_ROOT/.bin/linux-amd64/yg-vpngate" "$SCRIPT_ROOT/.bin/linux-amd64/managed-core"
     chmod +x "$RUNTIME" "$SCRIPT_ROOT/.bin/linux-amd64/managed-core"
     chmod +x "$MANAGER" "$SCRIPT_ROOT/.bin/linux-amd64/yg-vpngate"
@@ -37,10 +48,10 @@ for scenario in stopped active fail; do
         (set -e; upgrade_program) > "$base/result" 2>&1
         result=$?
         set -e
-        [[ "$result" != 0 && $("$MANAGER") == old && $(<"$APP_HOME/version") == old ]]
+        [[ "$result" != 0 && $("$MANAGER") == old && $(<"$APP_HOME/version") == old && $("$CORE") == old ]]
     else
         upgrade_program > "$base/result"
-        [[ $("$MANAGER") == new && $(<"$APP_HOME/version") == new ]]
+        [[ $("$MANAGER") == new && $(<"$APP_HOME/version") == new && $("$CORE") == new-validator ]]
     fi
     if [[ "$scenario" == stopped ]]; then
         if grep -q '^restart ' "$TEST_LOG"; then exit 1; fi
@@ -57,9 +68,11 @@ for scenario in panel-ok panel-fail panel-rollback-fail; do
     printf 'new\n' > "$base/app/version"
     printf '#!/bin/sh\n[ "$1" != --version ] || echo 5.0.0\n' > "$base/stage/manager.previous"
     cp "$base/stage/manager.previous" "$base/stage/runtime.previous"
+    cp "$base/stage/manager.previous" "$base/stage/validator.previous"
     printf '#!/bin/sh\n[ "$1" != --version ] || echo 5.1.0\n' > "$base/manager"
     cp "$base/manager" "$base/runtime"
-    chmod +x "$base/manager" "$base/runtime"
+    cp "$base/manager" "$base/sing-box"
+    chmod +x "$base/manager" "$base/runtime" "$base/sing-box"
     cat > "$base/bin/systemctl" <<'MOCK'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$PANEL_TEST_BASE/log"
@@ -74,7 +87,7 @@ MOCK
     result=$?
     set -e
     if [[ "$scenario" != panel-ok ]]; then
-        [[ "$result" == 1 && $("$base/manager" --version) == 5.0.0 && $("$base/runtime" --version) == 5.0.0 && $(<"$base/app/version") == old ]]
+        [[ "$result" == 1 && $("$base/manager" --version) == 5.0.0 && $("$base/runtime" --version) == 5.0.0 && $("$base/sing-box" --version) == 5.0.0 && $(<"$base/app/version") == old ]]
         phase=rolled-back
         [[ "$scenario" != panel-rollback-fail ]] || phase=rollback-failed
         grep -q "\"actual_version\":\"v5.0.0\".*\"phase\":\"$phase\"" "$base/program-upgrade.json"

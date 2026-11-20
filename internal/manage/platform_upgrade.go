@@ -7,45 +7,36 @@ import (
 	"errors"
 	"fmt"
 	"github.com/sck03/sing-box-vpn/internal/command"
+	"github.com/sck03/sing-box-vpn/internal/deployment"
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 )
 
-var programVersion = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
+var programVersion = deployment.TagPattern
 
 func (s *PlatformService) upgradeProgram(ctx context.Context, id int64, version string) error {
 	if s.NoSystem {
 		return errors.New("program deployment requires Linux systemd")
 	}
-	endpoint := "https://api.github.com/repos/sck03/sing-box-vpn/releases/latest"
-	if version != "" {
-		if !programVersion.MatchString(version) {
-			return errors.New("invalid release tag")
-		}
-		endpoint = "https://api.github.com/repos/sck03/sing-box-vpn/releases/tags/" + version
+	endpoint, err := deployment.Endpoint(version)
+	if err != nil {
+		return err
 	}
 	client := newHTTPClient(3 * time.Minute)
 	defer client.CloseIdleConnections()
-	var release coreRelease
-	if err := getJSON(ctx, client, endpoint, &release); err != nil {
+	var release deployment.Release
+	if err = getJSON(ctx, client, endpoint, &release); err != nil {
 		return err
 	}
-	if !programVersion.MatchString(release.Tag) {
-		return errors.New("release tag is invalid")
+	if version != "" && release.Tag != version {
+		return errors.New("release metadata does not match requested tag")
 	}
-	name := "sing-box-vpn-" + release.Tag + ".tar.gz"
-	var chosen releaseAsset
-	for _, asset := range release.Assets {
-		if asset.Name == name {
-			chosen = asset
-		}
-	}
-	if chosen.URL != "https://github.com/sck03/sing-box-vpn/releases/download/"+release.Tag+"/"+name || !digestPattern.MatchString(chosen.Digest) {
-		return errors.New("release has no verified compatible bundle")
+	chosen, err := deployment.Bundle(release)
+	if err != nil {
+		return err
 	}
 	stage, err := os.MkdirTemp(s.Root, ".program-update-")
 	if err != nil {
@@ -53,7 +44,7 @@ func (s *PlatformService) upgradeProgram(ctx context.Context, id int64, version 
 	}
 	defer os.RemoveAll(stage)
 	archive := filepath.Join(stage, "release.tar.gz")
-	if err = downloadAsset(ctx, client, chosen, archive); err != nil {
+	if err = downloadAsset(ctx, client, releaseAsset(chosen), archive); err != nil {
 		return err
 	}
 	if err = extractProgramArchive(archive, stage); err != nil {

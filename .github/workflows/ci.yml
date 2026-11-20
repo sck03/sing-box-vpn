@@ -103,6 +103,7 @@ jobs:
             bash -n "$script"
           done
           shellcheck --severity=warning sb.sh install.sh lib/*.sh scripts/*.sh
+          bash scripts/test-install-health.sh
           bash scripts/test-program-upgrade.sh
           bash scripts/test-install-ownership.sh
           bash scripts/test-installer.sh

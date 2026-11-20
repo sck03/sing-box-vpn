@@ -53,6 +53,8 @@ type manager struct {
 }
 
 func newManager(c Config, path string) *manager {
+	// Normalize identity before comparing later validated reloads.
+	c.DataDir, c.RunDir = filepath.Clean(c.DataDir), filepath.Clean(c.RunDir)
 	m := &manager{cfg: c, configPath: path, status: Status{Version: version, State: "stopped", Country: c.Country, Mode: c.Mode, Updated: time.Now()}, connections: map[net.Conn]bool{}, wake: make(chan struct{}, 1), factory: func(c Config) tunnel { return &backend{cfg: c} }}
 	m.refreshSlot = make(chan struct{}, 1)
 	m.actionSlot = make(chan struct{}, 1)

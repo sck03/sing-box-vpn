@@ -1,15 +1,9 @@
 import { api } from "./api.js";
-import {
-  card,
-  help,
-  el,
-  row,
-  button,
-  formDialog,
-  showResult,
-  notice,
-} from "./ui.js";
+import { card, help, el, row, button, formDialog, notice } from "./ui.js";
 import { workspace } from "./workspace.js";
+import { dialogSession } from "./dialog-session.js";
+import { withCertificateStatus } from "./certificate-fields.js";
+import { certificateEditor } from "./certificate-editor.js";
 import {
   accessValue,
   accessFields,
@@ -19,71 +13,145 @@ import {
 
 export async function access(ctx) {
   const request = ctx.request || api;
-  const settings = await request("/api/panel/settings");
-  const c = await ctx.config(),
-    certificates = c.certificates || [];
+  const [settings, c, status] = await Promise.all([
+    request("/api/panel/settings"),
+    ctx.config(),
+    request("/api/certificates"),
+  ]);
+  const certificates = () =>
+    withCertificateStatus(c.certificates || [], status);
   const restart = async (revision) => {
-    const result = await api("/api/panel/restart", { revision });
-    notice("面板重启任务 #" + result.task_id + " 已提交；连接会短暂中断。");
-    showResult(
-      "面板正在重启",
-      "请稍后打开新地址并重新登录。健康检查失败会自动恢复原访问配置。\n\n" +
-        (settings.options.public_url || "使用原 SSH 转发方式"),
+    const session = dialogSession(ctx.signal);
+    session.replace(
+      el("h2", {}, "正在提交重启任务"),
+      help("连接会短暂中断，请稍后使用新地址重新登录。"),
     );
+    try {
+      const result = await api(
+        "/api/panel/restart",
+        { revision },
+        { signal: session.signal },
+      );
+      if (!session.active()) return;
+      notice("面板重启任务 #" + result.task_id + " 已提交。");
+      session.replace(
+        el("h2", {}, "面板正在重启"),
+        help(
+          "健康检查失败会恢复原访问配置。请稍后打开：" +
+            (settings.options.public_url || "原 SSH 转发地址"),
+        ),
+        button("关闭", session.close),
+      );
+    } catch (error) {
+      if (session.active()) session.fail(error);
+    }
   };
-  const edit = () => {
-    formDialog(
+  const certificateActions = (editor, reopen) => {
+    const open = (provider) => {
+      const draft = editor.value();
+      if (typeof draft.trusted_proxy === "string")
+        draft.trusted_proxy = draft.trusted_proxy
+          .split(",")
+          .map((v) => v.trim())
+          .filter(Boolean);
+      certificateEditor(
+        ctx,
+        c,
+        provider,
+        (asset) => reopen({ ...draft, certificate_asset: asset.id }),
+        () => reopen(draft),
+      );
+    };
+    const tools = el(
+      "div",
+      { class: "wide certificate-actions" },
+      row(
+        button("导入证书", () => open("import")),
+        button("申请证书", () => open("acme")),
+      ),
+    );
+    editor.form.querySelector(".fields").append(tools);
+    const refresh = () => {
+      tools.hidden = editor.value().mode !== "tls";
+    };
+    editor.form.addEventListener("change", refresh);
+    refresh();
+  };
+  const edit = (draft = accessValue(settings.options, certificates())) => {
+    const editor = formDialog(
       "配置面板访问",
-      accessFields(certificates),
-      accessValue(settings.options),
+      accessFields(certificates()),
+      draft,
       async (v) => {
-        const next = accessOptions(v, certificates);
-        const validated = await api("/api/panel/settings/preview", {
-          options: next,
-        });
-        const dialog = /** @type {HTMLDialogElement} */ (document.querySelector("#dialog"));
-        dialog.replaceChildren(
-          el("h2", {}, "确认面板访问配置"),
-          help(
-            "直接 HTTPS 使用内置 TLS；反向代理需要事先自行配置 Nginx/Caddy。保存后点击重启使配置生效，失败会自动恢复原设置。云安全组需放行实际 HTTPS 端口。",
-          ),
-          el("pre", {}, JSON.stringify(validated.options, null, 2)),
-          row(
-            button("返回编辑", edit),
-            button(
-              "保存配置",
-              async () => {
-                await api("/api/panel/settings", {
-                  options: validated.options,
-                  revision: settings.revision,
-                });
-                const saved = await api("/api/panel/settings");
-                settings.options = saved.options;
-                settings.revision = saved.revision;
-                dialog.replaceChildren(
-                  el("h2", {}, "面板访问配置已保存"),
-                  help("点击重启后，稍后使用新地址登录。"),
-                  row(
-                    button("稍后重启", () => {
-                      dialog.close();
-                      ctx.render();
-                    }),
-                    button(
-                      "重启并应用",
-                      () => restart(saved.revision),
-                      "primary",
-                    ),
-                  ),
-                );
-              },
-              "primary",
-            ),
-          ),
+        const next = accessOptions(v, certificates());
+        const session = dialogSession(ctx.signal);
+        session.replace(
+          el("h2", {}, "正在校验访问配置"),
+          help("检查监听地址、证书有效期和域名匹配…"),
         );
-        dialog.showModal();
+        try {
+          const validated = await api(
+            "/api/panel/settings/preview",
+            { options: next },
+            { signal: session.signal },
+          );
+          if (!session.active()) return;
+          session.replace(
+            el("h2", {}, "确认面板访问配置"),
+            help(
+              "直接 HTTPS 无需 Nginx/Caddy。保存后重启生效，健康检查失败会恢复原设置。请先在云安全组放行 HTTPS 端口。",
+            ),
+            el("pre", {}, JSON.stringify(validated.options, null, 2)),
+            row(
+              button("返回编辑", () => edit(v)),
+              button(
+                "保存配置",
+                async () => {
+                  await api(
+                    "/api/panel/settings",
+                    { options: validated.options, revision: settings.revision },
+                    { signal: session.signal },
+                  );
+                  const saved = await api("/api/panel/settings", undefined, {
+                    signal: session.signal,
+                  });
+                  if (!session.active()) return;
+                  settings.options = saved.options;
+                  settings.revision = saved.revision;
+                  session.replace(
+                    el("h2", {}, "面板访问配置已保存"),
+                    help("点击重启后，使用新地址重新登录。"),
+                    row(
+                      button("稍后重启", () => {
+                        session.close();
+                        ctx.render();
+                      }),
+                      button(
+                        "重启并应用",
+                        () => restart(saved.revision),
+                        "primary",
+                      ),
+                    ),
+                  );
+                },
+                "primary",
+              ),
+            ),
+          );
+        } catch (error) {
+          if (session.active())
+            session.replace(
+              el("h2", {}, "访问配置未通过校验"),
+              help(error.message),
+              button("返回编辑", () => edit(v)),
+            );
+        }
       },
     );
+    editor.form.querySelector('button[type="submit"]').textContent =
+      "预览访问配置";
     wireAccessMode();
+    certificateActions(editor, edit);
   };
   const panel = () =>
     card(
@@ -104,7 +172,7 @@ export async function access(ctx) {
         ? help("已保存配置与当前运行配置不同，重启后生效。")
         : null,
       row(
-        button("配置面板访问", edit, "primary"),
+        button("配置面板访问", () => edit(), "primary"),
         ...(settings.restart_required
           ? [button("重启并应用", () => restart(settings.revision))]
           : []),
@@ -129,30 +197,34 @@ export async function access(ctx) {
           listen: `${c.listener.listen.includes(":") ? "[" + c.listener.listen + "]" : c.listener.listen}:${c.listener.port}`,
           public_url: c.listener.public_base_url || "",
         };
-        const initial = accessValue(options);
+        const initial = accessValue(options, certificates());
         if (initial.mode === "local") initial.mode = "tls";
-        formDialog(
-          "独立下载监听",
-          accessFields(certificates, true),
-          initial,
-          (v) => {
-            const next = accessOptions(v, certificates),
-              match = next.listen.match(/^(?:\[([^\]]+)\]|([^:]+)):(\d+)$/);
-            if (!match) throw new Error("监听地址需要 IP:端口");
-            c.listener = {
-              enabled: v.enabled,
-              listen: match[1] || match[2],
-              port: Number(match[3]),
-              public_base_url: next.public_url,
-              certificate: next.certificate,
-              key: next.key,
-              trusted_proxy: next.trusted_proxy,
-            };
-            ctx.changed();
-            ctx.render();
-          },
-        );
-        wireAccessMode();
+        const editSubscription = (draft = initial) => {
+          const editor = formDialog(
+            "独立下载监听",
+            accessFields(certificates(), true),
+            draft,
+            (v) => {
+              const next = accessOptions(v, certificates()),
+                match = next.listen.match(/^(?:\[([^\]]+)\]|([^:]+)):(\d+)$/);
+              if (!match) throw new Error("监听地址需要 IP:端口");
+              c.listener = {
+                enabled: v.enabled,
+                listen: match[1] || match[2],
+                port: Number(match[3]),
+                public_base_url: next.public_url,
+                certificate: next.certificate,
+                key: next.key,
+                trusted_proxy: next.trusted_proxy,
+              };
+              ctx.changed();
+              ctx.render();
+            },
+          );
+          wireAccessMode();
+          certificateActions(editor, editSubscription);
+        };
+        editSubscription();
       }),
     );
   return [workspace("access", { panel, subscription }, ctx)];

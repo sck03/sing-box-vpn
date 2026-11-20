@@ -1,6 +1,7 @@
 package subscription
 
 import (
+	project "github.com/sck03/sing-box-vpn"
 	"slices"
 
 	"github.com/sck03/sing-box-vpn/internal/clientprofile"
@@ -59,6 +60,13 @@ func Presets() []Preset {
 					continue
 				}
 				t.Mode = "provider"
+			}
+			t.Origin = &TemplateOrigin{Format: "builtin", Revision: project.Versions.Release}
+			if client == "sing-box" {
+				t.Origin.SourceURL = "https://sing-box.sagernet.org/configuration/"
+			}
+			if client == "mihomo" {
+				t.Origin.SourceURL = "https://wiki.metacubex.one/config/"
 			}
 			p.Templates[client] = t
 		}

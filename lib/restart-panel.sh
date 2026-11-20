@@ -33,6 +33,8 @@ install -m 0755 "$stage/manager.previous" "$manager.new"
 mv -f -- "$manager.new" "$manager"
 install -m 0755 "$stage/runtime.previous" "$runtime.new"
 mv -f -- "$runtime.new" "$runtime"
+install -m 0755 "$stage/validator.previous" "$root/sing-box.new"
+mv -f -- "$root/sing-box.new" "$root/sing-box"
 mv -- "$app" "$stage/rejected"
 mv -- "$stage/previous" "$app"
 failed=0

@@ -4,16 +4,9 @@ import { historyControls, journalCard } from "./log-maintenance.js";
 import { taskHistory } from "./tasks.js";
 import { capabilities } from "./capabilities.js";
 import { workspace } from "./workspace.js";
-import {
-  el,
-  card,
-  row,
-  button,
-  help,
-  formDialog,
-  showResult,
-  notice,
-} from "./ui.js";
+import { programCard } from "./program.js";
+import { secretField } from "./secret-field.js";
+import { el, card, row, button, help, showResult, notice } from "./ui.js";
 export async function maintenance(ctx) {
   async function logsAndTasks() {
     const metadata = await capabilities(ctx.request || api);
@@ -52,7 +45,7 @@ export async function maintenance(ctx) {
       help(
         "备份包含统一数据库、管理员、凭据、账本与证书。在线恢复仅替换配置，保留本机最新权益、账本、管理员和撤销记录。空目录灾难恢复使用维护 CLI，所有权益默认禁用，核对后再启用。",
       ),
-      password,
+      secretField(password),
       row(
         button(
           "下载全量备份",
@@ -110,31 +103,7 @@ export async function maintenance(ctx) {
       ),
     );
   };
-  const upgrade = () =>
-    card(
-      "程序与受管运行时",
-      help(
-        "受管核心随经验证的程序发行包更新。官方 sing-box 用于配置验证，不直接替换正在计费的受管运行时。升级和回滚保留原活动与开机启动状态。",
-      ),
-      row(
-        button("更新到正式发行包", () =>
-          formDialog(
-            "程序升级",
-            [{ key: "value", label: "发行标签（留空使用最新正式版）" }],
-            { value: "" },
-            (v) => ctx.task({ operation: "program-upgrade", value: v.value }),
-          ),
-        ),
-        button(
-          "回滚受管运行时",
-          async () => {
-            if (confirm("验证并切换到上一份受管运行时？原活动实例会重启。"))
-              await ctx.task({ operation: "runtime-rollback" });
-          },
-          "danger",
-        ),
-      ),
-    );
+  const upgrade = () => programCard(ctx);
   const network = () =>
     card(
       "高级网络设置",

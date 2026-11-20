@@ -6,6 +6,18 @@ func (s *PlatformService) serveConfiguration(w http.ResponseWriter, r *http.Requ
 	ctx, path := r.Context(), r.URL.Path
 	admin, operator, require, audit := access.admin, access.operator, access.require, access.audit
 	var err error
+	if path == "/api/program" && r.Method == "GET" {
+		if !require(admin) {
+			return true
+		}
+		result, err := s.ProgramStatus(ctx, r.URL.Query().Get("check") == "true")
+		if err != nil {
+			platformError(w, err)
+		} else {
+			jsonResponse(w, result)
+		}
+		return true
+	}
 	if path == "/api/inbounds/impact" && r.Method == "GET" {
 		if !require(admin) {
 			return true
@@ -180,6 +192,22 @@ func (s *PlatformService) serveConfiguration(w http.ResponseWriter, r *http.Requ
 		} else {
 			jsonResponse(w, v)
 		}
+		return true
+	}
+	if path == "/api/certificates/prepare" && r.Method == "POST" {
+		if !require(admin) {
+			return true
+		}
+		var value CertificatePreparation
+		if err = decodeRequest(w, r, &value, 4096); err == nil {
+			var asset CertificateAsset
+			asset, err = s.PrepareCertificate(ctx, value)
+			if err == nil {
+				jsonResponse(w, asset)
+				return true
+			}
+		}
+		platformError(w, err)
 		return true
 	}
 	if path == "/api/certificates" {

@@ -48,25 +48,33 @@ type RuleSet struct {
 	Rules []Rule `json:"rules,omitempty"`
 }
 
+type TemplateOrigin struct {
+	SourceURL string `json:"source_url,omitempty"`
+	Revision  string `json:"revision,omitempty"`
+	Format    string `json:"format"`
+	Digest    string `json:"digest,omitempty"`
+}
+
 type Template struct {
-	ID             string         `json:"id"`
-	Name           string         `json:"name,omitempty"`
-	Client         string         `json:"client"`
-	Version        int            `json:"version"`
-	Mode           string         `json:"mode"`   // nodes, provider, config, rules
-	Preset         string         `json:"preset"` // proxy, split
-	DNS            []string       `json:"dns,omitempty"`
-	ProbeURL       string         `json:"probe_url,omitempty"`
-	TUN            bool           `json:"tun,omitempty"`
-	Rules          []Rule         `json:"rules,omitempty"`
-	RuleSets       []string       `json:"rule_sets,omitempty"`
-	URL            string         `json:"url,omitempty"` // remote declarative JSON template
-	Groups         []PolicyGroup  `json:"groups,omitempty"`
-	Providers      []RuleProvider `json:"providers,omitempty"`
-	DNSPolicy      *DNSPolicy     `json:"dns_policy,omitempty"`
-	Native         Object         `json:"native,omitempty"`
-	Final          string         `json:"final,omitempty"`
-	PrivateNetwork bool           `json:"private_network,omitempty"`
+	Origin         *TemplateOrigin `json:"origin,omitempty"`
+	ID             string          `json:"id"`
+	Name           string          `json:"name,omitempty"`
+	Client         string          `json:"client"`
+	Version        int             `json:"version"`
+	Mode           string          `json:"mode"`   // nodes, provider, config, rules
+	Preset         string          `json:"preset"` // proxy, split
+	DNS            []string        `json:"dns,omitempty"`
+	ProbeURL       string          `json:"probe_url,omitempty"`
+	TUN            bool            `json:"tun,omitempty"`
+	Rules          []Rule          `json:"rules,omitempty"`
+	RuleSets       []string        `json:"rule_sets,omitempty"`
+	URL            string          `json:"url,omitempty"` // remote declarative JSON template
+	Groups         []PolicyGroup   `json:"groups,omitempty"`
+	Providers      []RuleProvider  `json:"providers,omitempty"`
+	DNSPolicy      *DNSPolicy      `json:"dns_policy,omitempty"`
+	Native         Object          `json:"native,omitempty"`
+	Final          string          `json:"final,omitempty"`
+	PrivateNetwork bool            `json:"private_network,omitempty"`
 }
 
 type Output struct {
@@ -138,6 +146,16 @@ func (r Rule) Validate() error {
 }
 
 func (t Template) Validate() error {
+	if t.Origin != nil {
+		if len(t.Origin.Revision) > 256 || len(t.Origin.SourceURL) > 2048 || len(t.Origin.Format) > 64 || len(t.Origin.Digest) > 64 {
+			return errors.New("template provenance exceeds limits")
+		}
+		if t.Origin.SourceURL != "" {
+			if err := HTTPURL(t.Origin.SourceURL); err != nil {
+				return err
+			}
+		}
+	}
 	cap, ok := clientprofile.Lookup(t.Client)
 	if !ok {
 		return fmt.Errorf("unknown client %q", t.Client)

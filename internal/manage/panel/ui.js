@@ -13,6 +13,7 @@ import {
 } from "./dom.js";
 import { table } from "./tables.js";
 import { errorMessage } from "./api.js";
+import { secretField } from "./secret-field.js";
 
 export function jsonDialog(title, value, save) {
   const dialog = $("#dialog"),
@@ -135,7 +136,7 @@ export function formDialog(title, fields, value, save, preserve = false) {
       "label",
       { class: field.wide ? "wide" : "" },
       field.label,
-      input,
+      field.type === "password" ? secretField(input, field.label) : input,
     );
     if (field.help) label.append(el("small", {}, field.help));
     target.append(label);
@@ -308,11 +309,18 @@ export function formDialog(title, fields, value, save, preserve = false) {
       } catch (error) {
         errorNode.textContent = errorMessage(error);
         errorNode.hidden = false;
-        const match = inputs.find(([field]) => error.field === field.key || error.field?.endsWith("." + field.key));
+        const match = inputs.find(
+          ([field]) =>
+            error.field === field.key || error.field?.endsWith("." + field.key),
+        );
         if (match) {
           const input = match[1];
           input.setAttribute("aria-invalid", "true");
-          for (let parent = input.parentElement; parent && parent !== form; parent = parent.parentElement)
+          for (
+            let parent = input.parentElement;
+            parent && parent !== form;
+            parent = parent.parentElement
+          )
             if (parent.tagName === "DETAILS") parent.open = true;
           input.focus();
         }

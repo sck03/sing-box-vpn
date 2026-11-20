@@ -33,6 +33,22 @@ func (s *PlatformService) serveGrants(w http.ResponseWriter, r *http.Request, ac
 		jsonResponse(w, Object{"schema_version": sub.SchemaVersion, "formats": sub.InputFormats(), "protocols": profile.Protocols})
 		return true
 	}
+	if path == "/api/subscription-templates/import" && r.Method == "POST" {
+		if !require(admin) {
+			return true
+		}
+		var input sub.TemplateImport
+		if err = decodeRequest(w, r, &input, 1<<20); err == nil {
+			var result sub.TemplateImportResult
+			result, err = sub.ImportTemplate(input)
+			if err == nil {
+				jsonResponse(w, result)
+				return true
+			}
+		}
+		platformError(w, err)
+		return true
+	}
 	if path == "/api/subscription-presets" && r.Method == "GET" {
 		jsonResponse(w, sub.Presets())
 		return true

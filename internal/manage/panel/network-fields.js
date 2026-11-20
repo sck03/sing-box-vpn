@@ -47,7 +47,6 @@ export const dnsFields = [
     ],
   },
   { key: "disable_cache", label: "禁用 DNS 缓存", type: "bool" },
-  { key: "independent_cache", label: "不同解析器使用独立缓存", type: "bool" },
   { key: "disable_expire", label: "保留已过期缓存", type: "bool" },
 ];
 export const vpnProfileFields = (protocols) => [

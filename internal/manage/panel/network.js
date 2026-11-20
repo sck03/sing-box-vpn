@@ -2,6 +2,12 @@
 import { api } from "./api.js";
 import { loadResult } from "./details.js";
 import { capabilities } from "./capabilities.js";
+import { certificateEditor } from "./certificate-editor.js";
+import {
+  boundCertificate,
+  certificateChoices,
+  certificateSources,
+} from "./certificate-fields.js";
 import {
   el,
   card,
@@ -16,87 +22,106 @@ import {
   notice,
 } from "./ui.js";
 const nodeFields = (protocols, protocol) => {
- const fields = [
-  { key: "id", label: "入站 ID", required: true },
-  {
-    key: "protocol",
-    label: "协议",
-    type: "select",
-    options: protocols,
-    readonly: true,
-  },
-  { key: "port", label: "监听端口", type: "number", min: 1, max: 65535 },
-  { key: "disabled", label: "停用入站", type: "bool" },
-  { key: "tls.server_name", label: "TLS / Reality SNI" },
-  {
-    key: "tls.enabled",
-    label: "启用 TLS",
-    type: "bool",
-    visible: (v) => v.protocol === "vmess",
-  },
-  {
-    key: "tls.reality_private",
-    label: "Reality 私钥",
-    type: "password",
-    visible: (v) => v.protocol === "vless",
-  },
-  {
-    key: "tls.reality_short_id",
-    label: "Reality Short ID",
-    visible: (v) => v.protocol === "vless",
-  },
-  {
-    key: "flow",
-    label: "VLESS Flow",
-    type: "select",
-    options: [
-      ["", "无"],
-      ["xtls-rprx-vision", "Vision"],
-    ],
-    visible: (v) => v.protocol === "vless",
-  },
-  {
-    key: "transport.early_data",
-    label: "WebSocket Early Data（字节）",
-    type: "number",
-    min: 0,
-    max: 65535,
-    visible: (v) => v.protocol === "vmess",
-  },
-  {
-    key: "transport.early_data_header",
-    label: "Early Data 请求头",
-    visible: (v) => v.protocol === "vmess",
-  },
-  {
-    key: "tls.handshake_host",
-    label: "Reality 握手域名",
-    visible: (v) => v.protocol === "vless",
-  },
-  {
-    key: "tls.handshake_port",
-    label: "Reality 握手端口",
-    type: "number",
-    min: 1,
-    max: 65535,
-    visible: (v) => v.protocol === "vless",
-  },
-  {
-    key: "transport.path",
-    label: "WebSocket 路径",
-    visible: (v) => v.protocol === "vmess",
-  },
-  {
-    key: "transport.host",
-    label: "WebSocket Host",
-    visible: (v) => v.protocol === "vmess",
-  },
-];
- return [
-   { section: "基本设置", matches: (field) => !field.key.includes(".") && field.key !== "flow" },
-   { section: "传输参数", matches: (field) => field.key.startsWith("transport.") },
-   { section: "安全与握手", matches: (field) => field.key.startsWith("tls.") || field.key === "flow" },
- ].flatMap(({ section, matches }) => fields.filter((field) => matches(field) && (!field.visible || field.visible({ protocol }))).map((field, index) => ({ ...field, ...(index === 0 ? { section } : {}) })));
+  const fields = [
+    { key: "id", label: "入站 ID", required: true },
+    {
+      key: "protocol",
+      label: "协议",
+      type: "select",
+      options: protocols,
+      readonly: true,
+    },
+    { key: "port", label: "监听端口", type: "number", min: 1, max: 65535 },
+    { key: "disabled", label: "停用入站", type: "bool" },
+    { key: "tls.server_name", label: "TLS / Reality SNI" },
+    {
+      key: "tls.enabled",
+      label: "启用 TLS",
+      type: "bool",
+      visible: (v) => v.protocol === "vmess",
+    },
+    {
+      key: "tls.reality_private",
+      label: "Reality 私钥",
+      type: "password",
+      visible: (v) => v.protocol === "vless",
+    },
+    {
+      key: "tls.reality_short_id",
+      label: "Reality Short ID",
+      visible: (v) => v.protocol === "vless",
+    },
+    {
+      key: "flow",
+      label: "VLESS Flow",
+      type: "select",
+      options: [
+        ["", "无"],
+        ["xtls-rprx-vision", "Vision"],
+      ],
+      visible: (v) => v.protocol === "vless",
+    },
+    {
+      key: "transport.early_data",
+      label: "WebSocket Early Data（字节）",
+      type: "number",
+      min: 0,
+      max: 65535,
+      visible: (v) => v.protocol === "vmess",
+    },
+    {
+      key: "transport.early_data_header",
+      label: "Early Data 请求头",
+      visible: (v) => v.protocol === "vmess",
+    },
+    {
+      key: "tls.handshake_host",
+      label: "Reality 握手域名",
+      visible: (v) => v.protocol === "vless",
+    },
+    {
+      key: "tls.handshake_port",
+      label: "Reality 握手端口",
+      type: "number",
+      min: 1,
+      max: 65535,
+      visible: (v) => v.protocol === "vless",
+    },
+    {
+      key: "transport.path",
+      label: "WebSocket 路径",
+      visible: (v) => v.protocol === "vmess",
+    },
+    {
+      key: "transport.host",
+      label: "WebSocket Host",
+      visible: (v) => v.protocol === "vmess",
+    },
+  ];
+  return [
+    {
+      section: "基本设置",
+      matches: (field) => !field.key.includes(".") && field.key !== "flow",
+    },
+    {
+      section: "传输参数",
+      matches: (field) => field.key.startsWith("transport."),
+    },
+    {
+      section: "安全与握手",
+      matches: (field) => field.key.startsWith("tls.") || field.key === "flow",
+    },
+  ].flatMap(({ section, matches }) =>
+    fields
+      .filter(
+        (field) =>
+          matches(field) && (!field.visible || field.visible({ protocol })),
+      )
+      .map((field, index) => ({
+        ...field,
+        ...(index === 0 ? { section } : {}),
+      })),
+  );
 };
 
 export async function inbounds(ctx) {
@@ -190,13 +215,11 @@ export async function inbounds(ctx) {
               key: "id",
               label: "证书资产",
               type: "select",
-              options: (c.certificates || []).map((a) => [
-                a.id,
-                a.id + " · " + a.domain,
-              ]),
+              options: certificateChoices(c.certificates || []),
+              help: "请选择域名匹配的有效证书。自签名证书仅用于测试；普通公网访问请申请或导入受信任证书。",
             },
           ],
-          {},
+          { id: boundCertificate(n.tls || {}, c.certificates || []) },
           (v) => {
             const a = c.certificates.find((a) => a.id === v.id);
             if (!a) throw new Error("请先导入或申请证书");
@@ -216,7 +239,7 @@ export async function inbounds(ctx) {
       button("复制", () =>
         formDialog(
           "复制入站",
-          nodeFields(protocols),
+          nodeFields(protocols, n.protocol),
           { ...structuredClone(n), id: n.id + "-copy", port: n.port + 1 },
           (v) => {
             items.push(v);
@@ -239,7 +262,8 @@ export async function inbounds(ctx) {
         async () => {
           const impact = await api(
             "/api/inbounds/impact?scope=normal&id=" + encodeURIComponent(n.id),
-            undefined, { signal: ctx.signal },
+            undefined,
+            { signal: ctx.signal },
           );
           if (
             confirm(
@@ -314,68 +338,21 @@ export async function certificates(ctx) {
   return [
     card(
       "证书资产",
+      el(
+        "a",
+        { href: "#maintenance/upgrade" },
+        "查看证书签发组件版本 / 检查程序更新",
+      ),
       help(
         "导入前验证域名、有效期和私钥匹配。内置 ACME 自动申请与续期，无需额外安装程序；域名须指向本机，端口 80 需要空闲且从公网可达。",
       ),
       row(
         button(
           "导入 PEM",
-          () =>
-            formDialog(
-              "导入证书",
-              [
-                { key: "id", label: "资产 ID", required: true },
-                { key: "domain", label: "证书域名", required: true },
-                {
-                  key: "certificate",
-                  label: "证书 PEM",
-                  type: "textarea",
-                  wide: true,
-                },
-                { key: "key", label: "私钥 PEM", type: "textarea", wide: true },
-              ],
-              {},
-              async (v) => {
-                const asset = await api("/api/certificates", v);
-                if (c.certificates.some((a) => a.id === asset.id))
-                  throw new Error("资产 ID 已存在，请使用新的 ID");
-                c.certificates.push(asset);
-                changed();
-              },
-            ),
+          () => certificateEditor(ctx, c, "import"),
           "primary",
         ),
-        button("新增 ACME 资产", () =>
-          formDialog(
-            "ACME 资产",
-            [
-              { key: "id", label: "资产 ID", required: true },
-              { key: "domain", label: "域名", required: true },
-              {
-                key: "email",
-                label: "联系邮箱",
-                type: "email",
-                required: true,
-              },
-            ],
-            {},
-            (v) => {
-              if (c.certificates.some((a) => a.id === v.id))
-                throw new Error("ID 已存在");
-              const root = ctx.root;
-              c.certificates.push({
-                ...v,
-                provider: "acme",
-                certificate: root + "/certificates/" + v.id + "/cert.pem",
-                key: root + "/certificates/" + v.id + "/key.pem",
-              });
-              changed();
-              notice(
-                "先应用资产配置，再点击「申请 / 续期」。证书成功后可在入站页绑定。",
-              );
-            },
-          ),
-        ),
+        button("申请自动证书", () => certificateEditor(ctx, c, "acme")),
       ),
       table(
         [
@@ -383,7 +360,7 @@ export async function certificates(ctx) {
           { key: "domain", label: "域名" },
           {
             label: "续期归属",
-            value: (a) => (a.provider === "import" ? "手动导入" : "内置 ACME"),
+            value: (a) => certificateSources[a.provider] || a.provider,
           },
           {
             label: "自动续期",

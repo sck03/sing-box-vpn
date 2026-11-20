@@ -48,10 +48,19 @@ cookie = login.headers.get("set-cookie").split(";")[0];
 const overview = ok(await call("/api/overview"));
 assert.equal(typeof overview.task_counts.attention, "number");
 for (const invalid of [
-  { operation: "subscription", automatic: true, subscription: { operation: "check", id: "missing" } },
+  {
+    operation: "subscription",
+    automatic: true,
+    subscription: { operation: "check", id: "missing" },
+  },
   { operation: "service", service: "sb-core", value: "stop", scope: "normal" },
   { operation: "service", service: "sb-core", value: "stop", id: "ignored" },
-]) assert.equal((await call("/api/tasks", invalid)).status, 400, "public task accepted internal or irrelevant fields");
+])
+  assert.equal(
+    (await call("/api/tasks", invalid)).status,
+    400,
+    "public task accepted internal or irrelevant fields",
+  );
 assert(
   overview.services.every((s) => s.state === "unavailable"),
   "Only --no-system test installations are supported",
@@ -64,13 +73,21 @@ let state = ok(await call("/api/config"));
 const config = state.config;
 assert.equal(config.app.schema, 4);
 assert.equal(config.schema, 5);
-assert(config.app.nodes.every((node) => !("uuid" in node) && !("password" in node)));
+assert(
+  config.app.nodes.every((node) => !("uuid" in node) && !("password" in node)),
+);
 const unsupportedDNS = structuredClone(config);
-unsupportedDNS.app.advanced.dns = { servers: [
-  { type: "local", tag: "dns-local" },
-  { type: "quic", tag: "dns-audit", server: "1.1.1.1" },
-], final: "dns-audit" };
-for (const [path, body] of [["/api/config/preview", unsupportedDNS], ["/api/config", { revision: state.revision, config: unsupportedDNS }]]) {
+unsupportedDNS.app.advanced.dns = {
+  servers: [
+    { type: "local", tag: "dns-local" },
+    { type: "quic", tag: "dns-audit", server: "1.1.1.1" },
+  ],
+  final: "dns-audit",
+};
+for (const [path, body] of [
+  ["/api/config/preview", unsupportedDNS],
+  ["/api/config", { revision: state.revision, config: unsupportedDNS }],
+]) {
   const rejected = await call(path, body);
   assert.equal(rejected.status, 400);
   assert.equal(rejected.value.error.code, "invalid_field");
@@ -79,6 +96,64 @@ for (const [path, body] of [["/api/config/preview", unsupportedDNS], ["/api/conf
 const invalidTask = await call("/api/tasks/detail?id=invalid");
 assert.equal(invalidTask.status, 400);
 assert.equal(invalidTask.value.error.field, "id");
+const components = ok(await call("/api/program"));
+assert.equal(components.components.length, 4);
+assert(
+  components.components.every(
+    (component) =>
+      component.compatible && component.version === component.expected,
+  ),
+);
+const generatedCertificates = ok(await call("/api/certificates"));
+assert(
+  generatedCertificates.some(
+    (certificate) => certificate.provider === "generated" && certificate.ready,
+  ),
+);
+const preparedCertificate = ok(
+  await call("/api/certificates/prepare", {
+    id: "prepared-cert",
+    domain: "panel.example.test",
+    email: "owner@example.test",
+  }),
+);
+assert.equal(preparedCertificate.provider, "acme");
+assert(
+  preparedCertificate.certificate.endsWith(
+    "/certificates/prepared-cert/cert.pem",
+  ),
+);
+const importedTemplate = ok(
+  await call("/api/subscription-templates/import", {
+    id: "imported-template",
+    name: "示例规则",
+    client: "mihomo",
+    format: "rule-list",
+    content: "DOMAIN-SUFFIX,example.com,DIRECT",
+    source_url: "https://example.test/rules",
+    revision: "fixture",
+    default_target: "PROXY",
+  }),
+);
+assert.equal(importedTemplate.template.rules[0].target, "DIRECT");
+assert.equal(importedTemplate.template.origin.digest.length, 64);
+const badTemplate = await call("/api/subscription-templates/import", {
+  id: "bad-template",
+  client: "sing-box",
+  format: "sing-box-json",
+  content: JSON.stringify({
+    route: {
+      rules: [
+        {
+          domain: ["example.com"],
+          ip_cidr: ["192.0.2.0/24"],
+          outbound: "proxy",
+        },
+      ],
+    },
+  }),
+});
+assert.equal(badTemplate.status, 400);
 const transportCandidate = structuredClone(config.app);
 const transportNode = transportCandidate.nodes.find(
   (node) => node.protocol === "vmess",
@@ -188,8 +263,23 @@ await finished(queued.task_id);
 const spelling = "AABBCCDD-1122-4333-8444-5566778899AA";
 for (const [index, uuid] of [spelling, spelling.toLowerCase()].entries()) {
   const id = "identity-" + suffix + "-" + index;
-  ok(await call("/api/accounts", { account: { id, name: id, start_mode: "created", revision: 0 } }));
-  const task = ok(await call("/api/tasks", { operation: "account", account: { operation: "bind", id, scope: "normal", inbound_ids: [inbound.id], uuid } }));
+  ok(
+    await call("/api/accounts", {
+      account: { id, name: id, start_mode: "created", revision: 0 },
+    }),
+  );
+  const task = ok(
+    await call("/api/tasks", {
+      operation: "account",
+      account: {
+        operation: "bind",
+        id,
+        scope: "normal",
+        inbound_ids: [inbound.id],
+        uuid,
+      },
+    }),
+  );
   await finished(task.task_id, index === 0 ? "succeeded" : "failed");
   const bindings = ok(await call(`/api/credentials?id=${id}&scope=normal`));
   assert.equal(bindings.length, index === 0 ? 1 : 0);
@@ -197,7 +287,9 @@ for (const [index, uuid] of [spelling, spelling.toLowerCase()].entries()) {
 const taskPage = ok(await call("/api/tasks?limit=2"));
 assert.equal(taskPage.items.length, 2);
 assert(taskPage.next_before > 0);
-const olderTasks = ok(await call("/api/tasks?limit=2&before=" + taskPage.next_before));
+const olderTasks = ok(
+  await call("/api/tasks?limit=2&before=" + taskPage.next_before),
+);
 assert(olderTasks.items.every((task) => task.id < taskPage.next_before));
 ok(await call("/api/tasks/acknowledge", { id: queued.task_id }));
 assert.equal(

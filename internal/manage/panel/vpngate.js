@@ -1,5 +1,6 @@
 import { workspace } from "./workspace.js";
 import { api } from "./api.js";
+import { boundCertificate, certificateChoices } from "./certificate-fields.js";
 import { capabilities } from "./capabilities.js";
 import { showFacts, loadRecords } from "./details.js";
 import { dialogSession } from "./dialog-session.js";
@@ -29,8 +30,14 @@ export async function vpngate(ctx) {
         const session = dialogSession(ctx.signal);
         session.replace(help("正在加载出口验证…"));
         let status;
-        try { status = await api("/api/gateway?resource=status", undefined, { signal: session.signal }); }
-        catch (error) { session.fail(error); return; }
+        try {
+          status = await api("/api/gateway?resource=status", undefined, {
+            signal: session.signal,
+          });
+        } catch (error) {
+          session.fail(error);
+          return;
+        }
         if (!session.active()) return;
         showFacts(
           "出口验证",
@@ -137,10 +144,7 @@ export async function vpngate(ctx) {
                 label: "证书资产",
                 type: "select",
                 required: true,
-                options: c.certificates.map((a) => [
-                  a.id,
-                  `${a.domain} · ${a.id}`,
-                ]),
+                options: certificateChoices(c.certificates),
               },
             ],
             {},
@@ -152,7 +156,7 @@ export async function vpngate(ctx) {
                 key: asset.key,
                 tls_sni: asset.domain,
                 vmess_tls: true,
-                self_signed: false,
+                self_signed: asset.provider === "generated",
               });
               ctx.changed();
               ctx.render();

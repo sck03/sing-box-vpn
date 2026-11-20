@@ -1,12 +1,13 @@
 // Shared form contract for built-in TLS and an existing HTTPS proxy.
-export const accessValue = (options) => ({
+import { boundCertificate, certificateChoices } from "./certificate-fields.js";
+export const accessValue = (options, certificates = []) => ({
   ...options,
   mode: options.certificate
     ? "tls"
     : options.trusted_proxy?.length
       ? "proxy"
       : "local",
-  certificate_asset: "",
+  certificate_asset: boundCertificate(options, certificates),
   trusted_proxy: options.trusted_proxy || [],
 });
 export function accessFields(certificates, subscription = false) {
@@ -41,11 +42,14 @@ export function accessFields(certificates, subscription = false) {
     },
     {
       key: "certificate_asset",
-      label: "使用已有证书资产（可选）",
+      label: "HTTPS 证书",
+      help: certificates.length
+        ? "选择证书管理中的证书；证书域名须覆盖公网 URL，保存前会校验有效期与私钥。自签名证书仅用于测试。"
+        : "还没有证书。使用下方「导入证书」或「申请证书」添加；也可在高级方式中填写服务器路径。",
       type: "select",
       options: [
-        ["", "手动填写证书路径"],
-        ...certificates.map((a) => [a.id, a.domain]),
+        ["", "高级：手动填写服务器证书路径"],
+        ...certificateChoices(certificates),
       ],
       visible: (v) => v.mode === "tls",
     },
@@ -74,7 +78,7 @@ export function accessOptions(v, certificates) {
   return {
     listen: v.listen.trim(),
     public_url:
-      v.mode === "local" ? "" : v.public_url.trim().replace(/\/$/, ""),
+      v.mode === "local" ? "" : (v.public_url || "").trim().replace(/\/$/, ""),
     certificate: v.mode === "tls" ? asset?.certificate || v.certificate : "",
     key: v.mode === "tls" ? asset?.key || v.key : "",
     trusted_proxy: v.mode === "proxy" ? v.trusted_proxy : [],
@@ -85,12 +89,14 @@ export function wireAccessMode() {
   form.addEventListener("change", (event) => {
     const target = /** @type {HTMLSelectElement} */ (event.target);
     if (target.getAttribute("aria-label") !== "访问方式") return;
-    const listen = /** @type {HTMLInputElement} */ (form.querySelector('[aria-label="监听地址"]')),
+    const listen = /** @type {HTMLInputElement} */ (
+        form.querySelector('[aria-label="监听地址"]')
+      ),
       port = listen.value.match(/:(\d+)$/)?.[1] || "2096";
-    listen.value =
-      (target.value === "tls" ? "0.0.0.0:" : "127.0.0.1:") + port;
-    const proxy = /** @type {HTMLInputElement} */ (form.querySelector('[aria-label="可信 HTTPS 代理 CIDR（逗号分隔）"]'));
-    if (target.value === "proxy" && !proxy.value)
-      proxy.value = "127.0.0.1/32";
+    listen.value = (target.value === "tls" ? "0.0.0.0:" : "127.0.0.1:") + port;
+    const proxy = /** @type {HTMLInputElement} */ (
+      form.querySelector('[aria-label="可信 HTTPS 代理 CIDR（逗号分隔）"]')
+    );
+    if (target.value === "proxy" && !proxy.value) proxy.value = "127.0.0.1/32";
   });
 }

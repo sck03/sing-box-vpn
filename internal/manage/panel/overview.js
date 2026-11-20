@@ -1,10 +1,28 @@
 import { api, getOverview } from "./api.js";
 import { capabilities } from "./capabilities.js";
 import { tasksCard } from "./tasks.js";
+import { setupGuide } from "./setup-guide.js";
 import { canView, pageFor, sectionsFor, routeFor } from "./page-catalog.js";
 import { el, card, help, table, badge, button } from "./ui.js";
 
-const serviceState = (value) => ({ active: "运行中", inactive: "已停止", activating: "启动中", deactivating: "停止中", failed: "失败", unavailable: "环境不可用", unknown: "未知", loaded: "已安装", "not-found": "未安装", enabled: "已启用", disabled: "已关闭", static: "静态单元", masked: "已屏蔽" })[value] || value || "—";
+const serviceState = (value) =>
+  ({
+    active: "运行中",
+    inactive: "已停止",
+    activating: "启动中",
+    deactivating: "停止中",
+    failed: "失败",
+    unavailable: "环境不可用",
+    unknown: "未知",
+    loaded: "已安装",
+    "not-found": "未安装",
+    enabled: "已启用",
+    disabled: "已关闭",
+    static: "静态单元",
+    masked: "已屏蔽",
+  })[value] ||
+  value ||
+  "—";
 
 function configurationStatus(snapshot) {
   if (snapshot.revision === snapshot.applied_revision)
@@ -17,7 +35,11 @@ function configurationStatus(snapshot) {
 }
 export async function overview(ctx) {
   const metadata = await capabilities();
-  const data = ctx.overview || (await (ctx.request ? ctx.request("/api/overview") : getOverview(ctx.signal)));
+  const data =
+    ctx.overview ||
+    (await (ctx.request
+      ? ctx.request("/api/overview")
+      : getOverview(ctx.signal)));
   ctx.observeRevision(data.revision);
   const health = el("div", { class: "health-summary", role: "status" });
   function updateHealth(next) {
@@ -73,10 +95,7 @@ export async function overview(ctx) {
       [configurationStatus(data), "配置状态"],
       [data.runtimes.filter((v) => v.recent).length, "近期在线实例"],
       [data.task_counts.attention, "需要关注"],
-      [
-        data.task_counts.active,
-        "进行中任务",
-      ],
+      [data.task_counts.active, "进行中任务"],
     ].map(([value, label]) =>
       el(
         "div",
@@ -217,9 +236,12 @@ export async function overview(ctx) {
     stats.querySelectorAll("strong").forEach((node, i) => {
       node.textContent = values[i];
     });
-    [next.runtimes, next.services, next.tasks.slice(0, 5), next.credentials || []].forEach(
-      (items, i) => tables[i].updateItems(items),
-    );
+    [
+      next.runtimes,
+      next.services,
+      next.tasks.slice(0, 5),
+      next.credentials || [],
+    ].forEach((items, i) => tables[i].updateItems(items));
   };
   const shortcuts = [
     ["inbounds", "配置节点", "选择协议，设置端口与发布地址"],
@@ -238,6 +260,7 @@ export async function overview(ctx) {
   return [
     health,
     stats,
+    ...[setupGuide(ctx)].filter(Boolean),
     card(
       "常用操作",
       el(

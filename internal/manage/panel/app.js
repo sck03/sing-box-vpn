@@ -1,5 +1,6 @@
 import { api, setCSRF, saveConfiguration, submitTask } from "./api.js";
 import { openTask } from "./tasks.js";
+import { secretField } from "./secret-field.js";
 import { overviewStream } from "./live.js";
 import { pageContext } from "./lifecycle.js";
 import { capabilities, validatePassword } from "./capabilities.js";
@@ -12,6 +13,14 @@ import {
 } from "./navigation.js";
 import { pageFor, groupFor, groupLabel, routeFor } from "./page-catalog.js";
 import { $, el, card, help, notice, action, button, showResult } from "./ui.js";
+const loginPassword = /** @type {HTMLInputElement} */ (
+  document.querySelector('input[name="password"]')
+);
+if (loginPassword) {
+  const container = loginPassword.parentElement;
+  const control = secretField(loginPassword, "登录密码");
+  container.append(control);
+}
 const setMenu = (open) => {
   $("#shell").classList.toggle("nav-open", open);
   $("#menu-toggle").setAttribute("aria-expanded", String(open));
@@ -86,7 +95,10 @@ const ctx = {
   /** @param {import("./contracts.js").TaskCommand} command */
   async task(command) {
     const response = await submitTask(command);
-    notice("任务 #" + response.task_id + " 已排队", false, { label: "查看结果", action: () => openTask(response.task_id) });
+    notice("任务 #" + response.task_id + " 已排队", false, {
+      label: "查看结果",
+      action: () => openTask(response.task_id),
+    });
     return response.task_id;
   },
   render: renderPage,
@@ -302,15 +314,24 @@ $("#preview").addEventListener(
       } else changed.push(path);
     }
     diff(baseline, submitted);
-    await requestConfiguration(async (signal) => {
-      const result = await api("/api/config/preview", submitted, { signal });
-      if (generation !== draftGeneration)
-        throw new DOMException("草稿已重新载入", "AbortError");
-      return result;
-    }, changed, {
-      signal: pageRequest?.signal,
-      loadOutput: (id, signal) => api("/api/config/preview-output", { id, config: submitted }, { signal }),
-    });
+    await requestConfiguration(
+      async (signal) => {
+        const result = await api("/api/config/preview", submitted, { signal });
+        if (generation !== draftGeneration)
+          throw new DOMException("草稿已重新载入", "AbortError");
+        return result;
+      },
+      changed,
+      {
+        signal: pageRequest?.signal,
+        loadOutput: (id, signal) =>
+          api(
+            "/api/config/preview-output",
+            { id, config: submitted },
+            { signal },
+          ),
+      },
+    );
   }),
 );
 $("#discard").addEventListener(
@@ -343,7 +364,8 @@ $("#save").addEventListener(
       "校验通过，应用任务 #" +
         response.task_id +
         " 已排队。请查看实际应用结果。",
-      false, { label: "查看结果", action: () => openTask(response.task_id) },
+      false,
+      { label: "查看结果", action: () => openTask(response.task_id) },
     );
   }),
 );

@@ -19,6 +19,7 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	"github.com/sck03/sing-box-vpn/internal/manage"
 	"github.com/sck03/sing-box-vpn/internal/runtimeconfig"
+	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
 func main() {
@@ -161,7 +162,7 @@ func main() {
 		}
 	}
 	for _, t := range []reflect.Type{
-		reflect.TypeFor[manage.OverviewSnapshot](),
+		reflect.TypeFor[sub.TemplateImport](), reflect.TypeFor[sub.TemplateImportResult](), reflect.TypeFor[manage.OverviewSnapshot](), reflect.TypeFor[manage.ProgramStatus](), reflect.TypeFor[manage.CertificatePreparation](), reflect.TypeFor[manage.CertificateImport](),
 		reflect.TypeFor[manage.ManagedNode](), reflect.TypeFor[manage.App](), reflect.TypeFor[manage.APIError](), reflect.TypeFor[manage.AccountClientOption](),
 		reflect.TypeFor[manage.PlatformConfig](), reflect.TypeFor[manage.ConfigurationSave](), reflect.TypeFor[manage.ConfigurationState](), reflect.TypeFor[manage.QueuedTask](), reflect.TypeFor[application.TaskCommand](),
 		reflect.TypeFor[domain.Account](), reflect.TypeFor[domain.Credential](), reflect.TypeFor[accounting.Usage](), reflect.TypeFor[accounting.Grant](),
