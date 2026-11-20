@@ -161,7 +161,11 @@ func compilePreparedSubscriptions(ctx context.Context, root, core string, c sub.
 		if !exists {
 			continue
 		}
-		if old, exists := previous.Artifacts[output.ID]; exists && templates[output.Template].Client == "sing-box" && previous.Validations[output.ID].State == "passed" && previous.CoreIdentity == snapshot.CoreIdentity && old.ETag == artifact.ETag {
+		if old, exists := previous.Artifacts[output.ID]; exists &&
+			templates[output.Template].Client == "sing-box" &&
+			previous.InputDigests[output.ID] == snapshot.InputDigests[output.ID] &&
+			old.ConnectionDigest != "" && old.ConnectionDigest == artifact.ConnectionDigest && old.NodeCount == artifact.NodeCount &&
+			previous.Validations[output.ID].State == "passed" && previous.CoreIdentity == snapshot.CoreIdentity && old.ETag == artifact.ETag {
 			snapshot.Validations[output.ID] = sub.Validation{State: "passed", Engine: "sing-box", Scope: "core-config", Cached: true}
 			continue
 		}

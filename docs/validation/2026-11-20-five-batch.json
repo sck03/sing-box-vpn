@@ -56,6 +56,11 @@
         "command": "go test ./internal/manage -run \"Test.*(Share|Account|ConfigurationView|Preset|Outbound|PlatformCollections)\" -count=1 && go test ./internal/clientprofile ./internal/subscription ./cmd/...",
         "result": "passed",
         "purpose": "Final DTO and VPNGate-only onboarding follow-up, then browser rebuilt and rerun"
+      },
+      {
+        "command": "go test ./internal/manage -count=1 -run \"Test.*(SubscriptionValidationCache|RefreshValidation|ClientExportsDoNotNeedMihomo|CachedAccountExport|Artifact)\" && go vet ./internal/manage",
+        "result": "passed",
+        "regression": "Compilation identity changed with identical encoded bytes incorrectly reused previous validation before the fix; now semantics are rechecked while unchanged inputs retain caching"
       }
     ]
   },
@@ -107,7 +112,7 @@
   },
   "ci": {
     "workflow": ".github/workflows/ci.yml",
-    "result_source": "GitHub Actions checks on the follow-up release-packaging fix commit",
+    "result_source": "GitHub Actions checks on the final follow-up commit, including release inventory and validation-cache fixes",
     "required": [
       "full Go race tests",
       "real client protocol matrix",
