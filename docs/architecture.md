@@ -24,13 +24,17 @@
 
 编译缓存以 SchemaVersion、CompilerVersion、选定节点和有效模板的摘要为键，复用前验证产物 ETag/正文摘要。连接、证书、模板或规则变化会失效；来源/能力/路由安全仍每次检查。解析语义变化时递增 ParserVersion，使来源正文与条件请求缓存失效；渲染语义变化时递增 CompilerVersion；持久化结构变化时递增 SchemaVersion。sing-box 核心校验另以核心身份和产物 ETag 缓存。
 
-subscriptions/schedule.json 是截止时间与权益修订的小型投影，不包含节点、远端凭据或内联正文；运行缓存与调度投影通过同一发布日志提交。常规空闲调度只读此文件，缺失时可从当前配置/运行元信息恢复。subscriptions/output-status.json 记录输出节点数量、实际验证和最多 20 条诊断，避免状态查询解码整个已发布节点正文。这些文件都可重建，配置权威仍为数据库。
+subscriptions/schedule.json 是截止时间与权益修订的小型投影，不包含节点、远端凭据或内联正文。subscriptions/activity.json 只包含来源、模板、规则和目标投递的活动状态及通知端点哈希；运行缓存、调度与活动投影通过同一发布日志提交。常规空闲调度只读 schedule.json，状态 API 只读活动、输出与通知小文件，不再扫描 runtime.json。subscriptions/output-status.json 记录输出节点数量、实际验证和最多 20 条诊断。这些文件由启动恢复和正常发布重建，配置权威仍为数据库。
 
 认证后的 `/api/subscription-capabilities` 返回 schema、格式和协议，`/api/clients` 返回详细字段范围，`/api/subscription-presets` 返回用途预设。`/api/accounts/outputs` 按账户和实例生成实际可下载范围；用量接口的 profiles 是对象数组。`account_exports.go` 共用同一配置快照、凭据、账户模板和 PreparedOutput，供分享验证、可用性、直接导出及公开下载使用。`account_defaults` / `account_overrides` 仍由统一配置管理。
 
 管理员 `/api/subscriptions/actions`、`/api/outbound-options` 只提供已应用对象。完整预览返回节点数量、变化和结构化 Validation；`POST /api/config/preview-output` 按 `{id,config}` 返回最多 64 KiB 的脱敏产物。公开 API 不返回原始凭据。Validation 分开记录状态、引擎、检查范围与缓存命中，不从英文消息推断结果。
 
-`subscriptions_publication.go` 隔离抓取/编译与发布：锁外运行编码器及 sing-box 核心检查，锁内重新检查配置、账户节点/修订和核心身份，再合并最新运行记录并原子提交。新资源失败时用旧资源重新构建健康输出。单输出检测只展开其来源图，不二次校验同一产物。连接检测统一使用 sing-box；超出能力的节点返回 unsupported，不依赖目标客户端核心。
+`subscriptions_publication.go` 隔离抓取/编译与发布：锁外运行编码器及 sing-box 核心检查，锁内通过 AppliedState 原子读取确认配置和版本，校对 runtime-revision、订阅配置、账户节点/修订和核心身份。候选文件已发布但尚未确认时拒绝后台刷新和新的投递快照；提交时再核对一次代际。新资源失败时用旧资源重新构建健康输出。单输出检测只展开其来源图，不二次校验同一产物。连接检测统一使用 sing-box；超出能力的节点返回 unsupported，不依赖目标客户端核心。
+
+投递与刷新共用有界后台任务队列，控制队列独立处理配置及凭据。投递分为快照捕获、两个并发传输 worker、独立限时完成记录提交和结果报告。记录按目标配置摘要匹配；无关配置变更不丢失确认，替换地址或凭据不继承旧确认。配置/凭据/隧道发布统一在提交阶段合并最新投递记录。写入后无法确认远端是否接收时记录 uncertain，可能需要重试，不能宣称恰好一次。
+
+账户导出通过 AccountTemplates 使用同版本已发布的有效模板；本地模板引用的远程规则也是该依赖图的一部分。缺失远程依赖只阻断相关输出，不影响内置模板。状态和投递报告采用命名 DTO，由 panel-contract 同步生成前端契约。
 
 `subscriptions/local.json` 已移除；账户节点从权威配置与凭据构造，内联节点来自当前来源。Snapshot 保存有效模板、节点指纹与校验结果；没有第二套本地节点真源。重名后缀计数按原名推进，策略组复用稳定名称分配；嵌套组检查范围和展开预算。
 
@@ -65,7 +69,7 @@ subscriptions/schedule.json 是截止时间与权益修订的小型投影，不�
 | internal/manage/panel                                            | 原生 ES 模块 SPA，共享表单/列表/草稿，静态嵌入二进制                                            |
 | internal/subscription                                            | 纯配置处理、解析、集合预算、节点选择与客户端渲染                                                |
 | internal/runtime                                                 | 受管 sing-box 注册、认证后计量守卫                                                              |
-| internal/vpngate                                           | 独立 VPNGate 后端、netns/OpenVPN、出口验证和 SOCKS 转发                                         |
+| internal/vpngate                                                 | 独立 VPNGate 后端、netns/OpenVPN、出口验证和 SOCKS 转发                                         |
 | internal/command                                                 | 子进程期限、取消、有界输出                                                                      |
 | internal/hostservice                                             | 不依赖数据库的失败服务恢复、Argo 运行观察、可重试网络设置恢复，通过命令适配器访问主机           |
 | internal/httpserver                                              | HTTP 生命周期、连接上限、独立请求并发准入，不依赖业务或数据库                                   |
@@ -216,6 +220,7 @@ VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IP
 未使用的官方校验器 activate 路径已删除，其专属实现测试同步移除。旧工作流测试需要的 systemServices helper 只放在 \_test.go，不再进入生产二进制。DNS independent_cache 已从表单移除，后端明确拒绝该已废弃字段。
 
 续期调度先读取两个 revision；版本不变且未到十分钟检查时间时，不读取完整配置或 PEM。失败可重试，配置变化绕过等待。额度账本 WAL/FULL、预留和撤销保证保持原语义。
+
 ## 输出用途与维护边界（6.0）
 
 clientprofile/output.go 定义稳定输出身份（格式与用途）；subscription/account_output.go 负责纯兼容性规划，account_policy.go 校验模板 client/mode。manage 负责配置快照、授权、编译缓存和核心验证；HTTP 不重新定义模板业务。账户导出请求与凭据命令为不同的 application 类型。

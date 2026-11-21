@@ -1,126 +1,34 @@
 package manage
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/sck03/sing-box-vpn/internal/application"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
-func sendSubscriptionArtifact(ctx context.Context, client *http.Client, d sub.Delivery, artifact sub.Artifact) error {
-	if d.Kind == "telegram" {
-		chunks, err := telegramMessages(string(artifact.Data))
-		if err != nil {
-			return err
-		}
-		for _, chunk := range chunks {
-			var response struct {
-				OK bool `json:"ok"`
-			}
-			if err = remoteRequest(ctx, client, d.URL+"/bot"+d.Token+"/sendMessage", "POST", Object{"chat_id": d.Username, "text": chunk, "disable_web_page_preview": true}, nil, &response); err != nil {
-				return errors.New("Telegram delivery failed")
-			}
-			if !response.OK {
-				return errors.New("Telegram rejected delivery")
-			}
-		}
-		return nil
-	}
-	if d.Kind == "gitlab" {
-		headers := map[string]string{"PRIVATE-TOKEN": d.Token}
-		var project struct {
-			Visibility string `json:"visibility"`
-		}
-		if err := remoteRequest(ctx, client, d.URL, "GET", nil, headers, &project); err != nil {
-			return errors.New("GitLab project check failed")
-		}
-		if project.Visibility != "private" {
-			return errors.New("GitLab delivery requires a private project")
-		}
-		branch := d.Username
-		if branch == "" {
-			branch = "main"
-		}
-		action := "update"
-		err := remoteRequest(ctx, client, d.URL+"/repository/files/"+url.PathEscape(d.Filename)+"?ref="+url.QueryEscape(branch), "HEAD", nil, headers, nil)
-		if err != nil {
-			var status httpStatusError
-			if !errors.As(err, &status) || status != 404 {
-				return errors.New("GitLab file check failed")
-			}
-			action = "create"
-		}
-		if err = remoteRequest(ctx, client, d.URL+"/repository/commits", "POST", Object{"branch": branch, "commit_message": "Update subscription", "actions": []Object{{"action": action, "file_path": d.Filename, "content": string(artifact.Data)}}}, headers, nil); err != nil {
-			return errors.New("GitLab delivery failed")
-		}
-		return nil
-	}
-	method, data := http.MethodPut, artifact.Data
-	if d.Kind == "github-gist" {
-		// Subscription credentials must never be uploaded to a public Gist.
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.URL, nil)
-		if err != nil {
-			return err
-		}
-		req.Header.Set("Authorization", "Bearer "+d.Token)
-		response, err := client.Do(req)
-		if err != nil {
-			return errors.New("Gist visibility check failed")
-		}
-		body, readErr := io.ReadAll(io.LimitReader(response.Body, sub.MaxBody+1))
-		response.Body.Close()
-		var gist struct {
-			Public *bool `json:"public"`
-		}
-		if readErr != nil || response.StatusCode != 200 || len(body) > sub.MaxBody || json.Unmarshal(body, &gist) != nil || gist.Public == nil || *gist.Public {
-			return errors.New("delivery requires an existing secret Gist")
-		}
-		method = http.MethodPatch
-		data, err = json.Marshal(Object{"files": Object{d.Filename: Object{"content": string(artifact.Data)}}})
-		if err != nil {
-			return err
-		}
-	}
-	req, err := http.NewRequestWithContext(ctx, method, d.URL, bytes.NewReader(data))
-	if err != nil {
-		return errors.New("invalid delivery request")
-	}
-	req.Header.Set("Content-Type", artifact.MIME)
-	if d.Kind == "github-gist" {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	if d.Username != "" {
-		req.SetBasicAuth(d.Username, d.Password)
-	}
-	if d.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+d.Token)
-	}
-	response, err := client.Do(req)
-	if err != nil {
-		return errors.New("delivery failed or timed out")
-	}
-	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("delivery HTTP %d", response.StatusCode)
-	}
-	n, err := io.Copy(io.Discard, io.LimitReader(response.Body, (4<<20)+1))
-	if err != nil || n > 4<<20 {
-		return errors.New("invalid delivery acknowledgement")
-	}
-	return nil
+type deliveryResult struct {
+	application.DeliveryOutcome
+	State sub.DeliveryState
 }
 
-func deliverSubscriptions(ctx context.Context, root, id string, automatic bool, output io.Writer) error {
+func deliverSubscriptions(ctx context.Context, root, id string, automatic bool, output io.Writer) (operationErr error) {
+	report := application.DeliveryResult{Items: []application.DeliveryOutcome{}}
+	defer func() {
+		report.Interrupted = ctx.Err() != nil
+		report.Complete(operationErr)
+		operationErr = errors.Join(operationErr, jsonEncoder(output).Encode(report))
+	}()
 	if !automatic && !sub.ValidID(id) {
 		return errors.New("deliver requires --id")
 	}
@@ -128,112 +36,151 @@ func deliverSubscriptions(ctx context.Context, root, id string, automatic bool, 
 		return err
 	}
 	return withNamedFileLock(filepath.Join(root, "subscriptions"), ".delivery.lock", func() error {
-		c, r, snapshot, err := captureSubscriptionDelivery(ctx, root)
+		config, runtime, snapshot, err := captureSubscriptionDelivery(ctx, root)
 		if err != nil {
 			return err
 		}
 		client := newHTTPClient(20 * time.Second)
 		defer client.CloseIdleConnections()
 		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-		type result struct {
-			ID     string
-			State  sub.DeliveryState
-			Err    error
-			Status string
-		}
-		var results []result
+		var results []deliveryResult
 		var mu sync.Mutex
 		var workers sync.WaitGroup
 		jobs := make(chan sub.Delivery)
 		now := time.Now()
+		var selected []sub.Delivery
+		for _, destination := range config.Deliveries {
+			if automatic && (!destination.Automatic || now.Before(runtime.Deliveries[destination.ID].Next)) || !automatic && destination.ID != id {
+				continue
+			}
+			selected = append(selected, destination)
+		}
+		report.Selected = len(selected)
+		if len(selected) == 0 && !automatic {
+			return errors.New("delivery not found")
+		}
 		for range 2 {
 			workers.Go(func() {
-				for d := range jobs {
-					state := r.Deliveries[d.ID]
-					artifact, exists := snapshot.Artifacts[d.Output]
-					settings, _ := json.Marshal(d)
-					digest := sub.Digest(append(settings, []byte(artifact.ETag)...))
-					status := "unchanged"
-					var err error
-					if !exists || !subscriptionFresh(c, snapshot, d.Output, now) {
-						err = errors.New("output unavailable or stale")
-					} else if e := checkOutputAccounts(ctx, root, c, d.Output); e != nil {
-						err = errors.New("output contains an inactive entitlement")
-					} else if state.Digest != digest {
-						err = sendSubscriptionArtifact(ctx, client, d, artifact)
-						status = "delivered"
+				for destination := range jobs {
+					if ctx.Err() != nil {
+						continue
 					}
-					state.Checked = now
-					if err != nil {
-						state.Failures = min(10, state.Failures+1)
-						state.Error = err.Error()
-						state.Next = now.Add(time.Duration(min(60*(1<<(state.Failures-1)), 21600)) * time.Second)
-						status = "failed"
-					} else {
-						state.Digest, state.Error, state.Failures, state.Next = digest, "", 0, now.Add(time.Minute)
-					}
+					result := deliverSubscription(ctx, client, root, config, snapshot, destination, runtime.Deliveries[destination.ID])
 					mu.Lock()
-					results = append(results, result{d.ID, state, err, status})
+					results = append(results, result)
 					mu.Unlock()
 				}
 			})
 		}
-		for _, d := range c.Deliveries {
-			if automatic && (!d.Automatic || now.Before(r.Deliveries[d.ID].Next)) || !automatic && d.ID != id {
-				continue
-			}
+	dispatch:
+		for _, destination := range selected {
 			select {
-			case jobs <- d:
+			case jobs <- destination:
 			case <-ctx.Done():
+				break dispatch
 			}
 		}
 		close(jobs)
 		workers.Wait()
-		if err := ctx.Err(); err != nil {
+		slices.SortFunc(results, func(a, b deliveryResult) int { return strings.Compare(a.ID, b.ID) })
+		// Cancellation stops network work, but cannot discard acknowledged deliveries.
+		finish, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		events, checkpointErr := checkpointDeliveries(finish, root, results)
+		var failures []error
+		for _, result := range results {
+			result.Persisted = checkpointErr == nil && result.Persisted
+			report.Items = append(report.Items, result.DeliveryOutcome)
+			if result.Error != "" {
+				failures = append(failures, fmt.Errorf("%s: %s", result.ID, result.Error))
+			}
+		}
+		notify, stop := context.WithTimeout(ctx, 10*time.Second)
+		defer stop()
+		for _, event := range events {
+			if notify.Err() != nil {
+				break
+			}
+			notifySubscriptionEvent(notify, client, root, config, event)
+		}
+		return errors.Join(append(failures, checkpointErr, ctx.Err())...)
+	})
+}
+
+func deliverSubscription(ctx context.Context, client *http.Client, root string, config sub.Config, snapshot sub.Snapshot, destination sub.Delivery, state sub.DeliveryState) deliveryResult {
+	hash := sub.DeliveryHash(destination)
+	if state.ConfigHash != hash {
+		state = sub.DeliveryState{ConfigHash: hash}
+	}
+	artifact, exists := snapshot.Artifacts[destination.Output]
+	digest := sub.Digest([]byte(hash + artifact.ETag))
+	status := "unchanged"
+	var err error
+	if !exists || !subscriptionFresh(config, snapshot, destination.Output, time.Now()) {
+		err = errors.New("output unavailable or stale")
+	} else if e := checkOutputAccounts(ctx, root, config, destination.Output); e != nil {
+		err = errors.New("output contains an inactive entitlement")
+	} else if state.Digest != digest {
+		err = sendSubscriptionArtifact(ctx, client, destination, artifact)
+		status = "delivered"
+	}
+	now := time.Now()
+	state.Checked = now
+	if err != nil {
+		state.Failures = min(10, state.Failures+1)
+		state.Error = err.Error()
+		state.Next = now.Add(time.Duration(min(60*(1<<(state.Failures-1)), 21600)) * time.Second)
+		status = "failed"
+		if errors.Is(err, errDeliveryUncertain) {
+			status = "uncertain"
+		}
+		if ctx.Err() != nil && status != "uncertain" {
+			status = "interrupted"
+		}
+	} else {
+		state.Digest, state.Error, state.Failures, state.Next = digest, "", 0, now.Add(time.Minute)
+		if status == "delivered" {
+			state.Success = now
+		}
+	}
+	state.Status = status
+	return deliveryResult{DeliveryOutcome: application.DeliveryOutcome{ID: destination.ID, Status: status, Error: state.Error}, State: state}
+}
+
+// Preserve acknowledgements across unrelated edits, never for replaced destinations.
+func checkpointDeliveries(ctx context.Context, root string, results []deliveryResult) ([]sub.Run, error) {
+	var events []sub.Run
+	if len(results) == 0 {
+		return events, nil
+	}
+	err := withStartupLock(ctx, root, func() error {
+		config, state, err := loadSubscriptionState(root)
+		if err != nil {
 			return err
 		}
-		if len(results) == 0 {
-			if automatic {
-				return nil
-			}
-			return errors.New("delivery not found")
+		current := map[string]string{}
+		for _, destination := range config.Deliveries {
+			current[destination.ID] = sub.DeliveryHash(destination)
 		}
-		var failures []error
-		var events []sub.Run
-		err = withLock(root, func() error {
-			current, state, err := loadSubscriptionState(root)
-			if err != nil {
-				return err
-			}
-			if err := validateSubscriptionsRevision(current, c); err != nil {
-				return err
-			}
-			if state.Deliveries == nil {
-				state.Deliveries = map[string]sub.DeliveryState{}
-			}
-			for _, result := range results {
-				old := state.Deliveries[result.ID]
-				state.Deliveries[result.ID] = result.State
-				if result.Status != "unchanged" {
-					state.Record("delivery", result.ID, result.Status, now)
-				}
-				if old.Error != result.State.Error {
-					events = append(events, sub.Run{Time: now, Operation: "delivery", ObjectID: result.ID, Message: result.Status})
-				}
-				if result.Err != nil {
-					failures = append(failures, fmt.Errorf("%s: %w", result.ID, result.Err))
-				}
-				if !automatic {
-					if err := jsonEncoder(output).Encode(Object{"id": result.ID, "status": result.Status}); err != nil {
-						return err
-					}
-				}
-			}
-			return writeSubscriptionRuntime(root, current, state)
-		})
-		for _, event := range events {
-			notifySubscriptionEvent(ctx, client, root, c, event)
+		if state.Deliveries == nil {
+			state.Deliveries = map[string]sub.DeliveryState{}
 		}
-		return errors.Join(append(failures, err)...)
+		for i := range results {
+			result := &results[i]
+			if current[result.ID] != result.State.ConfigHash {
+				continue
+			}
+			old := state.Deliveries[result.ID]
+			state.Deliveries[result.ID] = result.State
+			result.Persisted = true
+			if result.Status != "unchanged" {
+				state.Record("delivery", result.ID, result.Status, result.State.Checked)
+			}
+			if old.Error != result.State.Error {
+				events = append(events, sub.Run{Time: result.State.Checked, Operation: "delivery", ObjectID: result.ID, Message: result.Status})
+			}
+		}
+		return writeSubscriptionRuntime(root, config, state)
 	})
+	return events, err
 }

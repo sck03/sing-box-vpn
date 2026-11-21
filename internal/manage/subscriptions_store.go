@@ -181,7 +181,10 @@ func compilePreparedSubscriptions(ctx context.Context, root, core string, c sub.
 		}
 	}
 	files := fileBundle{}
-	for name, value := range map[string]any{subscriptionsConfig: c, subscriptionsRuntime: r, subscriptionsSnapshot: snapshot, subscriptionsSchedule: subscriptionDeadlines(c, r), subscriptionsOutputStatus: outputStatus(c, snapshot)} {
+	if err := files.subscriptionRuntime(c, r); err != nil {
+		return nil, snapshot, previews, err
+	}
+	for name, value := range map[string]any{subscriptionsConfig: c, subscriptionsSnapshot: snapshot, subscriptionsOutputStatus: outputStatus(c, snapshot)} {
 		if err := files.json(name, value); err != nil {
 			return nil, snapshot, previews, err
 		}
@@ -205,11 +208,20 @@ func validateSubscriptionsRevision(current, candidate sub.Config) error {
 // Runtime metadata and scheduler deadlines commit through the same journal.
 func writeSubscriptionRuntime(root string, config sub.Config, runtime sub.Runtime) error {
 	files := fileBundle{}
-	if err := files.json(subscriptionsRuntime, runtime); err != nil {
-		return err
-	}
-	if err := files.json(subscriptionsSchedule, subscriptionDeadlines(config, runtime)); err != nil {
+	if err := files.subscriptionRuntime(config, runtime); err != nil {
 		return err
 	}
 	return publish(root, files)
+}
+
+func (files fileBundle) subscriptionRuntime(config sub.Config, runtime sub.Runtime) error {
+	for name, value := range map[string]any{subscriptionsRuntime: runtime, subscriptionsSchedule: subscriptionDeadlines(config, runtime), subscriptionsActivity: subscriptionActivityStatus(config, runtime)} {
+		if err := files.json(name, value); err != nil {
+			return err
+		}
+		if len(files[name]) > maxJSONFile {
+			return errors.New("subscription state exceeds 16 MiB")
+		}
+	}
+	return nil
 }

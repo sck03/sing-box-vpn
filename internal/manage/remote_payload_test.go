@@ -73,7 +73,7 @@ func BenchmarkRemoteAcknowledgement(b *testing.B) {
 
 func TestDeliverySnapshotRecoversPublicationAndRespectsCancellation(t *testing.T) {
 	root := t.TempDir()
-	snapshot := sub.Snapshot{Artifacts: map[string]sub.Artifact{"normal": {Data: []byte("normal")}, "vpn": {Data: []byte("vpn")}}}
+	snapshot := sub.Snapshot{Version: sub.SchemaVersion, Revision: 1, Artifacts: map[string]sub.Artifact{"normal": {Data: []byte("normal")}, "vpn": {Data: []byte("vpn")}}}
 	before := fileBundle{}
 	if err := before.json(subscriptionsSnapshot, snapshot); err != nil {
 		t.Fatal(err)
@@ -106,6 +106,9 @@ func TestDeliverySnapshotRecoversPublicationAndRespectsCancellation(t *testing.T
 	}
 	if string(captured.Artifacts["normal"].Data) != "normal" {
 		t.Fatal("snapshot changed during delivery")
+	}
+	if _, _, _, err := captureSubscriptionDelivery(t.Context(), root); err == nil {
+		t.Fatal("invalid publication accepted")
 	}
 }
 

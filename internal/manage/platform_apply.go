@@ -118,7 +118,7 @@ func (s *PlatformService) apply(ctx context.Context, id int64, input applyInput)
 	return application.ApplyDeployment(ctx, application.Deployment{
 		Phase: func(ctx context.Context, phase string) error { return s.Store.Phase(ctx, id, phase) },
 		Publish: func(ctx context.Context) error {
-			return withStartupLock(ctx, s.Root, func() error { return publish(s.Root, files) })
+			return withStartupLock(ctx, s.Root, func() error { return publishPlatformFiles(s.Root, files) })
 		},
 		Activate: func(ctx context.Context) error {
 			if s.NoSystem {
@@ -135,7 +135,7 @@ func (s *PlatformService) apply(ctx context.Context, id int64, input applyInput)
 			if err = old.json("runtime-revision.json", state.AppliedRevision); err != nil {
 				return err
 			}
-			if err = withStartupLock(ctx, s.Root, func() error { return publish(s.Root, old) }); err != nil {
+			if err = withStartupLock(ctx, s.Root, func() error { return publishPlatformFiles(s.Root, old) }); err != nil {
 				return err
 			}
 			if s.NoSystem {

@@ -73,11 +73,19 @@ type AccountSourceState struct {
 }
 
 type DeliveryState struct {
-	Digest   string    `json:"digest,omitempty"`
-	Checked  time.Time `json:"checked"`
-	Next     time.Time `json:"next"`
-	Failures int       `json:"failures,omitempty"`
-	Error    string    `json:"error,omitempty"`
+	ConfigHash string    `json:"config_hash"`
+	Status     string    `json:"status"`
+	Success    time.Time `json:"success,omitzero"`
+	Digest     string    `json:"digest,omitempty"`
+	Checked    time.Time `json:"checked"`
+	Next       time.Time `json:"next"`
+	Failures   int       `json:"failures,omitempty"`
+	Error      string    `json:"error,omitempty"`
+}
+
+func DeliveryHash(d Delivery) string {
+	data, _ := json.Marshal(d)
+	return Digest(data)
 }
 
 type Snapshot struct {
@@ -119,19 +127,6 @@ func DefaultConfig() Config {
 	// Account outputs use built-ins until explicitly overridden. Do not copy
 	// every profile into editable configuration just to express its default.
 	return c
-}
-
-// Build uses already fetched data. Network activity is never part of publishing
-// or a download request. A required stale/missing source aborts the whole build.
-func Build(c Config, runtime Runtime, local map[string][]Node, now time.Time) (Snapshot, map[string]Preview, error) {
-	return build(c, runtime, local, now, Strict)
-}
-
-// BuildAvailable removes outputs whose required runtime dependencies are unavailable.
-// Local maintenance and background refresh can publish unrelated valid outputs;
-// explicit configuration edits still use Build to reject an incomplete plan.
-func BuildAvailable(c Config, runtime Runtime, local map[string][]Node, now time.Time) (Snapshot, map[string]Preview, error) {
-	return build(c, runtime, local, now, Available)
 }
 
 type BuildMode uint8

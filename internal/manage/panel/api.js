@@ -107,6 +107,10 @@ export const getTasks = (before = 0, signal) =>
  * @returns {Promise<import("./contracts.js").OverviewSnapshot>} */
 export const getOverview = (signal) =>
   api("/api/overview", undefined, { signal });
+/** @param {AbortSignal} [signal] @param {typeof api} [request]
+ * @returns {Promise<import("./contracts.js").SubscriptionStatusResponse>} */
+export const getSubscriptionStatus = (signal, request = api) =>
+  request("/api/subscriptions/status", undefined, { signal });
 /** @param {Blob} blob @param {string} name */
 export function download(blob, name) {
   const url = URL.createObjectURL(blob),
@@ -158,7 +162,9 @@ export const exportAccount = (input, request = api) =>
 /** @param {string} id @param {AbortSignal} [signal] @param {typeof api} [request]
  * @returns {Promise<import("./contracts.js").AccountSummary>} */
 export const getAccount = (id, signal, request = api) =>
-  request("/api/accounts/detail?id=" + encodeURIComponent(id), undefined, { signal });
+  request("/api/accounts/detail?id=" + encodeURIComponent(id), undefined, {
+    signal,
+  });
 /** @param {boolean} secret @param {AbortSignal} [signal]
  * @returns {Promise<import("./contracts.js").ConfigurationState>} */
 export const getConfiguration = (secret, signal) =>

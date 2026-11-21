@@ -16,11 +16,13 @@ export function workspace(key, contentById, ctx) {
   let selected = 0;
   function choose(index) {
     selected = index;
+    ctx.activeSection = sections[index]?.[0];
     tabs.forEach((tab, i) => {
       tab.setAttribute("aria-selected", String(i === index));
       tab.tabIndex = i === index ? 0 : -1;
       panels[i].hidden = i !== index;
     });
+    ctx.sectionChanged?.(sections[index]?.[0]);
     return loaders[index]?.();
   }
   const activate = (i) =>

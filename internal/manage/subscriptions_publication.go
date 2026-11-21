@@ -26,6 +26,7 @@ func publishSubscriptionRefresh(ctx context.Context, root, core string, expected
 	var config sub.Config
 	var state sub.Runtime
 	var local map[string][]sub.Node
+	var generation int64
 	err := withStartupLock(ctx, root, func() error {
 		var err error
 		config, state, err = loadSubscriptionState(root)
@@ -35,7 +36,7 @@ func publishSubscriptionRefresh(ctx context.Context, root, core string, expected
 		if err = validateSubscriptionsRevision(config, expected); err != nil {
 			return err
 		}
-		config, local, state.Accounts, err = captureSubscriptionSources(ctx, root, config, nil)
+		local, state.Accounts, generation, err = captureConfirmedSubscriptionSources(ctx, root, config)
 		return err
 	})
 	if err != nil {
@@ -112,11 +113,11 @@ func publishSubscriptionRefresh(ctx context.Context, root, core string, expected
 		if err = validateSubscriptionsRevision(current, config); err != nil {
 			return err
 		}
-		_, currentNodes, accounts, err := captureSubscriptionSources(ctx, root, current, nil)
+		currentNodes, accounts, currentGeneration, err := captureConfirmedSubscriptionSources(ctx, root, current)
 		if err != nil {
 			return err
 		}
-		if subscriptionInputsDigest(currentNodes, accounts) != inputDigest {
+		if currentGeneration != generation || subscriptionInputsDigest(currentNodes, accounts) != inputDigest {
 			return application.ErrConflict
 		}
 		if buildErr == nil {
@@ -138,10 +139,7 @@ func publishSubscriptionRefresh(ctx context.Context, root, core string, expected
 			return errors.Join(buildErr, writeSubscriptionRuntime(root, current, state))
 		}
 		state.RefreshPending = false
-		if err = files.json(subscriptionsRuntime, state); err != nil {
-			return err
-		}
-		if err = files.json(subscriptionsSchedule, subscriptionDeadlines(current, state)); err != nil {
+		if err = files.subscriptionRuntime(current, state); err != nil {
 			return err
 		}
 		if err := publish(root, files); err != nil {

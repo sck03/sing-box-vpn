@@ -113,7 +113,7 @@ func (o Options) TLS() *tls.Config {
 	return &tls.Config{MinVersion: tls.VersionTLS12, GetCertificate: cache.GetCertificate}
 }
 
-// ProxyPeer verifies the immediate hop before trusting forwarded headers.
+// ProxyPolicy verifies the immediate hop before trusting forwarded headers.
 type ProxyPolicy []netip.Prefix
 
 func NewProxyPolicy(values []string) (ProxyPolicy, error) {
@@ -140,13 +140,6 @@ func (p ProxyPolicy) Peer(r *http.Request) (string, error) {
 		return "", errors.New("untrusted HTTPS proxy")
 	}
 	return ForwardedPeer(r.Header.Get("X-Forwarded-For"), peer, p), nil
-}
-func (o Options) ProxyPeer(r *http.Request) (string, error) {
-	p, err := NewProxyPolicy(o.TrustedProxy)
-	if err != nil {
-		return "", err
-	}
-	return p.Peer(r)
 }
 
 func ForwardedPeer(header, fallback string, trusted []netip.Prefix) string {

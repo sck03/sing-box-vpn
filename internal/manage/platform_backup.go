@@ -1,7 +1,6 @@
 package manage
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"database/sql"
@@ -26,12 +25,6 @@ const maxPlatformBackup = backuparchive.MaxArchive
 const maxPlatformBackupRequest = maxPlatformBackup + (16 << 10)
 
 type platformBackup = backuparchive.Archive
-
-func (s *PlatformService) Backup(ctx context.Context, password []byte) ([]byte, error) {
-	var out bytes.Buffer
-	err := s.BackupTo(ctx, &out, password)
-	return out.Bytes(), err
-}
 
 func (s *PlatformService) BackupTo(ctx context.Context, out io.Writer, password []byte) error {
 	if len(password) < 12 || len(password) > 1024 {
@@ -480,11 +473,8 @@ func (s *PlatformService) servePlatformBackup(w http.ResponseWriter, r *http.Req
 	platformError(w, err)
 }
 
-// RestoreDisaster accepts an empty root only. All proxy users are disabled and
-// all download/session tokens are revoked until the operator reconciles usage.
-func RestoreDisaster(ctx context.Context, root string, data, password []byte, admin, newPassword string) error {
-	return restoreDisasterFrom(ctx, root, bytes.NewReader(data), password, admin, newPassword)
-}
+// restoreDisasterFrom accepts an empty root; restored proxy users remain disabled
+// and download/session tokens revoked until usage has been reconciled.
 
 func restoreDisasterFrom(ctx context.Context, root string, source io.Reader, password []byte, admin, newPassword string) error {
 	if entries, err := os.ReadDir(root); err == nil && len(entries) > 0 {

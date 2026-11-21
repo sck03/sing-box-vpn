@@ -149,7 +149,7 @@ CI 的独立下载验证和全新安装步骤均显式传递该只读令牌；�
 
 订阅扩展回归为 internal/subscription/extensions_test.go，覆盖 auto/文本输入、跳过与数量边界、gRPC/HTTPUpgrade/salamander 往返、唯一名称、缓存摘要/污染、组循环/空组、VPNGate 禁止直连以及有序规则。设置 SING_BOX_BINARY 与 MIHOMO_BINARY 后，TestExtendedTemplatesWithInstalledCores 实际检查带 DNS URL、策略组和国内规则的配置。新增 HTTP 能力/管理员操作接口与无秘密投影回归位于 manage。单纯编码器测试不能替代目标应用导入。
 
-服务单元生成器测试位于 internal/hostservice/platform_test.go，直接验证生产 renderer。GitHub 全量 race 步骤使用 sing-box 和 Mihomo 测试客户端执行互通验收；客户端进程运行器位于 _test.go，不编入服务端。前端保持无构建步骤的原生模块。
+服务单元生成器测试位于 internal/hostservice/platform_test.go，直接验证生产 renderer。GitHub 全量 race 步骤使用 sing-box 和 Mihomo 测试客户端执行互通验收；客户端进程运行器位于 \_test.go，不编入服务端。前端保持无构建步骤的原生模块。
 
 Linux systemd 恢复验收也直接使用 `hostservice.PlatformUnits`，仅将主进程替换为测试 helper，并将防火墙命令包装到隔离命名空间；重启、启动前恢复和限速策略均来自生产单元。Windows 的 `go test ./...` 不编译 `//go:build linux` 文件，交付前另行交叉编译 Linux 全部测试：设置 `GOOS=linux`、`CGO_ENABLED=0`，运行 `go test -exec <仅返回成功的本机程序> -run '^$' ./...`。该检查只证明编译成功，真实执行由 Linux CI 完成。
 
@@ -201,7 +201,7 @@ go vet ./...
 
 任务历史新增 `GET /api/tasks?before=<id>&limit=50`，响应 `{items,next_before}`，`limit` 为 1–100；0 的 `next_before` 表示没有下一页。概览任务数量固定上界，`task_counts.failed` 是未标记处理的失败总数，`attention` 是未处理失败或 partial/cached/failed 业务结果总数，`active` 是排队/运行中总数。顶部告警与概览统计使用聚合值，不依赖最近 12 条摘要。任务详情权限独立检查。
 
-备份读取返回私有暂存文件路径，调用者必须 `Close` 释放；失败读取自动清理。不要重新把所有条目读回一个内存集合，也不要在密文认证完成前信任数据库。当前备份格式 8、数据库 15、平台 5、节点 4，需新初始化目录。
+备份读取返回私有暂存文件路径，调用者必须 `Close` 释放；失败读取自动清理。不要重新把所有条目读回一个内存集合，也不要在密文认证完成前信任数据库。当前备份格式 8、数据库 16、平台 6、节点 4、订阅 6，需新初始化目录。
 
 ## 5.1 重构回归
 
@@ -236,3 +236,19 @@ Telegram/GitLab 的回归直接调用生产分发入口和快照捕获逻辑，�
 授权快照只复用容器容量与临时值数组，每轮重新查库、完成后清空，闲置时释放；不能把复用改成跨轮授权结果缓存。新增敏感配置字段须扩展统一字段策略和角色 HTTP 回归，URL 字段族也按凭据处理。
 
 `npm run typecheck` 同时运行全量 JS 检查与 `tsconfig.contracts.json` 的 strict 契约检查。公开任务、刷新结果和分享限制具有正反类型用例；不把现有 JS 的非严格检查误称为全项目严格类型覆盖。
+
+## 订阅一致性与投递回归
+
+配置编译可在锁外进行，但提交前必须核对数据库确认代际，不能只比较订阅 revision。运行状态写入统一通过 fileBundle.subscriptionRuntime，配置/凭据/隧道发布用 publishPlatformFiles 合并最新操作记录。增加新的状态字段时同步更新 Go DTO、panel-contract 和 scripts/task-contracts.ts，禁止手改生成的 contracts.d.ts。
+
+新增关键测试：
+
+- subscriptions_generation_test.go：确认前拒绝刷新、确认后恢复、编译期间代际变化。
+- account_remote_template_test.go：本地模板的远程规则与已发布输出一致，丢失依赖只阻断相关格式。
+- subscriptions_delivery_lifecycle_test.go：取消保留确认、配置变化匹配目标、并发发布合并、独立后台队列、截断确认与明确拒绝。
+- subscriptions_activity_projection_test.go：状态读取不依赖大运行文件，响应不包含投递凭据；另提供 4096 节点状态读取基准。
+- test-panel-subscription-lifecycle.mjs：真实页面 SSE、标签页重访、隐藏页、合并刷新和搜索/排序取消；已纳入 npm test。
+
+Windows 验证先加载 scripts/dev-env.ps1，再设置 MANAGED_CORE_BINARY 指向使用 with_quic,with_utls,with_wireguard,with_gvisor 构建的 managed-core。缺少这些环境变量会跳过实际核心集成夹具，不能把跳过视为完成验收。
+
+运行状态查询基准：go test ./internal/manage -run '^$' -bench '^BenchmarkSubscriptionActivityRead$' -benchmem -benchtime=1s -count=3。基准比较相同合成缓存的元信息解码与小投影读取，不测端到端 HTTP 或 VPN 吞吐。

@@ -32,7 +32,7 @@ func PruneRuntime(c Config, r Runtime) Runtime {
 		}
 	}
 	for _, d := range c.Deliveries {
-		deliveries[d.ID] = true
+		deliveries[d.ID] = r.Deliveries[d.ID].ConfigHash == DeliveryHash(d)
 	}
 	r.Sources, r.Resources, r.Deliveries = maps.Clone(r.Sources), maps.Clone(r.Resources), maps.Clone(r.Deliveries)
 	r.Accounts = maps.Clone(r.Accounts)

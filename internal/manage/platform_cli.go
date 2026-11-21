@@ -230,7 +230,7 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 		if e = files.json("runtime-revision.json", state.AppliedRevision); e != nil {
 			return e
 		}
-		return withStartupLock(ctx, s.Root, func() error { return publish(s.Root, files) })
+		return withStartupLock(ctx, s.Root, func() error { return publishPlatformFiles(s.Root, files) })
 	case "install-services":
 		if *noSystem {
 			return errors.New("system operations are disabled")

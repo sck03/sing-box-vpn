@@ -7,7 +7,7 @@ import (
 
 const subscriptionsOutputStatus = "subscriptions/output-status.json"
 
-type subscriptionOutputStatus struct {
+type SubscriptionOutputStatus struct {
 	ID              string           `json:"id"`
 	Name            string           `json:"name"`
 	Client          string           `json:"client"`
@@ -18,8 +18,8 @@ type subscriptionOutputStatus struct {
 	Diagnostics     []sub.Diagnostic `json:"diagnostics"`
 }
 
-func outputStatus(c sub.Config, snapshot sub.Snapshot) []subscriptionOutputStatus {
-	result := make([]subscriptionOutputStatus, 0, len(c.Outputs))
+func outputStatus(c sub.Config, snapshot sub.Snapshot) []SubscriptionOutputStatus {
+	result := make([]SubscriptionOutputStatus, 0, len(c.Outputs))
 	clients := map[string]string{}
 	for _, t := range c.Templates {
 		profile, _ := clientprofile.Lookup(t.Client)
@@ -28,7 +28,7 @@ func outputStatus(c sub.Config, snapshot sub.Snapshot) []subscriptionOutputStatu
 	for _, output := range c.Outputs {
 		_, available := snapshot.Artifacts[output.ID]
 		diagnostics := snapshot.Diagnostics[output.ID]
-		row := subscriptionOutputStatus{ID: output.ID, Name: output.Name, Client: clients[output.Template], Nodes: snapshot.NodeCounts[output.ID], Available: available, DiagnosticCount: len(diagnostics)}
+		row := SubscriptionOutputStatus{ID: output.ID, Name: output.Name, Client: clients[output.Template], Nodes: snapshot.NodeCounts[output.ID], Available: available, DiagnosticCount: len(diagnostics)}
 		row.Validation = snapshot.Validations[output.ID]
 		for _, d := range diagnostics {
 			if len(row.Diagnostics) < 20 {

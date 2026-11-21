@@ -1,4 +1,4 @@
-import { api } from "./api.js";
+import { api, getSubscriptionStatus } from "./api.js";
 import { validationLabel } from "./validation.js";
 import {
   el,
@@ -17,11 +17,24 @@ const labels = {
   ok: "成功",
   failed: "失败",
   disabled: "未启用",
+  delivered: "已送达",
+  unchanged: "内容未变化",
+  uncertain: "远端接收状态未知",
+  interrupted: "已中断",
 };
-function activityTable(items) {
+function activityTable(items, deliveries = false) {
   return table(
     [
       { key: "name", label: "名称" },
+      ...(deliveries
+        ? [
+            { key: "output", label: "输出" },
+            {
+              label: "触发方式",
+              value: (v) => (v.automatic ? "自动" : "手动"),
+            },
+          ]
+        : []),
       {
         label: "类型",
         value: (v) =>
@@ -35,12 +48,20 @@ function activityTable(items) {
         render: (v) =>
           badge(
             labels[v.state] || v.state,
-            v.state === "failed" ? "bad" : v.state === "ok" ? "good" : "warn",
+            v.state === "failed"
+              ? "bad"
+              : ["ok", "delivered", "unchanged"].includes(v.state)
+                ? "good"
+                : "warn",
           ),
       },
       { label: "最近检查", value: (v) => date(v.checked) },
       { label: "最后成功", value: (v) => date(v.success) },
-      { label: "下次尝试", value: (v) => date(v.next) },
+      {
+        label: "下次尝试",
+        value: (v) => (deliveries && !v.automatic ? "—" : date(v.next)),
+      },
+      { key: "failures", label: "连续失败" },
       { key: "error", label: "说明" },
     ],
     items,
@@ -51,15 +72,39 @@ export async function subscriptionStatus(ctx) {
   const body = el("div");
   const error = el("p", { class: "form-error", role: "alert", hidden: true });
   const panel = el("section", { "aria-label": "订阅运行状态" }, error, body);
-  async function refresh() {
+  let pending;
+  let dirty = false;
+  let visible = !ctx.activeSection || ctx.activeSection === "status";
+  let version;
+  function refresh() {
+    if (!visible || document.hidden || ctx.signal?.aborted) {
+      dirty = true;
+      return Promise.resolve();
+    }
+    if (pending) {
+      dirty = true;
+      return pending;
+    }
+    dirty = false;
+    pending = render().finally(() => {
+      pending = null;
+      if (dirty && visible && !document.hidden && !ctx.signal?.aborted)
+        void refresh();
+    });
+    return pending;
+  }
+  async function render() {
     try {
-      const status = await (ctx.request || api)("/api/subscriptions/status");
+      const status = await getSubscriptionStatus(
+        ctx.signal,
+        ctx.request || api,
+      );
       if (ctx.signal?.aborted) return;
       error.hidden = true;
       const outputs = status.outputs || [];
       const available = outputs.filter((output) => output.available).length;
-      const notification = status.notification || {};
-      const activity = notification.activity || { state: "disabled" };
+      const notification = status.notification;
+      const activity = notification.activity;
       const content = [
         card(
           "已发布输出",
@@ -146,10 +191,21 @@ export async function subscriptionStatus(ctx) {
         );
       if (status.sources?.length)
         content.push(card("远端来源同步", activityTable(status.sources)));
+      if (status.deliveries?.length)
+        content.push(
+          card(
+            "投递状态",
+            help(
+              "显示各目标最近的确认结果、失败次数及下次尝试时间。接收状态未知时，重试可能产生重复投递。",
+            ),
+            activityTable(status.deliveries, true),
+          ),
+        );
       if (
         !notification.configured &&
         !status.resources?.length &&
-        !status.sources?.length
+        !status.sources?.length &&
+        !status.deliveries?.length
       )
         content.push(
           help(
@@ -166,6 +222,33 @@ export async function subscriptionStatus(ctx) {
       );
     }
   }
+  ctx.updateOverview = (snapshot) => {
+    const next = JSON.stringify([
+      snapshot?.applied_revision,
+      snapshot?.tasks?.map((task) => [
+        task.id,
+        task.state,
+        task.phase,
+        task.updated,
+      ]),
+    ]);
+    if (next === version) return;
+    version = next;
+    void refresh();
+  };
+  ctx.sectionChanged = (section) => {
+    visible = section === "status";
+    if (visible) void refresh();
+  };
+  const visibility = () => {
+    if (!document.hidden && visible) void refresh();
+  };
+  document.addEventListener("visibilitychange", visibility);
+  ctx.signal?.addEventListener(
+    "abort",
+    () => document.removeEventListener("visibilitychange", visibility),
+    { once: true },
+  );
   await refresh();
   return panel;
 }

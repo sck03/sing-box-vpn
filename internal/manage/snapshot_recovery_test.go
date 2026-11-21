@@ -89,13 +89,26 @@ func TestAccountSubscriptionRecoversWithoutRemoteSources(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			c.Subscriptions = sub.Config{Version: sub.SchemaVersion, Revision: 1,
+			c.Subscriptions = sub.Config{Version: sub.SchemaVersion, Revision: 2,
 				Sources:     []sub.Source{{ID: "account", Name: "Account", Kind: "account", AccountID: "a", Scope: "normal", Required: true}},
 				Collections: []sub.Collection{{ID: "all", Name: "All", Sources: []string{"account"}}},
 				Templates:   []sub.Template{{ID: "uri", Version: 1, Client: "uri", Mode: "nodes"}},
 				Outputs:     []sub.Output{{ID: "out", Name: "Output", Collection: "all", Template: "uri"}}}
+			apply, err := s.Store.Queue(ctx, "apply", "test", []byte("{}"), 1, mustJSON(t, c))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Store.Applied(ctx, 2); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Store.Finish(ctx, apply, nil); err != nil {
+				t.Fatal(err)
+			}
 			files, err := s.build(ctx, c)
 			if err != nil {
+				t.Fatal(err)
+			}
+			if err := files.json("runtime-revision.json", int64(2)); err != nil {
 				t.Fatal(err)
 			}
 			if err = publish(root, files); err != nil {

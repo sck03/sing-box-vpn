@@ -232,7 +232,15 @@ func refreshSubscriptionsResult(ctx context.Context, root, core string, force bo
 	}
 	var config sub.Config
 	var runtime sub.Runtime
-	err = withStartupLock(ctx, root, func() error { var e error; config, runtime, e = loadSubscriptionState(root); return e })
+	err = withStartupLock(ctx, root, func() error {
+		var err error
+		config, runtime, err = loadSubscriptionState(root)
+		if err != nil {
+			return err
+		}
+		_, _, err = confirmedSubscriptionConfig(ctx, root, config)
+		return err
+	})
 	if err != nil {
 		return err
 	}

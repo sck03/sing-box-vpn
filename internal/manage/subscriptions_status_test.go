@@ -30,7 +30,7 @@ func TestSubscriptionActivityShowsResourcesAndWebhookLifecycle(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	r := sub.Runtime{Resources: map[string]sub.ResourceCache{"template:" + c.Templates[0].ID: {URL: c.Templates[0].URL, Body: json.RawMessage(`{"hidden":"cached-body-secret"}`), Checked: now, Success: now.Add(-time.Hour), Next: now.Add(time.Minute), Failures: 1, Error: "upstream unavailable"}}}
-	if err := AtomicJSON(filepath.Join(root, subscriptionsRuntime), r); err != nil {
+	if err := writeSubscriptionRuntime(root, c, r); err != nil {
 		t.Fatal(err)
 	}
 	handler := service.Handler(PanelOptions{PublicURL: "http://example.com"})
@@ -72,14 +72,14 @@ func TestSubscriptionActivityShowsResourcesAndWebhookLifecycle(t *testing.T) {
 		t.Fatal(failed)
 	}
 	c.Webhook = remote.URL + "/changed"
-	if err := AtomicJSON(filepath.Join(root, subscriptionsConfig), c); err != nil {
+	if err := writeSubscriptionRuntime(root, c, r); err != nil {
 		t.Fatal(err)
 	}
 	if object(object(read()["notification"])["activity"])["state"] != "pending" {
 		t.Fatal("old endpoint success was reused")
 	}
 	c.Webhook = ""
-	if err := AtomicJSON(filepath.Join(root, subscriptionsConfig), c); err != nil {
+	if err := writeSubscriptionRuntime(root, c, r); err != nil {
 		t.Fatal(err)
 	}
 	if object(object(read()["notification"])["activity"])["state"] != "disabled" {

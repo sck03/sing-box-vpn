@@ -54,12 +54,7 @@ func (s AccountService) exportInputs(ctx context.Context, command application.Ac
 		if err != nil {
 			return err
 		}
-		result = accountExportInputs{config: config.Subscriptions, templates: sub.EffectiveTemplates(config.Subscriptions), nodes: processed.Nodes, usage: usage}
-		for _, template := range config.Subscriptions.Templates {
-			if template.URL != "" {
-				delete(result.templates, template.ID)
-			}
-		}
+		result = accountExportInputs{config: config.Subscriptions, templates: sub.AccountTemplates(config.Subscriptions, nil), nodes: processed.Nodes, usage: usage}
 		data, err := json.Marshal(struct {
 			Account  string
 			Scope    string
@@ -70,10 +65,9 @@ func (s AccountService) exportInputs(ctx context.Context, command application.Ac
 			return err
 		}
 		result.digest = sub.Digest(data)
-		// Local templates require no snapshot read. Remote templates use the same
-		// immutable, atomically published cache as custom output downloads.
-		remote := slices.ContainsFunc(config.Subscriptions.Templates, func(t sub.Template) bool { return t.URL != "" })
-		if !remote || s.Config != nil {
+		// Local-only templates need no cache read. Any remote dependency uses the
+		// same effective template as ordinary compiled outputs.
+		if len(result.templates) == len(config.Subscriptions.Templates) || s.Config != nil {
 			return nil
 		}
 		view := s.view
@@ -84,19 +78,10 @@ func (s AccountService) exportInputs(ctx context.Context, command application.Ac
 		defer view.mu.Unlock()
 		if err := view.load(s.Root); err != nil {
 			// An absent or invalid publication makes remote templates unavailable.
-			// Built-ins and local templates do not depend on this cache.
+			// Built-ins and templates with only local dependencies remain available.
 			return nil
 		}
-		if view.snapshot.Revision != config.Subscriptions.Revision {
-			return nil
-		}
-		for _, template := range config.Subscriptions.Templates {
-			if template.URL != "" {
-				if published, ok := view.snapshot.Templates[template.ID]; ok {
-					result.templates[template.ID] = published
-				}
-			}
-		}
+		result.templates = sub.AccountTemplates(config.Subscriptions, &view.snapshot)
 		return nil
 	})
 	return result, err

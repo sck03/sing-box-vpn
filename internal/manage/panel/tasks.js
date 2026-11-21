@@ -53,10 +53,11 @@ export async function openTask(id, signal = undefined, completed = undefined) {
         previous = signature;
       }
       terminal = !["queued", "running"].includes(task.state);
-	  if (terminal && completed) {
-	    const actions = await completed(task, session.signal);
-	    if (session.active() && actions?.length) content.append(row(...actions));
-	  }
+      if (terminal && completed) {
+        const actions = await completed(task, session.signal);
+        if (session.active() && actions?.length)
+          content.append(row(...actions));
+      }
       if (!terminal && !document.hidden) timer = setTimeout(refresh, 1500);
     } catch (error) {
       if (session.active())
@@ -322,6 +323,8 @@ function resultDetails(result) {
   if (result.retained === false)
     return [help("任务详情已按保留策略清理，最终结果仍保留。")];
   const sections = [];
+  if (Array.isArray(result.items) && typeof result.selected === "number")
+    sections.push(...deliveryDetails(result));
   if (typeof result.published === "boolean")
     sections.push(...refreshDetails(result));
   if (result.artifact_validation)
@@ -399,9 +402,47 @@ function resultDetails(result) {
 
 /** @param {import("./contracts.js").RefreshResult} result */
 function refreshDetails(result) {
-  return [help(
-    `已检查 ${result.checked} 项 · 成功 ${result.updated} 项 · ${result.published ? "已发布通过校验的输出" : "本轮未发布输出"}` +
-    (result.deferred ? ` · ${result.deferred} 项留待后续刷新，自动调度会继续处理` : "") +
-    (result.interrupted ? " · 执行中断，已完成的来源抓取会在配置版本仍匹配时保存" : ""),
-  )];
+  return [
+    help(
+      `已检查 ${result.checked} 项 · 成功 ${result.updated} 项 · ${result.published ? "已发布通过校验的输出" : "本轮未发布输出"}` +
+        (result.deferred
+          ? ` · ${result.deferred} 项留待后续刷新，自动调度会继续处理`
+          : "") +
+        (result.interrupted
+          ? " · 执行中断，已完成的来源抓取会在配置版本仍匹配时保存"
+          : ""),
+    ),
+  ];
+}
+
+/** @param {import("./contracts.js").DeliveryResult} result */
+function deliveryDetails(result) {
+  return [
+    help(
+      `已选择 ${result.selected} 个投递目标 · 已处理 ${result.items.length} 个${result.interrupted ? " · 任务中断，已保存确认完成的记录" : ""}`,
+    ),
+    table(
+      [
+        { key: "id", label: "投递目标" },
+        {
+          label: "结果",
+          value: (item) =>
+            ({
+              delivered: "已送达",
+              unchanged: "内容未变化",
+              failed: "失败",
+              uncertain: "远端接收状态未知",
+              interrupted: "已中断",
+            })[item.status] || item.status,
+        },
+        {
+          label: "记录",
+          value: (item) =>
+            item.persisted ? "已保存" : "未保存（配置变化或写入失败）",
+        },
+        { key: "error", label: "说明" },
+      ],
+      result.items,
+    ),
+  ];
 }

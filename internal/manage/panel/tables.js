@@ -192,7 +192,10 @@ export function table(columns, items, actions, options = {}) {
       tr.addEventListener(
         "click",
         (event) => {
-          if (tr.stale && event.target.closest("button:not(.mobile-row-expand)")) {
+          if (
+            tr.stale &&
+            event.target.closest("button:not(.mobile-row-expand)")
+          ) {
             event.preventDefault();
             event.stopImmediatePropagation();
           }
@@ -205,18 +208,35 @@ export function table(columns, items, actions, options = {}) {
           : c.value
             ? c.value(item)
             : item[c.key];
-        tr.append(el("td", { "data-label": c.label, class: c.secondary ? "secondary-cell" : "" }, value ?? "—"));
+        tr.append(
+          el(
+            "td",
+            {
+              "data-label": c.label,
+              class: c.secondary ? "secondary-cell" : "",
+            },
+            value ?? "—",
+          ),
+        );
       }
       if (visible.some(({ c }) => c.secondary)) {
-        const expand = button("展开详细信息", () => {
-          const expanded = tr.classList.toggle("expanded");
-          if (expanded) expandedRows.add(tr.rowKey);
-          else expandedRows.delete(tr.rowKey);
-          expand.setAttribute("aria-expanded", String(expanded));
-          expand.textContent = expanded ? "收起详细信息" : "展开详细信息";
-        }, "mobile-row-expand");
-        expand.setAttribute("aria-expanded", String(tr.classList.contains("expanded")));
-        if (tr.classList.contains("expanded")) expand.textContent = "收起详细信息";
+        const expand = button(
+          "展开详细信息",
+          () => {
+            const expanded = tr.classList.toggle("expanded");
+            if (expanded) expandedRows.add(tr.rowKey);
+            else expandedRows.delete(tr.rowKey);
+            expand.setAttribute("aria-expanded", String(expanded));
+            expand.textContent = expanded ? "收起详细信息" : "展开详细信息";
+          },
+          "mobile-row-expand",
+        );
+        expand.setAttribute(
+          "aria-expanded",
+          String(tr.classList.contains("expanded")),
+        );
+        if (tr.classList.contains("expanded"))
+          expand.textContent = "收起详细信息";
         tr.append(el("td", { class: "mobile-details-toggle" }, expand));
       }
       if (actions)
@@ -265,7 +285,8 @@ export function table(columns, items, actions, options = {}) {
     const serialized = JSON.stringify(next);
     items = next;
     const keys = new Set(next.map(rowKey));
-    for (const key of expandedRows) if (!keys.has(key)) expandedRows.delete(key);
+    for (const key of expandedRows)
+      if (!keys.has(key)) expandedRows.delete(key);
     if (serialized === signature) return;
     // Patch visible data immediately, preserving active controls and row order.
     // Reorder/filter and replace action closures once focus leaves the table.
@@ -281,10 +302,12 @@ export function table(columns, items, actions, options = {}) {
             JSON.stringify(actionVersion(tr.rowItem));
         tr.stale ||= changed;
         if (changed)
-          tr.querySelectorAll("button:not(.mobile-row-expand)").forEach((control) => {
-            control.setAttribute("aria-disabled", "true");
-            control.title = "数据已更新，请移开焦点以刷新操作";
-          });
+          tr.querySelectorAll("button:not(.mobile-row-expand)").forEach(
+            (control) => {
+              control.setAttribute("aria-disabled", "true");
+              control.title = "数据已更新，请移开焦点以刷新操作";
+            },
+          );
         if (!item) continue;
         const visible = columns.filter(
           (_, i) => !preference.hidden.includes(i),
@@ -364,6 +387,7 @@ export async function remoteTable(columns, load, actions, options = {}) {
   let offset = 0,
     generation = 0,
     timer,
+    controller,
     busy = false;
   const previous = button("上一页", () => {
     offset = Math.max(0, offset - 20);
@@ -379,13 +403,20 @@ export async function remoteTable(columns, load, actions, options = {}) {
     if (options.signal?.aborted || (busy && !force) || (timer && !force))
       return;
     const current = ++generation;
+    controller?.abort();
+    clearTimeout(timer);
+    timer = null;
+    controller = new AbortController();
+    const signal = options.signal
+      ? AbortSignal.any([options.signal, controller.signal])
+      : controller.signal;
     busy = true;
     wrapper.setAttribute("aria-busy", "true");
     try {
       const params = { q: search.value, offset, limit: 20 };
       if (options.sortOptions)
         Object.assign(params, { sort: sort.value, direction: direction.value });
-      const page = await load(params);
+      const page = await load(params, signal);
       if (!page || !Array.isArray(page.items) || !Number.isInteger(page.total))
         throw new Error("列表接口响应格式错误");
       if (current !== generation || options.signal?.aborted) return;
@@ -405,7 +436,11 @@ export async function remoteTable(columns, load, actions, options = {}) {
       setDisabled(next, offset + 20 >= page.total);
       count.textContent = `${Math.floor(offset / 20) + 1} / ${Math.max(1, Math.ceil(page.total / 20))} · ${page.total} 项`;
     } catch (error) {
-      if (current === generation && error.name !== "AbortError") {
+      if (
+        current === generation &&
+        !signal.aborted &&
+        error.name !== "AbortError"
+      ) {
         errors.replaceChildren(
           help(error.message),
           button("重试", () => refresh(true)),
@@ -421,6 +456,7 @@ export async function remoteTable(columns, load, actions, options = {}) {
   search.addEventListener("input", () => {
     clearTimeout(timer);
     ++generation;
+    controller?.abort();
     offset = 0;
     timer = setTimeout(() => {
       timer = null;
@@ -439,6 +475,7 @@ export async function remoteTable(columns, load, actions, options = {}) {
     () => {
       clearTimeout(timer);
       generation++;
+      controller?.abort();
     },
     { once: true },
   );

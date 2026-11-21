@@ -1,5 +1,8 @@
 import { accountFields } from "./account-fields.js";
-import { openAccountBindingTask, accountCreated } from "./account-onboarding.js";
+import {
+  openAccountBindingTask,
+  accountCreated,
+} from "./account-onboarding.js";
 import { api, exportAccount } from "./api.js";
 import { createAccountShare } from "./sharing.js";
 import { accountOutputDialog } from "./account-outputs.js";
@@ -40,7 +43,9 @@ export async function accounts(ctx) {
       item.revision ? "编辑权益" : "新建权益",
       (signal) =>
         Promise.all([
-          (ctx.workflowRequest || api)("/api/subscribers", undefined, { signal }),
+          (ctx.workflowRequest || api)("/api/subscribers", undefined, {
+            signal,
+          }),
           item.revision ? [] : bindingFields(signal),
         ]),
       ([subscribers, bindings]) =>
@@ -51,19 +56,27 @@ export async function accounts(ctx) {
             ...(!item.revision
               ? [
                   {
-                    key: "bind_now", label: "创建后自动绑定节点", type: "bool",
-                    section: "可连接的节点", readonly: !bindings[0]?.options.length,
+                    key: "bind_now",
+                    label: "创建后自动绑定节点",
+                    type: "bool",
+                    section: "可连接的节点",
+                    readonly: !bindings[0]?.options.length,
                     help: bindings[0]?.options.length
                       ? "绑定成功后可直接创建分享链接。"
                       : "尚无已应用的节点，可先创建权益，稍后再绑定。",
                   },
-                  ...bindings.map((field) => ({ ...field, visible: (v) => v.bind_now })),
+                  ...bindings.map((field) => ({
+                    ...field,
+                    visible: (v) => v.bind_now,
+                  })),
                 ]
               : []),
           ],
           {
-            ...item, bind_now: !!bindings[0]?.options.length,
-            scope: bindings[0]?.options[0]?.[0] || "normal", inbound_ids: [],
+            ...item,
+            bind_now: !!bindings[0]?.options.length,
+            scope: bindings[0]?.options[0]?.[0] || "normal",
+            inbound_ids: [],
           },
           async (v) => {
             const account = {};
@@ -92,13 +105,19 @@ export async function accounts(ctx) {
                   const id = await ctx.task({
                     operation: "account",
                     account: {
-                      operation: "bind", id: account.id,
-                      scope: v.scope, inbound_ids: v.inbound_ids,
+                      operation: "bind",
+                      id: account.id,
+                      scope: v.scope,
+                      inbound_ids: v.inbound_ids,
                     },
                   });
                   await openAccountBindingTask(ctx, account, id, bind);
                 } catch (error) {
-                  accountCreated(account, bind, "权益已经保存，绑定未排队：" + error.message);
+                  accountCreated(
+                    account,
+                    bind,
+                    "权益已经保存，绑定未排队：" + error.message,
+                  );
                 }
               }
             }
@@ -365,8 +384,14 @@ export async function accounts(ctx) {
                   {},
                   `${bytes(a.charged_bytes)} / ${bytes(a.quota_bytes)}`,
                 ),
-                el("small", { class: "muted" }, a.quota_bytes === null
-                  ? "不限额度" : "剩余 " + bytes(Math.max(0, a.quota_bytes - a.charged_bytes))),
+                el(
+                  "small",
+                  { class: "muted" },
+                  a.quota_bytes === null
+                    ? "不限额度"
+                    : "剩余 " +
+                        bytes(Math.max(0, a.quota_bytes - a.charged_bytes)),
+                ),
                 ...(a.quota_bytes !== null
                   ? [
                       el("progress", {
@@ -405,13 +430,15 @@ export async function accounts(ctx) {
             value: (a) => date(a.next_reset),
           },
         ],
-        (params) =>
+        (params, signal) =>
           request(
             "/api/accounts?" +
               new URLSearchParams({
                 ...params,
                 archived: lifecycle.value === "archived",
               }),
+            undefined,
+            { signal },
           ),
         (item) => [
           ...(admin && !item.archived

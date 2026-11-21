@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
@@ -49,6 +50,60 @@ func TestUnpublishedRemoteTemplateOnlyBlocksItsOutput(t *testing.T) {
 	_, err = service.ExportDetailed(t.Context(), application.AccountExportRequest{ID: "a", Scope: "normal", Profile: "mihomo-config"})
 	if err == nil {
 		t.Fatal("unpublished remote template was used")
+	}
+}
+
+func TestAccountLocalTemplateUsesPublishedRemoteRules(t *testing.T) {
+	root, core, app := appFixture(t)
+	accounts, err := accounting.Open(filepath.Join(root, "control.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer accounts.Close()
+	control, err := controlstore.Open(filepath.Join(root, "control.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer control.Close()
+	config := PlatformConfig{Schema: PlatformSchema, App: app, Subscriptions: sub.DefaultConfig()}
+	config.Subscriptions.Templates = append(config.Subscriptions.Templates, sub.Template{ID: "local", Client: "mihomo", Mode: "config", Version: 1, RuleSets: []string{"remote"}})
+	config.Subscriptions.RuleSets = []sub.RuleSet{{ID: "remote", URL: "https://example.test/rules", Rules: []sub.Rule{{Type: "domain", Value: "fallback.example", Target: "DIRECT"}}}}
+	config.Subscriptions.AccountDefaults = map[string]sub.AccountExportPolicy{"mihomo-config": {Template: "local", SkipUnsupported: true}}
+	if err := control.Initialize(t.Context(), mustJSON(t, config)); err != nil {
+		t.Fatal(err)
+	}
+	service := AccountService{Root: root, Core: core, Store: accounts, Control: control, Config: &config}
+	if err := accounts.SaveAccount(t.Context(), domain.Account{ID: "a", Name: "Account"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: "a", Scope: "normal"}, new(bytes.Buffer)); err != nil {
+		t.Fatal(err)
+	}
+	runtime := sub.Runtime{Resources: map[string]sub.ResourceCache{"rules:remote": {URL: config.Subscriptions.RuleSets[0].URL, Body: mustJSON(t, []sub.Rule{{Type: "domain", Value: "published.example", Target: "REJECT"}})}}}
+	snapshot, _, err := sub.Compile(config.Subscriptions, runtime, nil, time.Now(), sub.Available)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := AtomicJSON(filepath.Join(root, subscriptionsSnapshot), snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if err := AtomicJSON(filepath.Join(root, subscriptionsConfig), config.Subscriptions); err != nil {
+		t.Fatal(err)
+	}
+	service.Config = nil
+	output, err := service.ExportDetailed(t.Context(), application.AccountExportRequest{ID: "a", Scope: "normal", Profile: "mihomo-config"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(output.Artifact.Data, []byte("published.example")) || bytes.Contains(output.Artifact.Data, []byte("fallback.example")) {
+		t.Fatal("account export differs from published effective rules", string(output.Artifact.Data))
+	}
+	if err := os.Remove(filepath.Join(root, subscriptionsSnapshot)); err != nil {
+		t.Fatal(err)
+	}
+	options, err := service.OutputOptions(t.Context(), "a", "normal", []string{"uri", "mihomo-config"})
+	if err != nil || !options[0].Available || options[1].Available {
+		t.Fatal("missing dependency did not isolate profile", options, err)
 	}
 }
 

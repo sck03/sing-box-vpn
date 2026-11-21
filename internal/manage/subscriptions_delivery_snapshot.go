@@ -2,6 +2,7 @@ package manage
 
 import (
 	"context"
+	"errors"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 	"path/filepath"
 )
@@ -15,7 +16,13 @@ func captureSubscriptionDelivery(ctx context.Context, root string) (config sub.C
 		if err != nil {
 			return err
 		}
+		if _, _, err = confirmedSubscriptionConfig(ctx, root, config); err != nil {
+			return err
+		}
 		_, err = ReadJSON(filepath.Join(root, subscriptionsSnapshot), &snapshot)
+		if err == nil && (snapshot.Version != sub.SchemaVersion || snapshot.Revision != config.Revision) {
+			return errors.New("subscription publication does not match the current configuration")
+		}
 		return err
 	})
 	return

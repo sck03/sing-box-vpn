@@ -207,7 +207,11 @@ assert(
 const subscriptionActions = ok(await call("/api/subscriptions/actions"));
 assert.deepEqual(subscriptionActions.outputs, []);
 assert.deepEqual(subscriptionActions.deliveries, []);
-assert(Array.isArray(ok(await call("/api/subscriptions/status")).outputs));
+const subscriptionStatus = ok(await call("/api/subscriptions/status"));
+assert(Array.isArray(subscriptionStatus.outputs));
+assert(Array.isArray(subscriptionStatus.deliveries));
+assert(Array.isArray(subscriptionStatus.sources));
+assert(Array.isArray(subscriptionStatus.resources));
 const invalid = structuredClone(config);
 invalid.gateway = { connect_timeout: 240 };
 assert.equal((await call("/api/config/preview", invalid)).status, 400);
@@ -506,7 +510,10 @@ ok(await call("/api/accounts", { account: limited }));
 const findAccount = async (archived = false) =>
   ok(await call(`/api/accounts?q=${limited.id}&archived=${archived}`)).items[0];
 let entitlement = await findAccount();
-assert.deepEqual(ok(await call("/api/accounts/detail?id=" + limited.id)), entitlement);
+assert.deepEqual(
+  ok(await call("/api/accounts/detail?id=" + limited.id)),
+  entitlement,
+);
 assert.equal(entitlement.expires_at, null);
 assert(entitlement.effective_expires_at);
 assert.equal(entitlement.download_denial, "no_bound_inbound");

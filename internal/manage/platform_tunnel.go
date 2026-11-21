@@ -125,7 +125,7 @@ func (s *PlatformService) syncTunnel(ctx context.Context) error {
 	}
 	files, err := s.build(ctx, c)
 	if err == nil {
-		err = withStartupLock(ctx, s.Root, func() error { return publish(s.Root, files) })
+		err = withStartupLock(ctx, s.Root, func() error { return publishPlatformFiles(s.Root, files) })
 	}
 	if err != nil {
 		recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)

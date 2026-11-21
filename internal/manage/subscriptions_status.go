@@ -2,13 +2,16 @@ package manage
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"time"
 
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
-type subscriptionActivity struct {
+const subscriptionsActivity = "subscriptions/activity.json"
+
+type SubscriptionActivity struct {
 	ID       string    `json:"id"`
 	Name     string    `json:"name,omitempty"`
 	Kind     string    `json:"kind"`
@@ -20,100 +23,116 @@ type subscriptionActivity struct {
 	Error    string    `json:"error,omitempty"`
 }
 
-type activityMeta struct {
-	Checked  time.Time `json:"checked"`
-	Success  time.Time `json:"success"`
-	Next     time.Time `json:"next"`
-	Failures int       `json:"failures"`
-	Error    string    `json:"error"`
+type DeliveryActivity struct {
+	SubscriptionActivity
+	Output    string `json:"output"`
+	Automatic bool   `json:"automatic"`
 }
 
-// This projection skips cached node arrays, template bodies and credentials.
-// Large source caches do not become large status objects or API responses.
-type subscriptionActivityCache struct {
-	Sources map[string]struct {
-		activityMeta
-		SourceHash string `json:"source_hash"`
-	} `json:"sources"`
-	Resources map[string]struct {
-		activityMeta
-		URL string `json:"url"`
-	} `json:"resources"`
+type NotificationActivity struct {
+	Configured bool                 `json:"configured"`
+	Activity   SubscriptionActivity `json:"activity"`
+	Event      string               `json:"event,omitempty"`
+	ObjectID   string               `json:"object_id,omitempty"`
 }
 
-func activity(id, name, kind string, meta activityMeta) subscriptionActivity {
+type SubscriptionStatusResponse struct {
+	Revision     uint64                     `json:"revision"`
+	Sources      []SubscriptionActivity     `json:"sources"`
+	Resources    []SubscriptionActivity     `json:"resources"`
+	Deliveries   []DeliveryActivity         `json:"deliveries"`
+	Outputs      []SubscriptionOutputStatus `json:"outputs"`
+	Notification NotificationActivity       `json:"notification"`
+}
+
+// The operational projection contains no cached bodies, nodes or destination secrets.
+// It commits with runtime/schedule so status reads never scan the large runtime cache.
+type subscriptionActivityProjection struct {
+	Revision    uint64                 `json:"revision"`
+	Sources     []SubscriptionActivity `json:"sources"`
+	Resources   []SubscriptionActivity `json:"resources"`
+	Deliveries  []DeliveryActivity     `json:"deliveries"`
+	WebhookHash string                 `json:"webhook_hash,omitempty"`
+}
+
+func activity(id, name, kind string, checked, success, next time.Time, failures int, message string) SubscriptionActivity {
 	state := "pending"
-	if !meta.Checked.IsZero() || !meta.Success.IsZero() {
+	if !checked.IsZero() || !success.IsZero() {
 		state = "ok"
 	}
-	if meta.Error != "" {
+	if message != "" {
 		state = "failed"
 	}
-	return subscriptionActivity{id, name, kind, state, meta.Checked, meta.Success, meta.Next, meta.Failures, meta.Error}
+	return SubscriptionActivity{id, name, kind, state, checked, success, next, failures, message}
 }
 
-func (s *PlatformService) SubscriptionStatus(ctx context.Context) (Object, error) {
-	var config sub.Config
-	var cached subscriptionActivityCache
-	var notificationState sub.NotificationState
-	outputs := []subscriptionOutputStatus{}
-	err := withStartupLock(ctx, s.Root, func() error {
-		if _, err := ReadJSON(filepath.Join(s.Root, subscriptionsConfig), &config); err != nil {
-			return err
-		}
-		if _, err := ReadJSON(filepath.Join(s.Root, subscriptionsRuntime), &cached); err != nil {
-			return err
-		}
-		if _, err := ReadJSON(filepath.Join(s.Root, subscriptionsOutputStatus), &outputs); err != nil {
-			return err
-		}
-		_, err := ReadJSON(filepath.Join(s.Root, subscriptionNotification), &notificationState)
-		return err
-	})
-	if err != nil {
-		return nil, err
+func subscriptionActivityStatus(config sub.Config, runtime sub.Runtime) subscriptionActivityProjection {
+	runtime = sub.PruneRuntime(config, runtime)
+	result := subscriptionActivityProjection{Revision: config.Revision, Sources: []SubscriptionActivity{}, Resources: []SubscriptionActivity{}, Deliveries: []DeliveryActivity{}}
+	if config.Webhook != "" {
+		result.WebhookHash = sub.Digest([]byte(config.Webhook))
 	}
-	sources, resources := []subscriptionActivity{}, []subscriptionActivity{}
 	for _, source := range config.Sources {
 		if source.Kind != "remote" {
 			continue
 		}
-		entry := cached.Sources[source.ID]
-		meta := entry.activityMeta
-		if entry.SourceHash != sub.SourceHash(source) {
-			meta = activityMeta{}
-		}
-		sources = append(sources, activity(source.ID, source.Name, "source", meta))
+		state := runtime.Sources[source.ID]
+		result.Sources = append(result.Sources, activity(source.ID, source.Name, "source", state.Checked, state.Success, state.Next, state.Failures, state.Error))
 	}
-	for _, t := range config.Templates {
-		if t.URL == "" {
-			continue
-		}
-		entry := cached.Resources["template:"+t.ID]
-		meta := entry.activityMeta
-		if entry.URL != t.URL {
-			meta = activityMeta{}
-		}
-		resources = append(resources, activity(t.ID, t.ID, "template", meta))
+	resource := func(id, kind string) {
+		state := runtime.Resources[kind+":"+id]
+		result.Resources = append(result.Resources, activity(id, id, kind, state.Checked, state.Success, state.Next, state.Failures, state.Error))
 	}
-	for _, r := range config.RuleSets {
-		if r.URL == "" {
-			continue
+	for _, template := range config.Templates {
+		if template.URL != "" {
+			resource(template.ID, "template")
 		}
-		entry := cached.Resources["rules:"+r.ID]
-		meta := entry.activityMeta
-		if entry.URL != r.URL {
-			meta = activityMeta{}
+	}
+	for _, rules := range config.RuleSets {
+		if rules.URL != "" {
+			resource(rules.ID, "rules")
 		}
-		resources = append(resources, activity(r.ID, r.ID, "rules", meta))
 	}
-	n := notificationState
-	if n.EndpointHash != sub.Digest([]byte(config.Webhook)) {
-		n = sub.NotificationState{}
+	for _, destination := range config.Deliveries {
+		state := runtime.Deliveries[destination.ID]
+		row := activity(destination.ID, destination.ID, destination.Kind, state.Checked, state.Success, state.Next, state.Failures, state.Error)
+		if state.Status != "" {
+			row.State = state.Status
+		}
+		result.Deliveries = append(result.Deliveries, DeliveryActivity{row, destination.Output, destination.Automatic})
 	}
-	notification := activity("webhook", "Webhook", "notification", activityMeta{Checked: n.Checked, Success: n.Success, Failures: n.Failures, Error: n.Error})
-	if config.Webhook == "" {
-		notification.State = "disabled"
-	}
-	return Object{"revision": config.Revision, "sources": sources, "resources": resources, "outputs": outputs, "notification": Object{"configured": config.Webhook != "", "activity": notification, "event": n.Event, "object_id": n.ObjectID}}, nil
+	return result
+}
+
+func (s *PlatformService) SubscriptionStatus(ctx context.Context) (SubscriptionStatusResponse, error) {
+	var result SubscriptionStatusResponse
+	err := withStartupLock(ctx, s.Root, func() error {
+		var cached subscriptionActivityProjection
+		found, err := ReadJSON(filepath.Join(s.Root, subscriptionsActivity), &cached)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return errors.New("subscription activity projection unavailable; rebuild the publication")
+		}
+		result.Revision, result.Sources, result.Resources, result.Deliveries = cached.Revision, cached.Sources, cached.Resources, cached.Deliveries
+		result.Outputs = []SubscriptionOutputStatus{}
+		if _, err = ReadJSON(filepath.Join(s.Root, subscriptionsOutputStatus), &result.Outputs); err != nil {
+			return err
+		}
+		var state sub.NotificationState
+		if _, err = ReadJSON(filepath.Join(s.Root, subscriptionNotification), &state); err != nil {
+			return err
+		}
+		if state.EndpointHash != cached.WebhookHash {
+			state = sub.NotificationState{}
+		}
+		row := activity("webhook", "Webhook", "notification", state.Checked, state.Success, time.Time{}, state.Failures, state.Error)
+		if cached.WebhookHash == "" {
+			row.State = "disabled"
+		}
+		result.Notification = NotificationActivity{cached.WebhookHash != "", row, state.Event, state.ObjectID}
+		return nil
+	})
+	return result, err
 }

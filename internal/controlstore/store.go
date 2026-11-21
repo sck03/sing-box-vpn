@@ -103,6 +103,17 @@ func (s *Store) AppliedConfig(ctx context.Context) (data json.RawMessage, err er
 	return
 }
 
+type AppliedState struct {
+	Revision int64
+	Config   json.RawMessage
+}
+
+// Configuration and its confirmation generation must be read atomically.
+func (s *Store) AppliedState(ctx context.Context) (v AppliedState, err error) {
+	err = s.db.QueryRowContext(ctx, `SELECT applied_revision,applied FROM control_state WHERE id=1`).Scan(&v.Revision, &v.Config)
+	return
+}
+
 // DesiredState reads the editable configuration and its revisions atomically,
 // without copying the potentially large applied configuration into memory.
 type DesiredState struct {

@@ -93,3 +93,29 @@ func EffectiveTemplates(c Config) map[string]Template {
 	}
 	return result
 }
+
+// AccountTemplates shares the compiler's published effective templates, including
+// remote rule dependencies. Missing publications isolate only dependent profiles.
+func AccountTemplates(c Config, published *Snapshot) map[string]Template {
+	result := EffectiveTemplates(c)
+	remoteRules := map[string]bool{}
+	for _, rules := range c.RuleSets {
+		remoteRules[rules.ID] = rules.URL != ""
+	}
+	for _, template := range c.Templates {
+		remote := template.URL != ""
+		for _, id := range template.RuleSets {
+			remote = remote || remoteRules[id]
+		}
+		if !remote {
+			continue
+		}
+		delete(result, template.ID)
+		if published != nil && published.Version == SchemaVersion && published.Revision == c.Revision {
+			if resolved, ok := published.Templates[template.ID]; ok {
+				result[template.ID] = resolved
+			}
+		}
+	}
+	return result
+}

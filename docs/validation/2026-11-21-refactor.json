@@ -1,100 +1,149 @@
 {
   "date": "2026-11-21",
-  "baseline_commit": "d7a17c1382969d36cd42e0af1e0b6ed8dc6b7f6d",
+  "baseline_commit": "f04d7c11243661010097c860b945b502de718689",
   "status": "local_validation_passed",
   "environment": {
     "os": "Windows amd64",
     "cpu": "Intel Core i5-9400F",
     "go": "1.27.3",
     "node": "24.18.0",
-    "sqlite_durability": "WAL/FULL"
+    "sqlite_durability": "WAL/FULL",
+    "managed_core_tags": [
+      "with_quic",
+      "with_utls",
+      "with_wireguard",
+      "with_gvisor"
+    ]
+  },
+  "previous_validation": {
+    "commit": "f04d7c11243661010097c860b945b502de718689",
+    "path": "docs/validation/2026-11-21-refactor.json",
+    "note": "Earlier account/refresh refactor and authorization benchmark retained in Git history; not new measurements."
   },
   "changes": [
-    "effective account query shared by list/detail/download",
-    "sensitive URL and credential field families",
-    "lazy page SSE dispatch",
-    "durable refresh failure reports",
-    "domain creation conflicts",
-    "bounded fair background refresh",
-    "optional account link limits",
-    "authorization scratch storage reuse",
-    "production delivery regression migration",
-    "superseded documentation cleanup"
+    "confirmed platform generation captured and rechecked before subscription publication",
+    "published effective remote rule dependencies shared by account exports",
+    "cancelled delivery checkpoints and ambiguous acknowledgement states",
+    "delivery background lane and typed persisted task reports",
+    "atomic small operational activity projection and secret-free delivery status",
+    "visible-page task invalidation, tab revisit and query cancellation",
+    "platform commits merge completed delivery records",
+    "production wrappers confined to test fixtures and unused proxy helper removed",
+    "current schema documentation and generated contracts synchronized"
   ],
   "benchmarks": {
-    "command": "go test ./internal/accounting -run '^$' -bench '^BenchmarkActiveAuthorization100$' -benchmem -benchtime=1s -count=3",
-    "before": [
-      {
-        "ns_per_op": 616141,
-        "bytes_per_op": 87025,
-        "allocs_per_op": 980
-      },
-      {
-        "ns_per_op": 553773,
-        "bytes_per_op": 86992,
-        "allocs_per_op": 980
-      },
-      {
-        "ns_per_op": 545464,
-        "bytes_per_op": 87002,
-        "allocs_per_op": 980
-      }
-    ],
-    "after": [
-      {
-        "ns_per_op": 527188,
-        "bytes_per_op": 15896,
-        "allocs_per_op": 766
-      },
-      {
-        "ns_per_op": 518711,
-        "bytes_per_op": 15875,
-        "allocs_per_op": 766
-      },
-      {
-        "ns_per_op": 508768,
-        "bytes_per_op": 15870,
-        "allocs_per_op": 766
-      }
-    ],
-    "scope": "100-account authorization tick only; no production throughput or RSS claim"
+    "command": "go test ./internal/manage -run '^$' -bench '^BenchmarkSubscriptionActivityRead$' -benchmem -benchtime=1s -count=3",
+    "fixture": {
+      "sources": 64,
+      "nodes": 4096
+    },
+    "samples": {
+      "runtime-scan": [
+        {
+          "ns_per_op": 3157289,
+          "file_bytes": 1164956,
+          "bytes_per_op": 1203782,
+          "allocs_per_op": 118
+        },
+        {
+          "ns_per_op": 3128057,
+          "file_bytes": 1164956,
+          "bytes_per_op": 1203057,
+          "allocs_per_op": 113
+        },
+        {
+          "ns_per_op": 3149585,
+          "file_bytes": 1164956,
+          "bytes_per_op": 1203201,
+          "allocs_per_op": 114
+        }
+      ],
+      "activity-projection": [
+        {
+          "ns_per_op": 167678,
+          "file_bytes": 17860,
+          "bytes_per_op": 42167,
+          "allocs_per_op": 83
+        },
+        {
+          "ns_per_op": 166292,
+          "file_bytes": 17860,
+          "bytes_per_op": 42171,
+          "allocs_per_op": 83
+        },
+        {
+          "ns_per_op": 170535,
+          "file_bytes": 17860,
+          "bytes_per_op": 42169,
+          "allocs_per_op": 83
+        }
+      ]
+    },
+    "median_reduction_percent": {
+      "time": 94.67618749771796,
+      "allocated_bytes": 96.49526554582319
+    },
+    "scope": "Warm local file read, JSON scan and decode only. No HTTP, lock contention, cold-disk, VPN throughput or process RSS claim."
   },
   "checks": {
-    "frontend_typecheck": "passed, including strict generated-contract examples",
-    "frontend_dom": "all 10 scripts passed",
-    "real_http": "passed",
-    "chrome_desktop_mobile": "passed",
-    "go_all": "passed: go test -tags with_quic,with_utls,with_wireguard,with_gvisor -p 2 -count=1 -timeout=10m ./...; affected follow-up tests passed",
-    "race": "passed: accounting, controlstore, tagged runtime, vpngate; targeted manage refresh/publication/role/concurrency regressions",
-    "vet": "passed with advertised runtime tags",
-    "shellcheck": "passed for all tracked shell scripts at warning severity",
-    "generated_contracts": "passed drift check",
-    "release_source_inventory": "passed, including tsconfig.contracts.json"
+    "frontend_typecheck": "passed: npm run typecheck; strict wire examples included",
+    "frontend_dom": "passed: all 11 scripts in npm test",
+    "real_http": "passed: scripts/test-panel-local.mjs with freshly built gateway and managed core",
+    "chrome_desktop_mobile": "passed: PANEL_BROWSER_TEST=1, Mihomo deliberately unavailable",
+    "go_all": "passed: go test -count=1 -timeout=10m ./... with SING_BOX_BINARY, MIHOMO_BINARY and MANAGED_CORE_BINARY",
+    "race_other_packages": "passed with all four advertised runtime tags",
+    "race_manage": {
+      "status": "passed",
+      "tests": 227,
+      "shards": 3,
+      "partition": "Test names from go test -list ^Test ./internal/manage, index modulo 3",
+      "command": "go test -race -tags with_quic,with_utls,with_wireguard,with_gvisor -count=1 -timeout=15m -run <anchored shard alternatives> ./internal/manage",
+      "seconds": [
+        302.295,
+        256.881,
+        219.334
+      ],
+      "shard_test_counts": [
+        76,
+        76,
+        75
+      ]
+    },
+    "race_followup": "passed: publication/delivery/remote-rule/status regressions; 39.194 seconds",
+    "linux_cross_compile": {
+      "status": "passed",
+      "command": "GOOS=linux CGO_ENABLED=0 go test -tags with_quic,with_utls,with_wireguard,with_gvisor -p 2 -exec <host success stub> -run ^$ ./...",
+      "execution": false
+    },
+    "vet": "passed with all four advertised runtime tags",
+    "shellcheck": "passed: all tracked shell scripts, warning severity",
+    "shell_syntax": "passed: bash -n, all tracked shell scripts",
+    "generated_contracts": "passed: go run ./cmd/panel-contract -check"
   },
+  "validation_adjustments": [
+    "Initial 10-minute unsharded Windows manage race run exceeded timeout; all manage tests are rerun in exhaustive disjoint shards.",
+    "Snapshot recovery fixtures now provide the current snapshot schema and a real confirmed platform generation; production consistency checks were not weakened."
+  ],
   "cleanup": {
-    "removed_obsolete_docs": 27,
-    "removed_duplicate_legacy_implementations": [
-      "internal/manage/legacy_remote_test.go",
-      "internal/manage/legacy_remote_payload_test.go"
+    "status": "moved_for_manual_deletion",
+    "directory": ".cleanup-manual",
+    "previous_files": 136,
+    "previous_bytes": 220584540,
+    "reason": "Automatic approval review blocked recursive deletion with blocked by policy; use the explicitly authorized manual-deletion directory.",
+    "retained": [
+      "toolchains",
+      "reusable Go caches",
+      "licenses",
+      "referenced regression fixtures"
     ],
-    "retained": "toolchains, reusable Go caches, licenses and referenced regression fixtures",
-    "history": "superseded reports remain recoverable in Git",
-    "local_residue": {
-      "files": 136,
-      "bytes": 220584540,
-      "status": "moved_for_manual_deletion",
-      "directory": ".cleanup-manual",
-      "reason": "automatic approval policy rejected the batch deletion; user-authorized move fallback completed",
-      "git_ignored": true
-    }
+    "files": 280,
+    "bytes": 292547117,
+    "git_ignored": true
   },
   "limitations": [
-    "local Windows execution excludes privileged Linux systemd, namespace and firewall tests",
-    "no target VPS long soak or production bandwidth benchmark",
-    "no release artifacts published"
-  ],
-  "test_stability_fixes": [
-    "expiry test uses an explicit post-setup deadline instead of requiring disk/setup under two seconds",
-    "corrupt-cache test uses a separate directory fixture instead of file-to-directory replacement subject to Windows delete-pending handles"
+    "Linux cross-compilation does not execute privileged systemd, namespace, firewall or storage fault tests; those remain Linux CI acceptance.",
+    "No target VPS soak or production throughput benchmark.",
+    "Remote side effects cannot guarantee exactly-once delivery after ambiguous acknowledgement or process loss.",
+    "No Release or deployed instance created."
   ]
 }

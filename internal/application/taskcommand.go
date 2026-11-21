@@ -111,5 +111,5 @@ func (c TaskCommand) GatewayOperation() (string, error) {
 }
 
 func (c TaskCommand) Background() bool {
-	return c.Operation == "outbound-probe" || c.Operation == "subscription" && (c.Subscription.Operation == "check" || c.Subscription.Operation == "refresh")
+	return c.Operation == "outbound-probe" || c.Operation == "subscription"
 }

@@ -86,7 +86,7 @@ func (s *PlatformService) reconcileCredentials(ctx context.Context) error {
 		if err = s.checkRuntime(ctx, files); err != nil {
 			return err
 		}
-		if err = withStartupLock(ctx, s.Root, func() error { return publish(s.Root, files) }); err != nil {
+		if err = withStartupLock(ctx, s.Root, func() error { return publishPlatformFiles(s.Root, files) }); err != nil {
 			return err
 		}
 		for _, v := range versions {

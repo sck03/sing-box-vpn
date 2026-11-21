@@ -47,6 +47,7 @@ export async function subscriptions(ctx) {
   const request = ctx.request || api;
   let clients;
   let presets;
+  let status;
   const getPresets = () =>
     (presets ??= request("/api/subscription-presets").catch((error) => {
       presets = null;
@@ -607,7 +608,7 @@ export async function subscriptions(ctx) {
         },
         outputs: async () => [views.outputs(), await views.sharing()],
         deliveries: async () => [views.deliveries(), await views.diagnostics()],
-        status: () => subscriptionStatus(ctx),
+        status: () => (status ??= subscriptionStatus(ctx)),
       },
       ctx,
     ),

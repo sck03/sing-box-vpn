@@ -46,7 +46,10 @@ export async function grants(ctx) {
               ),
           },
         ],
-        (params) => request("/api/grants?" + new URLSearchParams(params)),
+        (params, signal) =>
+          request("/api/grants?" + new URLSearchParams(params), undefined, {
+            signal,
+          }),
         (g) => [
           button(
             "撤销",

@@ -157,6 +157,25 @@ export interface CredentialSummary {
   generation: number;
 }
 
+export interface DeliveryActivity extends SubscriptionActivity {
+  output: string;
+  automatic: boolean;
+}
+
+export interface DeliveryOutcome {
+  id: string;
+  status: string;
+  error?: string;
+  persisted: boolean;
+}
+
+export interface DeliveryResult {
+  outcome: string;
+  selected: number;
+  items: Array<DeliveryOutcome> | null;
+  interrupted: boolean;
+}
+
 export interface Grant {
   id: string;
   account_id: string;
@@ -178,6 +197,13 @@ export interface ManagedNode {
   flow?: string;
   tls: ServerTLS;
   transport?: ServerTransport;
+}
+
+export interface NotificationActivity {
+  configured: boolean;
+  activity: SubscriptionActivity;
+  event?: string;
+  object_id?: string;
 }
 
 export interface OutboundFields {
@@ -341,6 +367,18 @@ export interface SubscriptionAccountOutputOption {
   diagnostics: Array<SubscriptionDiagnostic> | null;
 }
 
+export interface SubscriptionActivity {
+  id: string;
+  name?: string;
+  kind: string;
+  state: string;
+  checked?: string;
+  success?: string;
+  next?: string;
+  failures: number;
+  error?: string;
+}
+
 export interface SubscriptionCollection {
   id: string;
   name: string;
@@ -404,6 +442,17 @@ export interface SubscriptionOutput {
   skip_unsupported?: boolean;
 }
 
+export interface SubscriptionOutputStatus {
+  id: string;
+  name: string;
+  client: string;
+  nodes: number;
+  available: boolean;
+  validation: SubscriptionValidation;
+  diagnostic_count: number;
+  diagnostics: Array<SubscriptionDiagnostic> | null;
+}
+
 export interface SubscriptionPolicyGroup {
   id: string;
   name?: string;
@@ -464,6 +513,15 @@ export interface SubscriptionSource {
   skip_invalid?: boolean;
   user_agent?: string;
   headers?: Record<string, string> | null;
+}
+
+export interface SubscriptionStatusResponse {
+  revision: number;
+  sources: Array<SubscriptionActivity> | null;
+  resources: Array<SubscriptionActivity> | null;
+  deliveries: Array<DeliveryActivity> | null;
+  outputs: Array<SubscriptionOutputStatus> | null;
+  notification: NotificationActivity;
 }
 
 export interface SubscriptionTemplate {

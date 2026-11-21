@@ -33,13 +33,6 @@ func checkpointSubscriptionSources(ctx context.Context, root string, expected su
 		// Completed fetches can have a future Next even though no artifact was
 		// published. Schedule validation again without downloading them again.
 		state.RefreshPending = true
-		files := fileBundle{}
-		if err = files.json(subscriptionsRuntime, state); err != nil {
-			return err
-		}
-		if err = files.json(subscriptionsSchedule, subscriptionDeadlines(config, state)); err != nil {
-			return err
-		}
-		return publish(root, files)
+		return writeSubscriptionRuntime(root, config, state)
 	})
 }
