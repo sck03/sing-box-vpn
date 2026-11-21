@@ -84,22 +84,17 @@ func (s *PlatformService) execute(ctx context.Context, id int64, a taskInput) er
 	case "account":
 		return s.executeAccount(ctx, id, a.Account)
 	case "subscription":
-		if a.Automatic {
-			if a.Subscription.Operation == "refresh" {
-				var result application.RefreshResult
-				if err := refreshSubscriptionsResult(ctx, s.Root, s.Core, false, &result); err != nil {
-					return err
-				}
-				data, err := json.Marshal(result)
-				if err != nil {
-					return err
-				}
-				return s.Store.Result(ctx, id, data)
-			}
+		if a.Automatic && a.Subscription.Operation == "deliver" {
 			return deliverSubscriptions(ctx, s.Root, "", true, new(bytes.Buffer))
 		}
 		var out bytes.Buffer
-		operationErr := (SubscriptionService{Root: s.Root, Core: s.Core}).Execute(ctx, a.Subscription, &out)
+		service := SubscriptionService{Root: s.Root, Core: s.Core}
+		var operationErr error
+		if a.Subscription.Operation == "refresh" {
+			operationErr = service.refresh(ctx, !a.Automatic, &out)
+		} else {
+			operationErr = service.Execute(ctx, a.Subscription, &out)
+		}
 		return s.storeTaskOutput(ctx, id, out.Bytes(), operationErr)
 	case "service":
 		if s.NoSystem {

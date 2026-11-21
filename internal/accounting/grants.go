@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/sck03/sing-box-vpn/internal/clientprofile"
+	"github.com/sck03/sing-box-vpn/internal/database"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	"slices"
 	"time"
@@ -108,7 +109,7 @@ func (s *Store) CreateGrant(ctx context.Context, g Grant) (string, error) {
 	}
 	r, err := tx.ExecContext(ctx, `INSERT INTO download_grants(id,account,scope,profiles,outputs,expires,max_downloads,hash) SELECT ?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM download_grants WHERE revoked=0 AND (expires IS NULL OR expires>?) AND (account IS NOT NULL OR max_downloads IS NULL OR downloads<max_downloads))<10000`, g.ID, account, g.Scope, string(profiles), string(outputs), timestamp(g.ExpiresAt), g.MaxDownloads, grantHash(token), time.Now().Unix())
 	if err != nil {
-		return "", err
+		return "", database.CreationError(err)
 	}
 	n, err := r.RowsAffected()
 	if err != nil {

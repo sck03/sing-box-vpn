@@ -27,7 +27,7 @@ const releaseTags = "with_quic,with_utls,with_wireguard,with_gvisor"
 var releaseMembers = []string{
 	"sb.sh", "install.sh", "lib", "internal", "cmd", "scripts", "go.mod", "go.sum",
 	"package.json", "package-lock.json", "third_party", "manifest.go", "manifest_test.go",
-	"tsconfig.json", "versions.json", "LICENSE", "NOTICE.md", "README.md", "docs", ".github",
+	"tsconfig.json", "tsconfig.contracts.json", "versions.json", "LICENSE", "NOTICE.md", "README.md", "docs", ".github",
 }
 
 func validateReleaseSources(root string) error {

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
-	"github.com/sck03/sing-box-vpn/internal/application"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
@@ -23,11 +22,7 @@ func (s SubscriptionService) legacyExecute(ctx context.Context, command fixtureS
 	case "deliver":
 		return deliverSubscriptions(ctx, root, id, false, output)
 	case "refresh":
-		var result application.RefreshResult
-		if err := refreshSubscriptionsResult(ctx, root, core, true, &result); err != nil {
-			return err
-		}
-		return jsonEncoder(output).Encode(result)
+		return s.refresh(ctx, true, output)
 	case "preview", "apply":
 		return s.legacyPlan(ctx, command, output)
 	}

@@ -4,95 +4,78 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 )
 
-func TestGitLabRefusesPublicProjectsAndCommitsFilesTogether(t *testing.T) {
-	root := t.TempDir()
-	for _, name := range []string{"sbox.json", "clmi.yaml", "jhsub.txt"} {
-		if err := os.WriteFile(filepath.Join(root, name), []byte("test-content"), 0600); err != nil {
-			t.Fatal(err)
-		}
-		if err := AtomicBytes(filepath.Join(root, "vpngate", name), []byte("vpn-content"), 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	settings := remoteSettings{}
-	settings.GitLab = &struct {
-		Project string `json:"project"`
-		Branch  string `json:"branch"`
-		Token   string `json:"token"`
-	}{"group/project", "main", "private-token"}
+func TestGitLabDeliveryIsPrivateAndUsesSelectedArtifact(t *testing.T) {
 	var private atomic.Bool
 	var posts atomic.Int32
-	var vpn atomic.Bool
+	var exists atomic.Bool
+	delivery := sub.Delivery{Kind: "gitlab", Token: "private-token", Filename: "normal/output.yaml", Username: "main"}
+	artifact := sub.Artifact{Data: []byte("selected-content")}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("PRIVATE-TOKEN") != "private-token" {
-			t.Error("missing private authorization")
+			t.Error("missing authorization")
 		}
-		if strings.HasSuffix(r.URL.Path, "/repository/commits") {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/repository/commits"):
 			posts.Add(1)
-			var body Object
+			var body struct {
+				Actions []struct {
+					Action  string `json:"action"`
+					Path    string `json:"file_path"`
+					Content string `json:"content"`
+				} `json:"actions"`
+			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Error(err)
-			}
-			if len(objects(body["actions"])) != 3 {
-				t.Error("subscriptions were not committed together")
-			}
-			for _, action := range objects(body["actions"]) {
-				if strings.HasPrefix(text(action["file_path"]), "vpngate/") != vpn.Load() {
-					t.Error("GitLab scopes overwrite each other")
-				}
-				if vpn.Load() && action["content"] != "vpn-content" {
-					t.Error("VPNGate push read ordinary files")
-				}
-				want := "create"
-				if strings.HasSuffix(text(action["file_path"]), "sbox.json") {
-					want = "update"
-				}
-				if action["action"] != want {
-					t.Error("wrong GitLab file action", action["action"], want)
-				}
-			}
-			io.WriteString(w, `{}`)
-			return
-		}
-		if strings.Contains(r.URL.Path, "/repository/files/") {
-			if r.Method != http.MethodHead {
-				t.Error("existence check must use HEAD")
-			}
-			if strings.HasSuffix(r.URL.Path, "sbox.json") {
-				// HEAD describes the file without sending its large response body.
-				w.Header().Set("Content-Length", "8000000")
 				return
 			}
-			w.WriteHeader(404)
-			return
+			want := "create"
+			if exists.Load() {
+				want = "update"
+			}
+			if len(body.Actions) != 1 || body.Actions[0].Action != want || body.Actions[0].Path != delivery.Filename || body.Actions[0].Content != string(artifact.Data) {
+				t.Error("wrong artifact/action", body)
+			}
+			io.WriteString(w, `{}`)
+		case strings.Contains(r.URL.Path, "/repository/files/"):
+			if r.Method != "HEAD" {
+				t.Error("downloaded remote file")
+			}
+			if !exists.Load() {
+				w.WriteHeader(404)
+			} else {
+				w.Header().Set("Content-Length", "8000000")
+			}
+		default:
+			visibility := "public"
+			if private.Load() {
+				visibility = "private"
+			}
+			json.NewEncoder(w).Encode(Object{"visibility": visibility})
 		}
-		visibility := "public"
-		if private.Load() {
-			visibility = "private"
-		}
-		json.NewEncoder(w).Encode(Object{"visibility": visibility})
 	}))
 	defer server.Close()
-	if err := pushGitLab(context.Background(), server.Client(), server.URL, root, normalScope, settings); err == nil || posts.Load() != 0 {
+	delivery.URL = server.URL
+	if err := sendSubscriptionArtifact(t.Context(), server.Client(), delivery, artifact); err == nil || posts.Load() != 0 {
 		t.Fatal("public project accepted")
 	}
 	private.Store(true)
-	if err := pushGitLab(context.Background(), server.Client(), server.URL, root, normalScope, settings); err != nil || posts.Load() != 1 {
-		t.Fatal("private commit failed", err, posts.Load())
+	for _, update := range []bool{false, true} {
+		exists.Store(update)
+		if err := sendSubscriptionArtifact(t.Context(), server.Client(), delivery, artifact); err != nil {
+			t.Fatal(err)
+		}
 	}
-	vpn.Store(true)
-	if err := pushGitLab(context.Background(), server.Client(), server.URL, root, vpngateScope, settings); err != nil || posts.Load() != 2 {
-		t.Fatal("private VPNGate commit failed", err, posts.Load())
+	if posts.Load() != 2 {
+		t.Fatal(posts.Load())
 	}
 }
 func TestRemoteFailureDoesNotExposeToken(t *testing.T) {

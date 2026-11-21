@@ -47,11 +47,12 @@ type Run struct {
 }
 
 type Runtime struct {
-	Sources    map[string]SourceCache        `json:"sources"`
-	Runs       []Run                         `json:"runs"`
-	Resources  map[string]ResourceCache      `json:"resources,omitempty"`
-	Deliveries map[string]DeliveryState      `json:"deliveries,omitempty"`
-	Accounts   map[string]AccountSourceState `json:"accounts,omitempty"`
+	RefreshPending bool                          `json:"refresh_pending,omitempty"`
+	Sources        map[string]SourceCache        `json:"sources"`
+	Runs           []Run                         `json:"runs"`
+	Resources      map[string]ResourceCache      `json:"resources,omitempty"`
+	Deliveries     map[string]DeliveryState      `json:"deliveries,omitempty"`
+	Accounts       map[string]AccountSourceState `json:"accounts,omitempty"`
 }
 
 type NotificationState struct {

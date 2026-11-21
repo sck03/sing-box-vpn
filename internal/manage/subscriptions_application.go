@@ -17,12 +17,14 @@ func (s SubscriptionService) Execute(ctx context.Context, command application.Su
 	case "deliver":
 		return deliverSubscriptions(ctx, s.Root, command.ID, false, output)
 	case "refresh":
-		var result application.RefreshResult
-		if err := refreshSubscriptionsResult(ctx, s.Root, s.Core, true, &result); err != nil {
-			return err
-		}
-		return jsonEncoder(output).Encode(result)
+		return s.refresh(ctx, true, output)
 	default:
 		return errors.New("unsupported subscription operation")
 	}
+}
+
+func (s SubscriptionService) refresh(ctx context.Context, force bool, output io.Writer) error {
+	var result application.RefreshResult
+	err := refreshSubscriptionsResult(ctx, s.Root, s.Core, force, &result)
+	return errors.Join(err, jsonEncoder(output).Encode(result))
 }

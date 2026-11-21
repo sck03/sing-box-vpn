@@ -2,13 +2,24 @@ package manage
 
 import (
 	"encoding/json"
-	"slices"
 	"strings"
 	"unicode"
 )
 
 func secretField(key string) bool {
-	return slices.Contains([]string{"uuid", "password", "passwords", "private_key", "reality_private", "private", "token", "token_hash", "key", "secret", "authorization", "headers", "vpn_secrets", "proxy_pass", "socks_pass", "url", "webhook", "content", "client_secret", "pre_shared_key"}, key)
+	// Configuration and task projections share this policy. URL families are
+	// credentials too: provenance/probe addresses can carry signed query strings.
+	key = strings.ToLower(key)
+	switch key {
+	case "uuid", "password", "passwords", "private", "token", "token_hash", "key", "secret", "secrets", "authorization", "headers", "url", "webhook", "content", "pre_shared_key":
+		return true
+	}
+	for _, suffix := range []string{"_url", "_password", "_passwords", "_pass", "_token", "_token_hash", "_secret", "_secrets", "_private", "_private_key", "_key_pem"} {
+		if strings.HasSuffix(key, suffix) {
+			return true
+		}
+	}
+	return key == "private_key"
 }
 
 // Keep bounded, printable validation context without publishing values from

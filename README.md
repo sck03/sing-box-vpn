@@ -73,10 +73,10 @@ Reality 私钥及密码输入提供显示/隐藏按钮，默认隐藏。证书�
 - [开发与发布](docs/development.md)
 - [兼容性与限制](docs/compatibility.md)
 - [本次实施和验收记录](docs/unified-management-status.md)
-- [五批重构交付与测量](docs/refactor-five-batch.md)
+- [本轮修复、重构与清理](docs/refactor-review.md)
 - [性能与资源边界](docs/optimization.md)
 - [历史分析（固定提交）](https://github.com/sck03/sing-box-vpn/blob/5975e773383b49dd6daca9f5406665eb47b06266/docs/unified-management-analysis.md)
 
 许可证 GPL-3.0。历史分析与测量资料保留在 Git 历史中，不代表当前版本已重新通过其中所有实验。
 
-当前主干的重构与接口变更见 [6.0 重构说明](docs/refactor-6.0.md)。服务端使用 sing-box，Mihomo 等客户端格式由内置转换器生成，无需安装客户端核心。纯节点、Provider 和完整配置使用独立输出标识，授权不会相互扩大。
+当前主干的重构与接口变更见 [当前实施报告](docs/refactor-review.md)。服务端使用 sing-box，Mihomo 等客户端格式由内置转换器生成，无需安装客户端核心。纯节点、Provider 和完整配置使用独立输出标识，授权不会相互扩大。

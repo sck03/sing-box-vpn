@@ -9,21 +9,12 @@ import (
 
 // VisibleAccount never activates first use; exhausted accounts remain visible.
 func (s *Store) VisibleAccount(ctx context.Context, id string, now time.Time) (Usage, error) {
-	u, err := s.Advance(ctx, id, now, false)
+	u, err := s.AccountUsage(ctx, id, now)
 	if err != nil {
 		return u, err
 	}
-	if u.Archived || u.State == "disabled" || u.State == "expired" {
+	if u.Archived || u.State == "disabled" || u.State == "expired" || u.SubscriberDisabled {
 		return u, ErrDenied
-	}
-	if u.SubscriberID != "" {
-		var disabled bool
-		if err = s.db.QueryRowContext(ctx, `SELECT disabled FROM subscribers WHERE id=?`, u.SubscriberID).Scan(&disabled); err != nil {
-			return u, err
-		}
-		if disabled {
-			return u, ErrDenied
-		}
 	}
 	return u, nil
 }
@@ -59,6 +50,24 @@ type authorizationKey struct {
 	generation int64
 }
 
+// Owned exclusively by Meter.maintenance; rows are cleared after each tick.
+// Reuse container capacity, never authorization decisions between snapshots.
+type authorizationRead struct {
+	ids         []string
+	credentials map[authorizationKey]*Usage
+	accounts    map[string]*Usage
+	values      []Usage
+}
+
+func (r *authorizationRead) reset() {
+	clear(r.ids)
+	r.ids = r.ids[:0]
+	clear(r.credentials)
+	clear(r.accounts)
+	clear(r.values)
+	r.values = r.values[:0]
+}
+
 func permitted(u Usage, now time.Time) bool {
 	// Existing durable reservations remain usable when charged equals quota.
 	return !u.Archived && !u.Disabled && u.StartedAt != nil && !now.Before(*u.StartedAt) &&
@@ -67,12 +76,11 @@ func permitted(u Usage, now time.Time) bool {
 
 // One bounded read replaces a query per active credential on each meter tick.
 // No transaction is held while advancing a period or updating in-memory caches.
-func (s *Store) authorizationSnapshot(ctx context.Context, runtime string, now time.Time, wanted map[authorizationKey]bool) (map[authorizationKey]Usage, error) {
-	ids := make([]string, 0, len(wanted))
+func (s *Store) authorizationSnapshot(ctx context.Context, runtime string, now time.Time, wanted map[authorizationKey]bool, scratch *authorizationRead) (map[authorizationKey]*Usage, error) {
 	for key := range wanted {
-		ids = append(ids, key.id)
+		scratch.ids = append(scratch.ids, key.id)
 	}
-	selected, err := json.Marshal(ids)
+	selected, err := json.Marshal(scratch.ids)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +90,14 @@ func (s *Store) authorizationSnapshot(ctx context.Context, runtime string, now t
 	if err != nil {
 		return nil, err
 	}
-	result := make(map[authorizationKey]Usage, len(wanted))
+	if scratch.credentials == nil {
+		scratch.credentials = make(map[authorizationKey]*Usage, len(wanted))
+		scratch.accounts = make(map[string]*Usage, len(wanted))
+	}
+	if cap(scratch.values) < len(wanted) {
+		scratch.values = make([]Usage, 0, len(wanted))
+	}
+	result := scratch.credentials
 	var key authorizationKey
 	// Only authorization and period fields enter this hot path. advanceUsage
 	// rereads the full account under its write transaction if rollover is due.
@@ -108,7 +123,8 @@ func (s *Store) authorizationSnapshot(ctx context.Context, runtime string, now t
 			u.StartedAt = &v
 		}
 		if wanted[key] {
-			result[key] = u
+			scratch.values = append(scratch.values, u)
+			result[key] = &scratch.values[len(scratch.values)-1]
 		}
 	}
 	err = rows.Err()
@@ -116,18 +132,18 @@ func (s *Store) authorizationSnapshot(ctx context.Context, runtime string, now t
 	if err != nil {
 		return nil, err
 	}
-	accounts := map[string]Usage{}
+	accounts := scratch.accounts
 	for key, u := range result {
 		if cached, ok := accounts[u.ID]; ok {
 			u = cached
 		} else {
-			u, err = s.advanceUsage(ctx, u, now, false)
+			*u, err = s.advanceUsage(ctx, *u, now, false)
 			if err != nil {
 				return nil, err
 			}
 			accounts[u.ID] = u
 		}
-		if permitted(u, now) {
+		if permitted(*u, now) {
 			result[key] = u
 		} else {
 			delete(result, key)

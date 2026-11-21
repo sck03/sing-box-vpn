@@ -85,13 +85,14 @@ assert.equal(
 clearTimeout(notice.timer);
 document.querySelector("dialog").close();
 for (const scope of ["normal", "vpngate"]) for (const failed of [false, true]) {
-  let saves = 0, queued;
+  let saves = 0, queued, share;
   globalThis.fetch = async (path, options) => {
     let value = {};
     if (path === "/api/subscribers") value = [];
     else if (path.startsWith("/api/accounts?")) value = { items: [], total: 0 };
     else if (path.startsWith("/api/inbound-options")) value = path.endsWith(scope) ? [{ id: "node", name: "Node" }] : [];
     else if (path === "/api/accounts") saves++;
+    else if (path === "/api/grants") { share = JSON.parse(options.body); value = { user_url: "http://localhost/user#fixture" }; }
     else if (path === "/api/tasks/detail?id=17") value = { id: 17, kind: "account", state: "succeeded" };
     else if (path.startsWith("/api/accounts/detail?")) value = { id: queued.account.id, name: "自动绑定", download_scopes: [scope], download_denial: "" };
     else if (path.startsWith("/api/accounts/outputs?")) value = [{ profile: "uri", client: "uri", label: "URI", available: true, nodes: 1, input_nodes: 1, mode: "nodes" }];
@@ -119,6 +120,15 @@ for (const scope of ["normal", "vpngate"]) for (const failed of [false, true]) {
     assert([...document.querySelectorAll("dialog button")].some((b) => b.textContent === "创建分享"));
     click("创建分享"); await tick(); await tick();
     assert(document.querySelector('[aria-label="设备平台"]'), "sharing inherited the cancelled page signal");
+    const expiry = document.querySelector('[aria-label="链接到期时间"]');
+    const downloads = document.querySelector('[aria-label="最多下载次数"]');
+    assert(expiry && downloads, "account share limits have no UI");
+    expiry.value = "2030-01-01T12:30";
+    downloads.value = "3";
+    document.querySelector("dialog form").dispatchEvent(new Event("submit", { cancelable: true }));
+    await tick(); await tick();
+    assert.equal(share.max_downloads, 3);
+    assert.equal(new Date(share.expires_at).getFullYear(), 2030);
   }
   document.querySelector("dialog").close();
   clearTimeout(notice.timer);

@@ -137,13 +137,18 @@ func publishSubscriptionRefresh(ctx context.Context, root, core string, expected
 			state.Record("publish", "", buildErr.Error(), now)
 			return errors.Join(buildErr, writeSubscriptionRuntime(root, current, state))
 		}
+		state.RefreshPending = false
 		if err = files.json(subscriptionsRuntime, state); err != nil {
 			return err
 		}
 		if err = files.json(subscriptionsSchedule, subscriptionDeadlines(current, state)); err != nil {
 			return err
 		}
-		return publish(root, files)
+		if err := publish(root, files); err != nil {
+			return err
+		}
+		report.Published = true
+		return nil
 	})
 	return events, errors.Join(err, rejected)
 }

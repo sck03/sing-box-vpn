@@ -261,6 +261,24 @@ export interface Reality {
   short_id: string;
 }
 
+export interface RefreshFailure {
+  id: string;
+  error: string;
+  last_success: string;
+}
+
+export interface RefreshResult {
+  outcome: string;
+  checked: number;
+  updated: number;
+  outputs: number;
+  expected_outputs: number;
+  failures: Array<RefreshFailure> | null;
+  deferred: number;
+  published: boolean;
+  interrupted: boolean;
+}
+
 export interface Secrets {
   reality: Reality;
   socks_user?: string;

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/sck03/sing-box-vpn/internal/database"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	"time"
 )
@@ -171,6 +172,7 @@ func (s *Store) SaveSubscriber(ctx context.Context, v Subscriber) error {
 	var err error
 	if v.Revision == 0 {
 		r, err = s.db.ExecContext(ctx, `INSERT INTO subscribers(id,name,disabled) SELECT ?,?,? WHERE (SELECT COUNT(*) FROM subscribers)<1000`, v.ID, v.Name, v.Disabled)
+		err = database.CreationError(err)
 	} else {
 		r, err = s.db.ExecContext(ctx, `UPDATE subscribers SET name=?,disabled=?,revision=revision+1 WHERE id=? AND revision=?`, v.Name, v.Disabled, v.ID, v.Revision)
 	}

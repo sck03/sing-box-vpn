@@ -3,6 +3,7 @@ package manage
 import (
 	"encoding/base64"
 	"net/http"
+	"time"
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
@@ -112,7 +113,7 @@ func (s *PlatformService) serveAccounts(w http.ResponseWriter, r *http.Request, 
 		return true
 	}
 	if path == "/api/accounts/detail" && r.Method == "GET" {
-		usage, e := s.Accounts.Account(ctx, r.URL.Query().Get("id"))
+		usage, e := s.Accounts.AccountUsage(ctx, r.URL.Query().Get("id"), time.Now())
 		if e != nil {
 			platformError(w, e)
 			return true

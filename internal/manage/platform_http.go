@@ -19,6 +19,7 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/adminauth"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	"github.com/sck03/sing-box-vpn/internal/httpserver"
 	"github.com/sck03/sing-box-vpn/internal/publicaccess"
 	"github.com/sck03/sing-box-vpn/internal/runtimeconfig"
@@ -76,6 +77,8 @@ func platformError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		status, detail.Code = http.StatusNotFound, "not_found"
+	case errors.Is(err, domain.ErrAlreadyExists):
+		status, detail.Code, detail.Message, detail.Field = http.StatusConflict, "already_exists", "该 ID 已存在，请使用其他 ID", "id"
 	case errors.As(err, &storage), errors.As(err, &pathError):
 		slog.Error("panel storage operation failed", "error", err)
 		status, detail.Code, detail.Message = http.StatusInternalServerError, "storage_error", "存储操作失败，请检查面板服务日志"

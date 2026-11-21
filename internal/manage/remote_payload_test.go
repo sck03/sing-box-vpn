@@ -4,10 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
+	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -31,14 +30,6 @@ func TestTelegramMessageBoundaries(t *testing.T) {
 		{"oversized-tail", "first\n" + strings.Repeat("a", 3501), nil, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			root := t.TempDir()
-			if err := os.WriteFile(filepath.Join(root, "jhsub.txt"), []byte(tc.content), 0600); err != nil {
-				t.Fatal(err)
-			}
-			var settings remoteSettings
-			if err := json.Unmarshal([]byte(`{"telegram":{"token":"test-token","chat_id":"test-chat"}}`), &settings); err != nil {
-				t.Fatal(err)
-			}
 			var messages []string
 			client := &http.Client{Transport: testTransport(func(r *http.Request) (*http.Response, error) {
 				var body struct {
@@ -50,7 +41,7 @@ func TestTelegramMessageBoundaries(t *testing.T) {
 				messages = append(messages, body.Text)
 				return byteResponse([]byte(`{"ok":true}`)), nil
 			})}
-			err := pushTelegram(context.Background(), client, "https://example.test", root, normalScope, settings)
+			err := sendSubscriptionArtifact(t.Context(), client, sub.Delivery{Kind: "telegram", URL: "https://example.test", Token: "test-token", Username: "test-chat"}, sub.Artifact{Data: []byte(tc.content)})
 			if (err != nil) != tc.invalid || !reflect.DeepEqual(messages, tc.want) {
 				t.Fatalf("error=%v, message lengths=%v; want invalid=%v, lengths=%v", err, messageLengths(messages), tc.invalid, messageLengths(tc.want))
 			}
@@ -64,69 +55,6 @@ func messageLengths(messages []string) []int {
 		lengths[i] = len(message)
 	}
 	return lengths
-}
-
-func TestGitLabUsesOneExportSnapshot(t *testing.T) {
-	root := t.TempDir()
-	names := []string{"sbox.json", "clmi.yaml", "jhsub.txt"}
-	for _, name := range names {
-		if err := os.WriteFile(filepath.Join(root, name), []byte("before"), 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	var settings remoteSettings
-	if err := json.Unmarshal([]byte(`{"gitlab":{"project":"group/project","branch":"main","token":"test-token"}}`), &settings); err != nil {
-		t.Fatal(err)
-	}
-	var commits int
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/repository/commits"):
-			commits++
-			var body struct {
-				Actions []struct {
-					Content string `json:"content"`
-				} `json:"actions"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Error(err)
-			}
-			if len(body.Actions) != len(names) {
-				t.Error("incomplete subscription commit")
-			}
-			for _, action := range body.Actions {
-				if action.Content != "before" {
-					t.Errorf("push mixed a newer export into its snapshot: %q", action.Content)
-				}
-			}
-			io.WriteString(w, `{}`)
-		case strings.Contains(r.URL.Path, "/repository/files/"):
-			if r.Method != http.MethodHead {
-				t.Error("file existence check downloaded content instead of using HEAD")
-			}
-			// This must succeed while the remote request is active: no disk lock
-			// may span network I/O, and later files must still use the snapshot.
-			if err := withLock(root, func() error {
-				bundle := fileBundle{}
-				for _, name := range names {
-					bundle[name] = []byte("after")
-				}
-				return publish(root, bundle)
-			}); err != nil {
-				t.Error("remote request held configuration lock:", err)
-			}
-			w.WriteHeader(http.StatusNotFound)
-		default:
-			fmt.Fprint(w, `{"visibility":"private"}`)
-		}
-	}))
-	defer server.Close()
-	if err := pushGitLab(context.Background(), server.Client(), server.URL, root, normalScope, settings); err != nil {
-		t.Fatal(err)
-	}
-	if commits != 1 {
-		t.Fatal("expected one atomic remote commit", commits)
-	}
 }
 
 func BenchmarkRemoteAcknowledgement(b *testing.B) {
@@ -143,67 +71,41 @@ func BenchmarkRemoteAcknowledgement(b *testing.B) {
 	}
 }
 
-func TestRemoteSnapshotRecoversInterruptedPublication(t *testing.T) {
+func TestDeliverySnapshotRecoversPublicationAndRespectsCancellation(t *testing.T) {
 	root := t.TempDir()
-	before := fileBundle{"jhsub.txt": []byte("normal"), "vpngate/jhsub.txt": []byte("vpn")}
-	for name := range before {
-		if err := AtomicBytes(filepath.Join(root, name), []byte("partial"), 0600); err != nil {
-			t.Fatal(err)
-		}
+	snapshot := sub.Snapshot{Artifacts: map[string]sub.Artifact{"normal": {Data: []byte("normal")}, "vpn": {Data: []byte("vpn")}}}
+	before := fileBundle{}
+	if err := before.json(subscriptionsSnapshot, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if err := AtomicBytes(filepath.Join(root, subscriptionsSnapshot), []byte("partial"), 0600); err != nil {
+		t.Fatal(err)
 	}
 	writePendingJournal(t, root, before, snapshotStage)
-	for _, scope := range []string{vpngateScope, normalScope} {
-		files, err := readRemoteExports(context.Background(), root, scope, "jhsub.txt")
-		if err != nil || len(files) != 1 {
-			t.Fatal("snapshot failed", err)
-		}
-		if files[0].content != string(before[files[0].path]) {
-			t.Fatal("snapshot used partial or wrong-scope content", files)
-		}
+	_, _, captured, err := captureSubscriptionDelivery(t.Context(), root)
+	if err != nil || !reflect.DeepEqual(captured.Artifacts, snapshot.Artifacts) {
+		t.Fatal(captured, err)
 	}
 	if _, err := os.Stat(filepath.Join(root, journalName)); !os.IsNotExist(err) {
-		t.Fatal("pending publication was not recovered", err)
+		t.Fatal(err)
 	}
-}
-
-func TestRemoteSnapshotLockWaitCanBeCancelled(t *testing.T) {
-	root := t.TempDir()
 	if err := withConfigLock(root, func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 		defer cancel()
-		files, err := readRemoteExports(ctx, root, normalScope, "jhsub.txt")
-		if !errors.Is(err, context.DeadlineExceeded) || files != nil {
-			t.Errorf("lock wait ignored cancellation: files=%v, err=%v", files, err)
+		_, _, _, err := captureSubscriptionDelivery(ctx, root)
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("lock ignored cancellation: %v", err)
 		}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func TestRemoteExportBounds(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "export")
-	if err := os.WriteFile(path, []byte("content"), 0600); err != nil {
+	// The returned snapshot owns its bytes and holds no publication lock.
+	if err := withLock(root, func() error { return AtomicJSON(filepath.Join(root, subscriptionsSnapshot), sub.Snapshot{}) }); err != nil {
 		t.Fatal(err)
 	}
-	if content, err := readRemoteExport(path); err != nil || content != "content" {
-		t.Fatal("valid export rejected", err)
-	}
-	for _, size := range []int64{maxRemoteExport, maxRemoteExport + 1} {
-		if err := os.Truncate(path, size); err != nil {
-			t.Fatal(err)
-		}
-		content, err := readRemoteExport(path)
-		if size == maxRemoteExport {
-			if err != nil || len(content) != maxRemoteExport {
-				t.Fatal("exact file limit rejected", err)
-			}
-		} else if err == nil || content != "" {
-			t.Fatal("oversized file accepted")
-		}
-	}
-	if _, err := readRemoteExport(filepath.Dir(path)); err == nil {
-		t.Fatal("directory accepted as an export")
+	if string(captured.Artifacts["normal"].Data) != "normal" {
+		t.Fatal("snapshot changed during delivery")
 	}
 }
 

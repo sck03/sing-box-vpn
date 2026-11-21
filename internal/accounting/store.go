@@ -214,6 +214,7 @@ func (s *Store) SaveAccount(ctx context.Context, a domain.Account) error {
 		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO accounts(id,name,disabled,expires,quota,revision,created,subscriber,start_mode,starts,duration,period_kind,period_days,period_day,timezone,started,period) VALUES(?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?)`,
 			a.ID, a.Name, a.Disabled, timestamp(a.ExpiresAt), a.QuotaBytes, now.Unix(), a.SubscriberID, a.StartMode, timestamp(a.StartsAt), a.DurationSeconds, a.Period.Kind, a.Period.Days, a.Period.Day, a.Period.Timezone, timestamp(start), period)
+		err = database.CreationError(err)
 	} else {
 		old, e := readAccount(tx.QueryRowContext(ctx, `SELECT `+accountColumns+` FROM accounts WHERE id=?`, a.ID))
 		if e != nil {

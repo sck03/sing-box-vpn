@@ -87,13 +87,13 @@ Windows 先加载 `scripts/dev-env.ps1`，将 `GATEWAY_BINARY` 和 `MANAGED_CORE
 
 可对该独立面板运行真实 HTTP 工作流：设置 `PANEL_TEST_URL`、`PANEL_TEST_USERNAME`（默认 reviewadmin）和 `PANEL_TEST_PASSWORD`，执行 `node scripts/test-panel-api.mjs`。脚本只接受回环 URL，并在创建数据前确认服务均处于 no-system 状态。验证绑定/导出、下载次数、跨站分享、完整候选预览和任务应用；不能指向真实安装。
 
-配置预览为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回普通服务端脱敏配置、输出节点数/变化及结构化验证。`POST /api/config/preview-output` 接受 `{id,config}`，只编译目标图并返回有界脱敏内容。旧 `/api/subscriptions/preview` 不恢复。节点文档 schema=4、订阅 schema=6、CompilerVersion=5、模板 version=1、平台 schema=6；备份容器为 8，数据库为 16，旧订阅内容明确拒绝。
+配置预览为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回普通服务端脱敏配置、输出节点数/变化及结构化验证。`POST /api/config/preview-output` 接受 `{id,config}`，只编译目标图并返回有界脱敏内容。旧 `/api/subscriptions/preview` 不恢复。节点文档 schema=4、订阅 schema=6、CompilerVersion=6、模板 version=1、平台 schema=6；备份容器为 8，数据库为 16，旧订阅内容明确拒绝。
 
 新增回归 `compiler_regression_test.go`、`preview_test.go` 覆盖 URI 认证/端口、SIP003、WS early-data、gRPC/XHTTP、名称和策略组范围、脱敏与真实核心检查。`TestImportedTrojanTransportsWithMihomo` 使用真实 sing-box 服务端和 Mihomo 客户端验证 WS/gRPC，错误路径或服务名必须失败。`TestRefreshValidationDoesNotHoldPublicationLock` 覆盖锁外编译与过期配置拒绝，`TestLimitedServerPreservesTLSAndHTTP2` 覆盖 TLS 状态及协议协商。
 
 `test-panel-subscriptions.mjs` 是第七组前端回归，覆盖默认 DNS 与显式关闭、动态客户端范围、迟到响应、候选向导和局部列表更新。真实 API 套件检查订阅 schema=6、账户模板覆盖、可用性、扩展名、下载元信息和脱敏预览；浏览器套件沿用隔离目录与真实事件。
 
-`template_contract_test.go` 覆盖 DNS 三态与空排除数组、原生字段归属、Egern IPv6/TLS 和端口跳跃间隔。`account_export_cache_test.go` 覆盖容量/过期/并发合并、凭据轮换、授权撤销、正文隔离、严格核心校验和 ParserVersion 升级后的完整抓取。运行 `go test ./internal/manage -run '^$' -bench '^BenchmarkAccountCompilation$' -benchtime=300ms -count=3 -benchmem` 可复测缓存，测量范围见[验证记录](validation/2026-11-19-subscription-quality.json)。
+`template_contract_test.go` 覆盖 DNS 三态与空排除数组、原生字段归属、Egern IPv6/TLS 和端口跳跃间隔。`account_export_cache_test.go` 覆盖容量/过期/并发合并、凭据轮换、授权撤销、正文隔离、严格核心校验和 ParserVersion 升级后的完整抓取。运行 `go test ./internal/manage -run '^$' -bench '^BenchmarkAccountCompilation$' -benchtime=300ms -count=3 -benchmem` 可复测缓存，测量范围见[当前验证记录](validation/2026-11-21-refactor.json)。
 
 `GET /api/accounts/outputs?id=…&scope=…` 和用户用量的 profiles 对象数组共用实际导出计划；`GET /api/outbound-options` 返回已应用出站。新字段与契约直接更新，不增加旧数组或旧接口适配器。完整订阅说明见 [订阅](subscriptions.md)。
 
@@ -226,3 +226,13 @@ npm test 包括首次导出查询取消、替换对话框、默认模板重置�
 管理程序使用 `go build -o .build/yg-vpngate ./cmd/sbvpn` 构建；VPNGate 测试包为 `./internal/vpngate`。原 addons/vpngate/gateway 源码目录已移除。修改能力 DTO 后运行 `go run ./cmd/panel-contract`，并运行 `npm run typecheck`、`npm test`。
 
 完整验收应设置 `MANAGED_CORE_BINARY`、`SING_BOX_BINARY`、`MIHOMO_BINARY`，未设置时相关集成测试会跳过，不能只凭 `go test ./...` 的绿色结果宣称客户端链路通过。Windows 使用 `scripts/dev-env.ps1` 配置工具链；Linux 的 namespace、systemd、nftables、磁盘故障和 race 验收见 `.github/workflows/ci.yml`。本地 QEMU 脚本需要自行准备其依赖镜像和密钥；缺少资产时不会自动创建虚拟机。
+
+## 审查问题回归与契约
+
+`usage_queries_test.go` 验证详情/列表一致、账期推进、首次使用不激活及身份冲突。`audit_consistency_test.go` 验证 viewer/operator 配置脱敏和 HTTP 409。`subscriptions_fetch_test.go` 验证并发上限、取消和公平队列；`subscriptions_result_test.go` 验证手动/自动失败报告、取消后的来源保存与版本冲突。`test-panel-navigation.mjs` 从真实 app 延迟进入日志页并注入 SSE，验证任务更新及离页停止。`test-panel-workflows.mjs` 验证链接限制真实提交。
+
+Telegram/GitLab 的回归直接调用生产分发入口和快照捕获逻辑，旧 remoteSettings / pushTelegram / pushGitLab 测试实现已删除。其余仍有调用方的 legacy 测试夹具仅用于构造和验证历史场景，不是生产兼容层。新增测试应优先使用当前 application、HTTP 或 CLI 入口。
+
+授权快照只复用容器容量与临时值数组，每轮重新查库、完成后清空，闲置时释放；不能把复用改成跨轮授权结果缓存。新增敏感配置字段须扩展统一字段策略和角色 HTTP 回归，URL 字段族也按凭据处理。
+
+`npm run typecheck` 同时运行全量 JS 检查与 `tsconfig.contracts.json` 的 strict 契约检查。公开任务、刷新结果和分享限制具有正反类型用例；不把现有 JS 的非严格检查误称为全项目严格类型覆盖。

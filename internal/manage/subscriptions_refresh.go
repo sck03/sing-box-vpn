@@ -2,7 +2,6 @@ package manage
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,7 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/sck03/sing-box-vpn/internal/application"
@@ -216,6 +214,11 @@ func refreshSource(ctx context.Context, client *http.Client, source sub.Source, 
 // The separate cross-process lock coalesces scheduled and manual refreshes. It
 // never holds the configuration lock while waiting on a remote server.
 func refreshSubscriptionsResult(ctx context.Context, root, core string, force bool, report *application.RefreshResult) error {
+	*report = application.RefreshResult{Failures: []application.RefreshFailure{}}
+	defer func() {
+		report.Interrupted = ctx.Err() != nil
+		report.Complete()
+	}()
 	if err := os.MkdirAll(filepath.Join(root, "subscriptions"), 0700); err != nil {
 		return err
 	}
@@ -233,6 +236,7 @@ func refreshSubscriptionsResult(ctx context.Context, root, core string, force bo
 	if err != nil {
 		return err
 	}
+	report.ExpectedOutputs = len(config.Outputs)
 	client := newHTTPClient(20 * time.Second)
 	runtime = sub.PruneRuntime(config, runtime)
 	defer client.CloseIdleConnections()
@@ -242,65 +246,17 @@ func refreshSubscriptionsResult(ctx context.Context, root, core string, force bo
 		}
 		return sub.HTTPURL(req.URL.String())
 	}
-	results := map[string]sub.SourceCache{}
-	cacheBytes, cacheNodes := 0, 0
-	cacheSizes := map[string]int{}
-	for id, cache := range runtime.Sources {
-		data, err := json.Marshal(cache)
-		if err != nil {
-			return err
-		}
-		cacheSizes[id] = len(data)
-		cacheBytes += len(data)
-		cacheNodes += len(cache.Nodes)
-	}
-	if cacheBytes > sub.MaxBody || cacheNodes > sub.MaxNodes {
-		return errors.New("combined source cache limit exceeded")
-	}
-	var mu sync.Mutex
-	var workers sync.WaitGroup
-	jobs := make(chan sub.Source)
 	now := time.Now()
-	for range 2 {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
-			for source := range jobs {
-				result := refreshSource(ctx, client, source, runtime.Sources[source.ID], now)
-				mu.Lock()
-				data, _ := json.Marshal(result)
-				old := runtime.Sources[source.ID]
-				if cacheBytes-cacheSizes[source.ID]+len(data) > sub.MaxBody || cacheNodes-len(old.Nodes)+len(result.Nodes) > sub.MaxNodes {
-					result = old
-					result.Checked, result.Next, result.Error = now, now.Add(time.Hour), "combined source cache limit exceeded"
-					result.Failures++
-					data, _ = json.Marshal(result)
-				}
-				cacheBytes += len(data) - cacheSizes[source.ID]
-				cacheNodes += len(result.Nodes) - len(old.Nodes)
-				results[source.ID] = result
-				mu.Unlock()
-			}
-		}()
-	}
-	for _, source := range config.Sources {
-		if source.Kind != "remote" || (!force && now.Before(runtime.Sources[source.ID].Next)) {
-			continue
-		}
-		select {
-		case jobs <- source:
-		case <-ctx.Done():
-		}
-		if ctx.Err() != nil {
-			break
-		}
-	}
-	close(jobs)
-	workers.Wait()
-	if err := ctx.Err(); err != nil {
+	fetch, stop := context.WithTimeout(ctx, subscriptionSourceBudget)
+	results, deferred, err := refreshSubscriptionSources(fetch, client, config.Sources, runtime.Sources, now, force)
+	stop()
+	if err != nil {
 		return err
 	}
-	resourceChanged, resources, events := refreshSubscriptionResources(ctx, client, &config, runtime.Resources, now, force)
+	fetch, stop = context.WithTimeout(ctx, subscriptionResourceBudget)
+	resourceChanged, resources, events := refreshSubscriptionResources(fetch, client, &config, runtime.Resources, now, force)
+	stop()
+	report.Deferred = deferred + dueSubscriptionResources(config, runtime.Resources, now, force) - len(resources)
 	report.Failures = []application.RefreshFailure{}
 	for id, value := range results {
 		report.Checked++
@@ -319,10 +275,21 @@ func refreshSubscriptionsResult(ctx context.Context, root, core string, force bo
 		}
 	}
 	sort.Slice(report.Failures, func(i, j int) bool { return report.Failures[i].ID < report.Failures[j].ID })
+	if err := ctx.Err(); err != nil {
+		return errors.Join(err, checkpointSubscriptionSources(ctx, root, config, results))
+	}
 	events, err = publishSubscriptionRefresh(ctx, root, core, config, results, resources, events, now, resourceChanged, report, compilePreparedSubscriptions)
-	report.Complete()
+	if ctx.Err() != nil && !report.Published {
+		return errors.Join(err, ctx.Err(), checkpointSubscriptionSources(ctx, root, config, results))
+	}
+	// Notifications cannot consume the remaining publication/task budget.
+	notify, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	for _, event := range events {
-		notifySubscriptionEvent(ctx, client, root, config, event)
+		if notify.Err() != nil {
+			break
+		}
+		notifySubscriptionEvent(notify, client, root, config, event)
 	}
 	return err
 }

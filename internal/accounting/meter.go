@@ -45,9 +45,11 @@ type meterScratch struct {
 	authorizations  map[*authorization]bool
 	checkpoints     []UsageCheckpoint
 	checkpointPools []*pool
+	snapshot        authorizationRead
 }
 
 func (s *meterScratch) reset() {
+	s.snapshot.reset()
 	clear(s.handles)
 	clear(s.pools)
 	clear(s.wanted)
@@ -300,7 +302,7 @@ func (m *Meter) Tick(ctx context.Context) error {
 	}
 	if len(wanted) > 0 {
 		now, epoch := time.Now(), m.store.authorizationEpoch.Load()
-		snapshot, err := m.store.authorizationSnapshot(ctx, m.runtime, now, wanted)
+		snapshot, err := m.store.authorizationSnapshot(ctx, m.runtime, now, wanted, &scratch.snapshot)
 		if err != nil {
 			m.Shutdown()
 			return err
@@ -308,8 +310,11 @@ func (m *Meter) Tick(ctx context.Context) error {
 		for a := range authorizations {
 			a.mu.Lock()
 			if !a.checkedAt.After(now) {
-				var ok bool
-				a.usage, ok = snapshot[authorizationKey{a.credential, a.generation}]
+				usage, ok := snapshot[authorizationKey{a.credential, a.generation}]
+				a.usage = Usage{}
+				if ok {
+					a.usage = *usage
+				}
 				a.err = nil
 				if !ok {
 					a.err = ErrDenied
@@ -318,6 +323,9 @@ func (m *Meter) Tick(ctx context.Context) error {
 			}
 			a.mu.Unlock()
 		}
+	} else {
+		// An idle runtime need not retain a previous connection peak's buffers.
+		scratch.snapshot = authorizationRead{}
 	}
 	for _, h := range handles {
 		if err := h.authorized(ctx, false); err != nil {

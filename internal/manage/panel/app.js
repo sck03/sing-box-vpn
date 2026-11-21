@@ -171,7 +171,10 @@ async function renderPage() {
     const content = await definition.load(view);
     if (generation !== loading) return;
     showSection = view.showSection;
-    ctx.updateOverview = view.updateOverview;
+    // Sections register their handlers after asynchronous lazy loading.
+    ctx.updateOverview = (snapshot) => {
+      if (!signal.aborted) view.updateOverview?.(snapshot);
+    };
     $("#content").replaceChildren(...content);
     if (ctx.overview && ctx.overview !== initialSnapshot)
       ctx.updateOverview?.(ctx.overview);

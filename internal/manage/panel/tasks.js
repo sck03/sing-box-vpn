@@ -322,6 +322,8 @@ function resultDetails(result) {
   if (result.retained === false)
     return [help("任务详情已按保留策略清理，最终结果仍保留。")];
   const sections = [];
+  if (typeof result.published === "boolean")
+    sections.push(...refreshDetails(result));
   if (result.artifact_validation)
     sections.push(
       help(
@@ -393,4 +395,13 @@ function resultDetails(result) {
       ),
     );
   return sections;
+}
+
+/** @param {import("./contracts.js").RefreshResult} result */
+function refreshDetails(result) {
+  return [help(
+    `已检查 ${result.checked} 项 · 成功 ${result.updated} 项 · ${result.published ? "已发布通过校验的输出" : "本轮未发布输出"}` +
+    (result.deferred ? ` · ${result.deferred} 项留待后续刷新，自动调度会继续处理` : "") +
+    (result.interrupted ? " · 执行中断，已完成的来源抓取会在配置版本仍匹配时保存" : ""),
+  )];
 }

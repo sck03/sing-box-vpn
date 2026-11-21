@@ -12,8 +12,9 @@ import (
 func TestComputedExpirySurvivesRenameAndStopsForwarding(t *testing.T) {
 	s, _, cred := periodFixture(t, "created")
 	ctx := t.Context()
-	// Place the deadline close enough to exercise the authorization cache.
-	if _, err := s.db.Exec(`UPDATE accounts SET duration=86400,started=unixepoch()-86400+2 WHERE id='alice'`); err != nil {
+	// Setup/commits may take seconds under race instrumentation or a slow disk.
+	// Exercise expiry with an explicit clock boundary after setup is complete.
+	if _, err := s.db.Exec(`UPDATE accounts SET duration=86400,started=unixepoch() WHERE id='alice'`); err != nil {
 		t.Fatal(err)
 	}
 	u, err := s.Account(ctx, "alice")
@@ -39,11 +40,22 @@ func TestComputedExpirySurvivesRenameAndStopsForwarding(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.Complete(n, n, true)
-	time.Sleep(time.Until(*u.EffectiveExpiresAt))
+	deadline := time.Now().UTC().Truncate(time.Second)
+	if _, err := s.db.Exec(`UPDATE accounts SET started=? WHERE id='alice'`, deadline.Add(-24*time.Hour).Unix()); err != nil {
+		t.Fatal(err)
+	}
+	h.auth.mu.Lock()
+	h.auth.usage.EffectiveExpiresAt = &deadline
+	h.auth.setDeadline(deadline.Add(-AuthorizationInterval/2), s.authorizationEpoch.Load())
+	cachedUntil := h.auth.until
+	h.auth.mu.Unlock()
+	if !cachedUntil.Equal(deadline) {
+		t.Fatal("authorization cache outlived expiry", cachedUntil, deadline)
+	}
 	if _, err = h.Take(1); !errors.Is(err, ErrDenied) {
 		t.Fatal("cached forwarding after expiry", err)
 	}
-	if _, err = s.Reserve(ctx, "late", u.ID, "normal", 1, *u.EffectiveExpiresAt); !errors.Is(err, ErrDenied) {
+	if _, err = s.Reserve(ctx, "late", u.ID, "normal", 1, deadline); !errors.Is(err, ErrDenied) {
 		t.Fatal("reservation at deadline", err)
 	}
 }

@@ -128,18 +128,8 @@ func deliverSubscriptions(ctx context.Context, root, id string, automatic bool, 
 		return err
 	}
 	return withNamedFileLock(filepath.Join(root, "subscriptions"), ".delivery.lock", func() error {
-		var c sub.Config
-		var r sub.Runtime
-		var snapshot sub.Snapshot
-		if err := withStartupLock(ctx, root, func() error {
-			var err error
-			c, r, err = loadSubscriptionState(root)
-			if err != nil {
-				return err
-			}
-			_, err = ReadJSON(filepath.Join(root, subscriptionsSnapshot), &snapshot)
-			return err
-		}); err != nil {
+		c, r, snapshot, err := captureSubscriptionDelivery(ctx, root)
+		if err != nil {
 			return err
 		}
 		client := newHTTPClient(20 * time.Second)
@@ -210,7 +200,7 @@ func deliverSubscriptions(ctx context.Context, root, id string, automatic bool, 
 		}
 		var failures []error
 		var events []sub.Run
-		err := withLock(root, func() error {
+		err = withLock(root, func() error {
 			current, state, err := loadSubscriptionState(root)
 			if err != nil {
 				return err

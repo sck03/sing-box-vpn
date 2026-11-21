@@ -34,17 +34,19 @@ type scheduleConfig struct {
 	Deliveries []scheduledDelivery `json:"deliveries"`
 }
 type subscriptionSchedule struct {
-	Config     scheduleConfig                    `json:"config"`
-	Sources    map[string]scheduleDeadline       `json:"sources"`
-	Resources  map[string]scheduleDeadline       `json:"resources"`
-	Deliveries map[string]scheduleDeadline       `json:"deliveries"`
-	Accounts   map[string]sub.AccountSourceState `json:"accounts"`
+	RefreshPending bool                              `json:"refresh_pending,omitempty"`
+	Config         scheduleConfig                    `json:"config"`
+	Sources        map[string]scheduleDeadline       `json:"sources"`
+	Resources      map[string]scheduleDeadline       `json:"resources"`
+	Deliveries     map[string]scheduleDeadline       `json:"deliveries"`
+	Accounts       map[string]sub.AccountSourceState `json:"accounts"`
 }
 
 const subscriptionsSchedule = "subscriptions/schedule.json"
 
 func subscriptionDeadlines(c sub.Config, r sub.Runtime) subscriptionSchedule {
 	s := subscriptionSchedule{Config: scheduleConfig{Version: c.Version, Revision: c.Revision}, Sources: map[string]scheduleDeadline{}, Resources: map[string]scheduleDeadline{}, Deliveries: map[string]scheduleDeadline{}, Accounts: r.Accounts}
+	s.RefreshPending = r.RefreshPending
 	for _, source := range c.Sources {
 		s.Config.Sources = append(s.Config.Sources, scheduledSource{ID: source.ID, Kind: source.Kind, AccountID: source.AccountID})
 		s.Sources[source.ID] = scheduleDeadline{Next: r.Sources[source.ID].Next}
@@ -99,7 +101,7 @@ func (s *PlatformService) scheduleSubscriptions(ctx context.Context) error {
 		return err
 	}
 	now := time.Now()
-	refresh := false
+	refresh := r.RefreshPending
 	checked := map[string]bool{}
 	for _, source := range c.Sources {
 		if source.Kind == "remote" && !now.Before(r.Sources[source.ID].Next) {

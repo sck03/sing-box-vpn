@@ -339,6 +339,7 @@ func (s *Store) Save(ctx context.Context, actor string, a Admin, password string
 			return errors.New("administrator limit is 32")
 		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO administrators(id,password,role,disabled) VALUES(?,?,?,?)`, a.ID, p, a.Role, a.Disabled)
+		err = database.CreationError(err)
 	} else {
 		var r sql.Result
 		r, err = tx.ExecContext(ctx, `UPDATE administrators SET role=?,disabled=?,password=COALESCE(?,password),revision=revision+1 WHERE id=? AND revision=?`, a.Role, a.Disabled, p, a.ID, a.Revision)

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sync"
 	"time"
 
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
@@ -22,6 +23,8 @@ func refreshSubscriptionResources(ctx context.Context, client *http.Client, conf
 		cacheBytes += len(entry.Body)
 	}
 	var events []sub.Run
+	var mu sync.Mutex
+	var jobs []subscriptionFetchJob
 	refresh := func(id, endpoint string, apply func([]byte) error) {
 		if endpoint == "" {
 			return
@@ -36,42 +39,49 @@ func refreshSubscriptionResources(ctx context.Context, client *http.Client, conf
 		if !force && now.Before(cache.Next) {
 			return
 		}
-		priorError := cache.Error
-		cache.Checked = now
-		data, headers, unchanged, err := fetchSubscription(ctx, client, endpoint, cache.ETag)
-		if err == nil && unchanged && (cache.ETag == "" || len(cache.Body) == 0) {
-			err = errors.New("resource returned 304 without cache")
-		}
-		if err == nil && !unchanged {
-			if cacheBytes-len(old[id].Body)+len(data) > sub.MaxResourceBytes {
-				err = errors.New("combined resource cache limit exceeded")
+		jobs = append(jobs, subscriptionFetchJob{cache.Checked, func() {
+			priorError := cache.Error
+			cache.Checked = now
+			data, headers, unchanged, err := fetchSubscription(ctx, client, endpoint, cache.ETag)
+			if ctx.Err() != nil {
+				return
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if err == nil && unchanged && (cache.ETag == "" || len(cache.Body) == 0) {
+				err = errors.New("resource returned 304 without cache")
+			}
+			if err == nil && !unchanged {
+				if cacheBytes-len(old[id].Body)+len(data) > sub.MaxResourceBytes {
+					err = errors.New("combined resource cache limit exceeded")
+				} else {
+					err = apply(data)
+				}
+			}
+			if err != nil {
+				cache.Failures = min(cache.Failures+1, 10)
+				cache.Error = err.Error()
+				cache.Next = now.Add(time.Duration(min(60*(1<<(cache.Failures-1)), 21600)) * time.Second)
 			} else {
-				err = apply(data)
+				cache.Failures, cache.Error = 0, ""
+				cache.Success = now
+				cache.Next = now.Add(time.Hour)
+				if !unchanged {
+					changed = changed || !bytes.Equal(cache.Body, data)
+					cacheBytes += len(data) - len(old[id].Body)
+					cache.Body = json.RawMessage(data)
+					cache.ETag = headers.Get("ETag")
+				}
 			}
-		}
-		if err != nil {
-			cache.Failures = min(cache.Failures+1, 10)
-			cache.Error = err.Error()
-			cache.Next = now.Add(time.Duration(min(60*(1<<(cache.Failures-1)), 21600)) * time.Second)
-		} else {
-			cache.Failures, cache.Error = 0, ""
-			cache.Success = now
-			cache.Next = now.Add(time.Hour)
-			if !unchanged {
-				changed = changed || !bytes.Equal(cache.Body, data)
-				cacheBytes += len(data) - len(old[id].Body)
-				cache.Body = json.RawMessage(data)
-				cache.ETag = headers.Get("ETag")
+			results[id] = cache
+			if priorError != cache.Error {
+				message := cache.Error
+				if message == "" {
+					message = "resource refresh recovered"
+				}
+				events = append(events, sub.Run{Time: now, Operation: "resource", ObjectID: id, Message: message})
 			}
-		}
-		results[id] = cache
-		if priorError != cache.Error {
-			message := cache.Error
-			if message == "" {
-				message = "resource refresh recovered"
-			}
-			events = append(events, sub.Run{Time: now, Operation: "resource", ObjectID: id, Message: message})
-		}
+		}})
 	}
 	for _, t := range config.Templates {
 		refresh("template:"+t.ID, t.URL, func(data []byte) error {
@@ -106,5 +116,6 @@ func refreshSubscriptionResources(ctx context.Context, client *http.Client, conf
 			return nil
 		})
 	}
+	runSubscriptionFetches(ctx, jobs)
 	return changed, results, events
 }

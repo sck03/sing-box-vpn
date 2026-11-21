@@ -2,7 +2,7 @@ import { api } from "./api.js";
 import { accountOutputDialog } from "./account-outputs.js";
 import { $, el, button, row, help, notice } from "./ui.js";
 
-// Ordinary account shares inherit time and quota from the entitlement.
+// Link limits can narrow the entitlement; they never extend its time or quota.
 export async function createAccountShare(accounts, ctx) {
   accounts = accounts.filter(
     (a) => !a.download_denial && a.download_scopes?.length,
@@ -14,6 +14,12 @@ export async function createAccountShare(accounts, ctx) {
     ctx,
     title: "创建账户分享",
     multiple: true,
+    fields: [
+      { key: "expires_at", label: "链接到期时间", type: "date", advanced: true,
+        help: "留空则跟随权益；设置后仍受权益有效期限制。" },
+      { key: "max_downloads", label: "最多下载次数", type: "number", min: 1,
+        nullable: true, advanced: true, help: "留空不限次数；达到限制后链接停止下载。" },
+    ],
     defaults: {
       id: "share-" + crypto.randomUUID().replaceAll("-", ""),
       account_id: accounts[0].id,
@@ -30,7 +36,7 @@ export async function createAccountShare(accounts, ctx) {
       dialog.replaceChildren(
         el("h2", {}, "分享已创建"),
         help(
-          "请保存这个地址，之后无法再次查看完整链接。有效期和流量由权益统一控制；可在「用户与分享 → 分享链接」撤销。",
+          "请保存这个地址，之后无法再次查看完整链接。链接限制与权益有效期、流量同时生效；可在「用户与分享 → 分享链接」撤销。",
         ),
         address,
         row(

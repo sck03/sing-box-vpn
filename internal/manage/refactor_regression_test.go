@@ -69,13 +69,13 @@ func TestCorruptedSubscriptionCacheIsQuarantined(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "subscriptions/runtime.corrupt.json")); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(path); err != nil {
+	// Use an independent fixture instead of replacing a just-deleted file with
+	// a directory (Windows scanners can retain a delete-pending file handle).
+	unreadableRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(unreadableRoot, subscriptionsRuntime), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(path, 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := recoverSubscriptionRuntime(root); err == nil {
+	if err := recoverSubscriptionRuntime(unreadableRoot); err == nil {
 		t.Fatal("I/O failure silently ignored")
 	}
 }

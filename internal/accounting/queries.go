@@ -10,6 +10,32 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/application"
 )
 
+// AccountUsage is the effective, non-activating view used by all read APIs.
+// Account remains the raw record reader used by accounting mutations.
+func (s *Store) AccountUsage(ctx context.Context, id string, now time.Time) (Usage, error) {
+	u, err := readAccountUsage(s.db.QueryRowContext(ctx, `SELECT `+accountUsageColumns+` FROM accounts WHERE id=?`, id))
+	if err != nil {
+		return u, err
+	}
+	return s.effectiveUsage(ctx, u, now)
+}
+
+const accountUsageColumns = accountColumns + `,EXISTS(SELECT 1 FROM subscribers s WHERE s.id=accounts.subscriber AND s.disabled=1)`
+
+func readAccountUsage(row scanner) (Usage, error) {
+	var disabled bool
+	u, err := readAccount(scanFunc(func(values ...any) error { return row.Scan(append(values, &disabled)...) }))
+	u.SubscriberDisabled = disabled
+	return u, err
+}
+
+func (s *Store) effectiveUsage(ctx context.Context, u Usage, now time.Time) (Usage, error) {
+	next, err := s.advanceUsage(ctx, u, now, false)
+	next.SubscriberDisabled = u.SubscriberDisabled
+	next.describe(now)
+	return next, err
+}
+
 func (s *Store) AccountOptions(ctx context.Context) ([]application.Option, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id,name FROM accounts WHERE archived=0 ORDER BY name,id LIMIT 1000`)
 	if err != nil {
@@ -48,18 +74,16 @@ func (s *Store) AccountPage(ctx context.Context, q application.PageQuery, now ti
 	if err = tx.QueryRowContext(ctx, `SELECT count(*) FROM accounts WHERE `+filter, archived, q.Search, q.Search).Scan(&result.Total); err != nil {
 		return result, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT `+accountColumns+`,EXISTS(SELECT 1 FROM subscribers s WHERE s.id=accounts.subscriber AND s.disabled=1) FROM accounts WHERE `+filter+` ORDER BY `+order+` LIMIT ? OFFSET ?`, archived, q.Search, q.Search, q.Limit, q.Offset)
+	rows, err := tx.QueryContext(ctx, `SELECT `+accountUsageColumns+` FROM accounts WHERE `+filter+` ORDER BY `+order+` LIMIT ? OFFSET ?`, archived, q.Search, q.Search, q.Limit, q.Offset)
 	if err != nil {
 		return result, err
 	}
 	for rows.Next() {
-		var disabled bool
-		u, e := readAccount(scanFunc(func(values ...any) error { return rows.Scan(append(values, &disabled)...) }))
+		u, e := readAccountUsage(rows)
 		if e != nil {
 			rows.Close()
 			return result, e
 		}
-		u.SubscriberDisabled = disabled
 		result.Items = append(result.Items, u)
 	}
 	err = errors.Join(rows.Err(), rows.Close())
@@ -70,12 +94,10 @@ func (s *Store) AccountPage(ctx context.Context, q application.PageQuery, now ti
 		return result, err
 	}
 	for i, u := range result.Items {
-		next, e := s.advanceUsage(ctx, u, now, false)
+		next, e := s.effectiveUsage(ctx, u, now)
 		if e != nil {
 			return result, e
 		}
-		next.SubscriberDisabled = u.SubscriberDisabled
-		next.describe(now)
 		result.Items[i] = next
 	}
 	return result, nil
