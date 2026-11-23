@@ -1,7 +1,14 @@
 {
   "date": "2026-11-21",
   "baseline_commit": "f04d7c11243661010097c860b945b502de718689",
-  "status": "local_validation_passed",
+  "status": "post_push_ci_failed",
+  "post_push_ci": {
+    "commit": "1093cf44e696ddf693f445b44acb2529b5ce032a",
+    "run": "https://github.com/sck03/sing-box-vpn/actions/runs/44913196074",
+    "failed_step": "Generated panel contracts and DOM regression",
+    "reason": "Four multiline negative type examples place @ts-expect-error above the variable declaration instead of the property that reports the error.",
+    "followup": "docs/validation/2026-11-23-ci.md"
+  },
   "environment": {
     "os": "Windows amd64",
     "cpu": "Intel Core i5-9400F",
@@ -86,7 +93,7 @@
     "scope": "Warm local file read, JSON scan and decode only. No HTTP, lock contention, cold-disk, VPN throughput or process RSS claim."
   },
   "checks": {
-    "frontend_typecheck": "passed: npm run typecheck; strict wire examples included",
+    "frontend_typecheck": "failed on the final 1093cf4 snapshot in CI and reproduced locally on 2026-11-23; the earlier passed claim did not cover the final negative examples",
     "frontend_dom": "passed: all 11 scripts in npm test",
     "real_http": "passed: scripts/test-panel-local.mjs with freshly built gateway and managed core",
     "chrome_desktop_mobile": "passed: PANEL_BROWSER_TEST=1, Mihomo deliberately unavailable",

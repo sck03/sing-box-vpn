@@ -33,9 +33,9 @@ const commands: TaskCommand[] = [
 ];
 void commands;
 
-// @ts-expect-error scheduling metadata is internal
 const automatic: TaskCommand = {
   operation: "subscription",
+  // @ts-expect-error scheduling metadata is internal
   automatic: true,
   subscription: { operation: "refresh" },
 };
@@ -46,9 +46,9 @@ const unrelated: TaskCommand = {
   value: "stop",
   id: "ignored",
 };
-// @ts-expect-error credential tasks cannot carry download/export options
 const exported: TaskCommand = {
   operation: "account",
+  // @ts-expect-error credential tasks cannot carry download/export options
   account: { operation: "bind", scope: "normal", client: "uri" },
 };
 // @ts-expect-error operation-specific values must agree
@@ -97,13 +97,13 @@ const activity: Pick<SubscriptionStatusResponse, "deliveries"> = {
     },
   ],
 };
-// @ts-expect-error delivery acknowledgement persistence is explicit
 const incompleteDelivery: DeliveryResult = {
   ...delivery,
+  // @ts-expect-error delivery acknowledgement persistence is explicit
   items: [{ id: "device", status: "delivered" }],
 };
-// @ts-expect-error runtime status does not expose destination credentials
 const privateDelivery: Pick<SubscriptionStatusResponse, "deliveries"> = {
+  // @ts-expect-error runtime status does not expose destination credentials
   deliveries: [{ ...activity.deliveries[0], token: "secret" }],
 };
 void [delivery, activity, incompleteDelivery, privateDelivery];
