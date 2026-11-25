@@ -56,9 +56,11 @@ func BindAccounts(ctx context.Context, repository BindingRepository, c AccountCo
 			available[entry.ID] = entry
 		}
 	}
-	selected := entries
-	if len(c.InboundIDs) > 0 {
-		selected = nil
+	if len(c.InboundIDs) == 0 {
+		return result, errors.New("select at least one explicit inbound ID")
+	}
+	var selected []BindingEntry
+	{
 		seen := map[string]bool{}
 		for _, id := range c.InboundIDs {
 			entry, ok := available[id]

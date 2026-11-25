@@ -13,13 +13,14 @@ import type {
 const commands: TaskCommand[] = [
   {
     operation: "account",
-    account: { operation: "bind", id: "alice", scope: "normal" },
+    account: { operation: "bind", id: "alice", scope: "normal", inbound_ids: ["in"] },
   },
   {
     operation: "account",
     account: {
       operation: "bind",
       account_ids: ["alice", "bob"],
+      inbound_ids: ["in"],
       scope: "normal",
     },
   },
@@ -35,6 +36,18 @@ const commands: TaskCommand[] = [
   },
 ];
 void commands;
+
+const emptyBinding: TaskCommand = {
+  operation: "account",
+  // @ts-expect-error explicit selection must contain at least one inbound
+  account: { operation: "bind", id: "alice", scope: "normal", inbound_ids: [] },
+};
+const implicitBinding: TaskCommand = {
+  operation: "account",
+  // @ts-expect-error implicit all-inbound binding is no longer supported
+  account: { operation: "bind", id: "alice", scope: "normal" },
+};
+void [emptyBinding, implicitBinding];
 
 const automatic: TaskCommand = {
   operation: "subscription",

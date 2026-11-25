@@ -1,4 +1,5 @@
 import { api, previewConfiguration, previewOutput } from "./api.js";
+import { createShare } from "./account-api.js";
 import { workspace } from "./workspace.js";
 import { disclosure } from "./sections.js";
 import { requestConfiguration } from "./config-preview.js";
@@ -277,8 +278,10 @@ export async function subscriptions(ctx) {
         change,
       });
     },
-    collections: () =>
-      resourceEditor({
+    collections: async () => {
+      const catalog = await getClients();
+      const protocols = [...new Set(Object.values(catalog).flatMap((profile) => profile.protocols || []))];
+      return resourceEditor({
         title: "节点集合",
         local: true,
         items: s.collections,
@@ -290,7 +293,7 @@ export async function subscriptions(ctx) {
             type: "multiselect",
             options: s.sources.map((v) => [v.id, v.name || v.id]),
           },
-          ...processorFields,
+          ...processorFields(protocols),
         ],
         defaults: {
           id: "",
@@ -299,7 +302,8 @@ export async function subscriptions(ctx) {
           processor: { deduplicate: true, sort: true },
         },
         change,
-      }),
+      });
+    },
     templates: async (selectTemplate) => {
       const catalog = await getClients();
       return resourceEditor({
@@ -320,7 +324,7 @@ export async function subscriptions(ctx) {
                 ),
               ],
         items: s.templates,
-        fields: templateFields(catalog),
+        fields: templateFields(catalog, s.rule_sets),
         normalize: (v) => normalizeTemplate(v, catalog),
         preserve: true,
         defaults: {
@@ -492,7 +496,7 @@ export async function subscriptions(ctx) {
                 { id: "", outputs: [], max_downloads: null },
                 async (v) => {
                   if (!v.outputs.length) throw new Error("请选择已生效的输出");
-                  const result = await api("/api/grants", v);
+                  const result = await createShare(v);
                   showResult("请保存分享链接", result.urls.join("\n"));
                   ctx.render();
                 },

@@ -39,6 +39,7 @@ func TestRefreshTasksPersistRejectedResourceReport(t *testing.T) {
 				t.Fatal(err)
 			}
 			command := application.TaskCommand{Operation: "subscription", Subscription: application.SubscriptionCommand{Operation: "refresh"}}
+			confirmSubscriptionFixture(t, root)
 			id, err := s.queueTask(t.Context(), taskInput{TaskCommand: command, Automatic: automatic}, "admin")
 			if err != nil {
 				t.Fatal(err)
@@ -96,6 +97,7 @@ func TestRefreshCheckpointPreservesCompletedSourcesWithoutPublishing(t *testing.
 		t.Fatal("checkpoint would never publish", schedule, err)
 	}
 	var report application.RefreshResult
+	confirmSubscriptionFixture(t, root)
 	if err = refreshSubscriptionsResult(t.Context(), root, core, false, &report); err != nil || !report.Published || report.Checked != 0 {
 		t.Fatal("checkpoint fetched completed sources again", report, err)
 	}

@@ -22,6 +22,11 @@ export interface Account {
   period: PeriodPolicy;
 }
 
+export interface AccountArchive {
+  id: string;
+  revision: number;
+}
+
 export interface AccountCommand {
   operation: string;
   id?: string;
@@ -48,6 +53,8 @@ export interface AccountExportResponse {
   validation: SubscriptionValidation;
 }
 
+export interface AccountSave { account: Pick<Account, "id" | "name"> & Partial<Account>; }
+
 export interface AccountSummary extends Usage {
   download_scopes: Array<string> | null;
   download_denial: string;
@@ -71,6 +78,15 @@ export interface App {
   tuic_ports?: Array<string> | null;
   cdn_address?: string;
   advanced: CoreSettings;
+}
+
+export interface BackgroundIssue {
+  operation: string;
+  code: string;
+  message: string;
+  since: string;
+  last_failure: string;
+  failures: number;
 }
 
 export interface Capabilities {
@@ -228,6 +244,11 @@ export interface NotificationActivity {
   object_id?: string;
 }
 
+export interface Option {
+  id: string;
+  name: string;
+}
+
 export interface OutboundFields {
   tls: boolean;
   required_tls: boolean;
@@ -249,6 +270,7 @@ export interface OutputPreviewRequest {
 }
 
 export interface OverviewSnapshot {
+  background: Array<BackgroundIssue> | null;
   revision: number;
   applied_revision: number;
   services: Array<Record<string, unknown> | null> | null;
@@ -372,6 +394,12 @@ export interface ServiceChange {
 export interface Session extends Admin {
   csrf: string;
   expires: string;
+}
+
+export interface ShareCreated {
+  token: string;
+  user_url: string;
+  urls: Array<string> | null;
 }
 
 export interface SubscriptionAccountExportOverride extends SubscriptionAccountExportPolicy {
@@ -650,7 +678,7 @@ export interface TaskAudience {
 }
 
 export type TaskCommand =
-  | { operation: "account"; service?: never; id?: never; value?: never; config?: never; account: AccountCommand & { operation: "bind" | "rotate" | "unbind"; client?: never; tuic_port?: never }; subscription?: never }
+  | { operation: "account"; service?: never; id?: never; value?: never; config?: never; account: Omit<AccountCommand, "operation" | "inbound_ids" | "account_ids"> & { client?: never; tuic_port?: never } & ({ operation: "bind"; inbound_ids: [string, ...string[]]; account_ids?: string[] } | { operation: "rotate" | "unbind"; inbound_ids?: never; account_ids?: never }); subscription?: never }
   | { operation: "bbr"; service?: never; id?: never; value: "enable" | "restore"; config?: never; account?: never; subscription?: never }
   | { operation: "certificate-renew"; service?: never; id: string; value?: never; config?: never; account?: never; subscription?: never }
   | { operation: "gateway"; service?: never; id?: never; value?: never; config: { op: "start" | "stop" | "swap" | "refresh" }; account?: never; subscription?: never }

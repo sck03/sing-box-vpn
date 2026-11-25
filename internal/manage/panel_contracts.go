@@ -3,10 +3,25 @@ package manage
 import (
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
+type AccountSave struct {
+	Account domain.Account `json:"account"`
+}
+type AccountArchive struct {
+	ID       string `json:"id"`
+	Revision int64  `json:"revision"`
+}
+type ShareCreated struct {
+	Token   string   `json:"token"`
+	UserURL string   `json:"user_url"`
+	URLs    []string `json:"urls"`
+}
+
 type OverviewSnapshot struct {
+	Background      []BackgroundIssue                  `json:"background"`
 	Revision        int64                              `json:"revision"`
 	AppliedRevision int64                              `json:"applied_revision"`
 	Services        []Object                           `json:"services"`

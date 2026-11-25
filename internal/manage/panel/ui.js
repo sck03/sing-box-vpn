@@ -57,7 +57,7 @@ export function resourceEditor({
       button(
         "新增",
         () =>
-          formDialog("新增" + title, fields, structuredClone(defaults), (v) => {
+          formDialog("新增" + title, typeof fields === "function" ? fields() : fields, structuredClone(defaults), (v) => {
             items.push(normalize(v));
             change();
           }),
@@ -81,7 +81,7 @@ export function resourceEditor({
         button("编辑", () =>
           formDialog(
             "编辑" + title,
-            fields,
+            typeof fields === "function" ? fields() : fields,
             item,
             (v) => {
               items[items.indexOf(item)] = normalize(v, item);
@@ -97,7 +97,7 @@ export function resourceEditor({
           else if (v.tag) v.tag += "-copy";
           formDialog(
             "复制" + title,
-            fields,
+            typeof fields === "function" ? fields() : fields,
             v,
             (result) => {
               items.push(normalize(result, v));

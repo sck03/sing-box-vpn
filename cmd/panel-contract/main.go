@@ -69,6 +69,11 @@ func main() {
 				return n
 			}
 			types[n] = ""
+			if t == reflect.TypeFor[manage.AccountSave]() {
+				describe(reflect.TypeFor[domain.Account]())
+				types[n] = "export interface AccountSave { account: Pick<Account, \"id\" | \"name\"> & Partial<Account>; }\n"
+				return n
+			}
 			if t == reflect.TypeFor[application.TaskCommand]() {
 				operations := make([]string, 0, len(application.CommandFields))
 				for operation := range application.CommandFields {
@@ -96,7 +101,7 @@ func main() {
 							fieldType = `"enable" | "restore"`
 						}
 						if key == "account" && operation == "account" {
-							fieldType += ` & { operation: "bind" | "rotate" | "unbind"; client?: never; tuic_port?: never }`
+							fieldType = `Omit<AccountCommand, "operation" | "inbound_ids" | "account_ids"> & { client?: never; tuic_port?: never } & ({ operation: "bind"; inbound_ids: [string, ...string[]]; account_ids?: string[] } | { operation: "rotate" | "unbind"; inbound_ids?: never; account_ids?: never })`
 						}
 						if key == "subscription" && operation == "subscription" {
 							fieldType += ` & { operation: "refresh" | "check" | "deliver" }`
@@ -162,6 +167,7 @@ func main() {
 		}
 	}
 	for _, t := range []reflect.Type{
+		reflect.TypeFor[manage.AccountSave](), reflect.TypeFor[manage.AccountArchive](), reflect.TypeFor[manage.ShareCreated](), reflect.TypeFor[application.Option](),
 		reflect.TypeFor[manage.AccountSummary](),
 		reflect.TypeFor[application.RefreshResult](),
 		reflect.TypeFor[application.DeliveryResult](),

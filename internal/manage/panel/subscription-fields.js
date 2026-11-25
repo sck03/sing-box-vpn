@@ -1,10 +1,13 @@
 import { el, card, help, button, resourceEditor } from "./ui.js";
 
-export const processorFields = [
+export const processorFields = (protocols) => [
   {
     key: "processor.protocols",
     label: "保留协议",
-    type: "csv",
+    type: "multiselect",
+    options: protocols,
+    presentation: "inline",
+    help: "不限制时留空；仅保留勾选的协议。",
     section: "节点筛选",
   },
   { key: "processor.tags", label: "保留标签", type: "csv" },
@@ -87,8 +90,10 @@ export function templateResources(templates, catalog, change) {
             {
               key: "members",
               label: "引用其他策略组",
-              type: "csv",
-              help: "填写后使用这些组作为成员；服务端会检查循环引用。",
+              type: "multiselect",
+              ordered: true,
+              options: (value) => groups.filter((group) => group.id !== value.id).map((group) => [group.id, group.name || group.id]),
+              help: "选择后使用这些组作为成员；服务端会检查循环引用。",
             },
             {
               key: "url",

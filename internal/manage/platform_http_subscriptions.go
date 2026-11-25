@@ -139,7 +139,7 @@ func (s *PlatformService) serveGrants(w http.ResponseWriter, r *http.Request, ac
 					if g.AccountID != "" {
 						userURL = origin + "/user#" + token
 					}
-					jsonResponse(w, Object{"token": token, "user_url": userURL, "urls": urls})
+					jsonResponse(w, ShareCreated{Token: token, UserURL: userURL, URLs: urls})
 					return true
 				}
 			}

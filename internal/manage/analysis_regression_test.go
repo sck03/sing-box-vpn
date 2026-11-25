@@ -109,7 +109,7 @@ func TestScheduledRefreshPrunesExpiredOptionalWithoutFetch(t *testing.T) {
 	if err := AtomicJSON(filepath.Join(root, subscriptionsRuntime), r); err != nil {
 		t.Fatal(err)
 	}
-	if err := refreshSubscriptions(context.Background(), root, core, false); err != nil {
+	if err := refreshSubscriptions(t, context.Background(), root, core, false); err != nil {
 		t.Fatal(err)
 	}
 	data := readArtifact(t, root, "normal-uri")

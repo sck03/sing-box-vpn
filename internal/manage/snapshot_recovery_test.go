@@ -25,7 +25,7 @@ func TestExportIgnoresUnconfirmedAndBrokenProjections(t *testing.T) {
 	if err := s.Accounts.SaveAccount(t.Context(), domain.Account{ID: "a", Name: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: "a", Scope: "normal"}, new(bytes.Buffer)); err != nil {
+	if err := service.Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: "a", Scope: "normal", InboundIDs: testInboundIDs(t, service)}, new(bytes.Buffer)); err != nil {
 		t.Fatal(err)
 	}
 	candidate, err := decodePlatform(mustJSON(t, confirmed))
@@ -81,7 +81,7 @@ func TestAccountSubscriptionRecoversWithoutRemoteSources(t *testing.T) {
 			if err := s.Accounts.SaveAccount(ctx, a); err != nil {
 				t.Fatal(err)
 			}
-			if err := s.accountService().Execute(ctx, application.AccountCommand{Operation: "bind", ID: "a", Scope: "normal"}, new(bytes.Buffer)); err != nil {
+			if err := s.accountService().Execute(ctx, application.AccountCommand{Operation: "bind", ID: "a", Scope: "normal", InboundIDs: testInboundIDs(t, s.accountService())}, new(bytes.Buffer)); err != nil {
 				t.Fatal(err)
 			}
 			if cause == "quota" || cause == "period" {

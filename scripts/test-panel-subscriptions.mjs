@@ -169,7 +169,7 @@ await accountOutputDialog({
   },
 });
 assert.deepEqual(
-  [...field("允许的订阅格式与用途（可多选）").options].map((o) => o.value),
+  [...document.querySelectorAll('.choice-list input:not(:disabled)')].map((o) => o.value),
   ["uri"],
 );
 assert.match(
@@ -181,10 +181,10 @@ field("运行实例").dispatchEvent(new Event("change", { bubbles: true }));
 await tick();
 assert.equal(calls.length, 2);
 assert.deepEqual(
-  [...field("允许的订阅格式与用途（可多选）").options].map((o) => o.value),
+  [...document.querySelectorAll('.choice-list input:not(:disabled)')].map((o) => o.value),
   ["mihomo-provider"],
 );
-field("允许的订阅格式与用途（可多选）").options[0].selected = true;
+document.querySelector('.choice-list input[value="mihomo-provider"]').click();
 submit();
 await tick();
 assert.deepEqual(saved.profiles, ["mihomo-provider"]);

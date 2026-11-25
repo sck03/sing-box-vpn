@@ -22,6 +22,7 @@ func TestRefreshValidationDoesNotHoldPublicationLock(t *testing.T) {
 				t.Fatal(err)
 			}
 			entered, resume := make(chan struct{}), make(chan struct{})
+			confirmSubscriptionFixture(t, root)
 			compiler := func(ctx context.Context, root, core string, c sub.Config, r sub.Runtime, local map[string][]sub.Node, mode sub.BuildMode) (fileBundle, sub.Snapshot, map[string]sub.Preview, error) {
 				close(entered)
 				select {

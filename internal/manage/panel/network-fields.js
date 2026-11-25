@@ -1,15 +1,15 @@
 // Declarative field schemas keep configuration rules separate from page layout.
-export const ruleFields = [
+export const ruleFields = (inbounds = [], outbounds = []) => [
   { key: "domain_suffix", label: "域名后缀", type: "csv" },
   { key: "ip_cidr", label: "IP CIDR", type: "csv" },
-  { key: "inbound", label: "入站 ID", type: "csv" },
+  { key: "inbound", label: "入站入口", type: "multiselect", options: inbounds, help: "留空匹配所有入口；这里是路由筛选条件，不是账户绑定。" },
   {
     key: "action",
     label: "动作",
     type: "select",
     options: ["route", "reject", "sniff", "resolve"],
   },
-  { key: "outbound", label: "出站 tag", visible: (v) => v.action === "route" },
+  { key: "outbound", label: "出站", type: "select", options: outbounds, required: true, visible: (v) => v.action === "route" },
 ];
 export function cleanRule(value) {
   for (const key of ["domain_suffix", "ip_cidr", "inbound", "outbound"])

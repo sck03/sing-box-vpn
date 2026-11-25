@@ -33,7 +33,7 @@ func TestUnpublishedRemoteTemplateOnlyBlocksItsOutput(t *testing.T) {
 	if err := store.SaveAccount(t.Context(), domain.Account{ID: "a", Name: "Account"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: "a", Scope: "normal"}, new(bytes.Buffer)); err != nil {
+	if err := service.Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: "a", Scope: "normal", InboundIDs: testInboundIDs(t, service)}, new(bytes.Buffer)); err != nil {
 		t.Fatal(err)
 	}
 	options, err := service.OutputOptions(t.Context(), "a", "normal", []string{"uri", "mihomo-provider", "mihomo-config"})
@@ -76,7 +76,7 @@ func TestAccountLocalTemplateUsesPublishedRemoteRules(t *testing.T) {
 	if err := accounts.SaveAccount(t.Context(), domain.Account{ID: "a", Name: "Account"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: "a", Scope: "normal"}, new(bytes.Buffer)); err != nil {
+	if err := service.Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: "a", Scope: "normal", InboundIDs: testInboundIDs(t, service)}, new(bytes.Buffer)); err != nil {
 		t.Fatal(err)
 	}
 	runtime := sub.Runtime{Resources: map[string]sub.ResourceCache{"rules:remote": {URL: config.Subscriptions.RuleSets[0].URL, Body: mustJSON(t, []sub.Rule{{Type: "domain", Value: "published.example", Target: "REJECT"}})}}}
@@ -130,7 +130,7 @@ func TestRemoteTemplateSnapshotFailuresPreserveBuiltins(t *testing.T) {
 	if err := store.SaveAccount(t.Context(), domain.Account{ID: "a", Name: "Account"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: "a", Scope: "normal"}, new(bytes.Buffer)); err != nil {
+	if err := service.Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: "a", Scope: "normal", InboundIDs: testInboundIDs(t, service)}, new(bytes.Buffer)); err != nil {
 		t.Fatal(err)
 	}
 	service.Config = nil

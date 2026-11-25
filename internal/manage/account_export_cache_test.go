@@ -79,7 +79,7 @@ func TestAccountExportCacheRespectsGrantAndCredentialChanges(t *testing.T) {
 	if err := store.SaveAccount(t.Context(), domain.Account{ID: "a", Name: "Account"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: "a", Scope: "normal"}, new(bytes.Buffer)); err != nil {
+	if err := service.Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: "a", Scope: "normal", InboundIDs: testInboundIDs(t, service)}, new(bytes.Buffer)); err != nil {
 		t.Fatal(err)
 	}
 	token, err := store.CreateGrant(t.Context(), accounting.Grant{ID: "grant", AccountID: "a", Scope: "normal", Profiles: []string{"uri"}})

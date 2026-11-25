@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { createShare } from "./account-api.js";
 import { accountOutputDialog } from "./account-outputs.js";
 import { $, el, button, row, help, notice } from "./ui.js";
 
@@ -29,7 +30,7 @@ export async function createAccountShare(accounts, ctx) {
       max_downloads: null,
     },
     save: async (value) => {
-      const result = await request("/api/grants", value);
+      const result = await createShare(value, request);
       const dialog = $("#dialog");
       const address = el("input", { "aria-label": "分享地址", readonly: true });
       address.value = result.user_url;

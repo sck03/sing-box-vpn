@@ -129,6 +129,13 @@ export async function inbounds(ctx) {
     ctx.changed();
     ctx.render();
   };
+  const count = el("span", { class: "muted" });
+  const changeNodes = () => {
+    ctx.changed();
+    ctx.invalidateSections?.();
+    list.updateItems(items);
+    count.textContent = `${items.length} 个入站`;
+  };
   const host = card(
     "发布地址",
     help(
@@ -178,7 +185,7 @@ export async function inbounds(ctx) {
         async (v) => {
           const node = await api("/api/preset", v);
           items.push(node);
-          change();
+          changeNodes();
         },
       ),
     "primary",
@@ -208,7 +215,7 @@ export async function inbounds(ctx) {
       button("编辑", () =>
         formDialog("编辑入站", nodeFields(protocols, n.protocol), n, (v) => {
           items[items.indexOf(n)] = v;
-          change();
+          changeNodes();
         }),
       ),
       button("证书", () =>
@@ -236,7 +243,7 @@ export async function inbounds(ctx) {
               key: a.key,
               server_name: a.domain,
             };
-            change();
+            changeNodes();
           },
         ),
       ),
@@ -247,18 +254,18 @@ export async function inbounds(ctx) {
           { ...structuredClone(n), id: n.id + "-copy", port: n.port + 1 },
           (v) => {
             items.push(v);
-            change();
+            changeNodes();
           },
         ),
       ),
       button(n.disabled ? "启用" : "停用", () => {
         n.disabled = !n.disabled;
-        change();
+        changeNodes();
       }),
       button("高级", () =>
         jsonDialog("入站高级参数", n, (v) => {
           items[items.indexOf(n)] = v;
-          change();
+          changeNodes();
         }),
       ),
       button(
@@ -275,7 +282,7 @@ export async function inbounds(ctx) {
             )
           ) {
             items.splice(items.indexOf(n), 1);
-            change();
+            changeNodes();
           }
         },
         "danger",
@@ -311,11 +318,12 @@ export async function inbounds(ctx) {
       ),
     ),
   );
+  count.textContent = `${items.length} 个入站`;
   return [
     host,
     card(
       "入站管理",
-      row(add, el("span", { class: "muted" }, `${items.length} 个入站`)),
+      row(add, count),
       list,
     ),
     el(

@@ -37,6 +37,7 @@ type PlatformService struct {
 	exportView          subscriptionView
 	exportPlans         accountExportCache
 	bindingView         accountBindingCache
+	health              backgroundHealth
 }
 
 func OpenPlatform(root, core, runtime string, noSystem bool) (*PlatformService, error) {

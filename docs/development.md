@@ -71,7 +71,7 @@ shellcheck --severity=warning sb.sh install.sh lib/*.sh scripts/*.sh
 
 Linux root 专项通过 `RUN_NETNS_TESTS=1`、`RUN_FIREWALL_TESTS=1`、`RUN_SERVICE_TESTS=1`、`RUN_STORAGE_TESTS=1` 启用，测试定义明确需要的二进制环境变量。仅使用专门 VM，真实 systemd/firewall 测试会创建系统资源。
 
-`npm test` 执行十组回归，覆盖重复提交、客户端字段联动、短暂断网、用户页路径前缀、状态搜索、焦点保留、单位换算、授权分页与导航加载。Mihomo 仅作为开发/CI 测试客户端，版本及 Linux amd64 摘要位于 scripts/client-test-versions.json，使用官方基础 amd64-v1 构建。CI 仍执行原生配置与真实链路测试；面板 API/浏览器测试刻意设置无效 MIHOMO_BINARY，证明部署功能不依赖它。
+`npm test` 执行13 组回归，覆盖重复提交、客户端字段联动、短暂断网、用户页路径前缀、状态搜索、焦点保留、单位换算、授权分页与导航加载。Mihomo 仅作为开发/CI 测试客户端，版本及 Linux amd64 摘要位于 scripts/client-test-versions.json，使用官方基础 amd64-v1 构建。CI 仍执行原生配置与真实链路测试；面板 API/浏览器测试刻意设置无效 MIHOMO_BINARY，证明部署功能不依赖它。
 
 本地面板使用独立目录：manager `panel --root <空目录> --core <官方核心> --runtime <受管核心> --address 127.0.0.1 --no-system init`，stdin 为 username/password JSON；随后同样参数 `recover`、`serve`。仅在 `serve` 命令之前加 `--listen 127.0.0.1:0` 自动分配开发端口，日志返回实际 URL；`init` 和 `configure` 保存的端口必须为 1–65535。`--no-system` 仅用于开发，系统动作明确拒绝。Windows 的 Unix socket 测试需要较短的 TEMP/TMP 路径，例如项目下 `.test/tmp`。
 
@@ -178,7 +178,7 @@ python3 -m playwright install --with-deps chromium
 PANEL_BROWSER_TEST=1 PYTHON_BINARY=python3 GATEWAY_BINARY=... MANAGED_CORE_BINARY=... SING_BOX_BINARY=... node scripts/test-panel-local.mjs
 ```
 
-前端共十组回归，新增跨页面任务详情、并发弹窗归属、错误契约和按需资源编辑器检查。CI 先运行严格协议夹具预检，再运行完整 race/协议矩阵；实际 API 与桌面/手机浏览器验收均启用。浏览器只属于开发/CI 依赖，VPS 运行不安装 Node、TypeScript、Playwright 或 Python。
+前端共13 组回归，新增跨页面任务详情、并发弹窗归属、错误契约和按需资源编辑器检查。CI 先运行严格协议夹具预检，再运行完整 race/协议矩阵；实际 API 与桌面/手机浏览器验收均启用。浏览器只属于开发/CI 依赖，VPS 运行不安装 Node、TypeScript、Playwright 或 Python。
 
 更改 Go 面板边界模型后运行 `go run ./cmd/panel-contract`，同时提交生成类型。`tsconfig.json` 检查全部前端 JS 模块，采用非严格 `checkJs`，不声称 UI 已迁移到严格 TypeScript。边界测试夹具与已移除的旧 CLI 回归辅助函数只编译进 `_test.go`，生产程序没有旧接口兼容层。
 
@@ -205,7 +205,7 @@ go vet ./...
 
 ## 5.1 重构回归
 
-前端回归共有十组，覆盖密钥可见性、证书回选、访问预览草稿、迟到响应、协议字段、自动绑定、平台选择和输出用途。浏览器验收使用明确的提交按钮定位，避免把显示密码按钮当作登录操作。
+前端回归共有13 组，覆盖密钥可见性、证书回选、访问预览草稿、迟到响应、协议字段、自动绑定、平台选择和输出用途。浏览器验收使用明确的提交按钮定位，避免把显示密码按钮当作登录操作。
 
 `manifest_test.go` 要求组件版本与 go.mod 一致。模板导入测试拒绝有损逻辑条件、非末尾 MATCH、脚本、未知字段和过量输入。发行包选择测试拒绝草稿、预发行、错误资产地址/摘要和重复资产；升级 Shell 测试同时断言校验器回滚。
 
@@ -270,3 +270,15 @@ Windows 验证先加载 scripts/dev-env.ps1，再设置 MANAGED_CORE_BINARY 指�
 - 前端第 12 组：`scripts/test-panel-deployment.mjs`，验证部署计划、主机状态说明、证书回显和服务端驱动的探测取消。
 - 运行中取消与完成竞态、并发认领排他、后台刷新隔离、探测队列容量，以及无效发布字段不推进配置版本都有明确断言。
 - 完整的 Windows 测试、race、真实核心/API 与性能样本记录于 `docs/validation/2026-11-25-stability.json`。Linux systemd/netns/防火墙及磁盘故障由 Linux CI 执行；本地交叉编译不等同于运行验收。
+
+## 多选与接口收敛验证入口
+
+`scripts/test-panel-selection.mjs` 是第 13 组前端回归：出站组顺序、勾选焦点、1000 个候选只渲染 40 项、筛选保留、限额、必填错误聚焦、自由文本和整数、兼容性失败/重试，以及只有 VPNGate 时真实批量绑定页面的默认值和明确入口快照。已有页面生命周期测试继续覆盖请求取消与迟到响应。
+
+`selection_contract_test.go` 验证空绑定拒绝且不写凭据、只绑定所选入口、后台摘要脱敏/恢复/容量，以及未初始化发布拒绝。订阅测试用 `confirmSubscriptionFixture` 创建数据库确认状态，不在生产函数中增加测试专用放行分支。类型反例要求省略或传空 `inbound_ids` 都不能通过。
+
+`dom.el` 对 HTML 布尔属性使用存在性语义，禁止生成 `disabled="false"` 或 `hidden="false"`；ARIA 属性仍保留显式字符串值。回归必须实际触发排序/分页按钮并检查焦点，不只检查渲染后的文本或数组；内联复选框和兼容性详情的可见性也有断言。
+
+真实浏览器脚本验证搜索和勾选、跨搜索保留、Escape 焦点、分享的设备筛选，以及 390px/320px 视口中选择器和保存栏。截图是临时验证产物；公开文档只记录测试范围，不提交临时账户、数据库或日志。当前命令、结果和环境限制见 `docs/validation/2026-11-25-selection-refactor.json`。
+
+增加选择组件时优先扩展共享字段协议，不引入页面私有状态副本。动态候选通过字段工厂在打开表单时读取；候选不足 40 项也走同一组件。仅在选项或依赖变化时刷新候选，单次勾选不重建复选框。格式分组使用服务端的 mode，协议使用 `/api/clients` 目录，不按展示文字猜测后端能力。

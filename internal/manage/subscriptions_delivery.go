@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
@@ -40,6 +41,16 @@ func deliverSubscriptions(ctx context.Context, root, id string, automatic bool, 
 		if err != nil {
 			return err
 		}
+		// One explicit repository lifetime for all destinations in this task.
+		// Output checks still authorize each account immediately before sending.
+		var accounts *accounting.Store
+		if slices.ContainsFunc(config.Sources, func(source sub.Source) bool { return source.Kind == "account" }) {
+			accounts, err = accounting.Open(filepath.Join(root, "control.db"))
+			if err != nil {
+				return err
+			}
+			defer accounts.Close()
+		}
 		client := newHTTPClient(20 * time.Second)
 		defer client.CloseIdleConnections()
 		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
@@ -65,7 +76,7 @@ func deliverSubscriptions(ctx context.Context, root, id string, automatic bool, 
 					if ctx.Err() != nil {
 						continue
 					}
-					result := deliverSubscription(ctx, client, root, config, snapshot, destination, runtime.Deliveries[destination.ID])
+					result := deliverSubscription(ctx, client, root, config, snapshot, destination, runtime.Deliveries[destination.ID], accounts)
 					mu.Lock()
 					results = append(results, result)
 					mu.Unlock()
@@ -107,7 +118,7 @@ func deliverSubscriptions(ctx context.Context, root, id string, automatic bool, 
 	})
 }
 
-func deliverSubscription(ctx context.Context, client *http.Client, root string, config sub.Config, snapshot sub.Snapshot, destination sub.Delivery, state sub.DeliveryState) deliveryResult {
+func deliverSubscription(ctx context.Context, client *http.Client, root string, config sub.Config, snapshot sub.Snapshot, destination sub.Delivery, state sub.DeliveryState, accounts *accounting.Store) deliveryResult {
 	hash := sub.DeliveryHash(destination)
 	if state.ConfigHash != hash {
 		state = sub.DeliveryState{ConfigHash: hash}
@@ -118,7 +129,7 @@ func deliverSubscription(ctx context.Context, client *http.Client, root string, 
 	var err error
 	if !exists || !subscriptionFresh(config, snapshot, destination.Output, time.Now()) {
 		err = errors.New("output unavailable or stale")
-	} else if e := checkOutputAccounts(ctx, root, config, destination.Output); e != nil {
+	} else if e := checkOutputAccounts(ctx, config, destination.Output, accounts); e != nil {
 		err = errors.New("output contains an inactive entitlement")
 	} else if state.Digest != digest {
 		err = sendSubscriptionArtifact(ctx, client, destination, artifact)

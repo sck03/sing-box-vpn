@@ -86,6 +86,7 @@ func TestSubscriptionDeliverySnapshotAndUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range 2 {
+		confirmSubscriptionFixture(t, root)
 		if err := deliverSubscriptions(context.Background(), root, "device", false, io.Discard); err != nil {
 			t.Fatal(err)
 		}

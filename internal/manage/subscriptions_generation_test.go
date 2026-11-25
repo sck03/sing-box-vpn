@@ -40,7 +40,7 @@ func TestRefreshRejectsUnconfirmedGeneration(t *testing.T) {
 	if err := accounts.SaveAccount(t.Context(), domain.Account{ID: "a", Name: "Account"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: "a", Scope: "normal"}, io.Discard); err != nil {
+	if err := service.Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: "a", Scope: "normal", InboundIDs: testInboundIDs(t, service)}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	config.App.Address = "new.example.test"

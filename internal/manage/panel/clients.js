@@ -18,7 +18,7 @@ export function clientOptions(catalog) {
   ]);
 }
 
-export function templateFields(catalog) {
+export function templateFields(catalog, ruleSets = []) {
   const capability = (value) => catalog[value.client];
   const complete = (value) => value.mode === "config";
   const rules = (value) => complete(value) || value.mode === "rules";
@@ -73,7 +73,7 @@ export function templateFields(catalog) {
       type: "bool",
       visible: (v) => complete(v) && capability(v)?.features.tun,
     },
-    { key: "rule_sets", label: "规则集 ID", type: "csv", visible: rules },
+    { key: "rule_sets", label: "规则集", type: "multiselect", options: ruleSets.map((rule) => [rule.id, rule.name || rule.id]), ordered: true, visible: rules },
     {
       key: "final",
       label: "默认策略",

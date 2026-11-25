@@ -90,7 +90,7 @@ func (s *PlatformService) collectOverview(ctx context.Context) ([]byte, error) {
 			tasks[i].Error = "任务失败，请查看任务详情"
 		}
 	}
-	return json.Marshal(OverviewSnapshot{Revision: state.Revision, AppliedRevision: state.AppliedRevision, Services: services, Runtimes: runtimes, Tasks: tasks, TaskCounts: counts, Credentials: publications})
+	return json.Marshal(OverviewSnapshot{Background: s.health.snapshot(), Revision: state.Revision, AppliedRevision: state.AppliedRevision, Services: services, Runtimes: runtimes, Tasks: tasks, TaskCounts: counts, Credentials: publications})
 }
 func (s *PlatformService) streamOverview(w http.ResponseWriter, r *http.Request, token string) {
 	controller := http.NewResponseController(w)

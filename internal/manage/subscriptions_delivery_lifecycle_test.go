@@ -55,6 +55,7 @@ func TestDeliveryCancellationPreservesAcknowledgements(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
+	confirmSubscriptionFixture(t, root)
 	err = deliverSubscriptions(ctx, root, "", true, &out)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatal(err)

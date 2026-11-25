@@ -35,6 +35,7 @@ export function outboundFields(protocols, tags, resolvers, capabilities) {
       key: "outbounds",
       label: "组成员",
       type: "multiselect",
+      ordered: true,
       options: peers,
       required: true,
       wide: true,

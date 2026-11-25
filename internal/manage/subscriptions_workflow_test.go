@@ -59,13 +59,13 @@ func TestSubscriptionRequiredSourceApplyAndRefresh(t *testing.T) {
 	if !bytes.Contains(before, []byte("remote-secret")) {
 		t.Fatal("local exports differ from snapshot")
 	}
-	if err := refreshSubscriptions(context.Background(), root, core, false); err != nil {
+	if err := refreshSubscriptions(t, context.Background(), root, core, false); err != nil {
 		t.Fatal(err)
 	}
 	if requests.Load() != 1 {
 		t.Fatal("scheduler ignored Next")
 	}
-	if err := refreshSubscriptions(context.Background(), root, core, true); err != nil {
+	if err := refreshSubscriptions(t, context.Background(), root, core, true); err != nil {
 		t.Fatal(err)
 	}
 	_, state, _, _ = loadSubscriptions(root)

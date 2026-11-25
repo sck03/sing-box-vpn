@@ -1,10 +1,16 @@
 import { errorMessage } from "./api.js";
 export const $ = (selector, root = document) => root.querySelector(selector);
+const booleanAttributes = new Set([
+  "disabled", "checked", "selected", "hidden", "open", "multiple",
+  "required", "readonly", "autofocus", "inert", "novalidate",
+]);
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs)) {
     if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
     else if (key === "class") node.className = value;
+    else if (typeof value === "boolean" && booleanAttributes.has(key))
+      node.toggleAttribute(key, value);
     else if (value !== undefined && value !== null)
       node.setAttribute(key, String(value));
   }

@@ -146,7 +146,7 @@ func TestAccountSourceUsesCandidatePublishingAddress(t *testing.T) {
 	if e := s.Accounts.SaveAccount(ctx, domain.Account{ID: "a", Name: "A"}); e != nil {
 		t.Fatal(e)
 	}
-	if e := service.Execute(ctx, application.AccountCommand{Operation: "bind", ID: "a", Scope: "normal"}, new(bytes.Buffer)); e != nil {
+	if e := service.Execute(ctx, application.AccountCommand{Operation: "bind", ID: "a", Scope: "normal", InboundIDs: testInboundIDs(t, service)}, new(bytes.Buffer)); e != nil {
 		t.Fatal(e)
 	}
 	c.App.Address = "192.0.2.44"

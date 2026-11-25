@@ -154,7 +154,7 @@ func subscriptionHandlerView(root string, view *subscriptionView, store *account
 				status = http.StatusNotFound
 				return errors.New("invalid authorization")
 			}
-			if err := checkOutputAccounts(request.Context(), root, view.config, parts[3], store); err != nil {
+			if err := checkOutputAccounts(request.Context(), view.config, parts[3], store); err != nil {
 				status = http.StatusNotFound
 				return err
 			}

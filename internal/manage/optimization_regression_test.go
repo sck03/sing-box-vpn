@@ -166,7 +166,7 @@ func TestShareReadinessMatchesDownloadAfterUnbind(t *testing.T) {
 		t.Fatal("unbound share created", w.Code, w.Body.String())
 	}
 	service := s.accountService()
-	if err := service.Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: "share", Scope: "normal"}, new(bytes.Buffer)); err != nil {
+	if err := service.Execute(t.Context(), application.AccountCommand{Operation: "bind", ID: "share", Scope: "normal", InboundIDs: testInboundIDs(t, service)}, new(bytes.Buffer)); err != nil {
 		t.Fatal(err)
 	}
 	w = httptest.NewRecorder()

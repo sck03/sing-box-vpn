@@ -2,22 +2,20 @@ import { $, el, action, button, row, getPath, setPath } from "./dom.js";
 import { errorMessage } from "./api.js";
 import { secretField } from "./secret-field.js";
 import { resolverValue } from "./form-values.js";
+import { choiceField } from "./choice-field.js";
+import { tokenField } from "./token-field.js";
 
-function selection(input) {
-  return input.multiple
-    ? [...input.selectedOptions].map((o) => o.value)
-    : input.value;
-}
-function fieldSnapshot(input) {
-  return input.type === "checkbox"
-    ? input.checked
-    : JSON.stringify(selection(input));
-}
 export function formDialog(title, fields, value, save, preserve = false) {
   const dialog = $("#dialog"),
     form = el("form"),
     area = el("div", { class: "fields" });
   const inputs = [];
+  const controls = new Map();
+  const optionSnapshots = new WeakMap();
+  const dependencies = new Map();
+  const fieldSnapshot = (input) => controls.has(input)
+    ? JSON.stringify(controls.get(input).value())
+    : input.type === "checkbox" ? input.checked : JSON.stringify(input.value);
   const advanced = el("div", { class: "fields" });
   for (const field of fields) {
     const target = field.advanced ? advanced : area;
@@ -27,9 +25,16 @@ export function formDialog(title, fields, value, save, preserve = false) {
     const current = field.scale && raw != null ? raw / field.scale : raw;
     let input;
     let suggestions;
-    if (["select", "multiselect", "tristate"].includes(field.type)) {
+    let control;
+    if (["multiselect", "csv", "numbers"].includes(field.type)) {
+      const factory = field.type === "multiselect" ? choiceField : tokenField;
+      control = factory(field, current ?? field.initial?.(value) ?? [], () => {
+        control.root.dispatchEvent(new window.Event("change", { bubbles: true }));
+      });
+      input = control.input;
+      controls.set(input, control);
+    } else if (["select", "tristate"].includes(field.type)) {
       input = el("select");
-      input.multiple = field.type === "multiselect";
       const options =
         typeof field.options === "function"
           ? field.options(value)
@@ -38,8 +43,7 @@ export function formDialog(title, fields, value, save, preserve = false) {
         const [v, label] = Array.isArray(option) ? option : [option, option];
         input.append(el("option", { value: v }, label));
       }
-      const selected = input.multiple ? current || [] : [current];
-      for (const existing of selected) {
+      for (const existing of [current]) {
         if (
           existing != null &&
           ![...input.options].some((o) => o.value === String(existing))
@@ -55,9 +59,6 @@ export function formDialog(title, fields, value, save, preserve = false) {
           );
       }
       input.value = current ?? field.default ?? "";
-      if (input.multiple)
-        for (const option of input.options)
-          option.selected = (current || []).includes(option.value);
     } else if (field.type === "json" || field.type === "textarea") {
       input = el("textarea", { spellcheck: "false" });
       input.value =
@@ -87,9 +88,7 @@ export function formDialog(title, fields, value, save, preserve = false) {
         }
         input.step = "1";
       } else
-        input.value = ["csv", "numbers"].includes(field.type)
-          ? (current || []).join(", ")
-          : field.type === "resolver" && current && typeof current === "object"
+        input.value = field.type === "resolver" && current && typeof current === "object"
             ? JSON.stringify(current)
             : (current ?? field.default ?? "");
     }
@@ -98,17 +97,17 @@ export function formDialog(title, fields, value, save, preserve = false) {
       input.setAttribute("list", id);
       suggestions = el("datalist", { id });
     }
-    if (field.required) input.required = true;
+    if (field.required && !control) input.required = true;
     if (field.readonly) input.disabled = true;
     if (field.min !== undefined) input.min = field.min;
     if (field.max !== undefined) input.max = field.max;
     if (field.scale) input.step = "any";
     input.setAttribute("aria-label", field.label);
     const label = el(
-      "label",
-      { class: field.wide ? "wide" : "" },
-      field.label,
-      field.type === "password" ? secretField(input, field.label) : input,
+      control ? "div" : "label",
+      { class: "form-field" + (field.wide ? " wide" : "") },
+      el("span", { class: "field-label" }, field.label),
+      control ? control.root : field.type === "password" ? secretField(input, field.label) : input,
     );
     if (field.help) label.append(el("small", {}, field.help));
     if (suggestions) label.append(suggestions);
@@ -132,8 +131,8 @@ export function formDialog(title, fields, value, save, preserve = false) {
             ? input.value === ""
               ? undefined
               : input.value === "true"
-            : field.type === "multiselect"
-              ? [...input.selectedOptions].map((o) => o.value)
+            : controls.has(input)
+              ? controls.get(input).value()
               : input.value,
       );
     }
@@ -142,13 +141,25 @@ export function formDialog(title, fields, value, save, preserve = false) {
   const refreshFields = () => {
     let current = formValue();
     for (const [field, input] of inputs) {
-      if (field.type === "resolver" && field.options) {
+      const control = controls.get(input);
+      if (field.resetOn) {
+        const signature = JSON.stringify(field.resetOn.map((key) => getPath(current, key)));
+        if (dependencies.has(field.key) && dependencies.get(field.key) !== signature) {
+          control.setValue(field.initial?.(current) || []);
+        }
+        dependencies.set(field.key, signature);
+      }
+      if (control?.update) {
+        control.update(typeof field.options === "function" ? field.options(current) : field.options,
+          field.filter?.(current), field.loading?.(current));
+        setPath(current, field.key, control.value());
+      } else if (field.type === "resolver" && field.options) {
         const options =
           typeof field.options === "function"
             ? field.options(current)
             : field.options;
-        input
-          .closest("label")
+        if (optionSnapshots.get(input) !== JSON.stringify(options)) input
+          .closest(".form-field")
           .querySelector("datalist")
           .replaceChildren(
             ...options.map((option) => {
@@ -158,10 +169,9 @@ export function formDialog(title, fields, value, save, preserve = false) {
               return el("option", { value }, label);
             }),
           );
+        optionSnapshots.set(input, JSON.stringify(options));
       } else if (typeof field.options === "function") {
-        const previous = input.multiple
-          ? [...input.selectedOptions].map((o) => o.value)
-          : input.value;
+        const previous = input.value;
         const options = [...field.options(current)];
         // Keep structured values that have no simple option; scalar dependencies
         // still remove incompatible choices when another field changes.
@@ -183,7 +193,8 @@ export function formDialog(title, fields, value, save, preserve = false) {
           )
             options.push([selected.value, selected.textContent]);
         }
-        input.replaceChildren(
+        const snapshot = JSON.stringify(options);
+        if (optionSnapshots.get(input) !== snapshot) input.replaceChildren(
           ...options.map((option) => {
             const [v, label] = Array.isArray(option)
               ? option
@@ -191,26 +202,24 @@ export function formDialog(title, fields, value, save, preserve = false) {
             return el("option", { value: v }, label);
           }),
         );
-        if (input.multiple) {
-          for (const option of input.options)
-            option.selected = previous.includes(option.value);
-        } else if ([...input.options].some((o) => o.value === previous))
+        optionSnapshots.set(input, snapshot);
+        if ([...input.options].some((o) => o.value === previous))
           input.value = previous;
         setPath(
           current,
           field.key,
-          input.multiple
-            ? [...input.selectedOptions].map((o) => o.value)
-            : input.value,
+          input.value,
         );
       }
       const visible = !field.visible || field.visible(current);
-      input.required =
+      const required =
         typeof field.required === "function"
           ? field.required(current)
           : !!field.required;
-      input.closest("label").hidden = !visible;
-      input.disabled = !!field.readonly || !visible;
+      if (!control) input.required = required;
+      input.closest(".form-field").hidden = !visible;
+      input.disabled = !!field.readonly || !visible || !!field.loading?.(current);
+      control?.disable(input.disabled);
     }
   };
   form.addEventListener("change", refreshFields);
@@ -250,12 +259,21 @@ export function formDialog(title, fields, value, save, preserve = false) {
       event.preventDefault();
       const errorNode = form.querySelector(".form-error");
       errorNode.hidden = true;
-      for (const [, input] of inputs) input.removeAttribute("aria-invalid");
+      for (const [, input] of inputs) {
+        input.removeAttribute("aria-invalid");
+        controls.get(input)?.root.removeAttribute("aria-invalid");
+      }
       try {
         const result = structuredClone(value);
         for (const [field, input, initial] of inputs) {
-          if (field.readonly || input.disabled) continue;
+          if (field.readonly || input.closest(".form-field").hidden) continue;
           const original = getPath(value, field.key);
+          const control = controls.get(input);
+          if (control) {
+            try {
+              control.validate(typeof field.required === "function" ? field.required(formValue()) : !!field.required);
+            } catch (error) { error.field = field.key; throw error; }
+          }
           const structured = original !== null && typeof original === "object";
           if (
             (field.type === "date" ||
@@ -278,7 +296,7 @@ export function formDialog(title, fields, value, save, preserve = false) {
           }
           switch (field.type) {
             case "multiselect":
-              v = [...input.selectedOptions].map((o) => o.value);
+              v = control.value();
               break;
             case "bool":
               v = input.checked;
@@ -309,10 +327,7 @@ export function formDialog(title, fields, value, save, preserve = false) {
               break;
             case "csv":
             case "numbers":
-              v = v
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean);
+              v = control.value();
               if (field.type === "numbers") {
                 v = v.map(Number);
                 if (
@@ -342,13 +357,16 @@ export function formDialog(title, fields, value, save, preserve = false) {
         if (match) {
           const input = match[1];
           input.setAttribute("aria-invalid", "true");
+          const control = controls.get(input);
+          control?.root.setAttribute("aria-invalid", "true");
           for (
             let parent = input.parentElement;
             parent && parent !== form;
             parent = parent.parentElement
           )
             if (parent.tagName === "DETAILS") parent.open = true;
-          input.focus();
+          if (control?.focus) control.focus();
+          else input.focus();
         }
         return;
       }
@@ -363,6 +381,11 @@ export function formDialog(title, fields, value, save, preserve = false) {
     value: formValue,
     refresh: refreshFields,
     input: (key) => inputs.find(([field]) => field.key === key)?.[1],
+    setValue: (key, next) => {
+      const input = inputs.find(([field]) => field.key === key)?.[1];
+      if (controls.has(input)) controls.get(input).setValue(next);
+      else if (input) input.value = next;
+    },
     active: () => dialog.open && dialog.contains(form),
   };
 }

@@ -43,6 +43,7 @@ func (s *PlatformService) runLane(ctx context.Context, lane string) error {
 				reconcile, stop := context.WithTimeout(ctx, 60*time.Second)
 				err := withServiceLock(reconcile, s.Root, func() error { return s.reconcileCredentials(reconcile) })
 				stop()
+				s.backgroundResult("credential-publication", err)
 				if err != nil {
 					credentialDelay = min(credentialDelay*2, 5*time.Minute)
 				} else {
@@ -51,29 +52,19 @@ func (s *PlatformService) runLane(ctx context.Context, lane string) error {
 				nextCredentials = time.Now().Add(credentialDelay)
 			}
 			if time.Now().After(nextSubscriptions) {
-				if err := s.reconcilePanelRestart(ctx); err != nil {
-					_ = s.Auth.Audit(ctx, "scheduler", "panel-restart-receipt", "", "failed")
-				}
+				s.schedulerResult(ctx, "panel-restart", s.reconcilePanelRestart(ctx))
 				nextSubscriptions = time.Now().Add(time.Minute)
-				if err := s.reconcileProgramUpgrade(ctx); err != nil {
-					_ = s.Auth.Audit(ctx, "scheduler", "upgrade-receipt", "", "failed")
-				}
+				s.schedulerResult(ctx, "program-upgrade", s.reconcileProgramUpgrade(ctx))
 				if err := s.Store.ExpireExternal(ctx, time.Now().Add(-upgradeWaitBudget)); err != nil {
 					return err
 				}
-				if err := s.scheduleSubscriptions(ctx); err != nil {
-					_ = s.Auth.Audit(ctx, "scheduler", "subscription-schedule", "", "failed")
-				}
+				s.schedulerResult(ctx, "subscription-schedule", s.scheduleSubscriptions(ctx))
 			}
 			if !s.NoSystem && time.Now().After(nextMaintenance) {
 				nextMaintenance = time.Now().Add(30 * time.Second)
 				maintenance, stop := context.WithTimeout(ctx, 30*time.Second)
-				if err := s.syncTunnel(maintenance); err != nil {
-					_ = s.Auth.Audit(maintenance, "scheduler", "tunnel-sync", "", "failed")
-				}
-				if err := s.scheduleCertificates(maintenance); err != nil {
-					_ = s.Auth.Audit(maintenance, "scheduler", "certificate-schedule", "", "failed")
-				}
+				s.schedulerResult(maintenance, "tunnel-sync", s.syncTunnel(maintenance))
+				s.schedulerResult(maintenance, "certificate-schedule", s.scheduleCertificates(maintenance))
 				stop()
 			}
 		}
@@ -157,7 +148,7 @@ func (s *PlatformService) finishTask(task controlstore.Task, err error) error {
 			result = "cancelled"
 		}
 	}
-	_ = s.Auth.Audit(finish, task.Actor, task.Kind, fmt.Sprint(task.ID), result)
+	s.backgroundResult("audit-write", s.Auth.Audit(finish, task.Actor, task.Kind, fmt.Sprint(task.ID), result))
 	s.invalidateOverview()
 	return finishErr
 }

@@ -4,6 +4,7 @@ import {
   accountCreated,
 } from "./account-onboarding.js";
 import { api, exportAccount } from "./api.js";
+import { saveAccount, archiveAccount, inboundOptions, accountOptions, accountCredentials } from "./account-api.js";
 import { createAccountShare } from "./sharing.js";
 import { accountOutputDialog } from "./account-outputs.js";
 import { showExport } from "./export-results.js";
@@ -74,10 +75,10 @@ export async function accounts(ctx) {
             ...item,
             bind_now: !!bindings[0]?.options.length,
             scope: bindings[0]?.options[0]?.[0] || "normal",
-            inbound_ids: [],
           },
           async (v) => {
-            const account = {};
+            /** @type {import('./contracts.js').AccountSave['account']} */
+            const account = { id: v.id, name: v.name };
             for (const key of [
               "id",
               "name",
@@ -93,7 +94,7 @@ export async function accounts(ctx) {
               "created_at",
             ])
               if (v[key] !== undefined) account[key] = v[key];
-            await api("/api/accounts", { account });
+            await saveAccount({ account });
             notice("权益已保存，相关订阅会自动更新");
             ctx.render();
             if (!item.revision) {
@@ -126,11 +127,7 @@ export async function accounts(ctx) {
     const scopes = ["normal", "vpngate"];
     const choices = await Promise.all(
       scopes.map((scope) =>
-        (ctx.workflowRequest || api)(
-          "/api/inbound-options?scope=" + scope,
-          undefined,
-          { signal },
-        ),
+        inboundOptions(scope, signal, ctx.workflowRequest || api),
       ),
     );
     return [
@@ -149,11 +146,14 @@ export async function accounts(ctx) {
         type: "multiselect",
         wide: true,
         options: (value) =>
-          choices[scopes.indexOf(value.scope)].map((entry) => [
+          (choices[scopes.indexOf(value.scope)] || []).map((entry) => [
             entry.id,
             entry.name,
           ]),
-        help: "显示已应用配置中的启用入口；不选表示绑定该实例全部启用入口。",
+        required: true,
+        initial: (value) => (choices[scopes.indexOf(value.scope)] || []).map((entry) => entry.id),
+        resetOn: ["scope"],
+        help: "默认勾选当前启用入口，可搜索后调整。至少选择一个；排队期间新增的入口不会自动加入。",
       },
     ];
   };
@@ -171,7 +171,7 @@ export async function accounts(ctx) {
             advanced: true,
           },
         ],
-        { scope: fields[0].options[0]?.[0] || "normal", inbound_ids: [] },
+        { scope: fields[0].options[0]?.[0] || "" },
         async (v) => {
           const id = await ctx.task({
             operation: "account",
@@ -189,11 +189,7 @@ export async function accounts(ctx) {
       all = (
         await Promise.all(
           ["normal", "vpngate"].map((scope) =>
-            api(
-              `/api/credentials?id=${encodeURIComponent(item.id)}&scope=${scope}`,
-              undefined,
-              { signal: session.signal },
-            ),
+            accountCredentials(item.id, scope, session.signal),
           ),
         )
       ).flat();
@@ -215,8 +211,14 @@ export async function accounts(ctx) {
         ],
         all,
         (c) => [
-          button("轮换", async () => {
-            if (confirm("立即撤销旧凭据并重载对应入站？")) {
+          button("轮换", () => {
+            session.close();
+            formDialog("轮换凭据", [
+              { key: "uuid", label: "自定义 UUID（留空随机）", advanced: true },
+              { key: "password", label: "自定义密码（留空随机）", type: "password", minBytes: 16, maxBytes: 128, advanced: true },
+              { key: "confirmed", label: "撤销旧凭据并重载对应入站（该入站连接可能短暂中断）", type: "bool", required: true },
+            ], {}, async ({ uuid, password, confirmed }) => {
+              if (!confirmed) throw new Error("请确认撤销旧凭据");
               await ctx.task({
                 operation: "account",
                 account: {
@@ -224,10 +226,11 @@ export async function accounts(ctx) {
                   id: c.id,
                   generation: c.generation,
                   scope: c.runtime_id,
+                  uuid,
+                  password,
                 },
               });
-              session.close();
-            }
+            });
           }),
           button(
             "解除",
@@ -306,11 +309,7 @@ export async function accounts(ctx) {
               "批量绑定入站",
               (signal) =>
                 Promise.all([
-                  (ctx.workflowRequest || api)(
-                    "/api/account-options",
-                    undefined,
-                    { signal },
-                  ),
+                  accountOptions(signal, ctx.workflowRequest || api),
                   bindingFields(signal),
                 ]),
               ([accounts, fields]) =>
@@ -321,13 +320,14 @@ export async function accounts(ctx) {
                       key: "account_ids",
                       label: "权益（可多选，最多 100 个）",
                       type: "multiselect",
+                      maxSelected: 100,
                       options: accounts.map((item) => [item.id, item.name]),
                       required: true,
                       wide: true,
                     },
                     ...fields,
                   ],
-                  { account_ids: [], scope: "normal", inbound_ids: [] },
+                  { account_ids: [], scope: fields[0].options[0]?.[0] || "" },
                   (v) => {
                     if (!v.account_ids.length)
                       throw new Error("请选择至少一个权益");
@@ -470,7 +470,7 @@ export async function accounts(ctx) {
                       )
                     )
                       return;
-                    await api("/api/accounts/archive", {
+                    await archiveAccount({
                       id: item.id,
                       revision: item.revision,
                     });

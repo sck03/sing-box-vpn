@@ -34,6 +34,9 @@ func platformFixture(t *testing.T, root, core string) (*PlatformService, Platfor
 	if e = s.Store.Initialize(t.Context(), mustJSON(t, c)); e != nil {
 		t.Fatal(e)
 	}
+	if e = AtomicJSON(root+"/runtime-revision.json", int64(1)); e != nil {
+		t.Fatal(e)
+	}
 	if e = s.Auth.Bootstrap(t.Context(), "admin", "correct-password-123", false); e != nil {
 		t.Fatal(e)
 	}
@@ -151,7 +154,7 @@ func TestPanelAccountRevision(t *testing.T) {
 	for i, rev := range []int64{0, 1, 1} {
 		a.Revision = rev
 		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, panelRequest("POST", "/api/accounts", mustJSON(t, domainAccountRequest{a}), session))
+		handler.ServeHTTP(w, panelRequest("POST", "/api/accounts", mustJSON(t, AccountSave{a}), session))
 		want := 200
 		if i == 2 {
 			want = 409

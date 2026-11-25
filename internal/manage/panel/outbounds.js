@@ -29,10 +29,11 @@ export async function outbounds(ctx) {
       }));
   }
   a.services ??= [];
-  const changed = () => {
+  const changed = ({ local = false } = {}) => {
     c.app.advanced = a;
     ctx.changed();
-    ctx.render();
+    if (local) ctx.invalidateSections?.();
+    else ctx.render();
   };
   const selection = () =>
     card(
@@ -113,10 +114,11 @@ export async function outbounds(ctx) {
       selection(),
       resourceEditor({
         title: "出站与出站组",
+        local: true,
         normalize: (value, previous) => normalizeOutbound(value, previous, runtime.outbound_fields),
         preserve: true,
         items: a.outbounds,
-        fields: outboundFields(
+        fields: () => outboundFields(
           runtime.outbounds,
           [...a.outbounds, ...a.endpoints].map((v) => v.tag),
           (effective.dns?.servers || []).map((v) => v.tag),
@@ -142,6 +144,7 @@ export async function outbounds(ctx) {
     await networkModel();
     return resourceEditor({
       title: "WARP / WireGuard 端点",
+      local: true,
       items: a.endpoints,
       fields: [
         { key: "tag", label: "Tag", required: true },

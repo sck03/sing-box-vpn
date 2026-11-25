@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"path/filepath"
 	"slices"
 
+	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
@@ -22,16 +22,7 @@ func confirmedSubscriptionConfig(ctx context.Context, root string, config sub.Co
 		return nil, 0, err
 	}
 	if !found {
-		// Uninitialized compiler fixtures have no platform generation. An installed
-		// platform must rebuild a missing marker before any background publication.
-		_, err := os.Stat(filepath.Join(root, ".platform-v5"))
-		if err == nil {
-			return nil, 0, errors.New("runtime generation missing; rebuild the publication")
-		}
-		if errors.Is(err, os.ErrNotExist) {
-			err = nil
-		}
-		return nil, 0, err
+		return nil, 0, errors.New("runtime generation missing; rebuild the publication")
 	}
 	store, err := controlstore.Open(filepath.Join(root, "control.db"))
 	if err != nil {
@@ -64,13 +55,13 @@ func captureConfirmedSubscriptionSources(ctx context.Context, root string, confi
 		return nil, nil, 0, err
 	}
 	var services []AccountService
-	if applied != nil && slices.ContainsFunc(config.Sources, func(source sub.Source) bool { return source.Kind == "account" }) {
-		service, close, err := openAccountSource(root)
+	if slices.ContainsFunc(config.Sources, func(source sub.Source) bool { return source.Kind == "account" }) {
+		store, err := accounting.Open(filepath.Join(root, "control.db"))
 		if err != nil {
 			return nil, nil, 0, err
 		}
-		defer close()
-		service.Config = applied
+		defer store.Close()
+		service := AccountService{Root: root, Store: store, Config: applied}
 		services = append(services, service)
 	}
 	_, nodes, accounts, err := captureSubscriptionSources(ctx, root, config, nil, services...)

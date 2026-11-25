@@ -71,6 +71,9 @@ func (c TaskCommand) Validate() error {
 		if c.Account.Operation == "bind" && c.Account.Generation != 0 {
 			return errors.New("binding cannot select a credential generation")
 		}
+		if c.Account.Operation == "bind" && len(c.Account.InboundIDs) == 0 {
+			return errors.New("binding requires explicit inbound_ids")
+		}
 		_, err := NormalizeCredentialInput(c.Account)
 		return err
 	case "subscription":

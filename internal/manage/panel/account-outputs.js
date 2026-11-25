@@ -26,6 +26,7 @@ export async function accountOutputDialog({
     (signal) => load(initial, signal),
     (options) => {
       let pending = false,
+        verified = true,
         generation = 0,
         query;
       const available = () => options.filter((option) => option.available);
@@ -42,9 +43,20 @@ export async function accountOutputDialog({
         key,
         label: multiple ? "允许的订阅格式与用途（可多选）" : "订阅格式与用途",
         type: multiple ? "multiselect" : "select",
+        presentation: "cards",
+        wide: multiple,
         required: true,
-        options: (value) =>
-          available().filter((option) => supportsPlatform(option, value.device_platform)).map((option) => [
+        loading: () => pending || !verified,
+        filter: (value) => options.filter((option) => supportsPlatform(option, value.device_platform)).map((option) => option.profile),
+        options: (value) => multiple
+          ? [...options].sort((a, b) => Number(b.mode === "config") - Number(a.mode === "config")).map((option) => ({
+              value: option.profile, label: option.label,
+              description: `${option.nodes}/${option.input_nodes} 节点${option.experimental ? " · 实验适配" : ""}`,
+              group: option.mode === "config" ? "完整配置" : "节点订阅",
+              disabled: !option.available,
+              reason: option.reason || "当前权益没有可用节点，请检查绑定和模板。",
+            }))
+          : available().filter((option) => supportsPlatform(option, value.device_platform)).map((option) => [
             option.profile,
             `${option.label} · ${option.nodes}/${option.input_nodes} 节点${option.experimental ? " · 实验适配" : ""}`,
           ]),
@@ -84,6 +96,7 @@ export async function accountOutputDialog({
         initial,
         async (value) => {
           if (pending) throw new Error("正在检查客户端兼容性，请稍候。");
+          if (!verified) throw new Error("兼容性检查尚未成功，请重试检查后保存。");
           const selected = multiple ? value.profiles : [value.profile];
           if (
             !selected?.length ||
@@ -109,7 +122,12 @@ export async function accountOutputDialog({
           selected.includes(option.profile),
         );
         const denied = options.filter((option) => !option.available);
+        const expanded = summary.querySelector("details")?.open || false;
         summary.replaceChildren(
+          help(available().length
+            ? `已选 ${active.length} 种格式 · 当前权益可用 ${available().length} 种。设备筛选不会取消已选格式。`
+            : "当前权益没有可用格式，请检查入站绑定和下载模板。"),
+          el("details", { open: expanded }, el("summary", {}, "格式详情与兼容性说明"),
           ...active.map((option) =>
             help(
               `${option.label}：${option.nodes} 个可用节点${option.skipped ? `，跳过 ${option.skipped} 个不兼容节点` : ""}。${option.description || ""} ${validationLabel(option.validation)}`,
@@ -121,7 +139,7 @@ export async function accountOutputDialog({
                   `暂不可用：${denied.map((option) => option.label).join("、")}。可调整入站绑定或账户下载模板。`,
                 ),
               ]
-            : []),
+            : [])),
         );
       }
       let signature = `${initial.account_id}:${initial.scope}`;
@@ -129,7 +147,7 @@ export async function accountOutputDialog({
         const value = controller.value(),
           next = `${value.account_id}:${value.scope}`;
         if (next === signature) {
-          describe();
+          if (verified && !pending) describe();
           return;
         }
         signature = next;
@@ -138,7 +156,7 @@ export async function accountOutputDialog({
         query?.abort();
         query = new AbortController();
         pending = true;
-        options = [];
+        verified = false;
         controller.refresh();
         summary.replaceChildren(help("正在检查当前实例的客户端兼容性…"));
         try {
@@ -146,15 +164,16 @@ export async function accountOutputDialog({
           if (!controller.active() || generation !== current) return;
           options = result;
           controller.refresh();
-          const input = controller.input(key);
           const kept = selected.filter((id) =>
             available().some((option) => option.profile === id),
           );
-          if (multiple)
-            for (const option of input.options)
-              option.selected = kept.includes(option.value);
-          else input.value = kept[0] || available()[0]?.profile || "";
+          pending = false;
+          verified = true;
+          controller.setValue(key, multiple ? kept : kept[0] || available()[0]?.profile || "");
+          controller.refresh();
           describe();
+          if (selected.length > kept.length)
+            summary.prepend(help("部分格式在当前权益或实例下不可用，已移除，请核对选择。"));
         } catch (error) {
           if (
             controller.active() &&
@@ -169,7 +188,10 @@ export async function accountOutputDialog({
               }),
             );
         } finally {
-          if (generation === current) pending = false;
+          if (generation === current) {
+            pending = false;
+            if (controller.active()) controller.refresh();
+          }
         }
       });
       controller.dialog.addEventListener("close", () => query?.abort(), {

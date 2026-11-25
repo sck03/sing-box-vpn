@@ -38,7 +38,7 @@ func TestResourceCacheSurvivesRebuildAnd304(t *testing.T) {
 	}
 	before := readBytes(t, filepath.Join(root, subscriptionsConfig))
 	for range 2 {
-		if err = refreshSubscriptions(t.Context(), root, core, true); err != nil {
+		if err = refreshSubscriptions(t, t.Context(), root, core, true); err != nil {
 			t.Fatal(err)
 		}
 		current, state, local, err := loadSubscriptions(root)
@@ -109,7 +109,7 @@ func TestDisabledSubscriberBlocksCustomOutputAndExport(t *testing.T) {
 	c.Sources = []sub.Source{{ID: "a", Kind: "account", AccountID: "a"}}
 	c.Collections = []sub.Collection{{ID: "all", Sources: []string{"a"}}}
 	c.Outputs = []sub.Output{{ID: "custom", Collection: "all", Template: c.Templates[0].ID}}
-	if err := checkOutputAccounts(ctx, root, c, "custom", s.Accounts); err == nil {
+	if err := checkOutputAccounts(ctx, c, "custom", s.Accounts); err == nil {
 		t.Fatal("disabled subscriber authorized")
 	}
 	if _, err := (s.accountService()).ExportDetailed(ctx, application.AccountExportRequest{ID: "a", Profile: "uri"}); err == nil {

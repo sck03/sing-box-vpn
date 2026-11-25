@@ -7,7 +7,6 @@ import (
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
-	"github.com/sck03/sing-box-vpn/internal/domain"
 	qrcode "github.com/skip2/go-qrcode"
 )
 
@@ -130,10 +129,7 @@ func (s *PlatformService) serveAccounts(w http.ResponseWriter, r *http.Request, 
 		if !require(admin) {
 			return true
 		}
-		var v struct {
-			ID       string `json:"id"`
-			Revision int64  `json:"revision"`
-		}
+		var v AccountArchive
 		if err = decodeRequest(w, r, &v, 1024); err == nil {
 			if !audit("account-archive", v.ID) {
 				return true
@@ -165,7 +161,7 @@ func (s *PlatformService) serveAccounts(w http.ResponseWriter, r *http.Request, 
 			if !require(admin) {
 				return true
 			}
-			var v domainAccountRequest
+			var v AccountSave
 			if err = decodeRequest(w, r, &v, 64<<10); err == nil {
 				if !audit("account-save", v.Account.ID) {
 					return true
@@ -234,8 +230,4 @@ func (s *PlatformService) serveAccounts(w http.ResponseWriter, r *http.Request, 
 		return true
 	}
 	return false
-}
-
-type domainAccountRequest struct {
-	Account domain.Account `json:"account"`
 }
