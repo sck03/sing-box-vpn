@@ -415,9 +415,9 @@
   "cleanup": {
     "method": "reversible_move",
     "directory": ".cleanup-manual/2026-11-25-stability",
-    "items": 50,
-    "files": 73,
-    "bytes": 475220806,
+    "items": 55,
+    "files": 131,
+    "bytes": 478545103,
     "manifest": ".cleanup-manual/2026-11-25-stability/cleanup-manifest.json",
     "preserved": [
       ".tools",

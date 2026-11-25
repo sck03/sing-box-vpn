@@ -260,7 +260,7 @@ Windows 验证先加载 scripts/dev-env.ps1，再设置 MANAGED_CORE_BINARY 指�
 
 `test-panel-refactor.mjs` 覆盖结构化 DNS 解析器在编辑、动态选项和无关字段修改中的保留及错误定位。浏览器验收额外检查 1280/375/320px 登录输入框与显隐按钮宽度、切换行为及溢出。使用 `PANEL_BROWSER_TEST=1` 执行本地 API + 浏览器；可设置 `PANEL_TEST_SCREENSHOT_DIR` 保存证据。
 
-运行 `go test ./internal/manage -run '^ -bench '^BenchmarkBindingAvailability -benchmem -benchtime=1s -count=3` 比较 256 个入站下重复读取完整配置与版本缓存的成本。该指标只覆盖列表可用性计算，不代表 VPN 吞吐或整机内存。
+运行 `go test ./internal/manage -run '^$' -bench '^BenchmarkBindingAvailability$' -benchmem -benchtime=1s -count=3` 比较 256 个入站下重复读取完整配置与版本缓存的成本。该指标只覆盖列表可用性计算，不代表 VPN 吞吐或整机内存。
 
 ## 本轮稳定性验证入口
 
