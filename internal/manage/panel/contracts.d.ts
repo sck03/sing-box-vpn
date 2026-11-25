@@ -120,6 +120,20 @@ export interface CertificatePreparation {
   email: string;
 }
 
+export interface CertificateStatus {
+  id: string;
+  domain: string;
+  provider: string;
+  used_by: Array<string> | null;
+  ready: boolean;
+  renewal_state: string;
+  dns_names?: Array<string> | null;
+  not_before?: string | null;
+  expires_at?: string | null;
+  days_left?: number | null;
+  error?: string;
+}
+
 export interface ConfigurationOutputPreview {
   id: string;
   name: string;
@@ -453,11 +467,10 @@ export interface SubscriptionCollection {
   processor: SubscriptionProcessor;
 }
 
-export interface SubscriptionCommand {
-  operation: string;
-  id?: string;
-  probe_url?: string;
-}
+export type SubscriptionCommand =
+  | { operation: "refresh"; id?: never; probe_url?: never }
+  | { operation: "check"; id: string; probe_url?: string }
+  | { operation: "deliver"; id?: string; probe_url?: never };
 
 export interface SubscriptionConfig {
   version: number;
@@ -686,7 +699,7 @@ export type TaskCommand =
   | { operation: "program-upgrade"; service?: never; id?: never; value?: string; config?: never; account?: never; subscription?: never }
   | { operation: "runtime-rollback"; service?: never; id?: never; value?: never; config?: never; account?: never; subscription?: never }
   | { operation: "service"; service: string; id?: never; value: "start" | "stop" | "restart" | "enable" | "disable"; config?: never; account?: never; subscription?: never }
-  | { operation: "subscription"; service?: never; id?: never; value?: never; config?: never; account?: never; subscription: SubscriptionCommand & { operation: "refresh" | "check" | "deliver" } };
+  | { operation: "subscription"; service?: never; id?: never; value?: never; config?: never; account?: never; subscription: SubscriptionCommand };
 
 export interface TaskCounts {
   failed: number;

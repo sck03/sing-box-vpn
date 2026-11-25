@@ -170,7 +170,7 @@ func (c PlatformConfig) Validate() error {
 		if err = validateDomain(asset.Domain); err != nil {
 			return err
 		}
-		if asset.Provider != "import" && asset.Provider != "generated" && !automaticCertificate(asset) {
+		if asset.Provider != "import" && asset.Provider != "generated" && !certificates.Automatic(asset) {
 			return errors.New("certificate provider must be import, generated or acme")
 		}
 	}

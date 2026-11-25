@@ -55,6 +55,9 @@ for (const invalid of [
   },
   { operation: "service", service: "sb-core", value: "stop", scope: "normal" },
   { operation: "service", service: "sb-core", value: "stop", id: "ignored" },
+  { operation: "subscription", subscription: { operation: "refresh", id: "ignored" } },
+  { operation: "subscription", subscription: { operation: "check" } },
+  { operation: "subscription", subscription: { operation: "deliver", probe_url: "https://example.test" } },
 ])
   assert.equal(
     (await call("/api/tasks", invalid)).status,

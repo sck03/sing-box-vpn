@@ -1,10 +1,13 @@
 // Shared labels and binding rules for panel, subscription, inbound and VPN TLS.
+/** @type {Record<string, string>} */
 export const certificateSources = {
   acme: "自动证书",
   import: "导入证书",
   generated: "自签名（仅测试）",
 };
 const canonical = (value = "") => value.replaceAll("\\", "/");
+/** @param {Partial<import('./contracts.js').CertificateAsset>} options
+ * @param {import('./contracts.js').CertificateAsset[]} certificates */
 export function boundCertificate(options, certificates) {
   return (
     certificates.find(
@@ -14,6 +17,7 @@ export function boundCertificate(options, certificates) {
     )?.id || ""
   );
 }
+/** @param {(import('./contracts.js').CertificateAsset & {status?: import('./contracts.js').CertificateStatus})[]} certificates */
 export function certificateChoices(certificates) {
   return certificates.map((asset) => [
     asset.id,
@@ -28,6 +32,8 @@ export function certificateChoices(certificates) {
     ].join(" · "),
   ]);
 }
+/** @param {import('./contracts.js').CertificateAsset[]} certificates
+ * @param {import('./contracts.js').CertificateStatus[]} status */
 export function withCertificateStatus(certificates, status) {
   const byID = new Map(status.map((item) => [item.id, item]));
   return certificates.map((asset) => ({

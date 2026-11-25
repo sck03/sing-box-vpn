@@ -77,12 +77,7 @@ func (c TaskCommand) Validate() error {
 		_, err := NormalizeCredentialInput(c.Account)
 		return err
 	case "subscription":
-		if !slices.Contains([]string{"refresh", "check", "deliver"}, c.Subscription.Operation) {
-			return errors.New("unsupported subscription task")
-		}
-		if c.Subscription.Operation != "check" && c.Subscription.ProbeURL != "" {
-			return errors.New("probe_url is only valid for subscription checks")
-		}
+		return c.Subscription.Validate()
 	case "certificate-renew", "outbound-probe":
 		if c.ID == "" {
 			return errors.New("task requires an id")

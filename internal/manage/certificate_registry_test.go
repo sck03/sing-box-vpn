@@ -1,10 +1,11 @@
 package manage
 
 import (
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 )
 
 func TestCertificateRegistryPreparationAndDuplicateImport(t *testing.T) {
@@ -42,28 +43,47 @@ func TestCertificateRegistryPreparationAndDuplicateImport(t *testing.T) {
 		t.Fatal("duplicate import accepted")
 	}
 }
-func TestCertificateScheduleDeadlineUsesAppliedRevision(t *testing.T) {
+func TestCertificateScheduleSurvivesFailedUnrelatedApply(t *testing.T) {
 	root, core, _ := appFixture(t)
-	s, _, _ := platformFixture(t, root, core)
+	s, c, _ := platformFixture(t, root, core)
+	c.Certificates = []CertificateAsset{{ID: "live", Provider: "acme", Domain: "live.example.test"}}
+	raw, _ := encodePlatform(c)
+	state, err := s.Store.Revisions(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.Store.Queue(t.Context(), "apply", "test", []byte(`{}`), state.Revision, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Store.Applied(t.Context(), state.Revision+1); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Store.Finish(t.Context(), id, nil); err != nil {
+		t.Fatal(err)
+	}
+	// A failed desired change must not suppress or replace the live registry.
+	c.Certificates = []CertificateAsset{{ID: "pending", Provider: "acme", Domain: "pending.example.test"}}
+	raw, _ = encodePlatform(c)
+	id, err = s.Store.Queue(t.Context(), "apply", "test", []byte(`{}`), state.Revision+1, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Store.Finish(t.Context(), id, errors.New("activation failed")); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.scheduleCertificates(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	deadline := s.certificateNext
-	if !deadline.After(time.Now()) {
-		t.Fatal("missing schedule deadline")
-	}
-	if err := s.scheduleCertificates(t.Context()); err != nil {
+	task, err := s.Store.ClaimLane(t.Context(), "control")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if !deadline.Equal(s.certificateNext) {
-		t.Fatal("unchanged revision rescanned certificate material")
-	}
-	s.certificateRevision = 0
-	s.certificateNext = time.Now().Add(time.Hour)
-	if err := s.scheduleCertificates(t.Context()); err != nil {
+	var input taskInput
+	if err = json.Unmarshal(task.Input, &input); err != nil {
 		t.Fatal(err)
 	}
-	if s.certificateRevision == 0 || s.certificateNext.After(time.Now().Add(11*time.Minute)) {
-		t.Fatal("revision change did not invalidate deadline")
+	if input.Operation != "certificate-renew" || input.ID != "live" {
+		t.Fatal("renewed unconfirmed registry", input)
 	}
 }

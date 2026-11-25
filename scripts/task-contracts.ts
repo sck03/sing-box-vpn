@@ -71,6 +71,23 @@ const exported: TaskCommand = {
 const invalid: TaskCommand = { operation: "bbr", value: "disable" };
 void [automatic, unrelated, exported, invalid];
 
+const scopedRefresh: TaskCommand = {
+  operation: "subscription",
+  // @ts-expect-error refresh is global; a silently ignored ID is invalid
+  subscription: { operation: "refresh", id: "source" },
+};
+const missingOutput: TaskCommand = {
+  operation: "subscription",
+  // @ts-expect-error a check must identify its output
+  subscription: { operation: "check" },
+};
+const deliveryProbe: TaskCommand = {
+  operation: "subscription",
+  // @ts-expect-error delivery cannot carry probe options
+  subscription: { operation: "deliver", probe_url: "https://example.test" },
+};
+void [scopedRefresh, missingOutput, deliveryProbe];
+
 // Stateful results and grant limits must remain explicit in generated contracts.
 const refresh: RefreshResult = {
   outcome: "partial",

@@ -111,6 +111,18 @@ export const getOverview = (signal) =>
  * @returns {Promise<import("./contracts.js").SubscriptionStatusResponse>} */
 export const getSubscriptionStatus = (signal, request = api) =>
   request("/api/subscriptions/status", undefined, { signal });
+/** @param {AbortSignal} [signal] @param {typeof api} [request]
+ * @returns {Promise<import("./contracts.js").CertificateStatus[]>} */
+export const getCertificates = (signal, request = api) =>
+  request("/api/certificates", undefined, { signal });
+/** @param {import("./contracts.js").CertificateImport} input @param {AbortSignal} [signal]
+ * @returns {Promise<import("./contracts.js").CertificateAsset>} */
+export const importCertificate = (input, signal) =>
+  api("/api/certificates", input, { signal });
+/** @param {import("./contracts.js").CertificatePreparation} input @param {AbortSignal} [signal]
+ * @returns {Promise<import("./contracts.js").CertificateAsset>} */
+export const prepareCertificate = (input, signal) =>
+  api("/api/certificates/prepare", input, { signal });
 /** @param {Blob} blob @param {string} name */
 export function download(blob, name) {
   const url = URL.createObjectURL(blob),

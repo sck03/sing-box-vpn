@@ -208,7 +208,7 @@ VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IP
 
 ## 访问与组件维护的模块边界（5.1）
 
-- `internal/certificates` 持有证书资产模型和有界 PEM 读取/解析；材料的域名匹配与有效期仍交给 `tlsconfig`。配置登记、持久化、ACME 任务和服务恢复留在应用编排层。
+- `internal/certificates` 持有证书资产、具名状态 DTO、有界 PEM 读取/解析和续期调度器；材料的域名匹配与有效期交给 `tlsconfig`。调度器拥有修订缓存、扫描截止时间和互斥状态，通过 `RenewalSource` 读取已应用登记及持久尝试记录。`manage/certificate_schedule.go` 适配仓储、任务队列和 ACME 登记；签发与服务恢复仍由宿主机编排完成。
 - `internal/deployment` 校验正式发行标签、固定仓库资产地址、SHA256 元数据和数值版本顺序。HTTP 层只调用组件状态/更新用例，外部查询不自动触发安装。
 - `versions.json` 统一记录受管核心、官方校验器和 lego 版本，测试校对 Go 依赖。管理器提供 `--runtime-version`；发行安装使用候选管理器默认的已验证校验器版本。
 - 程序升级先准备对应校验器，再用候选管理器、受管核心和校验器验证当前配置；切换失败或面板健康检查失败同时恢复三个二进制。运行/开机状态保持既有语义。
@@ -219,7 +219,13 @@ VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IP
 
 未使用的官方校验器 activate 路径已删除，其专属实现测试同步移除。旧工作流测试需要的 systemServices helper 只放在 \_test.go，不再进入生产二进制。DNS independent_cache 已从表单移除，后端明确拒绝该已废弃字段。
 
-续期调度先读取两个 revision；版本不变且未到十分钟检查时间时，不读取完整配置或 PEM。失败可重试，配置变化绕过等待。额度账本 WAL/FULL、预留和撤销保证保持原语义。
+续期调度使用原子的 `AppliedStateSince` 读取已应用修订，未变化时 SQL 不返回配置正文；只有修订变化才解码并缓存证书登记。每十分钟扫描材料，同一证书成功入队后十二小时内不重复调度；队列错误在下次调度重试。待应用或应用失败的无关配置不会阻断在线证书续期，未应用证书不会提前签发。额度账本 WAL/FULL、预留和撤销保证保持原语义。
+
+订阅手动与自动任务统一经过 `application.ExecuteSubscription`，通过 `SubscriptionOperations` 调用刷新、检测或投递。`manage/subscriptions_application.go` 只适配基础设施，不重复分发。刷新是全局操作，不能携带 ID 或 probe_url；检测必须有输出 ID；投递可指定目标 ID，空 ID 表示所有目标，不能携带探测参数。自动调度信息不属于公开请求。Go 校验、生成的命令联合类型、HTTP 与类型正反例共同约束这些语义。
+
+`subscription.Schedule` 拥有纯调度规则和轻量投影；`manage/platform_scheduler.go` 只加载文件、读取账户有效状态和入队。投影不包含节点正文、模板正文和秘密。缺失投影可从当前配置与期限字段重建，这属于派生缓存恢复，不是旧数据迁移。
+
+表格按稳定 ID 更新，出站、DNS 和端点显式使用 tag；远程表格透传 rowKey。焦点存在时保留控件和行序，立即更新值，使用渲染时保存的操作签名判断动作是否失效；原地修改和重复标识也不能运行过期动作。全部 JS 继续 checkJs，API、账户 API、证书字段模块额外通过 `tsconfig.boundaries.json` 的严格检查。
 
 ## 输出用途与维护边界（6.0）
 

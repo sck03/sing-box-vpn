@@ -114,6 +114,7 @@ export async function outbounds(ctx) {
       selection(),
       resourceEditor({
         title: "出站与出站组",
+        rowKey: (item) => item.tag,
         local: true,
         normalize: (value, previous) => normalizeOutbound(value, previous, runtime.outbound_fields),
         preserve: true,
@@ -144,6 +145,7 @@ export async function outbounds(ctx) {
     await networkModel();
     return resourceEditor({
       title: "WARP / WireGuard 端点",
+      rowKey: (item) => item.tag,
       local: true,
       items: a.endpoints,
       fields: [

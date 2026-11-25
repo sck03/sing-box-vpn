@@ -111,6 +111,16 @@ DNS 分为 local、remote、bootstrap；bootstrap 使用 IP，其余支持 IP �
 
 ## 接口与预览
 
+任务统一通过 `POST /api/tasks` 提交：外层 `operation` 为 `subscription`，内层 `subscription` 必须符合下列形态。
+
+| 操作 | 内层请求 | 作用范围 |
+| --- | --- | --- |
+| 刷新 | `{ "operation": "refresh" }` | 全局刷新；拒绝 ID 和 probe_url |
+| 检测 | `{ "operation": "check", "id": "output-id", "probe_url": "https://example.com" }` | 必须指定已应用输出，probe_url 可省略 |
+| 投递 | `{ "operation": "deliver", "id": "delivery-id" }` | 指定分发目标；省略 ID 则处理所有目标，拒绝 probe_url |
+
+自动调度策略由服务端维护，不接受客户端提交 `automatic`。无效命令在入队前返回 400，不会悄悄扩大执行范围。
+
 | 接口                                   | 用途                                          |
 | -------------------------------------- | --------------------------------------------- |
 | GET /api/output-profiles               | 账户输出身份：客户端、用途、名称与使用说明    |

@@ -1,8 +1,8 @@
-import { api } from "./api.js";
+import { importCertificate, prepareCertificate } from "./api.js";
 import { button, formDialog, notice } from "./ui.js";
 
 // Creation returns an asset to the current draft. Applying remains one explicit transaction.
-/** @param {any} ctx @param {any} config @param {string} provider @param {(asset: any) => any} [created] @param {() => any} [back] */
+/** @param {any} ctx @param {import("./contracts.js").PlatformConfig} config @param {string} provider @param {(asset: import("./contracts.js").CertificateAsset) => any} [created] @param {() => any} [back] */
 export function certificateEditor(
   ctx,
   config,
@@ -55,11 +55,7 @@ export function certificateEditor(
       value.domain = value.domain.trim();
       if (config.certificates.some((asset) => asset.id === value.id))
         throw new Error("证书名称已存在，请使用新的名称");
-      const asset = await api(
-        importing ? "/api/certificates" : "/api/certificates/prepare",
-        value,
-        { signal: ctx.signal },
-      );
+      const asset = await (importing ? importCertificate : prepareCertificate)(value, ctx.signal);
       if (
         !editor.dialog.contains(editor.form) ||
         !editor.dialog.open ||

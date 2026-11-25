@@ -108,6 +108,7 @@ export async function routing(ctx) {
   );
   const dns = resourceEditor({
     title: "服务器 DNS",
+    rowKey: (item) => item.tag,
     preserve: true,
     local: true,
     normalize: (v) => {

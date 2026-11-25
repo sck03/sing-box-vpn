@@ -1,5 +1,5 @@
 /** @typedef {import("./contracts.js").ManagedNode} ManagedNode */
-import { api } from "./api.js";
+import { api, getCertificates } from "./api.js";
 import { loadResult } from "./details.js";
 import { capabilities } from "./capabilities.js";
 import { certificateEditor } from "./certificate-editor.js";
@@ -338,7 +338,7 @@ export async function inbounds(ctx) {
 export async function certificates(ctx) {
   const c = await ctx.config(),
     status = new Map(
-      (await (ctx.request || api)("/api/certificates")).map((asset) => [
+      (await getCertificates(ctx.signal, ctx.request || api)).map((asset) => [
         asset.id,
         asset,
       ]),

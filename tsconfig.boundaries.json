@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "strict": true },
+  "include": [
+    "internal/manage/panel/api.js",
+    "internal/manage/panel/account-api.js",
+    "internal/manage/panel/certificate-fields.js",
+    "internal/manage/panel/contracts.d.ts"
+  ]
+}

@@ -26,10 +26,10 @@ func coreBinary(t *testing.T) string {
 	}
 	return binary
 }
-func appFixture(t *testing.T) (string, string, App) {
+func appFixture(t *testing.T, excluded ...portRange) (string, string, App) {
 	t.Helper()
 	root, core := t.TempDir(), coreBinary(t)
-	p, err := NewProfile(root, map[int]bool{}, "")
+	p, err := NewProfile(root, map[int]bool{}, "", excluded...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func TestInvalidClientDoesNotCommitAnyWorkingConfig(t *testing.T) {
 	}
 }
 func TestHoppingAndMihomoManualGroup(t *testing.T) {
-	root, core, app := appFixture(t)
+	root, core, app := appFixture(t, portRange{31000, 31100}, portRange{31200, 31200})
 	app.Hopping = []string{"31000:31100", "31200"}
 	if err := publishFixtureApp(context.Background(), root, core, &app); err != nil {
 		t.Fatal(err)

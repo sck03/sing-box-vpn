@@ -9,6 +9,7 @@ import (
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/adminauth"
+	"github.com/sck03/sing-box-vpn/internal/certificates"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	"github.com/sck03/sing-box-vpn/internal/database"
 )
@@ -26,9 +27,7 @@ type PlatformService struct {
 	status              []byte
 	statusVersion       uint64
 	statusLoading       chan struct{}
-	certificateMu       sync.Mutex
-	certificateRevision int64
-	certificateNext     time.Time
+	certificateSchedule certificates.Scheduler
 	backupBusy          atomic.Bool
 	panelMu             sync.RWMutex
 	activePanel         *PanelOptions

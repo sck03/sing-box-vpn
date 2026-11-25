@@ -9,6 +9,7 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/adminauth"
 	"github.com/sck03/sing-box-vpn/internal/backuparchive"
+	"github.com/sck03/sing-box-vpn/internal/certificates"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	"github.com/sck03/sing-box-vpn/internal/database"
 	"io"
@@ -180,7 +181,7 @@ func pendingCertificatePath(c PlatformConfig, path string) bool {
 		}
 	}
 	for _, a := range c.Certificates {
-		if automaticCertificate(a) && (a.Certificate == path || a.Key == path) {
+		if certificates.Automatic(a) && (a.Certificate == path || a.Key == path) {
 			return true
 		}
 	}

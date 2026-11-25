@@ -20,7 +20,7 @@ func TestSubscriptionScheduleReadsOnlyDeadlines(t *testing.T) {
 	if err := AtomicJSON(filepath.Join(root, subscriptionsRuntime), runtime); err != nil {
 		t.Fatal(err)
 	}
-	_, schedule, err := loadSubscriptionSchedule(root)
+	schedule, err := loadSubscriptionSchedule(root)
 	if err != nil || !schedule.Sources["remote"].Next.Equal(next) || !schedule.Resources["template:t"].Next.Equal(next) {
 		t.Fatal(schedule, err)
 	}
@@ -53,12 +53,12 @@ func BenchmarkSubscriptionScheduleRead(b *testing.B) {
 	})
 	b.Run("schedule", func(b *testing.B) {
 		runtime := sub.Runtime{Sources: map[string]sub.SourceCache{"remote": {Nodes: nodes, Next: time.Now().Add(time.Hour)}}}
-		if err := AtomicJSON(filepath.Join(root, subscriptionsSchedule), subscriptionDeadlines(config, runtime)); err != nil {
+		if err := AtomicJSON(filepath.Join(root, subscriptionsSchedule), sub.NewSchedule(config, runtime)); err != nil {
 			b.Fatal(err)
 		}
 		b.ReportAllocs()
 		for b.Loop() {
-			if _, _, err := loadSubscriptionSchedule(root); err != nil {
+			if _, err := loadSubscriptionSchedule(root); err != nil {
 				b.Fatal(err)
 			}
 		}

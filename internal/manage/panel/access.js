@@ -1,4 +1,4 @@
-import { api } from "./api.js";
+import { api, getCertificates } from "./api.js";
 import { card, help, el, row, button, formDialog, notice } from "./ui.js";
 import { workspace } from "./workspace.js";
 import { dialogSession } from "./dialog-session.js";
@@ -16,7 +16,7 @@ export async function access(ctx) {
   const [settings, c, status] = await Promise.all([
     request("/api/panel/settings"),
     ctx.config(),
-    request("/api/certificates"),
+    getCertificates(ctx.signal, request),
   ]);
   const certificates = () =>
     withCertificateStatus(c.certificates || [], status);

@@ -18,9 +18,11 @@ export function table(columns, items, actions, options = {}) {
   const rowKey = (item) =>
     options.rowKey?.(item) ??
     item.id ??
+    item.tag ??
     item.instance ??
     item.runtime ??
     item.name;
+  const actionVersion = options.actionVersion || ((item) => item);
   const expandedRows = new Set();
   const collator = new Intl.Collator(undefined, { numeric: true });
   const preferenceKey =
@@ -186,7 +188,7 @@ export function table(columns, items, actions, options = {}) {
       ? data
       : data.slice(page * pageSize, (page + 1) * pageSize)) {
       const tr = el("tr");
-      tr.rowItem = item;
+      tr.actionSignature = actions ? JSON.stringify(actionVersion(item)) : "";
       tr.rowKey = rowKey(item);
       tr.classList.toggle("expanded", expandedRows.has(tr.rowKey));
       tr.addEventListener(
@@ -293,13 +295,18 @@ export function table(columns, items, actions, options = {}) {
     if (body.contains(document.activeElement)) {
       signature = "";
       const byKey = new Map(next.map((item) => [rowKey(item), item]));
+      // Ambiguous keys must not attach an action to a different resource.
+      const seen = new Set();
+      for (const item of next) {
+        const key = rowKey(item);
+        if (seen.has(key)) byKey.delete(key);
+        seen.add(key);
+      }
       for (const tr of body.querySelectorAll("tbody tr")) {
         const item = tr.rowKey === undefined ? null : byKey.get(tr.rowKey);
-        const actionVersion = options.actionVersion || ((v) => v);
         const changed =
           !item ||
-          JSON.stringify(actionVersion(item)) !==
-            JSON.stringify(actionVersion(tr.rowItem));
+          (actions && JSON.stringify(actionVersion(item)) !== tr.actionSignature);
         tr.stale ||= changed;
         if (changed)
           tr.querySelectorAll("button:not(.mobile-row-expand)").forEach(
@@ -381,6 +388,7 @@ export async function remoteTable(columns, load, actions, options = {}) {
   );
   const view = table(columns, [], actions, {
     controls: false,
+    rowKey: options.rowKey,
     actionVersion: options.actionVersion,
   });
   body.append(view);

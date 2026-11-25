@@ -6,71 +6,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/certificates"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	"net/mail"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"time"
 )
-
-func (s *PlatformService) scheduleCertificates(ctx context.Context) error {
-	s.certificateMu.Lock()
-	defer s.certificateMu.Unlock()
-	revisions, err := s.Store.Revisions(ctx)
-	if err != nil {
-		return err
-	}
-	if revisions.Revision != revisions.AppliedRevision {
-		return nil
-	}
-	if revisions.AppliedRevision == s.certificateRevision && time.Now().Before(s.certificateNext) {
-		return nil
-	}
-	data, err := s.Store.AppliedConfig(ctx)
-	if err != nil {
-		return err
-	}
-	c, err := decodePlatform(data)
-	if err != nil {
-		return err
-	}
-	// Recheck at most every ten minutes while unchanged. Revision changes bypass
-	// the deadline, and failed scheduling retries on the next worker tick.
-	for _, asset := range c.Certificates {
-		if !automaticCertificate(asset) {
-			continue
-		}
-		last, err := s.Store.Observation(ctx, "certificate-attempt/"+asset.ID)
-		if err != nil {
-			return err
-		}
-		attempt, _ := strconv.ParseInt(last, 10, 64)
-		if time.Now().Unix()-attempt < int64((12 * time.Hour).Seconds()) {
-			continue
-		}
-		material, err := certificates.Read(asset)
-		now := time.Now()
-		if err == nil && material.ValidAt(now) == nil && material.Leaf.NotAfter.Sub(now) > acmeRenewBefore &&
-			acmeRegistrationReady(s.Root, asset, material) {
-			continue
-		}
-		if _, err = s.Queue(ctx, application.TaskCommand{Operation: "certificate-renew", ID: asset.ID}, "scheduler"); err != nil {
-			s.certificateNext = time.Time{}
-			return err
-		}
-		if err = s.Store.Observe(ctx, "certificate-attempt/"+asset.ID, strconv.FormatInt(time.Now().Unix(), 10)); err != nil {
-			s.certificateNext = time.Time{}
-			return err
-		}
-	}
-	s.certificateRevision = revisions.AppliedRevision
-	s.certificateNext = time.Now().Add(10 * time.Minute)
-	return nil
-}
 
 type CertificateImport struct {
 	ID          string `json:"id"`
@@ -106,7 +49,7 @@ func (s *PlatformService) ImportCertificate(ctx context.Context, v CertificateIm
 	})
 	return asset, err
 }
-func (s *PlatformService) CertificateStatus(ctx context.Context) ([]Object, error) {
+func (s *PlatformService) CertificateStatus(ctx context.Context) ([]certificates.CertificateStatus, error) {
 	state, err := s.Store.State(ctx)
 	if err != nil {
 		return nil, err
@@ -141,34 +84,34 @@ func (s *PlatformService) CertificateStatus(ctx context.Context) ([]Object, erro
 	for _, uses := range usedBy {
 		sort.Strings(uses)
 	}
-	result := make([]Object, 0, len(c.Certificates))
+	result := make([]certificates.CertificateStatus, 0, len(c.Certificates))
 	for _, asset := range c.Certificates {
 		uses := usedBy[asset.Certificate]
 		if uses == nil {
 			uses = []string{}
 		}
-		v := Object{"id": asset.ID, "domain": asset.Domain, "provider": asset.Provider, "used_by": uses, "ready": false}
+		v := certificates.CertificateStatus{ID: asset.ID, Domain: asset.Domain, Provider: asset.Provider, UsedBy: uses, RenewalState: "manual"}
 		material, err := certificates.Read(asset)
-		v["renewal_state"] = "manual"
-		if automaticCertificate(asset) {
-			v["renewal_state"] = "automatic"
+		if certificates.Automatic(asset) {
+			v.RenewalState = "automatic"
 			if !acmeRegistrationReady(s.Root, asset, material) {
-				v["renewal_state"] = "registration_pending"
+				v.RenewalState = "registration_pending"
 			}
 		}
 		if err == nil {
 			now := time.Now()
 			err = material.ValidAt(now)
 			if err == nil {
-				v["ready"] = true
-				v["dns_names"] = material.Leaf.DNSNames
-				v["not_before"] = material.Leaf.NotBefore
-				v["expires_at"] = material.Leaf.NotAfter
-				v["days_left"] = int(material.Leaf.NotAfter.Sub(now).Hours() / 24)
+				v.Ready = true
+				v.DNSNames = material.Leaf.DNSNames
+				v.NotBefore = &material.Leaf.NotBefore
+				v.ExpiresAt = &material.Leaf.NotAfter
+				days := int(material.Leaf.NotAfter.Sub(now).Hours() / 24)
+				v.DaysLeft = &days
 			}
 		}
 		if err != nil {
-			v["error"] = err.Error()
+			v.Error = err.Error()
 		}
 		result = append(result, v)
 	}
@@ -192,7 +135,7 @@ func (s *PlatformService) renewCertificate(ctx context.Context, id string) error
 			asset = v
 		}
 	}
-	if !automaticCertificate(asset) || !domain.ResourceID.MatchString(asset.ID) {
+	if !certificates.Automatic(asset) || !domain.ResourceID.MatchString(asset.ID) {
 		return errors.New("certificate is not managed by ACME")
 	}
 	address, err := mail.ParseAddress(asset.Email)

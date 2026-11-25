@@ -43,6 +43,31 @@ def check(browser, base):
     api = context.request
     services = api.get(base + "/api/overview").json()["services"]
     assert services and all(s.get("state") == "unavailable" for s in services)
+    # Exercise the live component in Chromium with native focus semantics.
+    refreshed = page.evaluate("""async () => {
+      const { table } = await import('/panel/tables.js');
+      let clicks = 0;
+      const values = [{tag: 'a', value: 'same'}, {tag: 'b', value: 'old'}];
+      const grid = table([{key: 'value', label: 'Value'}], values, () => {
+        const action = document.createElement('button');
+        action.textContent = 'action';
+        action.onclick = () => clicks++;
+        return [action];
+      }, {controls: false});
+      document.body.append(grid);
+      try {
+        const actions = grid.querySelectorAll('tbody button');
+        actions[0].focus();
+        grid.updateItems([{tag: 'a', value: 'same'}, {tag: 'b', value: 'new'}]);
+        const focused = document.activeElement === actions[0];
+        const unaffected = actions[0].getAttribute('aria-disabled') === null;
+        const patched = grid.querySelectorAll('tbody tr')[1].textContent.includes('new');
+        actions[0].click();
+        actions[1].click();
+        return {focused, unaffected, patched, clicks};
+      } finally { grid.remove(); }
+    }""")
+    assert refreshed == {"focused": True, "unaffected": True, "patched": True, "clicks": 1}, refreshed
     result = api.post(base + "/api/accounts", headers=headers, data={"account": {
         "id": account, "name": account, "duration_seconds": 86400, "quota_bytes": None,
     }})
@@ -274,4 +299,4 @@ if __name__ == "__main__":
         browser = playwright.chromium.launch(executable_path=os.getenv("CHROME_BINARY"))
         check(browser, base)
         browser.close()
-    print("Browser passed: pointer, keyboard, outside dismissal, touch, stored expiry, quota message and mobile layout.")
+    print("Browser passed: native focused tag refresh, pointer, keyboard, outside dismissal, touch, stored expiry, quota message and mobile layout.")

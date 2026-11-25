@@ -20,7 +20,7 @@ func TestSubscriptionProjectionsExcludePayloadsAndSecrets(t *testing.T) {
 	r := sub.Runtime{Sources: map[string]sub.SourceCache{"remote": {Next: next, Nodes: []sub.Node{{Password: "node-password"}}}}}
 	snapshot := sub.Snapshot{Artifacts: map[string]sub.Artifact{"output": {Data: []byte("private-node-payload")}}, NodeCounts: map[string]int{"output": 2}, Diagnostics: map[string][]sub.Diagnostic{"output": {{Stage: "validation", Message: "core-check"}}}}
 	snapshot.Validations = map[string]sub.Validation{"output": {State: "passed", Engine: "sing-box", Scope: "core-config"}}
-	schedule, outputs := subscriptionDeadlines(c, r), outputStatus(c, snapshot)
+	schedule, outputs := sub.NewSchedule(c, r), outputStatus(c, snapshot)
 	for _, projection := range []any{schedule, outputs} {
 		data, err := json.Marshal(projection)
 		if err != nil {
@@ -44,8 +44,8 @@ func TestSubscriptionProjectionsExcludePayloadsAndSecrets(t *testing.T) {
 	if err := AtomicBytes(filepath.Join(root, subscriptionsRuntime), []byte("broken payload"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	config, deadlines, err := loadSubscriptionSchedule(root)
-	if err != nil || len(config.Sources) != 1 || !deadlines.Sources["remote"].Next.Equal(next) {
-		t.Fatal(config, deadlines, err)
+	deadlines, err := loadSubscriptionSchedule(root)
+	if err != nil || len(deadlines.Config.Sources) != 1 || !deadlines.Sources["remote"].Next.Equal(next) {
+		t.Fatal(deadlines, err)
 	}
 }

@@ -83,7 +83,7 @@ func TestRestoredCertificateQueuesRegistration(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, err := s.CertificateStatus(t.Context())
-	if err != nil || status[0]["renewal_state"] != "registration_pending" {
+	if err != nil || status[0].RenewalState != "registration_pending" {
 		t.Fatal(status, err)
 	}
 	if err = s.scheduleCertificates(t.Context()); err != nil {

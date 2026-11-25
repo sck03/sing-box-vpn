@@ -92,7 +92,7 @@ func TestRefreshCheckpointPreservesCompletedSourcesWithoutPublishing(t *testing.
 	if !bytes.Equal(before, readArtifact(t, root, "normal-provider")) {
 		t.Fatal("checkpoint published an artifact")
 	}
-	_, schedule, err := loadSubscriptionSchedule(root)
+	schedule, err := loadSubscriptionSchedule(root)
 	if err != nil || !state.RefreshPending || !schedule.RefreshPending {
 		t.Fatal("checkpoint would never publish", schedule, err)
 	}
@@ -101,7 +101,7 @@ func TestRefreshCheckpointPreservesCompletedSourcesWithoutPublishing(t *testing.
 	if err = refreshSubscriptionsResult(t.Context(), root, core, false, &report); err != nil || !report.Published || report.Checked != 0 {
 		t.Fatal("checkpoint fetched completed sources again", report, err)
 	}
-	_, schedule, err = loadSubscriptionSchedule(root)
+	schedule, err = loadSubscriptionSchedule(root)
 	if err != nil || schedule.RefreshPending {
 		t.Fatal("published checkpoint remains pending", err)
 	}

@@ -212,7 +212,7 @@ func writeSubscriptionRuntime(root string, config sub.Config, runtime sub.Runtim
 }
 
 func (files fileBundle) subscriptionRuntime(config sub.Config, runtime sub.Runtime) error {
-	for name, value := range map[string]any{subscriptionsRuntime: runtime, subscriptionsSchedule: subscriptionDeadlines(config, runtime), subscriptionsActivity: subscriptionActivityStatus(config, runtime)} {
+	for name, value := range map[string]any{subscriptionsRuntime: runtime, subscriptionsSchedule: sub.NewSchedule(config, runtime), subscriptionsActivity: subscriptionActivityStatus(config, runtime)} {
 		if err := files.json(name, value); err != nil {
 			return err
 		}

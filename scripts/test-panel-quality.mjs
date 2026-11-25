@@ -65,6 +65,57 @@ assert.equal(
   "deferred update replaced the latest state",
 );
 
+// Tag-based resources retain unaffected actions and patch changed values even
+// when an action has keyboard focus. Duplicate identities are fail-closed.
+let tagActionCount = 0;
+const tagged = table(
+  [{ key: "tag", label: "Tag" }, { key: "server", label: "地址" }],
+  [{ tag: "a", server: "a-old" }, { tag: "b", server: "b-old" }],
+  () => {
+    const control = document.createElement("button");
+    control.addEventListener("click", () => tagActionCount++);
+    return [control];
+  },
+);
+host.replaceChildren(tagged);
+const tagFocus = tagged.querySelector("tbody button");
+tagFocus.focus();
+tagged.updateItems([{ tag: "a", server: "a-old" }, { tag: "b", server: "b-new" }]);
+assert.equal(document.activeElement, tagFocus);
+assert.equal(tagFocus.getAttribute("aria-disabled"), null);
+assert.match(tagged.querySelectorAll("tbody tr")[1].textContent, /b-new/);
+tagFocus.click();
+assert.equal(tagActionCount, 1, "unchanged tag resource was disabled");
+tagged.querySelectorAll("tbody button")[1].click();
+assert.equal(tagActionCount, 1, "changed resource ran an old action");
+tagged.updateItems([{ tag: "a", server: "first" }, { tag: "a", server: "second" }]);
+tagFocus.click();
+assert.equal(tagActionCount, 1, "duplicate identities selected an arbitrary resource");
+tagged.querySelector("input").focus();
+await Promise.resolve();
+
+const mutableRows = [{ id: "mutable", state: "active" }];
+const mutableGrid = table([{ key: "state", label: "状态" }], mutableRows, () => [document.createElement("button")]);
+host.replaceChildren(mutableGrid);
+const mutableAction = mutableGrid.querySelector("tbody button");
+mutableAction.focus();
+mutableRows[0].state = "revoked";
+mutableGrid.updateItems(mutableRows);
+assert.equal(mutableAction.getAttribute("aria-disabled"), "true", "in-place mutation bypassed the action snapshot");
+assert.match(mutableGrid.textContent, /revoked/);
+
+let remoteVersion = 0;
+const keyedRemote = await remoteTable([{ key: "value", label: "内容" }], async () => ({
+  total: 2, items: [{ code: "one", value: "same" }, { code: "two", value: String(remoteVersion) }],
+}), () => [document.createElement("button")], { rowKey: (item) => item.code });
+host.replaceChildren(keyedRemote);
+const remoteFocus = keyedRemote.querySelector("tbody button");
+remoteFocus.focus();
+remoteVersion++;
+await keyedRemote.refresh();
+assert.equal(remoteFocus.getAttribute("aria-disabled"), null, "remote table lost its identity selector");
+assert.equal(document.activeElement, remoteFocus);
+
 let saved;
 formDialog(
   "额度",

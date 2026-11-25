@@ -15,6 +15,7 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/adminauth"
 	"github.com/sck03/sing-box-vpn/internal/application"
+	"github.com/sck03/sing-box-vpn/internal/certificates"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	"github.com/sck03/sing-box-vpn/internal/manage"
@@ -69,6 +70,14 @@ func main() {
 				return n
 			}
 			types[n] = ""
+			if t == reflect.TypeFor[application.SubscriptionCommand]() {
+				types[n] = `export type SubscriptionCommand =
+  | { operation: "refresh"; id?: never; probe_url?: never }
+  | { operation: "check"; id: string; probe_url?: string }
+  | { operation: "deliver"; id?: string; probe_url?: never };
+`
+				return n
+			}
 			if t == reflect.TypeFor[manage.AccountSave]() {
 				describe(reflect.TypeFor[domain.Account]())
 				types[n] = "export interface AccountSave { account: Pick<Account, \"id\" | \"name\"> & Partial<Account>; }\n"
@@ -102,9 +111,6 @@ func main() {
 						}
 						if key == "account" && operation == "account" {
 							fieldType = `Omit<AccountCommand, "operation" | "inbound_ids" | "account_ids"> & { client?: never; tuic_port?: never } & ({ operation: "bind"; inbound_ids: [string, ...string[]]; account_ids?: string[] } | { operation: "rotate" | "unbind"; inbound_ids?: never; account_ids?: never })`
-						}
-						if key == "subscription" && operation == "subscription" {
-							fieldType += ` & { operation: "refresh" | "check" | "deliver" }`
 						}
 						optional := "?"
 						if allowed && key != "value" {
@@ -167,6 +173,7 @@ func main() {
 		}
 	}
 	for _, t := range []reflect.Type{
+		reflect.TypeFor[certificates.CertificateStatus](),
 		reflect.TypeFor[manage.AccountSave](), reflect.TypeFor[manage.AccountArchive](), reflect.TypeFor[manage.ShareCreated](), reflect.TypeFor[application.Option](),
 		reflect.TypeFor[manage.AccountSummary](),
 		reflect.TypeFor[application.RefreshResult](),

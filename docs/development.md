@@ -12,7 +12,7 @@
 
 按入站重载的回归入口为 `TestManagedCredentialReload`（真实五协议、跨入站 TCP/UDP 连接、核心启动标识），`internal/runtime/reload_test.go` 还覆盖构造/启动恢复和失败关闭。修改凭据生命周期必须同时运行带四个发布标签的 runtime 竞态测试；单独 `go test ./...` 不替代该检查。
 
-当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载、订阅模板与预览、弹窗生命周期、组件流程、输出身份、订阅生命周期及部署影响十二组。数据库使用 schema 17，所有旧数据库及其备份明确拒绝。
+当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载、订阅模板与预览、弹窗生命周期、组件流程、输出身份、订阅生命周期、部署影响和选择交互十三组。数据库使用 schema 17，所有旧数据库及其备份明确拒绝。
 
 `scripts/test-panel-navigation.mjs` 覆盖角色过滤、搜索定位、空/非法路由、同页标签的前进/返回与表单复用、延迟读取合并与取消、错误重试、权益初始读取预算、稀疏订阅草稿和 SSE 启动。`TestPanelEphemeralDevelopmentListener` 实际启动回环随机端口、请求能力接口并关闭服务，同时拒绝公网随机端口；设置校验仍拒绝保存端口 0。`TestPanelHealthSurvivesSaturatedRequests` 验证 32 个业务请求占满限额时，本机健康检查仍能准确判断 worker 就绪状态。
 
@@ -54,7 +54,7 @@ sudo bash install.sh --local
 
 交互管理员输入通过 `panel --admin-stdin init/reset-admin` 读取两个 NUL 分隔字段，账号密码不经命令参数、环境变量或 Python 转义。默认 CLI 仍接受原来的 stdin JSON。
 
-证书只由平台内置的 lego v5.6.0 负责申请和续期，使用 HTTP-01、Let's Encrypt、ECDSA P-256。平台保留每 12 小时检查和不足 30 天续期策略；已申请结果缓存于 `acme/lego/`，服务发布失败后复用结果重试。账户私钥、登记和缓存证书以 0600 原子保存；备份恢复缺少登记时自动补登记。证书提供方仅接受 `acme` / `import`，不接受旧 `certbot` 标记或提供迁移。
+证书由平台内置的 lego v5.6.0 负责申请和续期，使用 HTTP-01、Let's Encrypt、ECDSA P-256。调度器每十分钟检查已应用登记，证书进入 30 天续期窗口时入队，同一证书成功入队后的重试间隔为 12 小时；修订变化立即检查，入队失败不等待该间隔。应用失败留下的待应用配置不会暂停续期。已申请结果缓存于 `acme/lego/`，服务发布失败后复用结果重试。账户私钥、登记和缓存证书以 0600 原子保存；备份恢复缺少登记时自动补登记。新导入/申请接受 `import` / `acme`，初始化的测试材料为 `generated`；不接受旧 `certbot` 标记或提供迁移。
 
 受管核心不启用上游 `with_acme` 或 Cloudflare Origin CA 提供器。发布器按 Linux amd64/arm64 的实际构建依赖检查，拒绝链接 CertMagic/acmez；sing-box 上游模块元数据中的可选依赖不等于进入发行二进制。
 
@@ -180,7 +180,7 @@ PANEL_BROWSER_TEST=1 PYTHON_BINARY=python3 GATEWAY_BINARY=... MANAGED_CORE_BINAR
 
 前端共13 组回归，新增跨页面任务详情、并发弹窗归属、错误契约和按需资源编辑器检查。CI 先运行严格协议夹具预检，再运行完整 race/协议矩阵；实际 API 与桌面/手机浏览器验收均启用。浏览器只属于开发/CI 依赖，VPS 运行不安装 Node、TypeScript、Playwright 或 Python。
 
-更改 Go 面板边界模型后运行 `go run ./cmd/panel-contract`，同时提交生成类型。`tsconfig.json` 检查全部前端 JS 模块，采用非严格 `checkJs`，不声称 UI 已迁移到严格 TypeScript。边界测试夹具与已移除的旧 CLI 回归辅助函数只编译进 `_test.go`，生产程序没有旧接口兼容层。
+更改 Go 面板边界模型后运行 `go run ./cmd/panel-contract`，同时提交生成类型。`tsconfig.json` 对全部 JS 运行 checkJs；`tsconfig.contracts.json` 检查命令正反例，`tsconfig.boundaries.json` 对 API、账户 API 和证书字段模块启用 strict。`npm run typecheck` 顺序执行三者。没有宣称所有 UI 都已启用 strict。边界测试夹具与旧 CLI 回归辅助函数只编译进 `_test.go`，生产程序没有旧接口兼容层。
 
 性能对照可用 `go test ./internal/manage -run '^$' -bench '^BenchmarkAccountCompilation$' -benchtime=500ms -count=3 -benchmem` 及 accounting 的 ActiveAuthorization100 基准。避免与发行构建、race 或 VM 测试同时计时。
 

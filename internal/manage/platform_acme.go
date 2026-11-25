@@ -24,12 +24,6 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
-const acmeRenewBefore = 30 * 24 * time.Hour
-
-func automaticCertificate(asset CertificateAsset) bool {
-	return asset.Provider == "acme"
-}
-
 type acmeAccount struct {
 	Directory    string                `json:"directory"`
 	Email        string                `json:"email"`
@@ -186,7 +180,7 @@ func obtainACMECertificate(ctx context.Context, root string, asset CertificateAs
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if !automaticCertificate(asset) || !domain.ResourceID.MatchString(asset.ID) || !managedCertificatePair(root, asset) {
+	if !certificates.Automatic(asset) || !domain.ResourceID.MatchString(asset.ID) || !managedCertificatePair(root, asset) {
 		return nil, errors.New("ACME asset paths escape the managed certificate directory")
 	}
 	if options.directory == "" {
@@ -217,7 +211,7 @@ func obtainACMECertificate(ctx context.Context, root string, asset CertificateAs
 		sameAccount := previous != nil && account.Registration != nil && previous.AccountURL == account.Registration.Location
 		if sameAccount {
 			now := time.Now()
-			if previous.material.ValidAt(now) == nil && previous.material.Leaf.NotAfter.Sub(now) > acmeRenewBefore {
+			if previous.material.ValidAt(now) == nil && previous.material.Leaf.NotAfter.Sub(now) > certificates.RenewBefore {
 				result = &previous.Resource
 				return nil
 			}

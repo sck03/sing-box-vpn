@@ -80,15 +80,7 @@ func (s *PlatformService) execute(ctx context.Context, id int64, a taskInput) er
 		return s.executeAccount(ctx, id, a.Account)
 	case "subscription":
 		var out bytes.Buffer
-		service := SubscriptionService{Root: s.Root, Core: s.Core}
-		var operationErr error
-		if a.Subscription.Operation == "deliver" {
-			operationErr = deliverSubscriptions(ctx, s.Root, a.Subscription.ID, a.Automatic, &out)
-		} else if a.Subscription.Operation == "refresh" {
-			operationErr = service.refresh(ctx, !a.Automatic, &out)
-		} else {
-			operationErr = service.Execute(ctx, a.Subscription, &out)
-		}
+		operationErr := application.ExecuteSubscription(ctx, subscriptionOperations{s.Root, s.Core}, a.Subscription, a.Automatic, &out)
 		return s.storeTaskOutput(ctx, id, out.Bytes(), operationErr)
 	case "service":
 		if s.NoSystem {
