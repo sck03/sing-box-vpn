@@ -247,6 +247,13 @@ ok(
 );
 const nodes = ok(await call("/api/inbound-options?scope=normal"));
 const inbound = nodes.find((n) => n.id.includes("vmess")) || nodes[0];
+for (const inbound_ids of [undefined, []]) {
+  const rejected = await call("/api/tasks", {
+    operation: "account",
+    account: { operation: "bind", id: account, scope: "normal", inbound_ids },
+  });
+  assert.equal(rejected.status, 400, "binding requires an explicit nonempty inlet snapshot");
+}
 const queued = ok(
   await call("/api/tasks", {
     operation: "account",

@@ -76,7 +76,9 @@ original = api("/api/config")["config"]
 identifier = "linux-" + str(time.time_ns())
 account = {"id": identifier, "name": "Linux acceptance", "quota_bytes": 1048576, "revision": 0, "start_mode": "first_use", "period": {"kind": "monthly", "day": 31, "timezone": "Asia/Shanghai"}}
 api("/api/accounts", {"account": account})
-task(operation="account", account={"operation": "bind", "id": account["id"], "scope": "normal"})
+inbound_ids = [entry["id"] for entry in api("/api/inbound-options?scope=normal")]
+assert inbound_ids, "fresh installation has no enabled ordinary inbounds"
+task(operation="account", account={"operation": "bind", "id": account["id"], "scope": "normal", "inbound_ids": inbound_ids})
 export = api("/api/accounts/export", {"id": account["id"], "profile": "uri", "scope": "normal"})
 assert len(export["content"].strip().splitlines()) == 5
 assert api("/api/qr", {"content": export["content"].splitlines()[0]})["image"].startswith("data:image/png;base64,")

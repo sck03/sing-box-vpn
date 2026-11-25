@@ -113,6 +113,14 @@
   "linux_ci": {
     "workflow": ".github/workflows/ci.yml",
     "status": "tracked_separately_on_delivery_commit",
+    "initial_run": {
+      "id": 45641222936,
+      "commit": "8aec1da65da0bede1f836a4d36c3b81ee0f623fc",
+      "result": "failed",
+      "step": "Fresh installation and panel deployment rollback",
+      "cause": "Linux installation acceptance still called bind without inbound_ids; the new API correctly returned 400 after successful installation.",
+      "correction": "The Linux acceptance script now reads enabled inbound options and submits explicit IDs. Live local API regression additionally checks missing and empty inbound_ids rejection. All earlier Linux steps passed, including race, browser, namespace, firewall, storage recovery and systemd."
+    },
     "note": "This local record does not claim Windows exercised systemd, network namespaces, firewall, Linux installation or disk-fault acceptance. Consult the delivery commit's GitHub Actions result."
   },
   "cleanup": {
