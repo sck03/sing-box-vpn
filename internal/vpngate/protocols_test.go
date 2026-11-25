@@ -256,8 +256,7 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 	// configuration publisher before making real TCP/UDP connections.
 	profile.WSPath = "/普通/连接-._~"
 	vpnProfile.WSPath = "/VPNGate/日本-._~"
-	app := manage.App{Name: "protocol-test", Address: "127.0.0.1", Nodes: manage.MakeNodes(profile, ""), SocksPort: 40000}
-	vpnProfile.Country = "JP"
+	app := manage.App{Name: "protocol-test", Address: "127.0.0.1", Nodes: manage.MakeNodes(profile, "")}
 	secret := vpnProfile.Secrets
 	secret.SocksUser, secret.SocksPass = cfg.ProxyUser, cfg.ProxyPass
 	vpnProfile.Secrets = manage.Secrets{}
@@ -314,7 +313,7 @@ func TestRealFiveProtocolsTCPUDP(t *testing.T) {
 	vpnProfile = settings.Profiles["JP"]
 	vpnProfile.Secrets = private["JP"]
 	inbounds, vpnInbounds := manage.MakeInbounds(profile, ""), manage.MakeInbounds(vpnProfile, "vg-JP-")
-	server, err := manage.ServerConfig(inbounds, nil, nil, 40000)
+	server, err := manage.ServerConfig(inbounds, manage.CoreSettings{})
 	if err != nil {
 		t.Fatal(err)
 	}

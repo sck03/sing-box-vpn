@@ -27,11 +27,9 @@ func (s AccountService) Credentials(ctx context.Context, id, scope string) ([]Cr
 	if err != nil {
 		return nil, err
 	}
-	result := []CredentialSummary{}
+	result := make([]CredentialSummary, 0, len(all))
 	for _, v := range all {
-		if v.AccountID == id {
-			result = append(result, CredentialSummary{v.ID, v.AccountID, v.RuntimeID, v.InboundID, v.Protocol, v.Generation})
-		}
+		result = append(result, CredentialSummary{v.ID, v.AccountID, v.RuntimeID, v.InboundID, v.Protocol, v.Generation})
 	}
 	return result, nil
 }

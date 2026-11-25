@@ -23,7 +23,8 @@ export const routeFields = [
   {
     key: "default_domain_resolver",
     label: "默认域名解析器",
-    help: "填写 DNS tag；用于连接域名形式的出站服务器。",
+    type: "resolver",
+    help: '填写 DNS tag 或 JSON，如 {"server":"dns-local","strategy":"prefer_ipv4"}。',
   },
   { key: "auto_detect_interface", label: "自动检测出口网卡", type: "bool" },
   {

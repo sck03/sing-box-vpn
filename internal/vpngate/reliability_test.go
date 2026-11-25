@@ -136,7 +136,7 @@ func TestRealDomainRoutingPreservesAddressFallback(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			server, err := manage.ServerConfig([]manage.Object{{"type": "mixed", "listen": "127.0.0.1", "listen_port": port}}, map[string][]string{channel: {"ipv4-only.test"}}, nil, 40000)
+			server, err := manage.ServerConfig([]manage.Object{{"type": "mixed", "listen": "127.0.0.1", "listen_port": port}}, manage.CoreSettings{Route: manage.Object{"rules": []manage.Object{{"action": "sniff"}, {"domain_suffix": []string{"ipv4-only.test"}, "action": "resolve", "strategy": map[string]string{"direct4": "prefer_ipv4", "direct6": "prefer_ipv6"}[channel]}, {"domain_suffix": []string{"ipv4-only.test"}, "action": "route", "outbound": "direct"}}, "final": "direct"}})
 			if err != nil {
 				t.Fatal(err)
 			}

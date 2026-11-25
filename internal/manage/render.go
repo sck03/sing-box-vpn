@@ -5,10 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
+
 	"path/filepath"
 	"slices"
-	"strings"
 )
 
 func NewProfile(root string, used map[int]bool, suffix string, excluded ...portRange) (Profile, error) {
@@ -20,7 +19,7 @@ func newProfile(root string, used map[int]bool, suffix string, protocols []strin
 	if suffix != "" {
 		directory = filepath.Join(root, "vpngate")
 	}
-	p := Profile{Ports: map[string]int{}, Certificate: filepath.ToSlash(filepath.Join(directory, suffix+"cert.pem")), Key: filepath.ToSlash(filepath.Join(directory, suffix+"private.key")), RealitySNI: "www.apple.com", TLSSNI: "www.bing.com", SelfSigned: true, WSPath: "/" + hex.EncodeToString(randomBytes(16))}
+	p := Profile{Ports: map[string]int{}, Certificate: filepath.ToSlash(filepath.Join(directory, suffix+"cert.pem")), Key: filepath.ToSlash(filepath.Join(directory, suffix+"private.key")), RealitySNI: "www.apple.com", TLSSNI: "www.bing.com", WSPath: "/" + hex.EncodeToString(randomBytes(16))}
 	if slices.ContainsFunc(protocols, func(protocol string) bool { return protocol != "vless" && protocol != "vmess" }) {
 		if err := EnsureCertificate(p.Certificate, p.Key, p.TLSSNI); err != nil {
 			return p, err
@@ -40,7 +39,7 @@ func newProfile(root string, used map[int]bool, suffix string, protocols []strin
 	if err != nil {
 		return p, err
 	}
-	p.Secrets.Reality = Reality{Private: base64.RawURLEncoding.EncodeToString(key.Bytes()), Public: base64.RawURLEncoding.EncodeToString(key.PublicKey().Bytes()), ShortID: hex.EncodeToString(randomBytes(4))}
+	p.Secrets.Reality = Reality{Private: base64.RawURLEncoding.EncodeToString(key.Bytes()), ShortID: hex.EncodeToString(randomBytes(4))}
 	return p, nil
 }
 
@@ -82,43 +81,14 @@ func MakeInbounds(p Profile, prefix string) []Object {
 	return (App{Nodes: MakeNodes(p, prefix)}).Inbounds()
 }
 
-func ServerConfig(inbounds []Object, routing map[string][]string, endpoints []Object, socksPort int) (Object, error) {
-	if socksPort == 0 {
-		socksPort = 40000
+// Ordinary routing and outbounds have one source: App.Advanced. An empty
+// configuration defaults to direct egress and the system DNS resolver.
+func defaultServerConfig(inbounds []Object) Object {
+	return Object{
+		"log":       Object{"level": "info", "timestamp": true},
+		"inbounds":  inbounds,
+		"outbounds": []Object{{"type": "direct", "tag": "direct"}},
+		"route":     Object{"rules": []Object{}, "final": "direct", "default_domain_resolver": "dns-local"},
+		"dns":       Object{"servers": []Object{{"type": "local", "tag": "dns-local"}}},
 	}
-	rules := []Object{}
-	for _, name := range []string{"socks", "warp", "direct4", "direct6"} {
-		domains := routing[name]
-		if len(domains) == 0 {
-			continue
-		}
-		if len(rules) == 0 {
-			rules = append(rules, Object{"action": "sniff"})
-		}
-		if strings.HasPrefix(name, "direct") {
-			strategy := "prefer_ipv4"
-			if name == "direct6" {
-				strategy = "prefer_ipv6"
-			}
-			rules = append(rules, Object{"domain_suffix": domains, "action": "resolve", "strategy": strategy})
-		}
-		if name == "warp" && !slices.ContainsFunc(endpoints, func(endpoint Object) bool { return endpoint["type"] == "wireguard" && endpoint["tag"] == "warp-out" }) {
-			return nil, errors.New("请先配置 WARP endpoint")
-		}
-		target := "direct"
-		if name == "socks" {
-			target = "socks-out"
-		}
-		if name == "warp" {
-			target = "warp-out"
-		}
-		rules = append(rules, Object{"domain_suffix": domains, "action": "route", "outbound": target})
-	}
-	result := Object{"log": Object{"level": "info", "timestamp": true}, "inbounds": inbounds, "outbounds": []Object{{"type": "direct", "tag": "direct"}, {"type": "socks", "tag": "socks-out", "server": "127.0.0.1", "server_port": socksPort, "version": "5"}}, "route": Object{"rules": rules, "final": "direct"}}
-	result["dns"] = Object{"servers": []Object{{"type": "local", "tag": "dns-local"}}}
-	object(result["route"])["default_domain_resolver"] = "dns-local"
-	if len(endpoints) > 0 {
-		result["endpoints"] = endpoints
-	}
-	return result, nil
 }

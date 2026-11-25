@@ -23,10 +23,10 @@ export async function routing(ctx) {
     a = structuredClone(c.app.advanced || {});
   const effective = await (ctx.request || api)("/api/server", c.app);
   const supported = (await capabilities()).runtime;
-  const changed = () => {
+  const changed = ({ local = false } = {}) => {
     c.app.advanced = a;
     ctx.changed();
-    ctx.render();
+    if (!local) ctx.render();
   };
   a.route ??= effective.route;
   a.route.rules ??= [];
@@ -57,6 +57,7 @@ export async function routing(ctx) {
             a.route = v;
             changed();
           },
+          true,
         ),
       ),
     ),
@@ -106,6 +107,8 @@ export async function routing(ctx) {
   );
   const dns = resourceEditor({
     title: "服务器 DNS",
+    preserve: true,
+    local: true,
     normalize: (v) => {
       for (const k of [
         "server",
@@ -143,7 +146,7 @@ export async function routing(ctx) {
       {
         key: "domain_resolver",
         label: "服务器域名解析器",
-        type: "select",
+        type: "resolver",
         options: (v) => [
           ["", "默认解析器"],
           ...a.dns.servers.filter((s) => s.tag !== v.tag).map((s) => s.tag),
@@ -196,21 +199,66 @@ export async function routing(ctx) {
     ),
     card(
       "快捷域名分流",
-      help(
-        "为本机 SOCKS5、WARP 或 IPv4/IPv6 优先策略设置域名。使用自定义服务端路由时，以高级路由为准。",
-      ),
-      button("编辑简明分流", () =>
+      help("选择现有出站或 WireGuard 端点，规则按添加顺序写入上方路由列表。"),
+      button("添加域名分流", () =>
         formDialog(
-          "简明分流",
-          ["socks", "warp", "direct4", "direct6"].map((key) => ({
-            key,
-            label: key + " 域名",
-            type: "csv",
-          })),
-          c.app.routing || {},
+          "域名分流",
+          [
+            {
+              key: "domain_suffix",
+              label: "域名后缀",
+              type: "csv",
+              required: true,
+            },
+            {
+              key: "outbound",
+              label: "目标出站",
+              type: "select",
+              options: [
+                ...(a.outbounds || effective.outbounds || []),
+                ...(a.endpoints || effective.endpoints || []),
+              ].map((v) => v.tag),
+              required: true,
+            },
+            {
+              key: "strategy",
+              label: "IP 策略",
+              type: "select",
+              options: [
+                ["", "默认"],
+                ["prefer_ipv4", "优先 IPv4"],
+                ["prefer_ipv6", "优先 IPv6"],
+              ],
+            },
+          ],
+          {
+            domain_suffix: [],
+            outbound: a.route.final || "direct",
+            strategy: "",
+          },
           (v) => {
-            c.app.routing = v;
-            delete a.route;
+            if (!v.domain_suffix.length)
+              throw new Error("至少填写一个域名后缀");
+            const domains = [
+              ...new Set(
+                v.domain_suffix.map((d) =>
+                  d.trim().replace(/^\./, "").toLowerCase(),
+                ),
+              ),
+            ];
+            if (!a.route.rules.some((rule) => rule.action === "sniff"))
+              a.route.rules.push({ action: "sniff" });
+            if (v.strategy)
+              a.route.rules.push({
+                domain_suffix: domains,
+                action: "resolve",
+                strategy: v.strategy,
+              });
+            a.route.rules.push({
+              domain_suffix: domains,
+              action: "route",
+              outbound: v.outbound,
+            });
             changed();
           },
         ),

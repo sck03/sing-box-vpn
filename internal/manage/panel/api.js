@@ -169,3 +169,12 @@ export const getAccount = (id, signal, request = api) =>
  * @returns {Promise<import("./contracts.js").ConfigurationState>} */
 export const getConfiguration = (secret, signal) =>
   api(secret ? "/api/config" : "/api/state", undefined, { signal });
+
+/** @param {import("./contracts.js").PlatformConfig} config @param {AbortSignal} [signal] @param {typeof api} [request]
+ * @returns {Promise<import("./contracts.js").ConfigurationPreview>} */
+export const previewConfiguration = (config, signal, request = api) =>
+  request("/api/config/preview", config, { signal });
+/** @param {import("./contracts.js").OutputPreviewRequest} input @param {AbortSignal} [signal] @param {typeof api} [request]
+ * @returns {Promise<import("./contracts.js").OutputPreview>} */
+export const previewOutput = (input, signal, request = api) =>
+  request("/api/config/preview-output", input, { signal });

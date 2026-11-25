@@ -3,13 +3,13 @@ package manage
 import (
 	"bytes"
 	"context"
-	"errors"
+
 	"github.com/sck03/sing-box-vpn/internal/application"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"strings"
+
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,6 +19,7 @@ import (
 
 func TestSubscriptionRequiredSourceApplyAndRefresh(t *testing.T) {
 	root, core, _ := appFixture(t)
+	service, config, _ := platformFixture(t, root, core)
 	var requests atomic.Int32
 	var fail atomic.Bool
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -46,14 +47,15 @@ func TestSubscriptionRequiredSourceApplyAndRefresh(t *testing.T) {
 	if err := AtomicJSON(input, c); err != nil {
 		t.Fatal(err)
 	}
-	if err := RunSubscriptions(context.Background(), []string{"--root", root, "--core", core, "apply", "--file", input}, nil, io.Discard); err != nil {
+	config.Subscriptions = c
+	if err := applyFixture(t, service, config, 1); err != nil {
 		t.Fatal(err)
 	}
 	_, state, _, err := loadSubscriptions(root)
 	if err != nil || len(state.Sources["remote"].Nodes) != 1 {
 		t.Fatal("required source was not prepared", err)
 	}
-	before := readBytes(t, filepath.Join(root, "proxies.yaml"))
+	before := readArtifact(t, root, "normal-provider")
 	if !bytes.Contains(before, []byte("remote-secret")) {
 		t.Fatal("local exports differ from snapshot")
 	}
@@ -79,10 +81,10 @@ func TestSubscriptionRequiredSourceApplyAndRefresh(t *testing.T) {
 		t.Fatal("upstream failure hidden", report)
 	}
 	_, state, _, _ = loadSubscriptions(root)
-	if state.Sources["remote"].Failures != 1 || !bytes.Equal(before, readBytes(t, filepath.Join(root, "proxies.yaml"))) {
+	if state.Sources["remote"].Failures != 1 || !bytes.Equal(before, readArtifact(t, root, "normal-provider")) {
 		t.Fatal("transient failure did not retain valid output")
 	}
-	if err := RunSubscriptions(context.Background(), []string{"--root", root, "--core", core, "apply", "--file", input}, nil, io.Discard); err == nil {
+	if _, err := service.QueueApply(t.Context(), config, 1, "test"); err == nil {
 		t.Fatal("stale revision accepted")
 	}
 }
@@ -125,34 +127,5 @@ func TestSubscriptionResourceScheduleAndRejection(t *testing.T) {
 	effective, err = sub.ResolveResources(c, next)
 	if changed || err != nil || len(effective.RuleSets[0].Rules) != 1 || next["rules:rules"].Failures != 1 || len(events) != 1 {
 		t.Fatal("bad rules replaced valid rules")
-	}
-}
-
-type fakeSubscriptionService struct {
-	applied, restored bool
-	fail              error
-}
-
-func (s *fakeSubscriptionService) state(context.Context) (bool, bool, error) { return true, true, nil }
-func (s *fakeSubscriptionService) apply(_ context.Context, _, _ bool) error {
-	s.applied = true
-	return s.fail
-}
-func (s *fakeSubscriptionService) restore(_ context.Context, active, enabled bool) error {
-	s.restored = active && enabled
-	return nil
-}
-
-func TestSubscriptionServiceRollback(t *testing.T) {
-	root := t.TempDir()
-	subscriptionFixture(t, root, strings.Repeat("a", 64), "old")
-	before := readBytes(t, filepath.Join(root, "subscription.json"))
-	configBefore := readBytes(t, filepath.Join(root, subscriptionsConfig))
-	service := &fakeSubscriptionService{fail: errors.New("start failed")}
-	err := applySubscriptionChange(context.Background(), root, func() error {
-		return AtomicJSON(filepath.Join(root, "subscription.json"), subscriptionSettings{Enabled: false})
-	}, service)
-	if err == nil || !service.applied || !service.restored || !bytes.Equal(before, readBytes(t, filepath.Join(root, "subscription.json"))) || !bytes.Equal(configBefore, readBytes(t, filepath.Join(root, subscriptionsConfig))) {
-		t.Fatal("subscription rollback failed", err)
 	}
 }

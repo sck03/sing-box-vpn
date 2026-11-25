@@ -1,6 +1,6 @@
 # 架构与维护
 
-`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 16；平台配置 schema=6、节点文档 schema=4、订阅配置 schema=6、模板 version=1 是各自独立的格式版本。只接受当前配置，不提供旧数据库、订阅内容、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责。
+`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 16；平台配置 schema=7、节点文档 schema=5、订阅配置 schema=6、模板 version=1 是各自独立的格式版本。只接受当前配置，不提供旧数据库、订阅内容、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责。
 
 公网传输由 `internal/publicaccess` 管理，共用 `internal/tlsconfig`；服务登记位于 `internal/servicecatalog`。主机操作按 service/deployment/units/gateway/network/journal 分文件，日志系统适配位于 `internal/hostservice`。任务保留策略与执行终态分离；面板访问重启由独立助手和持久收据完成。账户服务不再回退读取旧 JSON 配置，调用者必须注入配置/控制仓库，或读取当前数据库。
 
@@ -192,7 +192,7 @@ VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IP
 
 ## 强类型配置与任务边界（2026-11-19）
 
-`internal/serverconfig` 独立定义托管 Node、TLS、WebSocket 传输和字段约束，不依赖 HTTP、SQLite 或主机服务。`App.Nodes` 是内存与数据库中的唯一节点来源，正常节点不再保存 Profile / 动态 Inbounds 副本。`App.Inbounds()` 返回独立核心投影；VPNGate Profile 在初始化边界经 `MakeNodes` 转为同一节点契约。节点文档 schema=4，数据库 schema=16，旧数据直接拒绝。
+`internal/serverconfig` 独立定义托管 Node、TLS、WebSocket 传输和字段约束，不依赖 HTTP、SQLite 或主机服务。`App.Nodes` 是内存与数据库中的唯一节点来源，正常节点不再保存 Profile / 动态 Inbounds 副本。`App.Inbounds()` 返回独立核心投影；VPNGate Profile 在初始化边界经 `MakeNodes` 转为同一节点契约。节点文档 schema=5，数据库 schema=16，旧数据直接拒绝。
 
 托管 VMess 只接受 WS，支持 path/host/early_data/early_data_header；不支持的传输与未知字段明确拒绝，不能接受后丢弃。新节点默认关闭 early-data，用户开启后按真实目标客户端能力判断。关闭时核心投影显式选择 WS 请求头模式，避免上游按编码后的 RequestURI 比较中文路径；开启 early-data 且路径含非 ASCII 字符时必须指定请求头。Reality 私钥、short ID、flow 与握手信息可通过表单编辑。订阅导入模型仍单独支持更广的协议与传输，不与受管服务端模型混用。
 
@@ -225,7 +225,7 @@ VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IP
 
 clientprofile/output.go 定义稳定输出身份（格式与用途）；subscription/account_output.go 负责纯兼容性规划，account_policy.go 校验模板 client/mode。manage 负责配置快照、授权、编译缓存和核心验证；HTTP 不重新定义模板业务。账户导出请求与凭据命令为不同的 application 类型。
 
-授权 profiles 精确匹配输出身份；数据库 schema=16 的 profiles 列取代旧 clients 列。平台和订阅 schema=6，CompilerVersion=6；旧数据或旧接口明确拒绝。内置默认不再复制成账户配置，远程模板发布故障不阻断不依赖它的内置输出。
+授权 profiles 精确匹配输出身份；数据库 schema=16 的 profiles 列取代旧 clients 列。平台 schema=7、订阅 schema=6，CompilerVersion=6；旧数据或旧接口明确拒绝。内置默认不再复制成账户配置，远程模板发布故障不阻断不依赖它的内置输出。
 
 列表只分析节点，创建授权与下载才编译所选格式。面板配置预览、保存、导出、授权等重请求独立限制为 2 并发；每个下载监听的账户请求限制为 4 并发；状态、任务及 SSE 保持独立预算。ConfigurationState、AccountExportRequest 与 AccountExportResponse 由 Go 类型生成前端契约。只读状态递归擦除结构化秘密值，保留字段类型。
 
@@ -258,3 +258,15 @@ loadDialog 在首次查询前占有对话框；切页、关闭或替换会取消
 页面上下文拥有独立 updateOverview 槽，主页面事件分发读取当前槽，支持异步注册；取消后的视图不再接收更新。分享授权高级选项与后端 expires_at/max_downloads 一致，其权限只能收窄权益。
 
 取消后保存的来源进度携带 refresh_pending 标记；即使来源 Next 尚未到期，调度器也会安排继续发布，成功发布后清除标记。该标记属于派生运行状态，不修改期望配置。
+
+## 配置与表单边界（2026-11-25）
+
+平台 schema=7、节点文档 schema=5。普通路由和出站的唯一来源是 `app.advanced`：默认只有 direct 出站、本地 DNS 与 direct 默认路由。旧 `app.routing`、`app.socks_port`、`app.argo` 已移除。需要 SOCKS 时在出站资源中显式创建并在路由中引用。
+
+隧道期望状态仅保存于 `tunnel`。归一化派生固定域名或关闭状态，`observedConfig` 只在临时隧道设置相同时注入运行观察；该字段不序列化。候选预览、应用编译和下载均使用该流程，单次编译中的账户来源共用捕获的观察值。
+
+`ConfigurationPreview`、`OutputPreviewRequest`、`OutputPreview` 由 Go 定义并自动生成面板声明；HTTP 层负责解码和授权。`form-dialog.js` 负责字段状态、验证与提交，`form-values.js` 负责结构化解析器转换，`ui.js` 组织资源列表。DNS/出站/默认路由接受标签或 JSON 解析器；未改动的对象及未暴露的高级字段保留。
+
+账户列表缓存只保存按 AppliedRevision 派生的入站可用集合。`AppliedStateSince` 用一次 SQL 快照同时读取版本和必要时的配置正文；待应用版本不改变缓存。缓存只有一份不可变集合，新版本替换旧集合；权益、配额、到期和实际凭据绑定每次查询。
+
+删除 Profile 自签标志、Reality 公钥副本、Profile/App country 和 profile_order：自签/公钥由有效材料派生，国家由 profiles 键与 active_country 表达。VPNGate 的 proxy_port 保留并提供界面入口，修改时同步 gateway.listen，最终由服务端校验引用和端口冲突。

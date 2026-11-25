@@ -1,8 +1,8 @@
 # 兼容性与验证边界
 
-本版只接受新数据库 schema 16 / 备份格式 8，不迁移旧账户或管理接口。平台配置 schema 6 与数据库版本独立。Linux Debian/Ubuntu + systemd，amd64/arm64；Windows 用于开发与本机测试。数据目录由 root 独占，面板默认回环。
+本版只接受新数据库 schema 16 / 备份格式 8，不迁移旧账户或管理接口。平台配置 schema 7 与数据库版本独立。Linux Debian/Ubuntu + systemd，amd64/arm64；Windows 用于开发与本机测试。数据目录由 root 独占，面板默认回环。
 
-订阅配置 schema=6，不接受旧订阅配置。模板 version=1、平台 schema=6、数据库 schema=16 与备份容器 8 保持独立；同数据库版本中的旧订阅内容也会被拒绝。转换新增受控 SIP003、WS early-data、gRPC 参数、VLESS XHTTP 和 Hysteria2 地址规范化，按客户端/协议/传输/加密方式筛选。sing-box 1.14.4 不接受 XHTTP，相关输出或探测使用支持它的目标；未知 XHTTP extra 字段明确拒绝。
+订阅配置 schema=6，不接受旧订阅配置。模板 version=1、平台 schema=7、数据库 schema=16 与备份容器 8 保持独立；同数据库版本中的旧订阅内容也会被拒绝。转换新增受控 SIP003、WS early-data、gRPC 参数、VLESS XHTTP 和 Hysteria2 地址规范化，按客户端/协议/传输/加密方式筛选。sing-box 1.14.4 不接受 XHTTP，相关输出或探测使用支持它的目标；未知 XHTTP extra 字段明确拒绝。
 
 Release 标签使用 `vMAJOR.MINOR.PATCH`，主版本号与数据格式无绑定：v5.0.0 等正式标签可安装，但包内容必须满足当前平台约定。版本号变化不会自动迁移数据库。证书提供方接受 `acme` / `import` / `generated`（自签名测试证书），旧 `certbot` 标记不兼容。
 
@@ -25,3 +25,5 @@ Mihomo 开发/CI 测试基线为 1.19.33；部署服务器无需安装它。双�
 受管 DNS 当前支持 TCP、UDP、TLS、HTTPS、local、resolved；不支持 QUIC DNS。可选类型以 `/api/capabilities.runtime` 为准，运行环境和选项以实际受管核心校验为准。WARP/WireGuard 发布构建必须含 gVisor。配置预览通过只代表候选配置可加载，业务连通性仍需独立检测。
 
 5.1 提供检查正式发行包和组件配套状态的入口；不承诺未来任意上游版本自动兼容。新发行包仍须通过本项目当前配置、原生核心、账户计量及网络测试。外部模板导入是有限、显式的规则转换，不能把其他项目的完整配置直接视为本项目模板。
+
+2026-11-25：仅平台配置和节点文档变更为 7 / 5，数据库、订阅和备份容器版本不随之机械递增。旧 app.argo、routing、socks_port、country、Profile 自签标志与 Reality 公钥副本、profile_order 均移除；使用全新初始化的数据。固定名称的本地订阅文件不再生成，使用显式输出和下载接口。

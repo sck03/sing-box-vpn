@@ -84,8 +84,8 @@ func accountNodes(ctx context.Context, store *accounting.Store, config PlatformC
 				node.Server = app.CDNAddress
 			}
 			nodes = append(nodes, node)
-			if runtime == normalScope && node.Protocol == "vmess" && text(app.Argo["domain"]) != "" && (text(app.Argo["inbound"]) == "" || text(app.Argo["inbound"]) == entry.ID) {
-				domain := text(app.Argo["domain"])
+			if runtime == normalScope && node.Protocol == "vmess" && config.tunnelDomain != "" && config.Argo.Inbound == entry.ID {
+				domain := config.tunnelDomain
 				node.ID += "-argo"
 				node.Name += "-Argo"
 				node.Server = domain

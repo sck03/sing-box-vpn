@@ -211,7 +211,7 @@ func TestAccountDownloadsUseSharedClientCatalog(t *testing.T) {
 			break
 		}
 	}
-	if err := CommitApp(t.Context(), root, core, &app); err != nil {
+	if err := publishFixtureApp(t.Context(), root, core, &app); err != nil {
 		t.Fatal(err)
 	}
 	store, err := accounting.Open(filepath.Join(root, "control.db"))

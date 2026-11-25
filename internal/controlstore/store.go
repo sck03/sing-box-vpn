@@ -114,6 +114,15 @@ func (s *Store) AppliedState(ctx context.Context) (v AppliedState, err error) {
 	return
 }
 
+// AppliedStateSince avoids copying the configuration when its confirmed revision
+// is unchanged. Both values come from one database snapshot.
+func (s *Store) AppliedStateSince(ctx context.Context, revision int64) (v AppliedState, err error) {
+	var data []byte
+	err = s.db.QueryRowContext(ctx, `SELECT applied_revision,CASE WHEN applied_revision != ? THEN applied ELSE NULL END FROM control_state WHERE id=1`, revision).Scan(&v.Revision, &data)
+	v.Config = data
+	return
+}
+
 // DesiredState reads the editable configuration and its revisions atomically,
 // without copying the potentially large applied configuration into memory.
 type DesiredState struct {

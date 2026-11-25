@@ -31,7 +31,6 @@ var Countries = country.Names
 
 type Reality struct {
 	Private string `json:"private_key"`
-	Public  string `json:"public_key"`
 	ShortID string `json:"short_id"`
 }
 type Secrets struct {
@@ -46,28 +45,22 @@ type Profile struct {
 	RealitySNI    string         `json:"reality_sni"`
 	TLSSNI        string         `json:"tls_sni"`
 	VMessTLS      bool           `json:"vmess_tls"`
-	SelfSigned    bool           `json:"self_signed"`
 	WSPath        string         `json:"ws_path"`
 	Secrets       Secrets        `json:"secrets,omitzero"`
-	Country       string         `json:"country,omitempty"`
 	Hopping       []string       `json:"hopping,omitempty"`
 	TUICPorts     []string       `json:"tuic_ports,omitempty"`
 	HandshakeHost string         `json:"handshake_host,omitempty"`
 	HandshakePort int            `json:"handshake_port,omitempty"`
 }
 type App struct {
-	Version    string              `json:"version"`
-	Name       string              `json:"name"`
-	Address    string              `json:"address"`
-	Nodes      []ManagedNode       `json:"nodes"`
-	Country    string              `json:"country,omitempty"`
-	Hopping    []string            `json:"hopping,omitempty"`
-	TUICPorts  []string            `json:"tuic_ports,omitempty"`
-	Routing    map[string][]string `json:"routing"`
-	SocksPort  int                 `json:"socks_port"`
-	CDNAddress string              `json:"cdn_address,omitempty"`
-	Argo       Object              `json:"argo,omitempty"`
-	Advanced   CoreSettings        `json:"advanced"`
+	Version    string        `json:"version"`
+	Name       string        `json:"name"`
+	Address    string        `json:"address"`
+	Nodes      []ManagedNode `json:"nodes"`
+	Hopping    []string      `json:"hopping,omitempty"`
+	TUICPorts  []string      `json:"tuic_ports,omitempty"`
+	CDNAddress string        `json:"cdn_address,omitempty"`
+	Advanced   CoreSettings  `json:"advanced"`
 }
 
 // CoreSettings cannot override authenticated inbounds or VPNGate's route.
@@ -84,7 +77,6 @@ type VPNSettings struct {
 	ActiveCountry string             `json:"active_country"`
 	ProxyPort     int                `json:"proxy_port"`
 	Profiles      map[string]Profile `json:"profiles"`
-	Order         []string           `json:"profile_order,omitempty"`
 }
 
 func randomBytes(size int) []byte {

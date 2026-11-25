@@ -8,13 +8,14 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	strict "github.com/sck03/sing-box-vpn/internal/encoding"
 	"github.com/sck03/sing-box-vpn/internal/gatewayconfig"
+	"github.com/sck03/sing-box-vpn/internal/runtimeconfig"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 	"net"
 	"slices"
 	"strings"
 )
 
-const PlatformSchema = 6
+const PlatformSchema = 7
 
 // PlatformConfig is the single authoritative aggregate stored in control.db.
 // JSON files consumed by the gateway and compiler are generated projections.
@@ -28,6 +29,8 @@ type PlatformConfig struct {
 	Listener      subscriptionSettings `json:"listener"`
 	Certificates  []CertificateAsset   `json:"certificates"`
 	Argo          TunnelSettings       `json:"tunnel"`
+	// Resolved per operation, never persisted alongside desired tunnel settings.
+	tunnelDomain string
 }
 type CertificateAsset = certificates.CertificateAsset
 type TunnelSettings struct {
@@ -195,6 +198,7 @@ func (c PlatformConfig) Validate() error {
 }
 
 func validateServerResources(c CoreSettings) error {
+	caps := runtimeconfig.Supported()
 	if _, exists := c.DNS["independent_cache"]; exists {
 		return errors.New("DNS independent_cache is obsolete; remove it from DNS settings")
 	}
@@ -211,18 +215,18 @@ func validateServerResources(c CoreSettings) error {
 	}
 	if c.Outbounds != nil {
 		for _, v := range c.Outbounds {
-			if !slices.Contains([]string{"direct", "socks", "selector", "urltest", "vless", "vmess", "hysteria2", "tuic", "anytls"}, text(v["type"])) {
+			if !slices.Contains(caps.Outbounds, text(v["type"])) {
 				return errors.New("unsupported managed outbound type")
 			}
 		}
 	}
 	for _, v := range c.Endpoints {
-		if v["type"] != "wireguard" {
+		if !slices.Contains(caps.Endpoints, text(v["type"])) {
 			return errors.New("only WireGuard endpoints are registered")
 		}
 	}
 	for _, v := range c.Services {
-		if v["type"] != "resolved" {
+		if !slices.Contains(caps.Services, text(v["type"])) {
 			return errors.New("only the resolved DNS service is registered; unguarded proxy services are prohibited")
 		}
 		if listen := text(v["listen"]); listen != "127.0.0.1" && listen != "::1" {
@@ -290,15 +294,15 @@ func serverForApp(app App) (Object, error) {
 			active = append(active, in)
 		}
 	}
-	routing := app.Routing
-	if app.Advanced.Route != nil {
-		routing = nil
-	}
-	server, err := ServerConfig(active, routing, app.Advanced.Endpoints, app.SocksPort)
-	if err != nil {
+	return ServerConfig(active, app.Advanced)
+}
+
+// ServerConfig renders the current resource model; managed inbounds remain owned by callers.
+func ServerConfig(inbounds []Object, c CoreSettings) (Object, error) {
+	if err := validateServerResources(c); err != nil {
 		return nil, err
 	}
-	c := app.Advanced
+	server := defaultServerConfig(inbounds)
 	for name, value := range map[string]Object{"route": c.Route, "dns": c.DNS, "log": c.Log, "experimental": c.Experimental} {
 		if value != nil {
 			server[name] = value
@@ -323,6 +327,12 @@ func decodePlatform(data []byte) (PlatformConfig, error) {
 	return c, err
 }
 func (c *PlatformConfig) normalize() {
+	switch c.Argo.Mode {
+	case "fixed":
+		c.tunnelDomain = c.Argo.Domain
+	case "off", "":
+		c.tunnelDomain = ""
+	}
 	if c.App.Nodes == nil {
 		c.App.Nodes = []ManagedNode{}
 	}

@@ -1,4 +1,4 @@
-import { api } from "./api.js";
+import { api, previewConfiguration, previewOutput } from "./api.js";
 import { clientOptions } from "./clients.js";
 import { formDialog } from "./ui.js";
 import { requestConfiguration } from "./config-preview.js";
@@ -117,9 +117,7 @@ export function subscriptionWizard(ctx, config, catalog, presets) {
       };
       await requestConfiguration(
         async (signal) => {
-          const result = await request("/api/config/preview", candidate, {
-            signal,
-          });
+          const result = await previewConfiguration(candidate, signal, request);
           await current();
           return result;
         },
@@ -127,11 +125,7 @@ export function subscriptionWizard(ctx, config, catalog, presets) {
         {
           signal: ctx.signal,
           loadOutput: (id, signal) =>
-            request(
-              "/api/config/preview-output",
-              { id, config: candidate },
-              { signal },
-            ),
+            previewOutput({ id, config: candidate }, signal, request),
           applyDraft: async () => {
             await current();
             config.subscriptions = candidate.subscriptions;

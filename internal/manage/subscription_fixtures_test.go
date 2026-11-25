@@ -1,19 +1,8 @@
 package manage
 
 import (
-	"encoding/json"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
-	"time"
 )
-
-type fixtureSubscriptionCommand struct {
-	Operation, ID, Kind, ProbeURL string
-	Outputs                       []string
-	Expires                       time.Duration
-	MaxDownloads                  *int64
-	Config                        json.RawMessage
-	Apply                         bool
-}
 
 // Explicit inline fixtures replace the removed shared-local source format.
 func fixtureSubscriptionConfig() sub.Config {

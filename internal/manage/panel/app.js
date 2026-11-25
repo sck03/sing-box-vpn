@@ -4,6 +4,8 @@ import {
   saveConfiguration,
   submitTask,
   getConfiguration,
+  previewConfiguration,
+  previewOutput,
 } from "./api.js";
 import { openTask } from "./tasks.js";
 import { secretField } from "./secret-field.js";
@@ -323,7 +325,7 @@ $("#preview").addEventListener(
     diff(baseline, submitted);
     await requestConfiguration(
       async (signal) => {
-        const result = await api("/api/config/preview", submitted, { signal });
+        const result = await previewConfiguration(submitted, signal);
         if (generation !== draftGeneration)
           throw new DOMException("草稿已重新载入", "AbortError");
         return result;
@@ -332,11 +334,7 @@ $("#preview").addEventListener(
       {
         signal: pageRequest?.signal,
         loadOutput: (id, signal) =>
-          api(
-            "/api/config/preview-output",
-            { id, config: submitted },
-            { signal },
-          ),
+          previewOutput({ id, config: submitted }, signal),
       },
     );
   }),

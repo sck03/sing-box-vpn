@@ -71,7 +71,6 @@ func TestLinuxMultiportFirewall(t *testing.T) {
 		return p
 	}
 	app := fixtureApp(profile(20000, []string{"31000:31002"}, []string{"31100", "31110:31112"}))
-	app.SocksPort = 40000
 	settings := VPNSettings{ActiveCountry: "JP", ProxyPort: 7928, Profiles: map[string]Profile{
 		"JP": profile(22000, []string{"32000:32002"}, []string{"32100"}),
 		"KR": profile(24000, []string{"34000"}, []string{"34100"}),
@@ -183,8 +182,8 @@ func TestLinuxUDPRangeConflict(t *testing.T) {
 	}
 	defer conn.Close()
 	port := conn.LocalAddr().(*net.UDPAddr).Port
-	if err := checkSystemPorts([]portRange{{max(1, port-1), min(65535, port+1)}}, 0); err == nil {
-		t.Fatal("kernel socket inventory missed a UDP socket inside a range")
+	if err := probePort(port); err == nil {
+		t.Fatal("port probe missed a UDP socket")
 	}
 }
 

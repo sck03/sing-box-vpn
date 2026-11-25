@@ -76,7 +76,7 @@ func TestRefreshCheckpointPreservesCompletedSourcesWithoutPublishing(t *testing.
 	if err = AtomicJSON(filepath.Join(root, subscriptionsConfig), config); err != nil {
 		t.Fatal(err)
 	}
-	before := readBytes(t, filepath.Join(root, "proxies.yaml"))
+	before := readArtifact(t, root, "normal-provider")
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	now := time.Now().UTC()
@@ -88,7 +88,7 @@ func TestRefreshCheckpointPreservesCompletedSourcesWithoutPublishing(t *testing.
 	if err != nil || !state.Sources["remote"].Success.Equal(now) {
 		t.Fatal(state.Sources, err)
 	}
-	if !bytes.Equal(before, readBytes(t, filepath.Join(root, "proxies.yaml"))) {
+	if !bytes.Equal(before, readArtifact(t, root, "normal-provider")) {
 		t.Fatal("checkpoint published an artifact")
 	}
 	_, schedule, err := loadSubscriptionSchedule(root)

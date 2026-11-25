@@ -21,7 +21,12 @@ type configurationReader interface {
 // Runtime observations are versioned independently of desired configuration.
 // A candidate can reuse them only when it targets the same tunnel settings.
 func observedConfig(ctx context.Context, store configurationReader, c PlatformConfig) (PlatformConfig, error) {
+	c.normalize()
 	if c.Argo.Mode != "temporary" {
+		return c, nil
+	}
+	c.tunnelDomain = ""
+	if store == nil {
 		return c, nil
 	}
 	raw, err := store.Observation(ctx, "argo-tunnel")
@@ -38,6 +43,6 @@ func observedConfig(ctx context.Context, store configurationReader, c PlatformCo
 	if observation.Settings == c.Argo {
 		domain = observation.Runtime.Domain
 	}
-	c.App.Argo = Object{"domain": domain, "inbound": c.Argo.Inbound}
+	c.tunnelDomain = domain
 	return c, nil
 }

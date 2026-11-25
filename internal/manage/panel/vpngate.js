@@ -156,7 +156,6 @@ export async function vpngate(ctx) {
                 key: asset.key,
                 tls_sni: asset.domain,
                 vmess_tls: true,
-                self_signed: asset.provider === "generated",
               });
               ctx.changed();
               ctx.render();
@@ -183,6 +182,30 @@ export async function vpngate(ctx) {
   );
   const policy = card(
     "运行策略",
+    button("本地网关端口", () =>
+      formDialog(
+        "本地网关端口",
+        [
+          {
+            key: "proxy_port",
+            label: "SOCKS 监听端口",
+            type: "number",
+            required: true,
+            min: 1,
+            max: 65535,
+            help: "仅监听 127.0.0.1，服务端会检查端口冲突。",
+          },
+        ],
+        c.vpn,
+        (value) => {
+          c.vpn = value;
+          if (c.vpn.active_country)
+            c.gateway.listen = `127.0.0.1:${value.proxy_port}`;
+          ctx.changed();
+          ctx.render();
+        },
+      ),
+    ),
     button("编辑来源与筛选", () =>
       formDialog(
         "VPNGate 来源与策略",

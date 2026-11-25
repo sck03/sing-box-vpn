@@ -19,11 +19,6 @@ type applyInput struct {
 
 func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revision int64, actor string) (int64, error) {
 	c.normalize()
-	if c.Argo.Mode == "fixed" {
-		c.App.Argo = Object{"domain": c.Argo.Domain, "inbound": c.Argo.Inbound}
-	} else if c.Argo.Mode == "off" || c.Argo.Mode == "" {
-		c.App.Argo = Object{}
-	}
 	if err := c.Validate(); err != nil {
 		return 0, err
 	}

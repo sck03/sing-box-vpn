@@ -114,7 +114,7 @@ func TestQuickWarpUsesEndpointAndCandidateKeepsPreparedSource(t *testing.T) {
 	root, core, _ := appFixture(t)
 	service, config, _ := platformFixture(t, root, core)
 	config.App.Advanced.Endpoints = []Object{{"type": "wireguard", "tag": "warp-out", "private_key": base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32)), "address": []string{"172.16.0.2/32"}, "peers": []Object{{"address": "1.1.1.1", "port": 2408, "public_key": base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{2}, 32)), "allowed_ips": []string{"0.0.0.0/0"}}}}}
-	config.App.Routing["warp"] = []string{"example.com"}
+	config.App.Advanced.Route = Object{"rules": []Object{{"domain_suffix": []string{"example.com"}, "action": "route", "outbound": "warp-out"}}, "final": "direct", "default_domain_resolver": "dns-local"}
 	if _, err := service.PreviewConfiguration(t.Context(), config); err != nil {
 		t.Fatal("endpoint was not used", err)
 	}

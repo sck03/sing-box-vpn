@@ -162,14 +162,176 @@ globalThis.fetch = async (url) => {
   assert.equal(url, "/api/preset");
   return { ok: true, json: async () => preset };
 };
-document.querySelector("main").replaceChildren(...await inbounds({ ...ctx, changed() { dirty = true; } }));
-[...document.querySelectorAll("main button")].find((b) => b.textContent === "新增入站").click();
+document.querySelector("main").replaceChildren(
+  ...(await inbounds({
+    ...ctx,
+    changed() {
+      dirty = true;
+    },
+  })),
+);
+[...document.querySelectorAll("main button")]
+  .find((b) => b.textContent === "新增入站")
+  .click();
 dialog.querySelector('[aria-label="唯一 ID"]').value = "added";
-dialog.querySelector("form").dispatchEvent(new Event("submit", { cancelable: true }));
+dialog
+  .querySelector("form")
+  .dispatchEvent(new Event("submit", { cancelable: true }));
 await tick();
 assert.equal(dirty, true);
-assert.deepEqual(config.app.nodes, [preset], "null node collection detached the edited list");
+assert.deepEqual(
+  config.app.nodes,
+  [preset],
+  "null node collection detached the edited list",
+);
 dialog.close();
+// Resolver objects must survive edits to unrelated fields, including dynamic options.
+const { routeFields } = await import(
+  "../internal/manage/panel/network-fields.js"
+);
+const resolver = {
+  server: "dns-local",
+  strategy: "prefer_ipv4",
+  disable_cache: true,
+};
+saved = undefined;
+let editor = formDialog(
+  "route",
+  routeFields,
+  { final: "direct", default_domain_resolver: resolver },
+  (v) => {
+    saved = v;
+  },
+);
+assert.equal(
+  editor.input("default_domain_resolver").value,
+  JSON.stringify(resolver),
+);
+editor.input("final").value = "proxy";
+editor.form.dispatchEvent(new Event("submit", { cancelable: true }));
+await tick();
+assert.deepEqual(saved.default_domain_resolver, resolver);
+assert.equal(saved.final, "proxy");
+editor = formDialog(
+  "resolver",
+  [{ key: "resolver", label: "解析器", type: "resolver" }],
+  { resolver },
+  (v) => {
+    saved = v;
+  },
+);
+editor.input("resolver").value =
+  '{"server":"dns-other","strategy":"ipv6_only"}';
+editor.form.dispatchEvent(new Event("submit", { cancelable: true }));
+await tick();
+assert.deepEqual(saved.resolver, {
+  server: "dns-other",
+  strategy: "ipv6_only",
+});
+editor = formDialog(
+  "invalid",
+  [{ key: "resolver", label: "解析器", type: "resolver" }],
+  { resolver },
+  () => {
+    throw Error("invalid value reached save");
+  },
+);
+editor.input("resolver").value = '{"strategy":"ipv4_only"}';
+editor.form.dispatchEvent(new Event("submit", { cancelable: true }));
+await tick();
+assert.equal(editor.dialog.open, true);
+assert.equal(editor.input("resolver").getAttribute("aria-invalid"), "true");
+assert.match(editor.form.querySelector(".form-error").textContent, /server/);
+dialog.close();
+editor = formDialog(
+  "dynamic",
+  [
+    {
+      key: "resolver",
+      label: "解析器",
+      type: "select",
+      options: () => ["", "dns-local"],
+    },
+  ],
+  { resolver },
+  (v) => {
+    saved = v;
+  },
+  true,
+);
+editor.refresh();
+editor.form.dispatchEvent(new Event("submit", { cancelable: true }));
+await tick();
+assert.deepEqual(saved.resolver, resolver);
+const { routing } = await import("../internal/manage/panel/routing.js");
+const dnsConfig = {
+  app: {
+    advanced: {
+      route: {},
+      dns: {
+        servers: [
+          { tag: "dns-local", type: "local" },
+          {
+            tag: "dns-remote",
+            type: "https",
+            server: "dns.example.test",
+            domain_resolver: resolver,
+            connect_timeout: "8s",
+          },
+        ],
+      },
+    },
+  },
+};
+const dnsPage = await routing({
+  config: async () => dnsConfig,
+  request: async () => dnsConfig.app.advanced,
+  changed() {},
+  render() {},
+});
+document.querySelector("main").replaceChildren(...dnsPage);
+const dnsRow = [...document.querySelectorAll("tr")].find((r) =>
+  r.textContent.includes("dns-remote"),
+);
+[...dnsRow.querySelectorAll("button")]
+  .find((b) => b.textContent === "编辑")
+  .click();
+dialog.querySelector('[aria-label="Tag"]').value = "dns-renamed";
+dialog
+  .querySelector('[aria-label="Tag"]')
+  .dispatchEvent(new Event("change", { bubbles: true }));
+assert.equal(
+  dialog.querySelector('[aria-label="服务器域名解析器"]').value,
+  JSON.stringify(resolver),
+);
+dialog
+  .querySelector("form")
+  .dispatchEvent(new Event("submit", { cancelable: true }));
+await tick();
+assert.deepEqual(
+  dnsConfig.app.advanced.dns.servers[1].domain_resolver,
+  resolver,
+);
+assert.equal(dnsConfig.app.advanced.dns.servers[1].connect_timeout, "8s");
+assert.equal(dnsConfig.app.advanced.dns.servers[1].tag, "dns-renamed");
+[...document.querySelectorAll("main button")]
+  .find((b) => b.textContent === "添加域名分流")
+  .click();
+dialog.querySelector('[aria-label="域名后缀"]').value =
+  ".EXAMPLE.com, example.com";
+dialog.querySelector('[aria-label="IP 策略"]').value = "prefer_ipv4";
+dialog
+  .querySelector("form")
+  .dispatchEvent(new Event("submit", { cancelable: true }));
+await tick();
+assert.equal("routing" in dnsConfig.app, false);
+assert.deepEqual(
+  dnsConfig.app.advanced.route.rules.map((r) => r.action),
+  ["sniff", "resolve", "route"],
+);
+assert.deepEqual(dnsConfig.app.advanced.route.rules[2].domain_suffix, [
+  "example.com",
+]);
 console.log(
   "Refactor regressions passed: secret controls, certificate selection, preview drafts, stale dialogs and protocol-aware copy.",
 );

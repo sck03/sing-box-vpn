@@ -1,4 +1,4 @@
-import { api } from "./api.js";
+import { api, previewConfiguration, previewOutput } from "./api.js";
 import { workspace } from "./workspace.js";
 import { disclosure } from "./sections.js";
 import { requestConfiguration } from "./config-preview.js";
@@ -112,16 +112,12 @@ export async function subscriptions(ctx) {
           ),
           button("预览", async () =>
             requestConfiguration(
-              (signal) => request("/api/config/preview", c, { signal }),
+              (signal) => previewConfiguration(c, signal, request),
               [],
               {
                 signal: ctx.signal,
                 loadOutput: (id, signal) =>
-                  request(
-                    "/api/config/preview-output",
-                    { id, config: c },
-                    { signal },
-                  ),
+                  previewOutput({ id, config: c }, signal, request),
               },
             ),
           ),

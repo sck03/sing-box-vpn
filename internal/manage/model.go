@@ -12,7 +12,7 @@ import (
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
-const AppSchema = 4
+const AppSchema = 5
 
 type ManagedNode serverconfig.Node
 type ManagedTLS = serverconfig.TLS
@@ -40,7 +40,7 @@ func (a App) Inbounds() []Object {
 // profile supplies port allocation metadata for the shared VPNGate allocator.
 // Credentials and TLS settings are never reconstructed from this view.
 func (a App) profile() Profile {
-	p := Profile{Ports: map[string]int{}, Country: a.Country, Hopping: a.Hopping, TUICPorts: a.TUICPorts}
+	p := Profile{Ports: map[string]int{}, Hopping: a.Hopping, TUICPorts: a.TUICPorts}
 	for _, n := range a.Nodes {
 		if p.Ports[n.Protocol] == 0 {
 			p.Ports[n.Protocol] = n.Port

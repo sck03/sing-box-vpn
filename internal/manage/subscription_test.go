@@ -159,56 +159,6 @@ func TestSubscriptionRejectsUnavailableSnapshot(t *testing.T) {
 	}
 }
 
-func TestNativeProviderSubscription(t *testing.T) {
-	root, core, app := appFixture(t)
-	if _, err := PrepareVPN(context.Background(), root, core, app, "JP"); err != nil {
-		t.Fatal(err)
-	}
-	if err := configureSubscription(root, app, VPNSettings{}, 0); err != nil {
-		t.Fatal(err)
-	}
-	var settings subscriptionSettings
-	ReadJSON(filepath.Join(root, "subscription.json"), &settings)
-	token := strings.Repeat("a", 64)
-	seedOutputGrant(t, root, token, []string{"normal-provider", "vpngate-provider"}, nil)
-	for _, scope := range []string{normalScope, vpngateScope} {
-		var urls strings.Builder
-		if err := subscriptionURLs(root, "127.0.0.1", scope, &urls); err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(urls.String(), "/s/") {
-			t.Fatal("read-only display leaked a token")
-		}
-		r := httptest.NewRecorder()
-		subscriptionHandler(root).ServeHTTP(r, httptest.NewRequest("GET", "/s/"+token+"/"+scope+"-provider", nil))
-		if r.Code != 200 || !strings.Contains(r.Body.String(), `"proxies"`) {
-			t.Fatal(r.Code, r.Body.String())
-		}
-	}
-}
-
-func TestSubscriptionEnablePreservesAddress(t *testing.T) {
-	root := t.TempDir()
-	if err := configureSubscription(root, App{}, VPNSettings{}, 0, "127.0.0.1", "https://example.com/sub"); err != nil {
-		t.Fatal(err)
-	}
-	var first, second subscriptionSettings
-	ReadJSON(filepath.Join(root, "subscription.json"), &first)
-	if err := disableSubscription(root); err != nil {
-		t.Fatal(err)
-	}
-	if err := configureSubscription(root, App{}, VPNSettings{}, 0); err != nil {
-		t.Fatal(err)
-	}
-	ReadJSON(filepath.Join(root, "subscription.json"), &second)
-	if first.Port != second.Port || first.PublicBaseURL != second.PublicBaseURL {
-		t.Fatal("ordinary enable rotated address")
-	}
-	if err := resetSubscriptionToken(root); err == nil {
-		t.Fatal("obsolete default-token operation accepted")
-	}
-}
-
 func TestDisabledSubscriptionDoesNotListen(t *testing.T) {
 	root := t.TempDir()
 	if err := AtomicJSON(filepath.Join(root, "subscription.json"), subscriptionSettings{Enabled: false, Port: 12345, Listen: "127.0.0.1"}); err != nil {

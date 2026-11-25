@@ -55,7 +55,7 @@ func (a App) fixtureProfile() Profile {
 	return p
 }
 func fixtureApp(p Profile) App {
-	return App{Nodes: MakeNodes(p, ""), Country: p.Country, Hopping: p.Hopping, TUICPorts: p.TUICPorts}
+	return App{Nodes: MakeNodes(p, ""), Hopping: p.Hopping, TUICPorts: p.TUICPorts}
 }
 
 func fixtureCredential(kind string) domain.Credential {

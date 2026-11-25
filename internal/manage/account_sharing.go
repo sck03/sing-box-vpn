@@ -24,24 +24,9 @@ func (s AccountService) shareAccounts(ctx context.Context, store *accounting.Sto
 	if len(users) == 0 {
 		return result, nil
 	}
-	config, err := s.configSnapshot(ctx)
+	available, err := s.availableBindings(ctx)
 	if err != nil {
 		return nil, err
-	}
-	available := map[accounting.Binding]bool{}
-	for _, scope := range []string{normalScope, vpngateScope} {
-		if scope == vpngateScope && config.VPN.ActiveCountry == "" {
-			continue
-		}
-		entries, err := configuredEntries(config, scope)
-		if err != nil {
-			return nil, err
-		}
-		for _, entry := range entries {
-			if !entry.Disabled {
-				available[accounting.Binding{Runtime: scope, Inbound: entry.ID, Protocol: entry.Protocol}] = true
-			}
-		}
 	}
 	ids := make([]string, len(users))
 	for i, u := range users {

@@ -62,18 +62,14 @@ export interface Admin {
 }
 
 export interface App {
-  schema: 4;
+  schema: 5;
   version: string;
   name: string;
   address: string;
   nodes: Array<ManagedNode> | null;
-  country?: string;
   hopping?: Array<string> | null;
   tuic_ports?: Array<string> | null;
-  routing: Record<string, Array<string> | null> | null;
-  socks_port: number;
   cdn_address?: string;
-  argo?: Record<string, unknown> | null;
   advanced: CoreSettings;
 }
 
@@ -106,6 +102,25 @@ export interface CertificatePreparation {
   id: string;
   domain: string;
   email: string;
+}
+
+export interface ConfigurationOutputPreview {
+  id: string;
+  name: string;
+  available: boolean;
+  bytes: number;
+  diagnostics: Array<SubscriptionDiagnostic> | null;
+  input_nodes: number;
+  nodes: number;
+  delta: SubscriptionSelectionDelta;
+  validation: SubscriptionValidation;
+}
+
+export interface ConfigurationPreview {
+  valid: boolean;
+  ordinary_server: Record<string, unknown> | null;
+  outputs: Array<ConfigurationOutputPreview> | null;
+  diagnostics: Record<string, Array<SubscriptionDiagnostic> | null> | null;
 }
 
 export interface ConfigurationSave {
@@ -212,6 +227,20 @@ export interface OutboundFields {
   utls: boolean;
 }
 
+export interface OutputPreview {
+  id: string;
+  name: string;
+  mime: string;
+  preview: SubscriptionContentPreview;
+  nodes: number;
+  diagnostics: Array<SubscriptionDiagnostic> | null;
+}
+
+export interface OutputPreviewRequest {
+  config: PlatformConfig;
+  id: string;
+}
+
 export interface OverviewSnapshot {
   revision: number;
   applied_revision: number;
@@ -230,7 +259,7 @@ export interface PeriodPolicy {
 }
 
 export interface PlatformConfig {
-  schema: 6;
+  schema: 7;
   app: App;
   vpn: VPNSettings;
   vpn_secrets: Record<string, Secrets> | null;
@@ -248,10 +277,8 @@ export interface Profile {
   reality_sni: string;
   tls_sni: string;
   vmess_tls: boolean;
-  self_signed: boolean;
   ws_path: string;
   secrets?: Secrets;
-  country?: string;
   hopping?: Array<string> | null;
   tuic_ports?: Array<string> | null;
   handshake_host?: string;
@@ -283,7 +310,6 @@ export interface QueuedTask {
 
 export interface Reality {
   private_key: string;
-  public_key: string;
   short_id: string;
 }
 
@@ -406,6 +432,12 @@ export interface SubscriptionConfig {
   account_overrides?: Array<SubscriptionAccountExportOverride> | null;
 }
 
+export interface SubscriptionContentPreview {
+  content: string;
+  truncated: boolean;
+  decoded: boolean;
+}
+
 export interface SubscriptionDNSPolicy {
   local?: Array<string> | null;
   remote?: Array<string> | null;
@@ -496,6 +528,11 @@ export interface SubscriptionRuleSet {
   id: string;
   url?: string;
   rules?: Array<SubscriptionRule> | null;
+}
+
+export interface SubscriptionSelectionDelta {
+  added: number;
+  removed: number;
 }
 
 export interface SubscriptionSource {
@@ -643,7 +680,6 @@ export interface VPNSettings {
   active_country: string;
   proxy_port: number;
   profiles: Record<string, Profile> | null;
-  profile_order?: Array<string> | null;
 }
 
 export interface subscriptionSettings {

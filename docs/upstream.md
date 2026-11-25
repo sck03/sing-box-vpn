@@ -74,7 +74,7 @@ OpenClash 更新包括 Ruby/UCI 加载优化、TUN 默认 GSO、更新 SHA256 �
 Mihomo 更新包括 DNS 拨号收敛、代理循环检查性能及重载保留 fake-ip 分配等修复。
 实际效果依赖 OpenWrt 固件和路由器硬件，不能直接换算为 VPS 的性能提升。
 
-本项目提供完整 `clmi.yaml` 和仅含原生节点的 `proxies.yaml`。普通与 VPNGate 分开发布、
+本项目通过显式订阅输出提供完整 Mihomo 配置和原生节点 provider，文件名由输出定义决定，不再发布隐式固定名称文件。普通与 VPNGate 分开发布、
 使用同一套协议转换，避免为 OpenClash 另维护一套节点字段。HTTP provider 已用 Mihomo 验收
 五协议 TCP/UDP，涵盖自签 VMess/TUIC 与中文 WS 路径；尚未做实体 OpenWrt/LuCI 端到端验收。
 

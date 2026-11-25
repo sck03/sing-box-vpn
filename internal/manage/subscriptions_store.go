@@ -192,9 +192,6 @@ func compilePreparedSubscriptions(ctx context.Context, root, core string, c sub.
 			return nil, snapshot, previews, errors.New("subscription state exceeds 16 MiB")
 		}
 	}
-	if err := appendDefaultExports(files, snapshot, previews); err != nil {
-		return nil, snapshot, previews, err
-	}
 	return files, snapshot, previews, nil
 }
 

@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"github.com/sck03/sing-box-vpn/internal/certificates"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 	"go.yaml.in/yaml/v3"
 	"os"
@@ -32,8 +33,8 @@ func appFixture(t *testing.T) (string, string, App) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	app := App{Name: "test", Address: "127.0.0.1", Nodes: MakeNodes(p, ""), Routing: map[string][]string{}, SocksPort: 40000, Country: p.Country, Hopping: p.Hopping, TUICPorts: p.TUICPorts}
-	if err = CommitApp(context.Background(), root, core, &app); err != nil {
+	app := App{Name: "test", Address: "127.0.0.1", Nodes: MakeNodes(p, ""), Hopping: p.Hopping, TUICPorts: p.TUICPorts}
+	if err = publishFixtureApp(context.Background(), root, core, &app); err != nil {
 		t.Fatal(err)
 	}
 	return root, core, app
@@ -86,12 +87,11 @@ func TestTLSImportRejectsWrongDomainAndMissingFiles(t *testing.T) {
 	if err := EnsureCertificate(cert, key, "example.com"); err != nil {
 		t.Fatal(err)
 	}
-	app := App{Nodes: fixtureNodes([]Object{{"type": "anytls"}})}
-	if err := mutateApp(&app, VPNSettings{}, "tls", []string{"anytls", cert, key, "other.example"}); err == nil {
+	if _, err := certificates.Read(CertificateAsset{Certificate: cert, Key: key, Domain: "other.example"}); err == nil {
 		t.Fatal("TLS import accepted a certificate that does not cover its SNI")
 	}
 	missingCert, missingKey := filepath.Join(root, "missing.pem"), filepath.Join(root, "missing.key")
-	if err := mutateApp(&app, VPNSettings{}, "tls", []string{"anytls", missingCert, missingKey, "example.com"}); err == nil {
+	if _, err := certificates.Read(CertificateAsset{Certificate: missingCert, Key: missingKey, Domain: "example.com"}); err == nil {
 		t.Fatal("TLS import silently generated a self-signed certificate at a mistyped path")
 	}
 	for _, path := range []string{missingCert, missingKey} {
@@ -127,8 +127,7 @@ func TestTLSImportRejectsInvalidValidityPeriod(t *testing.T) {
 		if err := AtomicBytes(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0600); err != nil {
 			t.Fatal(err)
 		}
-		app := App{Nodes: fixtureNodes([]Object{{"type": "anytls"}})}
-		if err := mutateApp(&app, VPNSettings{}, "tls", []string{"anytls", certPath, keyPath, "example.com"}); err == nil {
+		if _, err := certificates.ValidatePEM(readBytes(t, certPath), readBytes(t, keyPath), "example.com"); err == nil {
 			t.Fatal("expired or not-yet-valid certificate was accepted")
 		}
 	}
@@ -136,7 +135,7 @@ func TestTLSImportRejectsInvalidValidityPeriod(t *testing.T) {
 
 func TestFiveConfigsValidateWithCurrentStableCore(t *testing.T) {
 	root, _, _ := appFixture(t)
-	client := readObject(t, filepath.Join(root, "sbox.json"))
+	client := readArtifactObject(t, root, "normal-sing-box")
 	kinds := map[string]bool{}
 	for _, node := range objects(client["outbounds"]) {
 		if Labels[text(node["type"])] != "" {
@@ -154,24 +153,24 @@ func TestCountryLinksStayStableAndCredentialsStayIndependent(t *testing.T) {
 	root, core, app := appFixture(t)
 	ctx := context.Background()
 	ordinary := readBytes(t, filepath.Join(root, "sb.json"))
-	ordinaryLinks := readBytes(t, filepath.Join(root, "jhsub.txt"))
-	if _, err := PrepareVPN(ctx, root, core, app, "JP"); err != nil {
+	ordinaryLinks := readArtifact(t, root, "normal-uri")
+	if _, err := prepareFixtureCountry(ctx, root, core, app, "JP"); err != nil {
 		t.Fatal(err)
 	}
-	first := readBytes(t, filepath.Join(root, "vpngate", "jhsub.txt"))
-	if _, err := PrepareVPN(ctx, root, core, app, "JP"); err != nil {
+	first := readArtifact(t, root, "vpngate-uri")
+	if _, err := prepareFixtureCountry(ctx, root, core, app, "JP"); err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(first, readBytes(t, filepath.Join(root, "vpngate", "jhsub.txt"))) {
+	if !bytes.Equal(first, readArtifact(t, root, "vpngate-uri")) {
 		t.Fatal("same-country links changed")
 	}
-	if _, err := PrepareVPN(ctx, root, core, app, "KR"); err != nil {
+	if _, err := prepareFixtureCountry(ctx, root, core, app, "KR"); err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(ordinary, readBytes(t, filepath.Join(root, "sb.json"))) {
 		t.Fatal("country selection changed ordinary nodes")
 	}
-	if !bytes.Equal(ordinaryLinks, readBytes(t, filepath.Join(root, "jhsub.txt"))) {
+	if !bytes.Equal(ordinaryLinks, readArtifact(t, root, "normal-uri")) {
 		t.Fatal("VPNGate selection changed ordinary subscriptions")
 	}
 	entries := objects(readObject(t, filepath.Join(root, "vpngate", "server.json"))["inbounds"])
@@ -194,13 +193,13 @@ func TestCountryLinksStayStableAndCredentialsStayIndependent(t *testing.T) {
 	if gateway["country"] != "KR" || gateway["proxy_user"] != private["KR"].SocksUser {
 		t.Fatal("wrong active country")
 	}
-	if _, err := PrepareVPN(ctx, root, core, app, "JP"); err != nil {
+	if _, err := prepareFixtureCountry(ctx, root, core, app, "JP"); err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(first, readBytes(t, filepath.Join(root, "vpngate", "jhsub.txt"))) {
+	if !bytes.Equal(first, readArtifact(t, root, "vpngate-uri")) {
 		t.Fatal("returning to a saved country changed its ports or credentials")
 	}
-	for _, out := range objects(readObject(t, filepath.Join(root, "sbox.json"))["outbounds"]) {
+	for _, out := range objects(readArtifactObject(t, root, "normal-sing-box")["outbounds"]) {
 		if out["tag"] == "auto" {
 			for _, tag := range stringsValue(out["outbounds"]) {
 				if strings.Contains(tag, "VPNGate") {
@@ -213,14 +212,14 @@ func TestCountryLinksStayStableAndCredentialsStayIndependent(t *testing.T) {
 
 func TestInvalidClientDoesNotCommitAnyWorkingConfig(t *testing.T) {
 	root, core, app := appFixture(t)
-	files := []string{"sb.json", "app.json", "sbox.json", "clmi.yaml", "jhsub.txt"}
+	files := []string{"sb.json", "app.json", subscriptionsSnapshot}
 	before := map[string][]byte{}
 	for _, name := range files {
 		before[name] = readBytes(t, filepath.Join(root, name))
 	}
 	bad := app
 	bad.Nodes[0].TLS.RealityPrivate = "invalid-private-key"
-	if err := CommitApp(context.Background(), root, core, &bad); err == nil {
+	if err := publishFixtureApp(context.Background(), root, core, &bad); err == nil {
 		t.Fatal("invalid client config was accepted")
 	}
 	for _, name := range files {
@@ -232,23 +231,23 @@ func TestInvalidClientDoesNotCommitAnyWorkingConfig(t *testing.T) {
 func TestHoppingAndMihomoManualGroup(t *testing.T) {
 	root, core, app := appFixture(t)
 	app.Hopping = []string{"31000:31100", "31200"}
-	if err := CommitApp(context.Background(), root, core, &app); err != nil {
+	if err := publishFixtureApp(context.Background(), root, core, &app); err != nil {
 		t.Fatal(err)
 	}
-	client := readObject(t, filepath.Join(root, "sbox.json"))
+	client := readArtifactObject(t, root, "normal-sing-box")
 	for _, node := range objects(client["outbounds"]) {
 		if node["type"] == "hysteria2" && !reflect.DeepEqual(stringsValue(node["server_ports"]), []string{"31000:31100", "31200:31200"}) {
 			t.Fatal("invalid hopping format")
 		}
 	}
-	if _, err := PrepareVPN(context.Background(), root, core, app, "JP"); err != nil {
+	if _, err := prepareFixtureCountry(context.Background(), root, core, app, "JP"); err != nil {
 		t.Fatal(err)
 	}
 	settings, secrets, err := loadVPN(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, err := collectLocalSubscriptionNodes(app, settings, secrets)
+	nodes, err := fixtureSubscriptionNodes(app, settings, secrets)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,15 +279,17 @@ func TestHoppingAndMihomoManualGroup(t *testing.T) {
 }
 func TestPinsFollowIndividualProtocolCertificates(t *testing.T) {
 	root, core, app := appFixture(t)
-	other := t.TempDir()
+	other := filepath.Join(root, "custom")
 	cert, key := filepath.Join(other, "cert.pem"), filepath.Join(other, "key.pem")
 	if err := EnsureCertificate(cert, key, "example.com"); err != nil {
 		t.Fatal(err)
 	}
-	if err := mutateApp(&app, VPNSettings{}, "tls", []string{"hysteria2", cert, key, "example.com"}); err != nil {
-		t.Fatal(err)
+	for i := range app.Nodes {
+		if app.Nodes[i].Protocol == "hysteria2" {
+			app.Nodes[i].TLS.Certificate, app.Nodes[i].TLS.Key, app.Nodes[i].TLS.ServerName = cert, key, "example.com"
+		}
 	}
-	if err := CommitApp(context.Background(), root, core, &app); err != nil {
+	if err := publishFixtureApp(context.Background(), root, core, &app); err != nil {
 		t.Fatal(err)
 	}
 	cache := certificateCache{}
@@ -300,7 +301,7 @@ func TestPinsFollowIndividualProtocolCertificates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, node := range objects(readObject(t, filepath.Join(root, "sbox.json"))["outbounds"]) {
+	for _, node := range objects(readArtifactObject(t, root, "normal-sing-box")["outbounds"]) {
 		kind := text(node["type"])
 		if kind != "hysteria2" && kind != "anytls" {
 			continue
@@ -313,41 +314,6 @@ func TestPinsFollowIndividualProtocolCertificates(t *testing.T) {
 		if len(pins) != 1 || pins[0] != expected {
 			t.Fatal("certificate change affected another protocol", kind)
 		}
-	}
-}
-func TestBashFacingConfigurationCommands(t *testing.T) {
-	root, core, _ := appFixture(t)
-	run := func(args ...string) string {
-		t.Helper()
-		var output bytes.Buffer
-		if err := RunConfig(context.Background(), append([]string{"--root", root, "--core", core}, args...), &output); err != nil {
-			t.Fatal(args[0], err)
-		}
-		return output.String()
-	}
-	run("cdn", "cdn.example.com")
-	run("cdn", "")
-	if text(readObject(t, filepath.Join(root, "app.json"))["cdn_address"]) != "" {
-		t.Fatal("menu could not clear CDN address")
-	}
-	run("subscription-init", "--port", "0")
-	urls := run("subscription-urls")
-	if len(strings.Split(strings.TrimSpace(urls), "\n")) != 5 || !strings.Contains(urls, "normal-uri") || strings.Contains(urls, "/s/") {
-		t.Fatal("missing subscription URLs")
-	}
-	run("subscription-stop")
-	if readObject(t, filepath.Join(root, "subscription.json"))["enabled"] != false {
-		t.Fatal("subscription stop did not persist")
-	}
-	if !strings.HasSuffix(strings.TrimSpace(run("vmess-info")), "http") {
-		t.Fatal("Argo menu received wrong VMess scheme")
-	}
-	if err := os.WriteFile(filepath.Join(root, "argo.log"), []byte("https://previous.trycloudflare.com\nhttps://current.trycloudflare.com\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	run("argo-watch", "--timeout", "5s")
-	if object(readObject(t, filepath.Join(root, "app.json"))["argo"])["domain"] != "current.trycloudflare.com" {
-		t.Fatal("Argo watcher did not select the latest domain")
 	}
 }
 

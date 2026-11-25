@@ -87,7 +87,7 @@ Windows 先加载 `scripts/dev-env.ps1`，将 `GATEWAY_BINARY` 和 `MANAGED_CORE
 
 可对该独立面板运行真实 HTTP 工作流：设置 `PANEL_TEST_URL`、`PANEL_TEST_USERNAME`（默认 reviewadmin）和 `PANEL_TEST_PASSWORD`，执行 `node scripts/test-panel-api.mjs`。脚本只接受回环 URL，并在创建数据前确认服务均处于 no-system 状态。验证绑定/导出、下载次数、跨站分享、完整候选预览和任务应用；不能指向真实安装。
 
-配置预览为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回普通服务端脱敏配置、输出节点数/变化及结构化验证。`POST /api/config/preview-output` 接受 `{id,config}`，只编译目标图并返回有界脱敏内容。旧 `/api/subscriptions/preview` 不恢复。节点文档 schema=4、订阅 schema=6、CompilerVersion=6、模板 version=1、平台 schema=6；备份容器为 8，数据库为 16，旧订阅内容明确拒绝。
+配置预览为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回普通服务端脱敏配置、输出节点数/变化及结构化验证。`POST /api/config/preview-output` 接受 `{id,config}`，只编译目标图并返回有界脱敏内容。旧 `/api/subscriptions/preview` 不恢复。节点文档 schema=5、订阅 schema=6、CompilerVersion=6、模板 version=1、平台 schema=7；备份容器为 8，数据库为 16，旧订阅内容明确拒绝。
 
 新增回归 `compiler_regression_test.go`、`preview_test.go` 覆盖 URI 认证/端口、SIP003、WS early-data、gRPC/XHTTP、名称和策略组范围、脱敏与真实核心检查。`TestImportedTrojanTransportsWithMihomo` 使用真实 sing-box 服务端和 Mihomo 客户端验证 WS/gRPC，错误路径或服务名必须失败。`TestRefreshValidationDoesNotHoldPublicationLock` 覆盖锁外编译与过期配置拒绝，`TestLimitedServerPreservesTLSAndHTTP2` 覆盖 TLS 状态及协议协商。
 
@@ -101,7 +101,7 @@ Windows 先加载 `scripts/dev-env.ps1`，将 `GATEWAY_BINARY` 和 `MANAGED_CORE
 
 账户策略存储为独立字段，备份结构校验随 schema 更新；所有旧 schema 数据库及其备份明确拒绝。新增回归覆盖配置快照、纯账户订阅自动恢复、模板省略字段、Argo 日志滚动、BBR 部分失败重试、任务详情权限、分页边界、日期精度及分享结果窗口。`Task.details` 是服务端生成的详情访问描述，前端不再维护任务类型白名单。
 
-旧 config/subscriptions 命令适配器只保留在 `legacy_*_test.go` 中服务测试夹具，不编入生产。旧 remote 命令和 remote.json 通知旁路已移除；使用平台订阅分发资源及 webhook。新增授权列表接口：`GET /api/grants?q=...&offset=0&limit=20` 返回 `{items,total,offset,limit}`，limit 范围 1–100，条目含统一 `state`；没有旧数组接口兼容层。
+旧 config/subscriptions 命令适配器及其 `legacy_*_test.go` 实现已删除；回归夹具调用现有 PlatformService 编译器，应用测试经过版本检查和持久任务。旧 remote 命令和 remote.json 通知旁路已移除；使用平台订阅分发资源及 webhook。新增授权列表接口：`GET /api/grants?q=...&offset=0&limit=20` 返回 `{items,total,offset,limit}`，limit 范围 1–100，条目含统一 `state`；没有旧数组接口兼容层。
 
 账户列表同样返回分页对象：`GET /api/accounts?q=...&offset=0&limit=20&sort=created&direction=asc`。搜索 ID、名称、订阅者 ID；sort 仅允许 created/name/id，direction 仅允许 asc/desc，offset 为 0–100000。账户 DTO 包含 `subscriber_disabled` 和有效 `state`。管理员选择器使用 `GET /api/account-options` 的 `{id,name}[]`（账户总量上限 1000）以及 `GET /api/inbound-options?scope=normal|vpngate` 的已应用启用入口；不使用列表第一页代替所有选项。未配置 VPNGate 时入口选项为空数组。
 
@@ -201,7 +201,7 @@ go vet ./...
 
 任务历史新增 `GET /api/tasks?before=<id>&limit=50`，响应 `{items,next_before}`，`limit` 为 1–100；0 的 `next_before` 表示没有下一页。概览任务数量固定上界，`task_counts.failed` 是未标记处理的失败总数，`attention` 是未处理失败或 partial/cached/failed 业务结果总数，`active` 是排队/运行中总数。顶部告警与概览统计使用聚合值，不依赖最近 12 条摘要。任务详情权限独立检查。
 
-备份读取返回私有暂存文件路径，调用者必须 `Close` 释放；失败读取自动清理。不要重新把所有条目读回一个内存集合，也不要在密文认证完成前信任数据库。当前备份格式 8、数据库 16、平台 6、节点 4、订阅 6，需新初始化目录。
+备份读取返回私有暂存文件路径，调用者必须 `Close` 释放；失败读取自动清理。不要重新把所有条目读回一个内存集合，也不要在密文认证完成前信任数据库。当前备份格式 8、数据库 16、平台 7、节点 5、订阅 6，需新初始化目录。
 
 ## 5.1 重构回归
 
@@ -252,3 +252,12 @@ Telegram/GitLab 的回归直接调用生产分发入口和快照捕获逻辑，�
 Windows 验证先加载 scripts/dev-env.ps1，再设置 MANAGED_CORE_BINARY 指向使用 with_quic,with_utls,with_wireguard,with_gvisor 构建的 managed-core。缺少这些环境变量会跳过实际核心集成夹具，不能把跳过视为完成验收。
 
 运行状态查询基准：go test ./internal/manage -run '^$' -bench '^BenchmarkSubscriptionActivityRead$' -benchmem -benchtime=1s -count=3。基准比较相同合成缓存的元信息解码与小投影读取，不测端到端 HTTP 或 VPN 吞吐。
+
+
+## 2026-11-25 重构验证入口
+
+新增 `config_consistency_test.go` 覆盖隧道候选/应用/下载一致性、临时观察归属、已应用版本缓存失效和废弃字段拒绝。历史 CLI 测试实现已移除；`config_fixture_test.go` 只组装测试材料并调用正式编译或应用服务。固定文件名导出的旧断言已替换为显式输出快照与旧文件不生成断言。
+
+`test-panel-refactor.mjs` 覆盖结构化 DNS 解析器在编辑、动态选项和无关字段修改中的保留及错误定位。浏览器验收额外检查 1280/375/320px 登录输入框与显隐按钮宽度、切换行为及溢出。使用 `PANEL_BROWSER_TEST=1` 执行本地 API + 浏览器；可设置 `PANEL_TEST_SCREENSHOT_DIR` 保存证据。
+
+运行 `go test ./internal/manage -run '^$' -bench '^BenchmarkBindingAvailability$' -benchmem -benchtime=1s -count=3` 比较 256 个入站下重复读取完整配置与版本缓存的成本。该指标只覆盖列表可用性计算，不代表 VPN 吞吐或整机内存。

@@ -16,13 +16,14 @@ type AccountService struct {
 	Control configurationReader
 	// Config supplies an explicit immutable candidate for compilation. Downloads
 	// leave it nil and capture the confirmed configuration once per operation.
-	Config  *PlatformConfig
-	view    *subscriptionView
-	exports *accountExportCache
+	Config   *PlatformConfig
+	view     *subscriptionView
+	exports  *accountExportCache
+	bindings *accountBindingCache
 }
 
 func (s *PlatformService) accountService() AccountService {
-	return AccountService{Root: s.Root, Core: s.Core, Store: s.Accounts, Control: s.Store, view: &s.exportView, exports: &s.exportPlans}
+	return AccountService{Root: s.Root, Core: s.Core, Store: s.Accounts, Control: s.Store, view: &s.exportView, exports: &s.exportPlans, bindings: &s.bindingView}
 }
 
 type bindingRepository struct{ *accounting.Store }
@@ -78,23 +79,23 @@ func (s AccountService) accountEntries(ctx context.Context, scope string) ([]Man
 
 func (s AccountService) configSnapshot(ctx context.Context) (PlatformConfig, error) {
 	if s.Config != nil {
-		return *s.Config, nil
+		c := *s.Config
+		c.normalize()
+		return c, nil
 	}
-	{
-		store := s.Control
-		if store == nil {
-			return PlatformConfig{}, errors.New("configuration repository dependency is required")
-		}
-		data, err := store.AppliedConfig(ctx)
-		if err != nil {
-			return PlatformConfig{}, err
-		}
-		c, err := decodePlatform(data)
-		if err != nil {
-			return c, err
-		}
-		return observedConfig(ctx, store, c)
+	store := s.Control
+	if store == nil {
+		return PlatformConfig{}, errors.New("configuration repository dependency is required")
 	}
+	data, err := store.AppliedConfig(ctx)
+	if err != nil {
+		return PlatformConfig{}, err
+	}
+	c, err := decodePlatform(data)
+	if err != nil {
+		return c, err
+	}
+	return observedConfig(ctx, store, c)
 }
 
 func configuredEntries(c PlatformConfig, scope string) ([]ManagedNode, error) {

@@ -4,9 +4,14 @@ const uuidProtocols = ["vless", "vmess", "tuic"];
 const isRemote = (v) => !["direct", ...groups].includes(v.type);
 
 export function outboundFields(protocols, tags, resolvers, capabilities) {
-  const tlsActive = (value) => capabilities[value.type]?.required_tls || value.tls?.enabled;
-  const tlsProtocols = Object.keys(capabilities).filter((type) => capabilities[type].tls);
-  const utlsProtocols = Object.keys(capabilities).filter((type) => capabilities[type].utls);
+  const tlsActive = (value) =>
+    capabilities[value.type]?.required_tls || value.tls?.enabled;
+  const tlsProtocols = Object.keys(capabilities).filter(
+    (type) => capabilities[type].tls,
+  );
+  const utlsProtocols = Object.keys(capabilities).filter(
+    (type) => capabilities[type].utls,
+  );
   const peers = (v) => tags.filter((tag) => tag !== v.tag);
   return [
     { key: "tag", label: "出站标识", required: true, section: "基本信息" },
@@ -101,7 +106,8 @@ export function outboundFields(protocols, tags, resolvers, capabilities) {
       label: "启用 TLS",
       type: "bool",
       section: "连接安全",
-      visible: (v) => capabilities[v.type]?.tls && !capabilities[v.type].required_tls,
+      visible: (v) =>
+        capabilities[v.type]?.tls && !capabilities[v.type].required_tls,
     },
     {
       key: "tls.server_name",
@@ -162,9 +168,7 @@ export function outboundFields(protocols, tags, resolvers, capabilities) {
       options: ["chrome", "firefox", "safari", "edge", "random"],
       default: "chrome",
       visible: (v) =>
-        utlsProtocols.includes(v.type) &&
-        tlsActive(v) &&
-        v.tls?.utls?.enabled,
+        utlsProtocols.includes(v.type) && tlsActive(v) && v.tls?.utls?.enabled,
     },
     {
       key: "transport.type",
@@ -238,7 +242,7 @@ export function outboundFields(protocols, tags, resolvers, capabilities) {
     {
       key: "domain_resolver",
       label: "域名解析器",
-      type: "select",
+      type: "resolver",
       options: [["", "使用默认解析器"], ...resolvers],
       visible: isRemote,
     },
@@ -281,7 +285,7 @@ export function outboundFields(protocols, tags, resolvers, capabilities) {
 }
 
 export function normalizeOutbound(v, previous, capabilities) {
-	const capability = capabilities[v.type] || {};
+  const capability = capabilities[v.type] || {};
   if (
     previous &&
     previous.transport?.type !== v.transport?.type &&
@@ -334,8 +338,7 @@ export function normalizeOutbound(v, previous, capabilities) {
   if (!capability.tls || !v.tls?.enabled) delete v.tls;
   if (v.tls) {
     if (v.type !== "vless" || !v.tls.reality?.enabled) delete v.tls.reality;
-    if (!capability.utls || !v.tls.utls?.enabled)
-      delete v.tls.utls;
+    if (!capability.utls || !v.tls.utls?.enabled) delete v.tls.utls;
   }
   if (!["vless", "vmess"].includes(v.type) || !v.transport?.type)
     delete v.transport;

@@ -37,7 +37,7 @@ func initialApp(ctx context.Context, root, core, address, name string) (App, err
 	if err != nil {
 		return App{}, err
 	}
-	app := App{Name: name, Address: address, Version: version, SocksPort: 40000, Routing: map[string][]string{}}
+	app := App{Name: name, Address: address, Version: version}
 	used, ranges, err := allocationPorts(root, app, settings)
 	if err != nil {
 		return App{}, err

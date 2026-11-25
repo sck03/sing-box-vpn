@@ -57,13 +57,11 @@ func (s *PlatformService) PrepareCountry(ctx context.Context, c PlatformConfig, 
 		secret := p.Secrets
 		secret.SocksUser, secret.SocksPass = "ygvg-"+cc, hexSecret()
 		p.Secrets = Secrets{}
-		p.Country = cc
 		c.VPN.Profiles[cc] = p
 		for _, asset := range initialCertificates(App{Nodes: MakeNodes(p, "vpngate-"+cc+"-")}) {
 			c.Certificates = append(c.Certificates, asset)
 		}
 		c.VPNSecrets[cc] = secret
-		c.VPN.Order = append(c.VPN.Order, cc)
 	}
 	c.VPN.ActiveCountry = cc
 	p := c.VPNSecrets[cc]

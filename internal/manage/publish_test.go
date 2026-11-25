@@ -37,7 +37,7 @@ func writePendingJournal(t *testing.T, root string, before fileBundle, stage str
 
 func TestPublishSkipsUnchangedFiles(t *testing.T) {
 	root := t.TempDir()
-	files := fileBundle{"app.json": []byte("state"), "sbox.json": []byte("old export")}
+	files := fileBundle{"app.json": []byte("state"), "artifact.bin": []byte("old export")}
 	if err := publish(root, files); err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestPublishSkipsUnchangedFiles(t *testing.T) {
 	if err := os.Chtimes(path, old, old); err != nil {
 		t.Fatal(err)
 	}
-	files["sbox.json"] = []byte("new export")
+	files["artifact.bin"] = []byte("new export")
 	files["empty.txt"] = []byte{}
 	files["missing.json"] = nil
 	if err := publish(root, files); err != nil {
@@ -56,7 +56,7 @@ func TestPublishSkipsUnchangedFiles(t *testing.T) {
 	if err != nil || !info.ModTime().Equal(old) {
 		t.Fatal("unchanged state was rewritten", err)
 	}
-	if string(readBytes(t, filepath.Join(root, "sbox.json"))) != "new export" {
+	if string(readBytes(t, filepath.Join(root, "artifact.bin"))) != "new export" {
 		t.Fatal("changed export was not published")
 	}
 	if data := readBytes(t, filepath.Join(root, "empty.txt")); len(data) != 0 {
@@ -174,7 +174,7 @@ func TestRecoverWaitsForCurrentConfigurationOperation(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	if err := withFileLock(root, func() error {
-		go func() { done <- RunConfig(ctx, []string{"--root", root, "recover"}, &bytes.Buffer{}) }()
+		go func() { done <- withStartupLock(ctx, root, func() error { return nil }) }()
 		select {
 		case err := <-done:
 			t.Fatal("concurrent service recovery failed before the writer released its lock", err)
@@ -197,7 +197,7 @@ func TestRecoverWaitsForCurrentConfigurationOperation(t *testing.T) {
 func BenchmarkPublishUnchanged(b *testing.B) {
 	root := b.TempDir()
 	files := fileBundle{}
-	for _, name := range []string{"app.json", "sb.json", "sbox.json", "clmi.yaml", "share.json", "jhsub.txt", "jhsub-base64.txt"} {
+	for _, name := range []string{"app.json", "sb.json", "artifact.bin", "clmi.yaml", "share.json", "jhsub.txt", "jhsub-base64.txt"} {
 		files[name] = bytes.Repeat([]byte("configuration\n"), 512)
 	}
 	if err := publish(root, files); err != nil {

@@ -151,10 +151,8 @@ func portReservations(app App, settings VPNSettings) ([]portReservation, error) 
 			return nil, err
 		}
 	}
-	for _, port := range []int{app.SocksPort, settings.ProxyPort} {
-		if port > 0 {
-			out = append(out, portReservation{portRange{port, port}, "", ""})
-		}
+	if port := settings.ProxyPort; port > 0 {
+		out = append(out, portReservation{portRange{port, port}, "", ""})
 	}
 	return out, nil
 }

@@ -15,6 +15,26 @@ def check(browser, base):
     browser_errors = []
     page.on("pageerror", lambda error: browser_errors.append(str(error)))
     page.goto(base + "/")
+    for width in [1280, 375, 320]:
+        page.set_viewport_size({"width": width, "height": 900})
+        password = page.locator('#login-form [name="password"]')
+        toggle = page.locator("#login-form .secret-toggle")
+        expect(password).to_be_visible()
+        expect(toggle).to_be_visible()
+        field_box = password.bounding_box()
+        toggle_box = toggle.bounding_box()
+        assert field_box["width"] > 2 * toggle_box["width"], (width, field_box, toggle_box)
+        assert toggle_box["x"] + toggle_box["width"] <= width, "login control overflows"
+        assert abs(field_box["y"] - toggle_box["y"]) < 1, "secret controls are misaligned"
+        assert abs(field_box["height"] - toggle_box["height"]) < 1, "secret controls differ in height"
+        toggle.click()
+        expect(password).to_have_attribute("type", "text")
+        toggle.click()
+        expect(password).to_have_attribute("type", "password")
+        if os.getenv("PANEL_TEST_SCREENSHOT_DIR"):
+            os.makedirs(os.environ["PANEL_TEST_SCREENSHOT_DIR"], exist_ok=True)
+            page.screenshot(path=os.path.join(os.environ["PANEL_TEST_SCREENSHOT_DIR"], f"login-{width}.png"))
+    page.set_viewport_size({"width": 1280, "height": 900})
     page.locator('[name="username"]').fill(os.getenv("PANEL_TEST_USERNAME", "reviewadmin"))
     page.locator('[name="password"]').fill(os.environ["PANEL_TEST_PASSWORD"])
     with page.expect_response(lambda r: r.url.endswith("/api/auth/login")) as login:

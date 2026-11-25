@@ -46,12 +46,9 @@ func (s *PlatformService) serveConfiguration(w http.ResponseWriter, r *http.Requ
 		if !require(admin) {
 			return true
 		}
-		var input struct {
-			Config PlatformConfig `json:"config"`
-			ID     string         `json:"id"`
-		}
+		var input OutputPreviewRequest
 		if err = decodeRequest(w, r, &input, 16<<20); err == nil {
-			var preview Object
+			var preview OutputPreview
 			preview, err = s.PreviewOutput(ctx, input.Config, input.ID)
 			if err == nil {
 				jsonResponse(w, preview)
@@ -67,7 +64,7 @@ func (s *PlatformService) serveConfiguration(w http.ResponseWriter, r *http.Requ
 		}
 		var c PlatformConfig
 		if err = decodeRequest(w, r, &c, 16<<20); err == nil {
-			var preview Object
+			var preview ConfigurationPreview
 			preview, err = s.PreviewConfiguration(ctx, c)
 			if err == nil {
 				jsonResponse(w, preview)

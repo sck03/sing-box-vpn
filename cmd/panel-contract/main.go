@@ -168,7 +168,7 @@ func main() {
 		reflect.TypeFor[manage.SubscriptionStatusResponse](),
 		reflect.TypeFor[sub.TemplateImport](), reflect.TypeFor[sub.TemplateImportResult](), reflect.TypeFor[manage.OverviewSnapshot](), reflect.TypeFor[manage.ProgramStatus](), reflect.TypeFor[manage.CertificatePreparation](), reflect.TypeFor[manage.CertificateImport](),
 		reflect.TypeFor[manage.ManagedNode](), reflect.TypeFor[manage.App](), reflect.TypeFor[manage.APIError](), reflect.TypeFor[sub.AccountOutputOption](),
-		reflect.TypeFor[manage.PlatformConfig](), reflect.TypeFor[manage.ConfigurationSave](), reflect.TypeFor[manage.ConfigurationState](), reflect.TypeFor[manage.QueuedTask](), reflect.TypeFor[application.TaskCommand](),
+		reflect.TypeFor[manage.PlatformConfig](), reflect.TypeFor[manage.ConfigurationSave](), reflect.TypeFor[manage.ConfigurationState](), reflect.TypeFor[manage.ConfigurationPreview](), reflect.TypeFor[manage.OutputPreview](), reflect.TypeFor[manage.OutputPreviewRequest](), reflect.TypeFor[manage.QueuedTask](), reflect.TypeFor[application.TaskCommand](),
 		reflect.TypeFor[domain.Account](), reflect.TypeFor[domain.Credential](), reflect.TypeFor[accounting.Usage](), reflect.TypeFor[accounting.Grant](),
 		reflect.TypeFor[application.AccountCommand](), reflect.TypeFor[application.AccountExportRequest](), reflect.TypeFor[manage.AccountExportResponse](), reflect.TypeFor[application.SubscriptionCommand](), reflect.TypeFor[controlstore.Task](), reflect.TypeFor[adminauth.Session](), reflect.TypeFor[runtimeconfig.Capabilities](),
 		reflect.TypeFor[manage.CredentialSummary](), reflect.TypeFor[accounting.CredentialPublication](), reflect.TypeFor[controlstore.TaskPage](), reflect.TypeFor[controlstore.TaskCounts](),

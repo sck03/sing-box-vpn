@@ -4,6 +4,9 @@ import type {
   DeliveryResult,
   SubscriptionStatusResponse,
   Grant,
+  App,
+  ConfigurationPreview,
+  OutputPreview,
 } from "../internal/manage/panel/contracts.js";
 
 // Compile-time wire examples. These never send requests or ship in the panel.
@@ -107,3 +110,28 @@ const privateDelivery: Pick<SubscriptionStatusResponse, "deliveries"> = {
   deliveries: [{ ...activity.deliveries[0], token: "secret" }],
 };
 void [delivery, activity, incompleteDelivery, privateDelivery];
+
+const preview: ConfigurationPreview = {
+  valid: true,
+  ordinary_server: {},
+  outputs: [],
+  diagnostics: {},
+};
+const output: OutputPreview = {
+  id: "account",
+  name: "Account",
+  mime: "text/plain",
+  nodes: 2,
+  diagnostics: [],
+  preview: { content: "redacted", truncated: false, decoded: false },
+};
+// @ts-expect-error preview node counts must stay numeric
+const badPreview: OutputPreview = { ...output, nodes: "2" };
+declare const app: App;
+// @ts-expect-error tunnel state belongs to PlatformConfig, never App
+app.argo = {};
+// @ts-expect-error routing has one representation in app.advanced
+app.routing = {};
+// @ts-expect-error SOCKS endpoints are explicit outbound resources
+app.socks_port = 40000;
+void [preview, output, badPreview];

@@ -35,6 +35,7 @@ type PlatformService struct {
 	workerReady         atomic.Bool
 	exportView          subscriptionView
 	exportPlans         accountExportCache
+	bindingView         accountBindingCache
 }
 
 func OpenPlatform(root, core, runtime string, noSystem bool) (*PlatformService, error) {

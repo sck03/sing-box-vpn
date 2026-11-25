@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sck03/sing-box-vpn/internal/accounting"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
@@ -89,7 +90,7 @@ func TestSubscriptionDeliverySnapshotAndUnchanged(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if uploads.Load() != 1 || !bytes.Equal(received, readBytes(t, filepath.Join(root, "proxies.yaml"))) {
+	if uploads.Load() != 1 || !bytes.Equal(received, readArtifact(t, root, "normal-provider")) {
 		t.Fatal("delivery duplicated or used a different snapshot")
 	}
 	_ = core
@@ -151,7 +152,12 @@ func TestSubscriptionCustomOutputsAndRevokedUsageCleanup(t *testing.T) {
 	c.Outputs[0].ID = "custom"
 	root, token := t.TempDir(), strings.Repeat("b", 64)
 	subscriptionFixture(t, root, token, "content")
-	if err := RunSubscriptions(context.Background(), []string{"--root", root, "revoke", "--id", "fixture"}, nil, io.Discard); err != nil {
+	store, err := accounting.Open(filepath.Join(root, "control.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.RevokeGrant(t.Context(), "fixture"); err != nil {
 		t.Fatal(err)
 	}
 	response := httptest.NewRecorder()
@@ -159,14 +165,11 @@ func TestSubscriptionCustomOutputsAndRevokedUsageCleanup(t *testing.T) {
 	if response.Code != 404 {
 		t.Fatal("revoked grant remains usable")
 	}
-	var links bytes.Buffer
-	if err := subscriptionURLs(root, "127.0.0.1", "normal", &links); err != nil || strings.Contains(links.String(), "/s/") {
-		t.Fatal("read-only display emitted revoked links", err, links.String())
-	}
+
 }
 
 func TestSubscriptionApplyPrunesUnusedResourcesWithoutRemoteSources(t *testing.T) {
-	root, core, app := appFixture(t)
+	root, core, _ := appFixture(t)
 	c, r, _, err := loadSubscriptions(root)
 	if err != nil {
 		t.Fatal(err)
@@ -177,29 +180,16 @@ func TestSubscriptionApplyPrunesUnusedResourcesWithoutRemoteSources(t *testing.T
 	if err := AtomicJSON(filepath.Join(root, subscriptionsRuntime), r); err != nil {
 		t.Fatal(err)
 	}
-	file := filepath.Join(t.TempDir(), "config.json")
-	if err := AtomicJSON(file, c); err != nil {
-		t.Fatal(err)
-	}
-	if err := RunSubscriptions(context.Background(), []string{"--root", root, "--core", core, "apply", "--file", file}, nil, io.Discard); err != nil {
+	service, config, _ := platformFixture(t, root, core)
+	config.Subscriptions = c
+	if err := applyFixture(t, service, config, 1); err != nil {
 		t.Fatal(err)
 	}
 	_, r, _, err = loadSubscriptions(root)
 	if err != nil || len(r.Resources) != 0 || len(r.Deliveries) != 0 {
 		t.Fatal("unused resource state retained without source caches", err)
 	}
-	before := readBytes(t, filepath.Join(root, subscriptionsConfig))
-	args := []string{"--root", root, "grant", "--id", "phone", "--outputs", "normal-provider", "--max-downloads", "2"}
-	if err := RunSubscriptions(context.Background(), args, nil, io.Discard); err == nil || !bytes.Equal(before, readBytes(t, filepath.Join(root, subscriptionsConfig))) {
-		t.Fatal("unconfigured share must fail without changing authorization", err)
-	}
-	if err := configureSubscription(root, app, VPNSettings{}, 0); err != nil {
-		t.Fatal(err)
-	}
-	var links bytes.Buffer
-	if err := RunSubscriptions(context.Background(), args, nil, &links); err != nil || !strings.Contains(links.String(), "/normal-provider") {
-		t.Fatal("configured share was not created", err)
-	}
+
 }
 
 func TestSubscriptionOnDemandProtocolProbe(t *testing.T) {
@@ -238,7 +228,7 @@ func TestSubscriptionOnDemandProtocolProbe(t *testing.T) {
 	defer func() { cancel(); _ = cmd.Wait() }()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }))
 	defer server.Close()
-	local, err := collectLocalSubscriptionNodes(app, VPNSettings{}, nil)
+	local, err := fixtureSubscriptionNodes(app, VPNSettings{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

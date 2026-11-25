@@ -2,7 +2,7 @@ package manage
 
 import (
 	"context"
-	"errors"
+
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -71,7 +71,7 @@ func TestLocalMutationSurvivesUnrelatedRequiredRemoteFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	app.Address = "new.example.com"
-	if err := CommitApp(context.Background(), root, core, &app); err != nil {
+	if err := publishFixtureApp(context.Background(), root, core, &app); err != nil {
 		t.Fatal(err)
 	}
 	var snapshot sub.Snapshot
@@ -96,7 +96,7 @@ func TestScheduledRefreshPrunesExpiredOptionalWithoutFetch(t *testing.T) {
 	node := local[normalScope][0]
 	node.ID, node.Name, node.Server = "remote-node", "remote-node", "upstream.example"
 	r.Sources[source.ID] = sub.SourceCache{SourceHash: sub.SourceHash(source), Nodes: []sub.Node{node}, Success: time.Now(), Next: time.Now().Add(time.Hour)}
-	files, _, _, err := buildSubscriptions(context.Background(), root, core, c, r, local)
+	files, _, _, err := compileSubscriptions(context.Background(), root, core, c, r, local, sub.Strict)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,33 +112,8 @@ func TestScheduledRefreshPrunesExpiredOptionalWithoutFetch(t *testing.T) {
 	if err := refreshSubscriptions(context.Background(), root, core, false); err != nil {
 		t.Fatal(err)
 	}
-	data := readBytes(t, filepath.Join(root, "jhsub.txt"))
+	data := readArtifact(t, root, "normal-uri")
 	if strings.Contains(string(data), "upstream.example") || len(data) == 0 {
 		t.Fatal("expired optional source not pruned")
-	}
-}
-
-func TestCoreUpgradeChecksCustomPublishedOutput(t *testing.T) {
-	root := t.TempDir()
-	c := fixtureSubscriptionConfig()
-	c.Outputs = []sub.Output{{ID: "custom", Collection: "normal", Template: "normal-sing-box"}}
-	data := []byte(`{"new_only":true}`)
-	snapshot := sub.Snapshot{Artifacts: map[string]sub.Artifact{"custom": {Data: data, ETag: `"` + sub.Digest(data) + `"`}}}
-	if err := AtomicJSON(filepath.Join(root, subscriptionsConfig), c); err != nil {
-		t.Fatal(err)
-	}
-	if err := AtomicJSON(filepath.Join(root, subscriptionsSnapshot), snapshot); err != nil {
-		t.Fatal(err)
-	}
-	called := false
-	err := validateConfigs(context.Background(), root, "candidate", func(_ context.Context, _ string, args ...string) ([]byte, error) {
-		called = true
-		if string(readBytes(t, args[len(args)-1])) != string(data) {
-			t.Fatal("wrong candidate content")
-		}
-		return nil, errors.New("unsupported")
-	})
-	if !called || err == nil || !strings.Contains(err.Error(), "custom") {
-		t.Fatal("custom configuration bypassed upgrade validation", err)
 	}
 }

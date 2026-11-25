@@ -2,7 +2,7 @@
 
 [使用指南](usage.md) · [架构](architecture.md) · [兼容性](compatibility.md)
 
-当前订阅配置为 **schema=6**，CompilerVersion=6、ParserVersion=2。只接受当前配置，不迁移旧数据或恢复旧管理接口。平台配置 schema=6、节点文档 schema=4、模板 version=1、数据库 schema=16 和备份容器格式 8 分别维护，不能一起机械递增。
+当前订阅配置为 **schema=6**，CompilerVersion=6、ParserVersion=2。只接受当前配置，不迁移旧数据或恢复旧管理接口。平台配置 schema=7、节点文档 schema=5、模板 version=1、数据库 schema=16 和备份容器格式 8 分别维护，不能一起机械递增。
 
 ## 普通账户分享
 
@@ -193,3 +193,9 @@ Egern 独立渲染 IPv4 `ip_cidr` 与 IPv6 `ip_cidr6`，支持 UDP 中继、Hyst
 状态 delivered 表示远端确认送达，unchanged 表示此前已确认相同内容，failed 表示明确错误，interrupted 表示操作中断，uncertain 表示远端可能已接收但本地没有完整确认。Telegram 多段消息部分成功、写入请求超时或确认正文中断都可能出现 uncertain；重试仍可能产生重复消息或提交，不能保证恰好一次。重试退避从 60 秒增加，上限 6 小时；手动投递可立即触发。
 
 投递与刷新共用后台任务队列，每次投递最多两个并发网络请求，不占用配置控制队列。配置候选激活但尚未确认时，不会从不一致的订阅快照启动投递。网络期间发生的配置变化不撤回已发出的远程写入。
+
+## 显式输出与预览一致性（2026-11-25）
+
+订阅发布只保存已配置输出的快照和必要运行投影，不再隐式创建 `sbox.json`、`clmi.yaml`、`proxies.yaml`、`jhsub.txt`、`jhsub-base64.txt` 或 `share.json`（包括 VPNGate 子目录）。通过账户下载或配置输出的授权 URL 获取内容；输出 ID 不再决定额外的本地文件路径。
+
+固定 Argo 隧道在应用前的候选预览中就会包含对应节点；更换域名和关闭隧道同样影响预览、应用后快照与账户下载。临时隧道只复用与候选隧道设置一致的观察值。

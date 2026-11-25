@@ -33,6 +33,7 @@ func configurationOutcome(files fileBundle) ([]byte, error) {
 // Candidate preparation owns fetched material until the durable apply task
 // publishes it. Preview cannot overwrite live caches or applied configuration.
 func (s *PlatformService) prepareBuild(ctx context.Context, c PlatformConfig) (fileBundle, map[string]sub.SourceCache, error) {
+	c.normalize()
 	if err := c.Validate(); err != nil {
 		return nil, nil, err
 	}
@@ -49,58 +50,58 @@ func (s *PlatformService) prepareBuild(ctx context.Context, c PlatformConfig) (f
 	return files, prepared, err
 }
 
-func (s *PlatformService) PreviewConfiguration(ctx context.Context, c PlatformConfig) (Object, error) {
-	c.normalize()
+func (s *PlatformService) PreviewConfiguration(ctx context.Context, c PlatformConfig) (ConfigurationPreview, error) {
 	files, _, err := s.prepareBuild(ctx, c)
 	if err != nil {
-		return nil, err
+		return ConfigurationPreview{}, err
 	}
-	var server any
+	var server Object
 	var snapshot sub.Snapshot
 	if err := json.Unmarshal(files["sb.json"], &server); err != nil {
-		return nil, err
+		return ConfigurationPreview{}, err
 	}
 	if err := json.Unmarshal(files[subscriptionsSnapshot], &snapshot); err != nil {
-		return nil, err
+		return ConfigurationPreview{}, err
 	}
 	redactPlatform(server)
-	outputs := []Object{}
+	outputs := []ConfigurationOutputPreview{}
 	var previous sub.Snapshot
 	_, _ = ReadJSON(filepath.Join(s.Root, subscriptionsSnapshot), &previous)
 	for _, output := range c.Subscriptions.Outputs {
 		artifact, available := snapshot.Artifacts[output.ID]
-		outputs = append(outputs, Object{"id": output.ID, "name": output.Name, "available": available, "bytes": len(artifact.Data), "diagnostics": snapshot.Diagnostics[output.ID], "input_nodes": snapshot.InputCounts[output.ID], "nodes": snapshot.NodeCounts[output.ID], "delta": sub.CompareSelection(previous.NodeKeys[output.ID], snapshot.NodeKeys[output.ID]), "validation": snapshot.Validations[output.ID]})
+		outputs = append(outputs, ConfigurationOutputPreview{ID: output.ID, Name: output.Name, Available: available, Bytes: len(artifact.Data), Diagnostics: snapshot.Diagnostics[output.ID], InputNodes: snapshot.InputCounts[output.ID], Nodes: snapshot.NodeCounts[output.ID], Delta: sub.CompareSelection(previous.NodeKeys[output.ID], snapshot.NodeKeys[output.ID]), Validation: snapshot.Validations[output.ID]})
 	}
-	return Object{"valid": true, "ordinary_server": server, "outputs": outputs, "diagnostics": snapshot.Diagnostics}, nil
+	return ConfigurationPreview{Valid: true, OrdinaryServer: server, Outputs: outputs, Diagnostics: snapshot.Diagnostics}, nil
 }
 
-func (s *PlatformService) PreviewOutput(ctx context.Context, c PlatformConfig, id string) (Object, error) {
+func (s *PlatformService) PreviewOutput(ctx context.Context, c PlatformConfig, id string) (OutputPreview, error) {
 	var err error
 	c.Subscriptions, err = c.Subscriptions.OnlyOutput(id)
 	if err != nil {
-		return nil, err
+		return OutputPreview{}, err
 	}
 	files, _, err := s.prepareBuild(ctx, c)
 	if err != nil {
-		return nil, err
+		return OutputPreview{}, err
 	}
 	var snapshot sub.Snapshot
 	if err = json.Unmarshal(files[subscriptionsSnapshot], &snapshot); err != nil {
-		return nil, err
+		return OutputPreview{}, err
 	}
 	artifact, found := snapshot.Artifacts[id]
 	if !found {
-		return nil, errors.New("selected output is unavailable")
+		return OutputPreview{}, errors.New("selected output is unavailable")
 	}
 	template := snapshot.Templates[c.Subscriptions.Outputs[0].Template]
 	preview, err := sub.PreviewArtifact(artifact, template.Client, 64<<10)
 	if err != nil {
-		return nil, err
+		return OutputPreview{}, err
 	}
-	return Object{"id": id, "name": artifact.Name, "mime": artifact.MIME, "preview": preview, "nodes": snapshot.NodeCounts[id], "diagnostics": snapshot.Diagnostics[id]}, nil
+	return OutputPreview{ID: id, Name: artifact.Name, MIME: artifact.MIME, Preview: preview, Nodes: snapshot.NodeCounts[id], Diagnostics: snapshot.Diagnostics[id]}, nil
 }
 
 func (s *PlatformService) buildConfig(ctx context.Context, c PlatformConfig, mode sub.BuildMode, prepared map[string]sub.SourceCache) (fileBundle, error) {
+	c.normalize()
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}

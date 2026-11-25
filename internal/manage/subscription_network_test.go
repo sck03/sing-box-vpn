@@ -20,11 +20,18 @@ func TestSubscriptionURLsReachBothAddressFamilies(t *testing.T) {
 	}
 	probe.Close()
 	root := t.TempDir()
-	if err := configureSubscription(root, App{}, VPNSettings{}, 0); err != nil {
+	port, err := AvailablePort(map[int]bool{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := AtomicJSON(filepath.Join(root, "subscription.json"), subscriptionSettings{Enabled: true, Listen: "::", Port: port}); err != nil {
 		t.Fatal(err)
 	}
 	const body = `{"subscription":"current"}`
 	writeTestSnapshot(t, root, body)
+	if err := AtomicJSON(filepath.Join(root, subscriptionsConfig), fixtureSubscriptionConfig()); err != nil {
+		t.Fatal(err)
+	}
 	var settings subscriptionSettings
 	ReadJSON(filepath.Join(root, "subscription.json"), &settings)
 	token := strings.Repeat("a", 64)

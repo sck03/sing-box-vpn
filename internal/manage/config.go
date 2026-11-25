@@ -76,7 +76,7 @@ func vpnServer(settings VPNSettings, private map[string]Secrets) (Object, error)
 
 func hexSecret() string { return fmt.Sprintf("%x", randomBytes(32)) }
 func usedPorts(app App, settings VPNSettings) map[int]bool {
-	used := map[int]bool{settings.ProxyPort: true, app.SocksPort: true}
+	used := map[int]bool{settings.ProxyPort: true}
 	for _, node := range app.Nodes {
 		used[node.Port] = true
 	}

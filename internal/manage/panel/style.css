@@ -901,7 +901,7 @@ form[aria-busy="true"] button[type="submit"]::after {
 .login h1 {
   font-size: 25px;
 }
-.login button {
+.login button[type="submit"] {
   width: 100%;
   margin-top: 10px;
 }
@@ -1323,15 +1323,18 @@ progress {
 /* Shared secret controls and first-run guidance. */
 .secret-field {
   display: flex;
+  margin-top: 7px;
   align-items: stretch;
   gap: 0.4rem;
   min-width: 0;
 }
 .secret-field input {
   flex: 1;
+  margin: 0;
   min-width: 0;
 }
 .secret-field .secret-toggle {
+  width: auto;
   flex: 0 0 auto;
   align-self: stretch;
   margin: 0;

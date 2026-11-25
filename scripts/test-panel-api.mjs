@@ -71,8 +71,10 @@ assert.equal(
 );
 let state = ok(await call("/api/config"));
 const config = state.config;
-assert.equal(config.app.schema, 4);
-assert.equal(config.schema, 6);
+assert.equal(config.app.schema, 5);
+for (const removed of ["argo", "socks_port", "routing", "country"])
+  assert.equal(removed in config.app, false);
+assert.equal(config.schema, 7);
 assert(
   config.app.nodes.every((node) => !("uuid" in node) && !("password" in node)),
 );
