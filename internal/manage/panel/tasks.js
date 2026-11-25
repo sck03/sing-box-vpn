@@ -170,6 +170,7 @@ const phases = {
   succeeded: "已完成",
   failed: "失败",
   cancelled: "已取消",
+  cancelling: "正在停止探测",
 };
 export const taskKind = (kind) => kinds[kind] || kind;
 export const taskPhase = (phase) => phases[phase] || phase;
@@ -254,10 +255,19 @@ export function tasksCard(tasks, ctx, { compact = false } = {}) {
         { label: "操作", value: (t) => taskKind(t.kind) },
         {
           label: "状态",
-          value: (t) => taskPhase(t.state),
+          value: (t) =>
+            taskPhase(
+              t.cancel_requested && t.state === "running"
+                ? "cancelling"
+                : t.state,
+            ),
           render: (t) =>
             badge(
-              taskPhase(t.state),
+              taskPhase(
+                t.cancel_requested && t.state === "running"
+                  ? "cancelling"
+                  : t.state,
+              ),
               t.state === "failed" || t.outcome === "failed"
                 ? "bad"
                 : ["partial", "cached", "not_run"].includes(t.outcome)
@@ -299,11 +309,9 @@ export function tasksCard(tasks, ctx, { compact = false } = {}) {
         ...(canViewTask(t, ctx.session)
           ? [button("详情", () => openTask(t.id, ctx.signal))]
           : []),
-        ...(t.state === "queued" &&
-        t.kind !== "apply" &&
-        ctx.session.role === "admin"
+        ...(t.cancellable && ctx.session.role === "admin"
           ? [
-              button("取消", async () => {
+              button(t.state === "running" ? "停止探测" : "取消", async () => {
                 await api("/api/tasks/cancel", { id: t.id });
                 ctx.render();
               }),

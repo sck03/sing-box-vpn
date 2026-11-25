@@ -10,8 +10,6 @@ import (
 	"strings"
 )
 
-const maxASN = 1<<32 - 1
-
 // Parse the original JSON number, without float64 rounding before policy checks.
 type geoASNNumber uint32
 

@@ -1,6 +1,6 @@
 # 架构与维护
 
-`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 16；平台配置 schema=7、节点文档 schema=5、订阅配置 schema=6、模板 version=1 是各自独立的格式版本。只接受当前配置，不提供旧数据库、订阅内容、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责。
+`control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 17；平台配置 schema=7、节点文档 schema=5、订阅配置 schema=6、模板 version=1 是各自独立的格式版本。只接受当前配置，不提供旧数据库、订阅内容、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责。
 
 公网传输由 `internal/publicaccess` 管理，共用 `internal/tlsconfig`；服务登记位于 `internal/servicecatalog`。主机操作按 service/deployment/units/gateway/network/journal 分文件，日志系统适配位于 `internal/hostservice`。任务保留策略与执行终态分离；面板访问重启由独立助手和持久收据完成。账户服务不再回退读取旧 JSON 配置，调用者必须注入配置/控制仓库，或读取当前数据库。
 
@@ -32,7 +32,7 @@ subscriptions/schedule.json 是截止时间与权益修订的小型投影，不�
 
 `subscriptions_publication.go` 隔离抓取/编译与发布：锁外运行编码器及 sing-box 核心检查，锁内通过 AppliedState 原子读取确认配置和版本，校对 runtime-revision、订阅配置、账户节点/修订和核心身份。候选文件已发布但尚未确认时拒绝后台刷新和新的投递快照；提交时再核对一次代际。新资源失败时用旧资源重新构建健康输出。单输出检测只展开其来源图，不二次校验同一产物。连接检测统一使用 sing-box；超出能力的节点返回 unsupported，不依赖目标客户端核心。
 
-投递与刷新共用有界后台任务队列，控制队列独立处理配置及凭据。投递分为快照捕获、两个并发传输 worker、独立限时完成记录提交和结果报告。记录按目标配置摘要匹配；无关配置变更不丢失确认，替换地址或凭据不继承旧确认。配置/凭据/隧道发布统一在提交阶段合并最新投递记录。写入后无法确认远端是否接收时记录 uncertain，可能需要重试，不能宣称恰好一次。
+投递与刷新共用有界 subscription 队列；probe 队列独立执行连通性检查，control 队列独立处理配置及凭据。投递分为快照捕获、两个并发传输 worker、独立限时完成记录提交和结果报告。记录按目标配置摘要匹配；无关配置变更不丢失确认，替换地址或凭据不继承旧确认。配置/凭据/隧道发布统一在提交阶段合并最新投递记录。写入后无法确认远端是否接收时记录 uncertain，可能需要重试，不能宣称恰好一次。
 
 账户导出通过 AccountTemplates 使用同版本已发布的有效模板；本地模板引用的远程规则也是该依赖图的一部分。缺失远程依赖只阻断相关输出，不影响内置模板。状态和投递报告采用命名 DTO，由 panel-contract 同步生成前端契约。
 
@@ -192,7 +192,7 @@ VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IP
 
 ## 强类型配置与任务边界（2026-11-19）
 
-`internal/serverconfig` 独立定义托管 Node、TLS、WebSocket 传输和字段约束，不依赖 HTTP、SQLite 或主机服务。`App.Nodes` 是内存与数据库中的唯一节点来源，正常节点不再保存 Profile / 动态 Inbounds 副本。`App.Inbounds()` 返回独立核心投影；VPNGate Profile 在初始化边界经 `MakeNodes` 转为同一节点契约。节点文档 schema=5，数据库 schema=16，旧数据直接拒绝。
+`internal/serverconfig` 独立定义托管 Node、TLS、WebSocket 传输和字段约束，不依赖 HTTP、SQLite 或主机服务。`App.Nodes` 是内存与数据库中的唯一节点来源，正常节点不再保存 Profile / 动态 Inbounds 副本。`App.Inbounds()` 返回独立核心投影；VPNGate Profile 在初始化边界经 `MakeNodes` 转为同一节点契约。节点文档 schema=5，数据库 schema=17，旧数据直接拒绝。
 
 托管 VMess 只接受 WS，支持 path/host/early_data/early_data_header；不支持的传输与未知字段明确拒绝，不能接受后丢弃。新节点默认关闭 early-data，用户开启后按真实目标客户端能力判断。关闭时核心投影显式选择 WS 请求头模式，避免上游按编码后的 RequestURI 比较中文路径；开启 early-data 且路径含非 ASCII 字符时必须指定请求头。Reality 私钥、short ID、flow 与握手信息可通过表单编辑。订阅导入模型仍单独支持更广的协议与传输，不与受管服务端模型混用。
 
@@ -225,7 +225,7 @@ VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IP
 
 clientprofile/output.go 定义稳定输出身份（格式与用途）；subscription/account_output.go 负责纯兼容性规划，account_policy.go 校验模板 client/mode。manage 负责配置快照、授权、编译缓存和核心验证；HTTP 不重新定义模板业务。账户导出请求与凭据命令为不同的 application 类型。
 
-授权 profiles 精确匹配输出身份；数据库 schema=16 的 profiles 列取代旧 clients 列。平台 schema=7、订阅 schema=6，CompilerVersion=6；旧数据或旧接口明确拒绝。内置默认不再复制成账户配置，远程模板发布故障不阻断不依赖它的内置输出。
+授权 profiles 精确匹配输出身份；数据库 schema=17 的 profiles 列取代旧 clients 列。平台 schema=7、订阅 schema=6，CompilerVersion=7；旧数据或旧接口明确拒绝。内置默认不再复制成账户配置，远程模板发布故障不阻断不依赖它的内置输出。
 
 列表只分析节点，创建授权与下载才编译所选格式。面板配置预览、保存、导出、授权等重请求独立限制为 2 并发；每个下载监听的账户请求限制为 4 并发；状态、任务及 SSE 保持独立预算。ConfigurationState、AccountExportRequest 与 AccountExportResponse 由 Go 类型生成前端契约。只读状态递归擦除结构化秘密值，保留字段类型。
 
@@ -251,7 +251,7 @@ loadDialog 在首次查询前占有对话框；切页、关闭或替换会取消
 
 `accounting.AccountUsage` 与分页列表共用有效状态处理，结合订阅者停用与当前账期，不激活首次使用权益；基础 `Account` 查询供内部账务操作读取原始记录。SQLite 的主键/唯一冲突在仓库边界转换为 domain.ErrAlreadyExists，HTTP 映射为 409/already_exists，其他存储故障继续作为故障处理。
 
-刷新使用 background 队列，来源抓取 90 秒、资源抓取 45 秒，每阶段最多 4 并发；最久未检查者优先，未完成输入保持原调度状态。候选准备复用抓取器，不再持有刷新锁等待网络。配置/账户输入/核心身份在最终提交时重新检查，防止并发配置更改被旧结果覆盖。
+刷新使用 subscription 队列，来源抓取 90 秒、资源抓取 45 秒，每阶段最多 4 并发；最久未检查者优先，未完成输入保持原调度状态。候选准备复用抓取器，不再持有刷新锁等待网络。配置/账户输入/核心身份在最终提交时重新检查，防止并发配置更改被旧结果覆盖。
 
 刷新结果包含 checked、updated、failures、outputs、expected_outputs、published、deferred、interrupted。手动和自动任务共用执行器，错误和成功都通过独立 5 秒保存预算记录报告。取消后的来源检查点不发布产物或未经验证的规则，版本不匹配则拒绝保存。分发快照由独立函数在发布锁内捕获，网络发送位于锁外。
 
@@ -270,3 +270,14 @@ loadDialog 在首次查询前占有对话框；切页、关闭或替换会取消
 账户列表缓存只保存按 AppliedRevision 派生的入站可用集合。`AppliedStateSince` 用一次 SQL 快照同时读取版本和必要时的配置正文；待应用版本不改变缓存。缓存只有一份不可变集合，新版本替换旧集合；权益、配额、到期和实际凭据绑定每次查询。
 
 删除 Profile 自签标志、Reality 公钥副本、Profile/App country 和 profile_order：自签/公钥由有效材料派生，国家由 profiles 键与 active_country 表达。VPNGate 的 proxy_port 保留并提供界面入口，修改时同步 gateway.listen，最终由服务端校验引用和端口冲突。
+
+## 发布校验、部署计划与探测取消（2026-11-25）
+
+- `internal/domain/address.go` 提供裸 IP / DNS 名称约束，平台地址、可选 CDN 地址、托管节点 SNI/Reality 目标与订阅节点复用。拒绝 URL、端口、路径、控制字符与 IPv6 zone；IPv6 地址不带方括号。平台字段错误返回 invalid_field 与具体 field。CDN/Argo 转换完成后再次验证最终订阅节点。
+- `internal/manage/deployment_plan.go` 是纯部署差异计算。比较实际服务输入的规范 JSON，避免 JSON 数字的 Go 类型差异导致误重启。普通核心使用实际服务端配置，VPNGate 核心只使用当前国家生成配置，网关使用自身策略，下载服务使用监听设置。临时 Argo 只比较模式和绑定入站的本地 scheme/port，固定 Argo 只比较模式和 token；发布域名变化单独更新订阅。
+- ServiceChange 同时供预览和执行使用。预览标注观察到的运行状态及 applied_revision；no-system 只给出服务运行时的潜在操作，不伪造主机状态。实际应用重新计算计划，保持手动停止的服务停止。
+- 三个任务队列各有一个工作协程；probe 仍有 64 节点、2 并发、每节点 12 秒、总计 504 秒的预算。全局待处理上限 32，probe 最多占 8，避免探测填满队列。ClaimLane 在取得写锁后再次检查运行任务，防止并发认领同一队列。
+- 数据库 schema=17 增加 probe/subscription 队列及 cancel_requested。仅运行中的 probe 和排队中的非 apply 任务可取消。取消先落库，再中断已注册上下文；注册后再次读取持久标志，覆盖认领到注册之间的竞态。运行资源释放前保持 running，Finish 原子产生 cancelled；进程恢复尊重取消请求。Task.cancellable 与 Task.cancel_requested 是前端唯一的取消能力来源。
+- Argo 观察与日志管理共用 servicecatalog.Journal。读取当前 invocation 的日志时指定 --namespace=sb-vpn；已确认域名仍按 invocation 缓存。
+
+旧数据库及包含旧数据库的备份直接拒绝，无迁移器、旧队列别名或旧接口适配层。平台/节点/订阅配置 schema 与备份容器版本未因任务表变化一起递增；ParserVersion=3、CompilerVersion=7 使收紧地址语义前的解析与编译缓存失效。

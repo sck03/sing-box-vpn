@@ -397,16 +397,15 @@ func reserveInTransaction(ctx context.Context, tx *sql.Tx, id, account, runtime 
 	if want <= 0 {
 		return 0, ErrDenied
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO leases(id,account,runtime,reserved,period) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET reserved=reserved+excluded.reserved WHERE account=excluded.account AND runtime=excluded.runtime AND period=excluded.period AND closed=0`, id, account, runtime, want, u.PeriodID); err != nil {
+	lease, err := tx.ExecContext(ctx, `INSERT INTO leases(id,account,runtime,reserved,period) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET reserved=reserved+excluded.reserved WHERE account=excluded.account AND runtime=excluded.runtime AND period=excluded.period AND closed=0`, id, account, runtime, want, u.PeriodID)
+	if err != nil {
 		return 0, err
 	}
-	var closed int
-	var owner, instance string
-	var period int64
-	if err = tx.QueryRowContext(ctx, `SELECT account,runtime,closed,period FROM leases WHERE id=?`, id).Scan(&owner, &instance, &closed, &period); err != nil {
+	// The guarded upsert already checks ownership, period and closure atomically.
+	// A rejected conflict changes no row; avoid rereading the lease on every refill.
+	if n, err := lease.RowsAffected(); err != nil {
 		return 0, err
-	}
-	if closed != 0 || owner != account || instance != runtime || period != u.PeriodID {
+	} else if n != 1 {
 		return 0, errors.New("reservation owner mismatch")
 	}
 	charged, err := tx.ExecContext(ctx, `UPDATE accounts SET charged=charged+? WHERE id=? AND charged<=?`, want, account, int64(1<<62)-want)

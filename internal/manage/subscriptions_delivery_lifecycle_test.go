@@ -151,7 +151,7 @@ func TestDeliveryDoesNotBlockConfigurationQueue(t *testing.T) {
 	if _, err := store.Queue(t.Context(), "apply", "test", []byte("{}"), 1, []byte("{}")); err != nil {
 		t.Fatal("delivery blocks config", err)
 	}
-	if task, err := store.ClaimLane(t.Context(), "background"); err != nil || task.Kind != "subscription" {
+	if task, err := store.ClaimLane(t.Context(), "subscription"); err != nil || task.Kind != "subscription" {
 		t.Fatal(task, err)
 	}
 }

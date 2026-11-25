@@ -22,19 +22,21 @@ type State struct {
 	Applied         json.RawMessage `json:"applied"`
 }
 type Task struct {
-	ID           int64                    `json:"id"`
-	Kind         string                   `json:"kind"`
-	Actor        string                   `json:"actor"`
-	State        string                   `json:"state"`
-	Phase        string                   `json:"phase"`
-	Error        string                   `json:"error,omitempty"`
-	Created      int64                    `json:"created"`
-	Updated      int64                    `json:"updated"`
-	Input        json.RawMessage          `json:"-"`
-	Result       json.RawMessage          `json:"result,omitempty"`
-	Outcome      string                   `json:"outcome,omitempty"`
-	Acknowledged bool                     `json:"acknowledged"`
-	Details      application.TaskAudience `json:"details"`
+	ID              int64                    `json:"id"`
+	Kind            string                   `json:"kind"`
+	Actor           string                   `json:"actor"`
+	State           string                   `json:"state"`
+	Phase           string                   `json:"phase"`
+	Error           string                   `json:"error,omitempty"`
+	Created         int64                    `json:"created"`
+	Updated         int64                    `json:"updated"`
+	Input           json.RawMessage          `json:"-"`
+	Result          json.RawMessage          `json:"result,omitempty"`
+	Outcome         string                   `json:"outcome,omitempty"`
+	Acknowledged    bool                     `json:"acknowledged"`
+	Details         application.TaskAudience `json:"details"`
+	Cancellable     bool                     `json:"cancellable"`
+	CancelRequested bool                     `json:"cancel_requested"`
 }
 
 func Open(path string) (*Store, error) {
@@ -43,7 +45,7 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS control_state(id INTEGER PRIMARY KEY CHECK(id=1),revision INTEGER NOT NULL,applied_revision INTEGER NOT NULL,desired BLOB NOT NULL,applied BLOB NOT NULL);
-CREATE TABLE IF NOT EXISTS control_tasks(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,actor TEXT NOT NULL,lane TEXT NOT NULL DEFAULT 'control' CHECK(lane IN ('control','background')),state TEXT NOT NULL,phase TEXT NOT NULL,error TEXT NOT NULL DEFAULT '',created INTEGER NOT NULL,updated INTEGER NOT NULL,input BLOB NOT NULL,result BLOB NOT NULL DEFAULT '{}',outcome TEXT NOT NULL DEFAULT '',acknowledged INTEGER NOT NULL DEFAULT 0 CHECK(acknowledged IN (0,1)));
+CREATE TABLE IF NOT EXISTS control_tasks(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,actor TEXT NOT NULL,lane TEXT NOT NULL DEFAULT 'control' CHECK(lane IN ('control','subscription','probe')),state TEXT NOT NULL,phase TEXT NOT NULL,error TEXT NOT NULL DEFAULT '',created INTEGER NOT NULL,updated INTEGER NOT NULL,input BLOB NOT NULL,result BLOB NOT NULL DEFAULT '{}',outcome TEXT NOT NULL DEFAULT '',acknowledged INTEGER NOT NULL DEFAULT 0 CHECK(acknowledged IN (0,1)),cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK(cancel_requested IN (0,1)));
 CREATE INDEX IF NOT EXISTS control_task_lane ON control_tasks(state,lane,id);
 CREATE TABLE IF NOT EXISTS runtime_state(instance TEXT PRIMARY KEY,revision INTEGER NOT NULL,version TEXT NOT NULL,started INTEGER NOT NULL,heartbeat INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS observations(name TEXT PRIMARY KEY,value TEXT NOT NULL);
@@ -143,8 +145,15 @@ func (s *Store) Queue(ctx context.Context, kind, actor string, input []byte, exp
 	return s.queue(ctx, "control", kind, actor, input, expected, desired)
 }
 
-func (s *Store) QueueBackground(ctx context.Context, kind, actor string, input []byte) (int64, error) {
-	return s.queue(ctx, "background", kind, actor, input, 0, nil)
+func (s *Store) QueueTask(ctx context.Context, lane, kind, actor string, input []byte) (int64, error) {
+	if !validLane(lane) {
+		return 0, errors.New("unknown task lane")
+	}
+	return s.queue(ctx, lane, kind, actor, input, 0, nil)
+}
+
+func validLane(lane string) bool {
+	return lane == application.ControlLane || lane == application.SubscriptionLane || lane == application.ProbeLane
 }
 
 func (s *Store) queue(ctx context.Context, lane, kind, actor string, input []byte, expected int64, desired []byte) (int64, error) {
@@ -162,6 +171,16 @@ func (s *Store) queue(ctx context.Context, lane, kind, actor string, input []byt
 	}
 	if pending >= 32 {
 		return 0, errors.New("task queue is full")
+	}
+	// Leave capacity for configuration repair and automatic refresh under probe load.
+	if lane == application.ProbeLane {
+		var probes int
+		if err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM control_tasks WHERE lane='probe' AND state IN ('queued','running')").Scan(&probes); err != nil {
+			return 0, err
+		}
+		if probes >= 8 {
+			return 0, errors.New("probe queue is full")
+		}
 	}
 	if desired != nil {
 		// Serialize desired configuration changes with active side effects.
@@ -205,7 +224,7 @@ func (s *Store) queue(ctx context.Context, lane, kind, actor string, input []byt
 	return id, tx.Commit()
 }
 func (s *Store) ClaimLane(ctx context.Context, lane string) (v Task, err error) {
-	if lane != "control" && lane != "background" {
+	if !validLane(lane) {
 		return Task{}, errors.New("unknown task lane")
 	}
 	// Idle workers must not contend with durable data-plane reservations.
@@ -221,7 +240,7 @@ func (s *Store) ClaimLane(ctx context.Context, lane string) (v Task, err error) 
 	if _, err = tx.ExecContext(ctx, `UPDATE control_tasks SET updated=updated WHERE id=-1`); err != nil {
 		return v, err
 	}
-	err = tx.QueryRowContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,input FROM control_tasks WHERE state='queued' AND lane=? ORDER BY id LIMIT 1`, lane).Scan(&v.ID, &v.Kind, &v.Actor, &v.State, &v.Phase, &v.Error, &v.Created, &v.Updated, &v.Input)
+	err = tx.QueryRowContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,input FROM control_tasks WHERE state='queued' AND lane=? AND NOT EXISTS (SELECT 1 FROM control_tasks WHERE state='running' AND lane=?) ORDER BY id LIMIT 1`, lane, lane).Scan(&v.ID, &v.Kind, &v.Actor, &v.State, &v.Phase, &v.Error, &v.Created, &v.Updated, &v.Input)
 	if err != nil {
 		return v, err
 	}
@@ -232,7 +251,7 @@ func (s *Store) ClaimLane(ctx context.Context, lane string) (v Task, err error) 
 	return v, tx.Commit()
 }
 func (s *Store) Phase(ctx context.Context, id int64, phase string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE control_tasks SET phase=?,updated=? WHERE id=?`, phase, time.Now().Unix(), id)
+	_, err := s.db.ExecContext(ctx, `UPDATE control_tasks SET phase=?,updated=? WHERE id=? AND cancel_requested=0`, phase, time.Now().Unix(), id)
 	return err
 }
 func (s *Store) Result(ctx context.Context, id int64, result []byte) error {
@@ -248,23 +267,10 @@ func (s *Store) Result(ctx context.Context, id int64, result []byte) error {
 	if len(summary.Outcome) > 64 {
 		return errors.New("task outcome exceeds budget")
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE control_tasks SET result=?,outcome=? WHERE id=?`, result, summary.Outcome, id)
+	_, err := s.db.ExecContext(ctx, `UPDATE control_tasks SET result=?,outcome=? WHERE id=? AND cancel_requested=0`, result, summary.Outcome, id)
 	return err
 }
-func (s *Store) Finish(ctx context.Context, id int64, result error) error {
-	state, detail := "succeeded", ""
-	if result != nil {
-		state, detail = "failed", result.Error()
-		if len(detail) > 2048 {
-			detail = detail[:2048]
-		}
-	}
-	_, err := s.db.ExecContext(ctx, `UPDATE control_tasks SET state=?,phase=CASE WHEN ?='failed' THEN phase ELSE ? END,error=?,updated=?,input='{}',outcome=CASE WHEN ?='failed' AND kind='apply' THEN 'failed' ELSE outcome END,result=CASE WHEN ?='failed' AND kind='apply' THEN json_set(result,'$.outcome','failed') ELSE result END WHERE id=?`, state, state, state, detail, time.Now().Unix(), state, state, id)
-	if err != nil {
-		return err
-	}
-	return nil
-}
+
 func (s *Store) Applied(ctx context.Context, revision int64) error {
 	r, err := s.db.ExecContext(ctx, `UPDATE control_state SET applied=desired,applied_revision=revision WHERE id=1 AND revision=?`, revision)
 	if err != nil {
@@ -277,28 +283,11 @@ func (s *Store) Applied(ctx context.Context, revision int64) error {
 	return err
 }
 
-// Only an interrupted configuration application is replayed automatically.
-// Non-idempotent operations require an explicit new request after interruption.
-func (s *Store) Recover(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE control_tasks SET state=CASE WHEN kind='apply' THEN 'queued' ELSE 'failed' END,input=CASE WHEN kind='apply' THEN input ELSE CAST('{}' AS BLOB) END,phase='interrupted',error='process interrupted; inspect state before retrying',updated=? WHERE state='running' AND NOT (kind IN ('program-upgrade','panel-restart') AND phase='awaiting-panel-health')`, time.Now().Unix())
-	return err
-}
-func (s *Store) Cancel(ctx context.Context, id int64) error {
-	r, err := s.db.ExecContext(ctx, `UPDATE control_tasks SET state='cancelled',phase='cancelled',input='{}',updated=? WHERE id=? AND state='queued' AND kind!='apply'`, time.Now().Unix(), id)
-	if err != nil {
-		return err
-	}
-	n, err := r.RowsAffected()
-	if err == nil && n != 1 {
-		return errors.New("only queued non-configuration tasks can be cancelled")
-	}
-	return err
-}
 func (s *Store) RecentTaskSummaries(ctx context.Context) ([]Task, error) {
-	return s.queryTasks(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,CAST('{}' AS BLOB),outcome,acknowledged FROM control_tasks ORDER BY state IN ('queued','running') DESC,id DESC LIMIT 12`)
+	return s.queryTasks(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,CAST('{}' AS BLOB),outcome,acknowledged,`+taskCancellationColumns+` FROM control_tasks ORDER BY state IN ('queued','running') DESC,id DESC LIMIT 12`)
 }
 func (s *Store) Task(ctx context.Context, id int64) (t Task, err error) {
-	err = s.db.QueryRowContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,CAST(result AS BLOB),outcome,acknowledged FROM control_tasks WHERE id=?`, id).Scan(&t.ID, &t.Kind, &t.Actor, &t.State, &t.Phase, &t.Error, &t.Created, &t.Updated, &t.Result, &t.Outcome, &t.Acknowledged)
+	err = s.db.QueryRowContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,CAST(result AS BLOB),outcome,acknowledged,`+taskCancellationColumns+` FROM control_tasks WHERE id=?`, id).Scan(&t.ID, &t.Kind, &t.Actor, &t.State, &t.Phase, &t.Error, &t.Created, &t.Updated, &t.Result, &t.Outcome, &t.Acknowledged, &t.CancelRequested, &t.Cancellable)
 	t.Details = application.TaskDetails(t.Kind, t.Actor)
 	return
 }
@@ -312,7 +301,7 @@ func (s *Store) queryTasks(ctx context.Context, query string, args ...any) ([]Ta
 	v := []Task{}
 	for rows.Next() {
 		var t Task
-		if err = rows.Scan(&t.ID, &t.Kind, &t.Actor, &t.State, &t.Phase, &t.Error, &t.Created, &t.Updated, &t.Result, &t.Outcome, &t.Acknowledged); err != nil {
+		if err = rows.Scan(&t.ID, &t.Kind, &t.Actor, &t.State, &t.Phase, &t.Error, &t.Created, &t.Updated, &t.Result, &t.Outcome, &t.Acknowledged, &t.CancelRequested, &t.Cancellable); err != nil {
 			return nil, err
 		}
 		t.Details = application.TaskDetails(t.Kind, t.Actor)

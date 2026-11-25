@@ -15,6 +15,7 @@ type ConfigurationOutputPreview struct {
 	Validation  sub.Validation     `json:"validation"`
 }
 type ConfigurationPreview struct {
+	Deployment     DeploymentPreview            `json:"deployment"`
 	Valid          bool                         `json:"valid"`
 	OrdinaryServer Object                       `json:"ordinary_server"`
 	Outputs        []ConfigurationOutputPreview `json:"outputs"`

@@ -17,9 +17,7 @@ import {
   table,
   formDialog,
   jsonDialog,
-  showResult,
   badge,
-  notice,
 } from "./ui.js";
 const nodeFields = (protocols, protocol) => {
   const fields = [
@@ -144,7 +142,10 @@ export async function inbounds(ctx) {
           [
             { key: "name", label: "节点名称", required: true },
             { key: "address", label: "IP / 域名", required: true },
-            { key: "cdn_address", label: "VMess CDN 地址（可留空）" },
+            {
+              key: "cdn_address",
+              label: "VMess CDN IP / 域名（可留空，不含协议、端口或路径）",
+            },
           ],
           c.app,
           (v) => {
@@ -170,7 +171,10 @@ export async function inbounds(ctx) {
             options: protocols,
           },
         ],
-        { id: "node-" + crypto.randomUUID().replaceAll("-", ""), protocol: "vless" },
+        {
+          id: "node-" + crypto.randomUUID().replaceAll("-", ""),
+          protocol: "vless",
+        },
         async (v) => {
           const node = await api("/api/preset", v);
           items.push(node);

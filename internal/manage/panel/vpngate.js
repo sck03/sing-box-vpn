@@ -14,7 +14,6 @@ import {
   table,
   formDialog,
   jsonDialog,
-  showResult,
   badge,
 } from "./ui.js";
 export async function vpngate(ctx) {
@@ -147,7 +146,7 @@ export async function vpngate(ctx) {
                 options: certificateChoices(c.certificates),
               },
             ],
-            {},
+            { id: boundCertificate(p, c.certificates) },
             (v) => {
               const asset = c.certificates.find((a) => a.id === v.id);
               if (!asset) throw new Error("请先导入或申请证书。");

@@ -18,7 +18,6 @@ import (
 	"math/big"
 	"os"
 	"regexp"
-	"strings"
 	"time"
 )
 
@@ -150,22 +149,11 @@ func (cache certificateCache) get(path string) (certificateInfo, error) {
 	return info, nil
 }
 
-var domainLabelPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
 var countryPattern = regexp.MustCompile(`^[A-Z]{2}$`)
 
-func validateDomain(value string) error {
-	if len(value) == 0 || len(value) > 253 {
-		return errors.New("域名格式错误")
-	}
-	for label := range strings.SplitSeq(value, ".") {
-		if !domainLabelPattern.MatchString(label) {
-			return errors.New("域名格式错误")
-		}
-	}
-	return nil
-}
-func object(v any) Object { m, _ := v.(map[string]any); return m }
-func text(v any) string   { s, _ := v.(string); return s }
+func validateDomain(value string) error { return domain.ValidateDomain(value) }
+func object(v any) Object               { m, _ := v.(map[string]any); return m }
+func text(v any) string                 { s, _ := v.(string); return s }
 func number(v any) int {
 	switch n := v.(type) {
 	case float64:

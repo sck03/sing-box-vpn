@@ -28,6 +28,11 @@ func (n Node) Validate() error {
 	if n.Protocol != "vmess" && !n.TLS.Enabled {
 		return invalid("tls.enabled", "TLS is required")
 	}
+	if n.TLS.ServerName != "" {
+		if err := domain.ValidateHost(n.TLS.ServerName); err != nil {
+			return invalid("tls.server_name", err.Error())
+		}
+	}
 	if n.Protocol == "vless" {
 		if n.Flow != "" && n.Flow != "xtls-rprx-vision" {
 			return invalid("flow", "unsupported flow")
@@ -42,7 +47,7 @@ func (n Node) Validate() error {
 		if _, err = hex.DecodeString(n.TLS.RealityShortID); err != nil || len(n.TLS.RealityShortID) > 16 {
 			return invalid("tls.reality_short_id", "expected up to 16 hexadecimal characters in byte pairs")
 		}
-		if n.TLS.HandshakeHost == "" || strings.ContainsAny(n.TLS.HandshakeHost, " /\r\n\x00") || n.TLS.HandshakePort < 1 || n.TLS.HandshakePort > 65535 {
+		if domain.ValidateHost(n.TLS.HandshakeHost) != nil || n.TLS.HandshakePort < 1 || n.TLS.HandshakePort > 65535 {
 			return invalid("tls.handshake_host", "valid Reality handshake host and port are required")
 		}
 		if n.TLS.Certificate != "" || n.TLS.Key != "" {

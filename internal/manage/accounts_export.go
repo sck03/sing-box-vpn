@@ -83,6 +83,9 @@ func accountNodes(ctx context.Context, store *accounting.Store, config PlatformC
 			if runtime == normalScope && node.Protocol == "vmess" && app.CDNAddress != "" {
 				node.Server = app.CDNAddress
 			}
+			if err := node.Validate(); err != nil {
+				return nil, err
+			}
 			nodes = append(nodes, node)
 			if runtime == normalScope && node.Protocol == "vmess" && config.tunnelDomain != "" && config.Argo.Inbound == entry.ID {
 				domain := config.tunnelDomain
@@ -92,6 +95,9 @@ func accountNodes(ctx context.Context, store *accounting.Store, config PlatformC
 				node.Port = 443
 				node.TLS = sub.TLS{Enabled: true, ServerName: domain}
 				node.Transport.Host = domain
+				if err := node.Validate(); err != nil {
+					return nil, err
+				}
 				nodes = append(nodes, node)
 			}
 		}

@@ -114,6 +114,7 @@ void [delivery, activity, incompleteDelivery, privateDelivery];
 const preview: ConfigurationPreview = {
   valid: true,
   ordinary_server: {},
+  deployment: { changes: [], runtime_observed: false, applied_revision: 1 },
   outputs: [],
   diagnostics: {},
 };

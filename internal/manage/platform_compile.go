@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/sck03/sing-box-vpn/internal/runtimeconfig"
+	"github.com/sck03/sing-box-vpn/internal/servicecatalog"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 	"path/filepath"
 	"time"
@@ -71,7 +72,28 @@ func (s *PlatformService) PreviewConfiguration(ctx context.Context, c PlatformCo
 		artifact, available := snapshot.Artifacts[output.ID]
 		outputs = append(outputs, ConfigurationOutputPreview{ID: output.ID, Name: output.Name, Available: available, Bytes: len(artifact.Data), Diagnostics: snapshot.Diagnostics[output.ID], InputNodes: snapshot.InputCounts[output.ID], Nodes: snapshot.NodeCounts[output.ID], Delta: sub.CompareSelection(previous.NodeKeys[output.ID], snapshot.NodeKeys[output.ID]), Validation: snapshot.Validations[output.ID]})
 	}
-	return ConfigurationPreview{Valid: true, OrdinaryServer: server, Outputs: outputs, Diagnostics: snapshot.Diagnostics}, nil
+	state, err := s.Store.State(ctx)
+	if err != nil {
+		return ConfigurationPreview{}, err
+	}
+	old, err := decodePlatform(state.Applied)
+	if err != nil {
+		return ConfigurationPreview{}, err
+	}
+	active := servicecatalog.Names()
+	if !s.NoSystem {
+		active, _, err = serviceSnapshot(ctx, false)
+		if err != nil {
+			return ConfigurationPreview{}, err
+		}
+	}
+	c.normalize()
+	changes, err := deploymentPlan(c, old, active)
+	if err != nil {
+		return ConfigurationPreview{}, err
+	}
+	deployment := DeploymentPreview{Changes: changes, RuntimeObserved: !s.NoSystem, AppliedRevision: state.AppliedRevision}
+	return ConfigurationPreview{Valid: true, OrdinaryServer: server, Outputs: outputs, Diagnostics: snapshot.Diagnostics, Deployment: deployment}, nil
 }
 
 func (s *PlatformService) PreviewOutput(ctx context.Context, c PlatformConfig, id string) (OutputPreview, error) {

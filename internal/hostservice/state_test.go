@@ -3,8 +3,10 @@ package hostservice
 import (
 	"context"
 	"errors"
+	"github.com/sck03/sing-box-vpn/internal/servicecatalog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -12,9 +14,12 @@ import (
 func TestTunnelRetainsDomainUntilInvocationChanges(t *testing.T) {
 	id, active, logs := strings.Repeat("a", 32), "active", "https://example-tunnel.trycloudflare.com"
 	reads := 0
-	run := func(_ context.Context, name string, _ ...string) ([]byte, error) {
+	run := func(_ context.Context, name string, args ...string) ([]byte, error) {
 		if name == "systemctl" {
 			return []byte("InvocationID=" + id + "\nActiveState=" + active), nil
+		}
+		if name != "journalctl" || !slices.Contains(args, "--namespace="+servicecatalog.Journal) || !slices.Contains(args, "_SYSTEMD_INVOCATION_ID="+id) {
+			t.Fatalf("unscoped tunnel observation: %s %v", name, args)
 		}
 		reads++
 		return []byte(logs), nil

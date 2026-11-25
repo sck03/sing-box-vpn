@@ -98,6 +98,10 @@ func platformError(w http.ResponseWriter, err error) {
 		detail.Code = "invalid_field"
 		detail.Field = "app.nodes[" + field.Node + "]." + field.Field
 	}
+	var input *domain.FieldError
+	if errors.As(err, &input) {
+		detail.Code, detail.Field = "invalid_field", input.Field
+	}
 	var capability *runtimeconfig.FieldError
 	if errors.As(err, &capability) {
 		detail.Code, detail.Field = "invalid_field", "app.advanced."+capability.Field

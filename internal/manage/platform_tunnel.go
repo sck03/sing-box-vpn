@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/sck03/sing-box-vpn/internal/command"
 	"github.com/sck03/sing-box-vpn/internal/hostservice"
+	"github.com/sck03/sing-box-vpn/internal/servicecatalog"
 	"io"
 	"os"
 	"path/filepath"
@@ -47,28 +48,16 @@ func (s *PlatformService) writeTunnel(ctx context.Context, c PlatformConfig) err
 		env = "TUNNEL_TOKEN=" + c.Argo.Token + "\n"
 		body = "ExecStart=" + quoted + " tunnel --no-autoupdate run\n"
 	} else {
-		nodes, err := managedNodes(c.App)
+		origin, err := tunnelOrigin(c)
 		if err != nil {
 			return err
 		}
-		port, scheme := 0, "http"
-		for _, node := range nodes {
-			if node.ID == c.Argo.Inbound {
-				port = node.Port
-				if node.TLS.Enabled {
-					scheme = "https"
-				}
-			}
-		}
-		if port == 0 {
-			return errors.New("tunnel inbound is missing")
-		}
-		body = fmt.Sprintf("ExecStart=%s tunnel --no-autoupdate --no-tls-verify --url %s://127.0.0.1:%d\n", quoted, scheme, port)
+		body = fmt.Sprintf("ExecStart=%s tunnel --no-autoupdate --no-tls-verify --url %s\n", quoted, origin)
 	}
 	if err = AtomicBytes(filepath.Join(s.Root, "argo.env"), []byte(env), 0600); err != nil {
 		return err
 	}
-	unit := "# Managed by sing-box-vpn v4\n[Unit]\nDescription=sing-box-vpn Cloudflare tunnel\nAfter=network-online.target sb-core.service\nWants=network-online.target\n[Service]\nUMask=0077\nLogNamespace=sb-vpn\nRestart=on-failure\nRestartSec=10\nEnvironmentFile=" + envPath + "\n" + body + "[Install]\nWantedBy=multi-user.target\n"
+	unit := "# Managed by sing-box-vpn v4\n[Unit]\nDescription=sing-box-vpn Cloudflare tunnel\nAfter=network-online.target sb-core.service\nWants=network-online.target\n[Service]\nUMask=0077\nLogNamespace=" + servicecatalog.Journal + "\nRestart=on-failure\nRestartSec=10\nEnvironmentFile=" + envPath + "\n" + body + "[Install]\nWantedBy=multi-user.target\n"
 	if old, e := os.ReadFile("/etc/systemd/system/sb-argo.service"); e == nil && !bytes.HasPrefix(old, []byte("# Managed by sing-box-vpn v4\n")) {
 		return errors.New("refusing to overwrite an unrelated tunnel unit")
 	}

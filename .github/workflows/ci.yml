@@ -136,6 +136,8 @@ jobs:
         run: sudo env RUN_FIREWALL_TESTS=1 "$(command -v go)" test -run '^TestLinuxMultiportFirewall$' -count=1 -v -timeout=3m ./internal/manage
       - name: Disk exhaustion and killed accounting process recovery
         run: sudo env RUN_STORAGE_TESTS=1 "$(command -v go)" test -run '^TestLinux(DiskFullRecovery|KilledMeterPreservesReservation)$' -count=1 -v -timeout=2m ./internal/accounting
+      - name: Argo observation reads only the project journal namespace
+        run: sudo env RUN_SERVICE_TESTS=1 "$(command -v go)" test -run '^TestLinuxTunnelJournalNamespace$' -count=1 -v -timeout=1m ./internal/hostservice
       - name: systemd startup recovery after firewall loss and unexpected clean exit
         run: sudo env GATEWAY_BINARY="$PWD/.build/yg-vpngate" RUN_SERVICE_TESTS=1 "$(command -v go)" test -run '^TestLinuxServiceStartupRecovery$' -count=1 -v -timeout=2m ./internal/manage
       - name: Build both release architectures

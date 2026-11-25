@@ -8,7 +8,6 @@ import (
 	"io"
 	"net"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 )
@@ -105,5 +104,3 @@ func publicIP(ctx context.Context) (string, error) {
 	}
 	return "", errors.New("无法取得 VPS IPv4，请使用 --address 指定")
 }
-
-var argoPattern = regexp.MustCompile(`https://([a-z0-9-]+\.trycloudflare\.com)`)

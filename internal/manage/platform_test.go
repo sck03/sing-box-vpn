@@ -19,17 +19,23 @@ func TestDeploymentPlanPreservesStoppedAndUnaffected(t *testing.T) {
 	old := PlatformConfig{App: App{Nodes: []ManagedNode{}}, Argo: TunnelSettings{Mode: "off"}}
 	c := old
 	c.Listener.Enabled = true
-	plan := deploymentPlan(c, old, []string{"sb-core"})
-	if !reflect.DeepEqual(plan, []serviceChange{{"sb-subscription", "enable-start"}}) {
+	plan, err := deploymentPlan(c, old, []string{"sb-core"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(plan, []ServiceChange{{Name: "sb-subscription", Action: "enable-start", Reason: "enabled"}}) {
 		t.Fatal(plan)
 	}
 	c = old
 	c.App.Advanced.Log = Object{"level": "debug"}
-	if p := deploymentPlan(c, old, nil); len(p) != 0 {
+	if p, err := deploymentPlan(c, old, nil); err != nil || len(p) != 0 {
 		t.Fatal("started a stopped runtime", p)
 	}
-	plan = deploymentPlan(c, old, []string{"sb-core"})
-	if !reflect.DeepEqual(plan, []serviceChange{{"sb-core", "restart"}}) {
+	plan, err = deploymentPlan(c, old, []string{"sb-core"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(plan, []ServiceChange{{Name: "sb-core", Action: "restart", Reason: "runtime-config"}}) {
 		t.Fatal(plan)
 	}
 }

@@ -56,6 +56,7 @@ func (s *Store) reservePeriod(ctx context.Context, id, account, runtime string, 
 func (s *Store) writeReservations(writer *reservationWriter) {
 	defer close(writer.done)
 	batch := make([]*reservationRequest, 0, reservationBatchSize)
+	results := make([]reservationResult, reservationBatchSize)
 	for first := range writer.requests {
 		batch = append(batch, first)
 	collect:
@@ -70,16 +71,16 @@ func (s *Store) writeReservations(writer *reservationWriter) {
 				break collect
 			}
 		}
-		s.commitReservations(batch)
+		s.commitReservations(batch, results[:len(batch)])
+		clear(results[:len(batch)])
 		clear(batch)
 		batch = batch[:0]
 	}
 }
 
-func (s *Store) commitReservations(batch []*reservationRequest) {
+func (s *Store) commitReservations(batch []*reservationRequest, results []reservationResult) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	results := make([]reservationResult, len(batch))
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err == nil {
 		defer tx.Rollback()

@@ -21,7 +21,7 @@ func TestReservationBatchIsolatesFailuresAndCommitsQuota(t *testing.T) {
 		return &reservationRequest{ctx: ctx, id: id, account: account, runtime: "normal", want: ReservationBytes, now: time.Now(), period: u.PeriodID, result: make(chan reservationResult, 1)}
 	}
 	batch := []*reservationRequest{makeRequest("first", "alice", t.Context()), makeRequest("missing", "missing", t.Context()), makeRequest("cancelled", "alice", cancelled), makeRequest("last", "alice", t.Context())}
-	s.commitReservations(batch)
+	s.commitReservations(batch, make([]reservationResult, len(batch)))
 	for i, r := range batch {
 		result := <-r.result
 		switch i {

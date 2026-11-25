@@ -90,7 +90,7 @@ func (s *PlatformService) serveTasks(w http.ResponseWriter, r *http.Request, acc
 			if !audit("task-cancel", strconv.FormatInt(v.ID, 10)) {
 				return true
 			}
-			err = s.Store.Cancel(ctx, v.ID)
+			err = s.CancelTask(ctx, v.ID)
 		}
 		if err != nil {
 			platformError(w, err)

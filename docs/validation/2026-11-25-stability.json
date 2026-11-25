@@ -1,0 +1,438 @@
+{
+  "date": "2026-11-25",
+  "timezone": "Asia/Shanghai",
+  "baseline_commit": "2370c84e39df1c3fe94bf6dd240c290282752efc",
+  "status": "local_validation_passed",
+  "environment": {
+    "os": "Windows amd64",
+    "cpu": "Intel Core i5-9400F",
+    "go": "1.27.3",
+    "node": "24.18.0",
+    "official_core": "sing-box 1.14.4",
+    "managed_runtime": "1.14.4+sbvpn.7",
+    "managed_core_tags": [
+      "with_quic",
+      "with_utls",
+      "with_wireguard",
+      "with_gvisor"
+    ]
+  },
+  "schemas": {
+    "database": 17,
+    "platform": 7,
+    "app": 5,
+    "subscription": 6,
+    "template": 1,
+    "backup": 8,
+    "parser": 3,
+    "compiler": 7
+  },
+  "compatibility": "Fresh deployment only; no migration for old databases, queue lanes or APIs.",
+  "validation": [
+    {
+      "command": "MANAGED_CORE_BINARY=<final managed core> go test -json -timeout=15m -count=1 ./...",
+      "result": "passed",
+      "external_cores": true,
+      "tests_and_subtests_passed": 1055,
+      "tests_and_subtests_skipped": 8,
+      "failed": 0,
+      "package_results": [
+        {
+          "package": "github.com/sck03/sing-box-vpn",
+          "status": "pass",
+          "seconds": 0.059
+        },
+        {
+          "package": "cmd/ci-release",
+          "status": "pass",
+          "seconds": 4.774
+        },
+        {
+          "package": "cmd/release",
+          "status": "pass",
+          "seconds": 0.165
+        },
+        {
+          "package": "internal/application",
+          "status": "pass",
+          "seconds": 0.152
+        },
+        {
+          "package": "internal/database",
+          "status": "pass",
+          "seconds": 0.125
+        },
+        {
+          "package": "internal/deployment",
+          "status": "pass",
+          "seconds": 0.051
+        },
+        {
+          "package": "internal/domain",
+          "status": "pass",
+          "seconds": 0.046
+        },
+        {
+          "package": "internal/hostservice",
+          "status": "pass",
+          "seconds": 0.055
+        },
+        {
+          "package": "internal/command",
+          "status": "pass",
+          "seconds": 1.263
+        },
+        {
+          "package": "internal/httpserver",
+          "status": "pass",
+          "seconds": 0.148
+        },
+        {
+          "package": "internal/backuparchive",
+          "status": "pass",
+          "seconds": 1.94
+        },
+        {
+          "package": "internal/publicaccess",
+          "status": "pass",
+          "seconds": 0.058
+        },
+        {
+          "package": "internal/controlstore",
+          "status": "pass",
+          "seconds": 8.033
+        },
+        {
+          "package": "internal/runtime",
+          "status": "pass",
+          "seconds": 0.763
+        },
+        {
+          "package": "internal/tlsconfig",
+          "status": "pass",
+          "seconds": 0.299
+        },
+        {
+          "package": "internal/accounting",
+          "status": "pass",
+          "seconds": 11.026
+        },
+        {
+          "package": "internal/subscription",
+          "status": "pass",
+          "seconds": 2.731
+        },
+        {
+          "package": "internal/adminauth",
+          "status": "pass",
+          "seconds": 14.233
+        },
+        {
+          "package": "internal/vpngate",
+          "status": "pass",
+          "seconds": 43.035
+        },
+        {
+          "package": "internal/manage",
+          "status": "pass",
+          "seconds": 82.751
+        }
+      ],
+      "log": ".cleanup-manual/2026-11-25-stability/test-artifacts/refactor-go-tests-final.jsonl"
+    },
+    {
+      "command": "npm run typecheck",
+      "result": "passed",
+      "note": "checkJs, generated API contracts, noUnusedLocals and noUnusedParameters enabled"
+    },
+    {
+      "command": "npm test",
+      "result": "passed",
+      "groups": 12,
+      "log": ".cleanup-manual/2026-11-25-stability/test-artifacts/refactor-panel-tests.txt"
+    },
+    {
+      "command": "go vet ./...",
+      "result": "passed"
+    },
+    {
+      "command": "go run ./cmd/panel-contract -check",
+      "result": "passed"
+    },
+    {
+      "command": "gofmt -l manifest.go internal cmd; git diff --check",
+      "result": "passed"
+    },
+    {
+      "command": "go test -race -count=1 ./internal/accounting ./internal/controlstore ./internal/application ./internal/domain ./internal/hostservice",
+      "result": "passed",
+      "log": ".cleanup-manual/2026-11-25-stability/test-artifacts/refactor-race.txt"
+    },
+    {
+      "command": "go test -race -count=1 ./internal/controlstore ./internal/hostservice",
+      "result": "passed",
+      "note": "Final repeat after task cancellation projection changes; controlstore 17.038s, hostservice 1.439s"
+    },
+    {
+      "command": "go test -race -count=1 -timeout=5m -run 'TestPublication|TestDeploymentPlan|TestFixedTunnel|TestProbeCancellation|TestRunningOutboundCancellation' ./internal/manage",
+      "result": "passed",
+      "external_cores": true,
+      "seconds": 27.7,
+      "log": ".cleanup-manual/2026-11-25-stability/test-artifacts/refactor-manage-race-final.txt"
+    },
+    {
+      "command": "GATEWAY_BINARY=<final manager> MANAGED_CORE_BINARY=<final managed core> PANEL_BROWSER_TEST=1 node scripts/test-panel-local.mjs",
+      "result": "passed",
+      "log": ".cleanup-manual/2026-11-25-stability/test-artifacts/refactor-panel-final.txt",
+      "note": "Fresh disposable root; live API, durable configuration apply, current schemas, account exports, desktop/mobile browser and credential dialogs. Successful fixture removed by harness."
+    },
+    {
+      "command": "RUN_UDP_IDLE_TESTS=1 RUN_SUBSCRIPTION_SOAK=1m go test -json -count=1 -timeout=3m -run '^(TestUDPRejectedTrafficDoesNotExtendIdleTimeout|TestUDPActiveOneWay|TestSubscriptionSoak)$' ./internal/vpngate ./internal/manage",
+      "result": "passed",
+      "tests_and_subtests_passed": 9,
+      "udp_seconds": 65.073,
+      "subscription_seconds": 60.543,
+      "log": ".cleanup-manual/2026-11-25-stability/test-artifacts/refactor-lifetime-final.jsonl"
+    },
+    {
+      "command": "GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c ./internal/hostservice",
+      "result": "passed",
+      "execution": false
+    },
+    {
+      "command": "GOOS=linux GOARCH=amd64/arm64 CGO_ENABLED=0 go build ./cmd/sbvpn",
+      "result": "passed",
+      "execution": false
+    },
+    {
+      "command": "GOOS=linux GOARCH=amd64/arm64 CGO_ENABLED=0 go build -tags with_quic,with_utls,with_wireguard,with_gvisor ./cmd/managed-core",
+      "result": "passed",
+      "execution": false
+    }
+  ],
+  "skipped_in_full_suite": [
+    {
+      "package": "internal/hostservice",
+      "test": "TestJournalOwnershipRejectsForeignAndLinkedPaths",
+      "reason": "Windows symlink privilege unavailable"
+    },
+    {
+      "package": "internal/vpngate",
+      "test": "TestRealFiveProtocolsTCPUDP/ordinary/uri/vmess",
+      "reason": "Mihomo URI importer cannot represent self-signed TLS for this protocol; native subscription covered"
+    },
+    {
+      "package": "internal/vpngate",
+      "test": "TestRealFiveProtocolsTCPUDP/ordinary/uri/tuic",
+      "reason": "Mihomo URI importer cannot represent self-signed TLS for this protocol; native subscription covered"
+    },
+    {
+      "package": "internal/vpngate",
+      "test": "TestRealFiveProtocolsTCPUDP/vpngate/uri/vmess",
+      "reason": "Mihomo URI importer cannot represent self-signed TLS for this protocol; native subscription covered"
+    },
+    {
+      "package": "internal/vpngate",
+      "test": "TestRealFiveProtocolsTCPUDP/vpngate/uri/tuic",
+      "reason": "Mihomo URI importer cannot represent self-signed TLS for this protocol; native subscription covered"
+    },
+    {
+      "package": "internal/vpngate",
+      "test": "TestUDPRejectedTrafficDoesNotExtendIdleTimeout",
+      "reason": "Opt-in test; subsequently executed successfully in the lifetime acceptance run"
+    },
+    {
+      "package": "internal/vpngate",
+      "test": "TestUDPActiveOneWay",
+      "reason": "Opt-in test; subsequently executed successfully in the lifetime acceptance run"
+    },
+    {
+      "package": "internal/manage",
+      "test": "TestSubscriptionSoak",
+      "reason": "Opt-in test; subsequently executed successfully in the lifetime acceptance run"
+    }
+  ],
+  "subscription_short_soak": {
+    "requested_duration": "1m",
+    "observed_duration": "1m0.001337s",
+    "workers": 8,
+    "requests": 6232,
+    "failures": 0,
+    "heap_before_bytes": 806888,
+    "heap_after_bytes": 979920,
+    "goroutines_before": 8,
+    "goroutines_after": 2,
+    "note": "Bounded smoke test with concurrent browser acceptance on the same machine; not a sustained capacity benchmark or long-term leak guarantee."
+  },
+  "benchmarks": {
+    "method": "Before/after compiled test executables, run serially without concurrent validation. Baseline accounting sources from baseline_commit injected with Go overlay; same schema=17 and fixtures in both executables.",
+    "command": "accounting-{before,after}.test.exe -test.run '^$' -test.bench 'Benchmark(DurableMeter64KiB|ConcurrentDurableReservations)$' -test.benchmem -test.benchtime=1s -test.count=3",
+    "samples": {
+      "before": [
+        {
+          "benchmark": "BenchmarkDurableMeter64KiB",
+          "iterations": 984,
+          "nsPerOp": 1161257,
+          "mbPerSecond": 56.44,
+          "bytesPerOp": 10669,
+          "allocationsPerOp": 249
+        },
+        {
+          "benchmark": "BenchmarkDurableMeter64KiB",
+          "iterations": 1006,
+          "nsPerOp": 1152211,
+          "mbPerSecond": 56.88,
+          "bytesPerOp": 10548,
+          "allocationsPerOp": 249
+        },
+        {
+          "benchmark": "BenchmarkDurableMeter64KiB",
+          "iterations": 976,
+          "nsPerOp": 1164230,
+          "mbPerSecond": 56.29,
+          "bytesPerOp": 10554,
+          "allocationsPerOp": 249
+        },
+        {
+          "benchmark": "BenchmarkConcurrentDurableReservations",
+          "iterations": 3526,
+          "nsPerOp": 334901,
+          "mbPerSecond": 195.69,
+          "bytesPerOp": 9520,
+          "allocationsPerOp": 238
+        },
+        {
+          "benchmark": "BenchmarkConcurrentDurableReservations",
+          "iterations": 3574,
+          "nsPerOp": 338583,
+          "mbPerSecond": 193.56,
+          "bytesPerOp": 9518,
+          "allocationsPerOp": 238
+        },
+        {
+          "benchmark": "BenchmarkConcurrentDurableReservations",
+          "iterations": 3576,
+          "nsPerOp": 335298,
+          "mbPerSecond": 195.46,
+          "bytesPerOp": 9517,
+          "allocationsPerOp": 238
+        }
+      ],
+      "after": [
+        {
+          "benchmark": "BenchmarkDurableMeter64KiB",
+          "iterations": 1002,
+          "nsPerOp": 1144892,
+          "mbPerSecond": 57.24,
+          "bytesPerOp": 9328,
+          "allocationsPerOp": 211
+        },
+        {
+          "benchmark": "BenchmarkDurableMeter64KiB",
+          "iterations": 1012,
+          "nsPerOp": 1156128,
+          "mbPerSecond": 56.69,
+          "bytesPerOp": 9255,
+          "allocationsPerOp": 210
+        },
+        {
+          "benchmark": "BenchmarkDurableMeter64KiB",
+          "iterations": 993,
+          "nsPerOp": 1153417,
+          "mbPerSecond": 56.82,
+          "bytesPerOp": 9243,
+          "allocationsPerOp": 210
+        },
+        {
+          "benchmark": "BenchmarkConcurrentDurableReservations",
+          "iterations": 3824,
+          "nsPerOp": 311459,
+          "mbPerSecond": 210.42,
+          "bytesPerOp": 8188,
+          "allocationsPerOp": 199
+        },
+        {
+          "benchmark": "BenchmarkConcurrentDurableReservations",
+          "iterations": 3819,
+          "nsPerOp": 313562,
+          "mbPerSecond": 209.01,
+          "bytesPerOp": 8178,
+          "allocationsPerOp": 199
+        },
+        {
+          "benchmark": "BenchmarkConcurrentDurableReservations",
+          "iterations": 3853,
+          "nsPerOp": 314657,
+          "mbPerSecond": 208.28,
+          "bytesPerOp": 8190,
+          "allocationsPerOp": 199
+        }
+      ]
+    },
+    "medians": {
+      "durable_64kib": {
+        "before_ns_per_op": 1161257,
+        "after_ns_per_op": 1153417,
+        "before_bytes_per_op": 10554,
+        "after_bytes_per_op": 9255,
+        "before_allocations_per_op": 249,
+        "after_allocations_per_op": 210
+      },
+      "concurrent_reservations": {
+        "before_ns_per_op": 335298,
+        "after_ns_per_op": 313562,
+        "before_bytes_per_op": 9518,
+        "after_bytes_per_op": 8188,
+        "before_allocations_per_op": 238,
+        "after_allocations_per_op": 199
+      }
+    },
+    "scope": "Durable quota reservation path only. Concurrent time about 6.5% lower, allocation counts about 16% lower; single-stream time effectively unchanged. Not whole-process RSS or VPN throughput.",
+    "excluded": "Earlier overlapping benchmark runs retained for diagnostics but excluded from speed claims.",
+    "logs": [
+      ".cleanup-manual/2026-11-25-stability/test-artifacts/refactor-accounting-isolated-before.txt",
+      ".cleanup-manual/2026-11-25-stability/test-artifacts/refactor-accounting-isolated-after.txt"
+    ]
+  },
+  "linux_ci": {
+    "status": "not_executed_locally",
+    "workflow": ".github/workflows/ci.yml",
+    "result_source": "GitHub Actions check attached to the pushed commit; this file records local evidence only.",
+    "acceptance": [
+      "Full Linux race suite and strict protocol fixtures",
+      "Managed runtime account isolation and credential reload",
+      "Panel API and desktop/mobile browser",
+      "Network namespace and OpenVPN isolation",
+      "IPv4/IPv6 firewall and owned cleanup",
+      "Disk exhaustion and killed process recovery",
+      "Real namespaced journald observation (new)",
+      "systemd startup recovery",
+      "Both Linux release architectures",
+      "Fresh installation and deployment rollback"
+    ],
+    "local_limit": "Windows host has no Linux/WSL execution environment. Cross-compilation is not runtime acceptance."
+  },
+  "cleanup": {
+    "method": "reversible_move",
+    "directory": ".cleanup-manual/2026-11-25-stability",
+    "items": 50,
+    "files": 73,
+    "bytes": 475220806,
+    "manifest": ".cleanup-manual/2026-11-25-stability/cleanup-manifest.json",
+    "preserved": [
+      ".tools",
+      "node_modules",
+      ".test/gocache",
+      ".test/gomodcache",
+      ".test/tmp/node-compile-cache",
+      "vendored source and license notices"
+    ],
+    "note": "Ignored test binaries, logs, baseline overlay sources and stopped disposable fixtures moved to one directory for manual deletion. No credentials or temporary databases are committed."
+  },
+  "limits": [
+    "No promise that all bugs are eliminated.",
+    "One-minute subscription smoke test is not long-term stability validation.",
+    "Real Cloudflare account/tunnel connectivity is not exercised by the journald test.",
+    "No release tag, published package or production deployment requested."
+  ]
+}

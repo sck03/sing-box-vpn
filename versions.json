@@ -13,6 +13,6 @@
     "fanout": "d7ce5224caf3469b19876982abdf8d1be16c4a8b",
     "conduitvpn": "4afc89bb9647fc1ccd8c240ab88e6e84e879398e"
   },
-  "managed_runtime": "1.14.4+sbvpn.6",
+  "managed_runtime": "1.14.4+sbvpn.7",
   "certificate_manager": "5.6.0"
 }

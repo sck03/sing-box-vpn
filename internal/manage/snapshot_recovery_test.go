@@ -141,7 +141,7 @@ func TestAccountSubscriptionRecoversWithoutRemoteSources(t *testing.T) {
 			if err = s.scheduleSubscriptions(ctx); err != nil {
 				t.Fatal(err)
 			}
-			task, err := s.Store.ClaimLane(ctx, "background")
+			task, err := s.Store.ClaimLane(ctx, "subscription")
 			if err != nil {
 				t.Fatal("account recovery was not queued", err)
 			}
@@ -159,7 +159,7 @@ func TestAccountSubscriptionRecoversWithoutRemoteSources(t *testing.T) {
 			if err = s.scheduleSubscriptions(ctx); err != nil {
 				t.Fatal(err)
 			}
-			if _, err = s.Store.ClaimLane(ctx, "background"); !errors.Is(err, sql.ErrNoRows) {
+			if _, err = s.Store.ClaimLane(ctx, "subscription"); !errors.Is(err, sql.ErrNoRows) {
 				t.Fatal("unchanged state queued redundant work", err)
 			}
 		})

@@ -9,19 +9,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 const (
 	SchemaVersion = 6
 	// ParserVersion invalidates fetched node caches, including conditional GETs.
-	ParserVersion = 2
+	ParserVersion = 3
 	// CompilerVersion invalidates rendered artifacts and account export plans.
-	CompilerVersion = 6
+	CompilerVersion = 7
 	MaxNodes        = 4096
 	MaxBody         = 8 << 20
 	MaxObjects      = 128
@@ -94,11 +95,8 @@ func (n Node) Validate() error {
 	if !slices.Contains(protocols, n.Protocol) {
 		return fmt.Errorf("unsupported protocol %q", n.Protocol)
 	}
-	if n.Port < 1 || n.Port > 65535 || n.Server == "" || len(n.Server) > 253 || strings.ContainsAny(n.Server, " /\\\r\n\t@?#") {
+	if n.Port < 1 || n.Port > 65535 || domain.ValidateHost(n.Server) != nil {
 		return errors.New("invalid server or port")
-	}
-	if strings.Contains(n.Server, ":") && net.ParseIP(n.Server) == nil {
-		return errors.New("invalid IPv6 address")
 	}
 	if n.Name == "" || len(n.Name) > 256 || strings.ContainsAny(n.Name, "\r\n\x00") {
 		return errors.New("invalid node name")
@@ -185,7 +183,7 @@ func (n Node) Validate() error {
 			return errors.New("invalid ALPN")
 		}
 	}
-	if strings.ContainsAny(n.TLS.ServerName+n.Transport.Host, "\r\n\x00") {
+	if (n.TLS.ServerName != "" && domain.ValidateHost(n.TLS.ServerName) != nil) || strings.ContainsAny(n.Transport.Host, "\r\n\x00") {
 		return errors.New("invalid TLS/transport name")
 	}
 	if slices.Contains([]string{"hysteria2", "tuic", "anytls", "trojan"}, n.Protocol) && !n.TLS.Enabled {

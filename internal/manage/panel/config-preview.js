@@ -34,10 +34,12 @@ export function showConfiguration(result, changed = [], options = {}) {
   const outputs = result.outputs || [],
     unavailable = outputs.filter((o) => !o.available).length;
   const corePassed = outputs.filter(
-    (o) => o.validation?.state === "passed" && o.validation.scope === "core-config",
+    (o) =>
+      o.validation?.state === "passed" && o.validation.scope === "core-config",
   ).length;
   const needsReview = outputs.filter(
-    (o) => (o.diagnostics || []).length > 0 || o.validation?.state === "unavailable",
+    (o) =>
+      (o.diagnostics || []).length > 0 || o.validation?.state === "unavailable",
   ).length;
   const marker = el("h2", {}, "配置校验与发布预览");
   let loading = 0;
@@ -76,19 +78,58 @@ export function showConfiguration(result, changed = [], options = {}) {
         ? "配置格式有效，部分来源尚无可用数据。应用后会继续刷新；请检查下方输出说明。"
         : "应用后会更新配置并按需重启受影响的实例。",
     ),
-    ...(outputs.length
-      ? [el(
-          "div",
-          { class: "preview-summary", "aria-label": "输出概览" },
-          [
-            ["可发布输出", outputs.length - unavailable],
-            ["核心校验通过", corePassed],
-            ["需要关注", needsReview],
-            ["暂不可用", unavailable],
-          ].map(([label, value]) =>
-            el("div", {}, el("span", {}, label), el("strong", {}, value)),
+    el("h3", {}, "服务变更计划"),
+    help(
+      result.deployment?.runtime_observed
+        ? "根据当前运行状态计算；应用时会重新核对。手动停止的服务会保持停止。"
+        : "当前环境未读取主机运行状态，以下重启仅在服务运行时执行。",
+    ),
+    ...(result.deployment?.changes?.length
+      ? [
+          table(
+            [
+              { key: "name", label: "服务" },
+              {
+                label: "操作",
+                value: (v) =>
+                  ({
+                    restart: "重启",
+                    "enable-start": "启用并启动",
+                    "disable-stop": "停用并停止",
+                  })[v.action] || v.action,
+              },
+              {
+                label: "原因",
+                value: (v) =>
+                  ({
+                    enabled: "启用服务",
+                    disabled: "停用服务",
+                    "runtime-config": "生效核心配置变化",
+                    "gateway-config": "出口网关配置变化",
+                    "download-listener": "下载监听配置变化",
+                    "tunnel-connection": "隧道连接参数变化",
+                  })[v.reason] || v.reason,
+              },
+            ],
+            result.deployment.changes,
           ),
-        )]
+        ]
+      : [help("本次配置变更无需重启服务。")]),
+    ...(outputs.length
+      ? [
+          el(
+            "div",
+            { class: "preview-summary", "aria-label": "输出概览" },
+            [
+              ["可发布输出", outputs.length - unavailable],
+              ["核心校验通过", corePassed],
+              ["需要关注", needsReview],
+              ["暂不可用", unavailable],
+            ].map(([label, value]) =>
+              el("div", {}, el("span", {}, label), el("strong", {}, value)),
+            ),
+          ),
+        ]
       : []),
     ...(changed.length
       ? [

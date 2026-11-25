@@ -2,7 +2,7 @@
 
 [使用指南](usage.md) · [架构](architecture.md) · [兼容性](compatibility.md)
 
-当前订阅配置为 **schema=6**，CompilerVersion=6、ParserVersion=2。只接受当前配置，不迁移旧数据或恢复旧管理接口。平台配置 schema=7、节点文档 schema=5、模板 version=1、数据库 schema=16 和备份容器格式 8 分别维护，不能一起机械递增。
+当前订阅配置为 **schema=6**，CompilerVersion=7、ParserVersion=3。只接受当前配置，不迁移旧数据或恢复旧管理接口。平台配置 schema=7、节点文档 schema=5、模板 version=1、数据库 schema=17 和备份容器格式 8 分别维护，不能一起机械递增。
 
 ## 普通账户分享
 
@@ -149,7 +149,7 @@ DNS 分为 local、remote、bootstrap；bootstrap 使用 IP，其余支持 IP �
 
 Stash 使用独立完整模板：DNS 路由使用 follow-rule，不输出 Mihomo 的 respect-rules、enhanced-mode 或 TUN 字段；保留 MRS domain/ipcidr 支持。Stash 默认 Fake-IP，可配置排除域名，显式关闭会返回错误。前端依据共享能力隐藏不适用开关，不把它标成 redir-host。
 
-当前 ParserVersion=2、CompilerVersion=6。生成产物保存节点数和不含明文秘密的连接摘要；解析后比较数量、名称、凭据、TLS、传输与协议参数，拒绝节点丢失或关键字段变化。等价默认值、公开说明的自签证书固定值映射被规范化。文本客户端的注释前缀名称（#、;、//）明确拒绝；允许跳过不兼容节点时，节点数与诊断同时减少。节点语义校验不等于应用完整配置已导入。Egern 仍只报告编码完成。
+当前 ParserVersion=3、CompilerVersion=7。生成产物保存节点数和不含明文秘密的连接摘要；解析后比较数量、名称、凭据、TLS、传输与协议参数，拒绝节点丢失或关键字段变化。等价默认值、公开说明的自签证书固定值映射被规范化。文本客户端的注释前缀名称（#、;、//）明确拒绝；允许跳过不兼容节点时，节点数与诊断同时减少。节点语义校验不等于应用完整配置已导入。Egern 仍只报告编码完成。
 
 ## 验证范围与预算
 

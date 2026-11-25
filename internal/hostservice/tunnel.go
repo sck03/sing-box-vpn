@@ -4,6 +4,8 @@ import (
 	"context"
 	"regexp"
 	"strings"
+
+	"github.com/sck03/sing-box-vpn/internal/servicecatalog"
 )
 
 type Tunnel struct {
@@ -17,7 +19,7 @@ var tunnelDomainPattern = regexp.MustCompile(`https://([a-z0-9-]+\.trycloudflare
 // ObserveTunnel retains a confirmed hostname for exactly one running instance.
 // Once captured, journal rotation cannot invalidate it and no log scan is needed.
 func ObserveTunnel(ctx context.Context, run Command, previous Tunnel) (Tunnel, error) {
-	data, err := run(ctx, "systemctl", "show", "sb-argo", "--property=InvocationID,ActiveState")
+	data, err := run(ctx, "systemctl", "show", servicecatalog.Argo, "--property=InvocationID,ActiveState")
 	if err != nil {
 		return previous, err
 	}
@@ -38,7 +40,7 @@ func ObserveTunnel(ctx context.Context, run Command, previous Tunnel) (Tunnel, e
 		return previous, nil
 	}
 	next := Tunnel{Invocation: id}
-	data, err = run(ctx, "journalctl", "_SYSTEMD_INVOCATION_ID="+id, "-n", "200", "--no-pager", "-o", "cat")
+	data, err = run(ctx, "journalctl", "--namespace="+servicecatalog.Journal, "_SYSTEMD_INVOCATION_ID="+id, "-n", "200", "--no-pager", "-o", "cat")
 	if err != nil {
 		return previous, err
 	}

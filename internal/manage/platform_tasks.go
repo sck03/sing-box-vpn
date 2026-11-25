@@ -58,12 +58,7 @@ func (s *PlatformService) queueTask(ctx context.Context, a taskInput, actor stri
 	if err != nil {
 		return 0, err
 	}
-	var id int64
-	if a.Background() {
-		id, err = s.Store.QueueBackground(ctx, a.Operation, actor, data)
-	} else {
-		id, err = s.Store.Queue(ctx, a.Operation, actor, data, 0, nil)
-	}
+	id, err := s.Store.QueueTask(ctx, a.Lane(), a.Operation, actor, data)
 	if err == nil {
 		s.signal()
 	}

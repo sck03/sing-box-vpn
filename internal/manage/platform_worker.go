@@ -12,18 +12,19 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
 )
 
-// Configuration and external side effects remain ordered. Read-only probes
-// have their own bounded worker and never block a configuration repair.
+// Configuration, subscription publication and probes each have a bounded lane.
+// Slow probes cannot occupy the subscription worker or block configuration repair.
 func (s *PlatformService) runWorkers(ctx context.Context) error {
 	child, cancel := context.WithCancel(ctx)
 	defer cancel()
-	done := make(chan error, 3)
+	done := make(chan error, 4)
 	go func() { done <- s.runLane(child, "control") }()
-	go func() { done <- s.runLane(child, "background") }()
+	go func() { done <- s.runLane(child, application.SubscriptionLane) }()
+	go func() { done <- s.runLane(child, application.ProbeLane) }()
 	go func() { done <- s.runRetention(child) }()
 	err := <-done
 	cancel()
-	return errors.Join(err, <-done, <-done)
+	return errors.Join(err, <-done, <-done, <-done)
 }
 
 func (s *PlatformService) runLane(ctx context.Context, lane string) error {
@@ -107,9 +108,9 @@ func (s *PlatformService) runLane(ctx context.Context, lane string) error {
 func (s *PlatformService) runTask(ctx context.Context, task controlstore.Task) error {
 	s.invalidateOverview()
 	budget := application.ControlTaskTimeout
-	if task.Kind == "subscription" {
+	if task.Kind == "subscription" || task.Kind == "outbound-probe" {
 		var action taskInput
-		if json.Unmarshal(task.Input, &action) == nil && action.Subscription.Operation == "check" {
+		if json.Unmarshal(task.Input, &action) == nil && action.Lane() == application.ProbeLane {
 			budget = application.ProbeTaskTimeout
 		}
 	}
@@ -127,7 +128,9 @@ func (s *PlatformService) runTask(ctx context.Context, task controlstore.Task) e
 		var action taskInput
 		err = json.Unmarshal(task.Input, &action)
 		if err == nil {
-			if action.Operation == "outbound-probe" || action.Operation == "program-upgrade" || action.Operation == "subscription" {
+			if action.Lane() == application.ProbeLane {
+				err = s.runProbe(child, task.ID, func(probe context.Context) error { return s.execute(probe, task.ID, action) })
+			} else if action.Operation == "program-upgrade" || action.Operation == "subscription" {
 				err = s.execute(child, task.ID, action)
 			} else {
 				err = withServiceLock(child, s.Root, func() error { return s.execute(child, task.ID, action) })
@@ -144,12 +147,17 @@ func (s *PlatformService) runTask(ctx context.Context, task controlstore.Task) e
 func (s *PlatformService) finishTask(task controlstore.Task, err error) error {
 	finish, stop := context.WithTimeout(context.Background(), 10*time.Second)
 	defer stop()
+	finishErr := s.Store.Finish(finish, task.ID, err)
 	result := "success"
-	if err != nil {
+	if err != nil || finishErr != nil {
 		result = "failed"
 	}
+	if finishErr == nil {
+		if final, readErr := s.Store.Task(finish, task.ID); readErr == nil && final.State == "cancelled" {
+			result = "cancelled"
+		}
+	}
 	_ = s.Auth.Audit(finish, task.Actor, task.Kind, fmt.Sprint(task.ID), result)
-	finishErr := s.Store.Finish(finish, task.ID, err)
 	s.invalidateOverview()
 	return finishErr
 }

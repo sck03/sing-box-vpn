@@ -20,7 +20,7 @@ import {
   featureSearch,
 } from "./navigation.js";
 import { pageFor, groupFor, groupLabel, routeFor } from "./page-catalog.js";
-import { $, el, card, help, notice, action, button, showResult } from "./ui.js";
+import { $, card, help, notice, action, button } from "./ui.js";
 const loginPassword = /** @type {HTMLInputElement} */ (
   document.querySelector('input[name="password"]')
 );

@@ -12,7 +12,7 @@
 
 按入站重载的回归入口为 `TestManagedCredentialReload`（真实五协议、跨入站 TCP/UDP 连接、核心启动标识），`internal/runtime/reload_test.go` 还覆盖构造/启动恢复和失败关闭。修改凭据生命周期必须同时运行带四个发布标签的 runtime 竞态测试；单独 `go test ./...` 不替代该检查。
 
-当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载、订阅模板与预览、弹窗生命周期、组件流程及输出身份十组。数据库使用 schema 16，所有旧数据库及其备份明确拒绝。
+当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载、订阅模板与预览、弹窗生命周期、组件流程、输出身份、订阅生命周期及部署影响十二组。数据库使用 schema 17，所有旧数据库及其备份明确拒绝。
 
 `scripts/test-panel-navigation.mjs` 覆盖角色过滤、搜索定位、空/非法路由、同页标签的前进/返回与表单复用、延迟读取合并与取消、错误重试、权益初始读取预算、稀疏订阅草稿和 SSE 启动。`TestPanelEphemeralDevelopmentListener` 实际启动回环随机端口、请求能力接口并关闭服务，同时拒绝公网随机端口；设置校验仍拒绝保存端口 0。`TestPanelHealthSurvivesSaturatedRequests` 验证 32 个业务请求占满限额时，本机健康检查仍能准确判断 worker 就绪状态。
 
@@ -87,7 +87,7 @@ Windows 先加载 `scripts/dev-env.ps1`，将 `GATEWAY_BINARY` 和 `MANAGED_CORE
 
 可对该独立面板运行真实 HTTP 工作流：设置 `PANEL_TEST_URL`、`PANEL_TEST_USERNAME`（默认 reviewadmin）和 `PANEL_TEST_PASSWORD`，执行 `node scripts/test-panel-api.mjs`。脚本只接受回环 URL，并在创建数据前确认服务均处于 no-system 状态。验证绑定/导出、下载次数、跨站分享、完整候选预览和任务应用；不能指向真实安装。
 
-配置预览为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回普通服务端脱敏配置、输出节点数/变化及结构化验证。`POST /api/config/preview-output` 接受 `{id,config}`，只编译目标图并返回有界脱敏内容。旧 `/api/subscriptions/preview` 不恢复。节点文档 schema=5、订阅 schema=6、CompilerVersion=6、模板 version=1、平台 schema=7；备份容器为 8，数据库为 16，旧订阅内容明确拒绝。
+配置预览为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回普通服务端脱敏配置、输出节点数/变化、结构化验证和 `deployment` 服务变更计划（`changes`、`runtime_observed`、`applied_revision`）。`POST /api/config/preview-output` 接受 `{id,config}`，只编译目标图并返回有界脱敏内容。旧 `/api/subscriptions/preview` 不恢复。节点文档 schema=5、订阅 schema=6、CompilerVersion=7、模板 version=1、平台 schema=7；备份容器为 8，数据库为 17，旧订阅内容明确拒绝。
 
 新增回归 `compiler_regression_test.go`、`preview_test.go` 覆盖 URI 认证/端口、SIP003、WS early-data、gRPC/XHTTP、名称和策略组范围、脱敏与真实核心检查。`TestImportedTrojanTransportsWithMihomo` 使用真实 sing-box 服务端和 Mihomo 客户端验证 WS/gRPC，错误路径或服务名必须失败。`TestRefreshValidationDoesNotHoldPublicationLock` 覆盖锁外编译与过期配置拒绝，`TestLimitedServerPreservesTLSAndHTTP2` 覆盖 TLS 状态及协议协商。
 
@@ -97,7 +97,7 @@ Windows 先加载 `scripts/dev-env.ps1`，将 `GATEWAY_BINARY` 和 `MANAGED_CORE
 
 `GET /api/accounts/outputs?id=…&scope=…` 和用户用量的 profiles 对象数组共用实际导出计划；`GET /api/outbound-options` 返回已应用出站。新字段与契约直接更新，不增加旧数组或旧接口适配器。完整订阅说明见 [订阅](subscriptions.md)。
 
-当前数据库 schema 16、备份格式 8。不复用早期开发目录或旧数据库；应用配置 schema 与数据库版本分别维护。对外 CLI 保留 panel、核心 prepare/check、firewall、下载监听和网关运行模式，旧 config/accounts/subscriptions/asset/remote 命令不再暴露。
+当前数据库 schema 17、备份格式 8。不复用早期开发目录或旧数据库；应用配置 schema 与数据库版本分别维护。对外 CLI 保留 panel、核心 prepare/check、firewall、下载监听和网关运行模式，旧 config/accounts/subscriptions/asset/remote 命令不再暴露。
 
 账户策略存储为独立字段，备份结构校验随 schema 更新；所有旧 schema 数据库及其备份明确拒绝。新增回归覆盖配置快照、纯账户订阅自动恢复、模板省略字段、Argo 日志滚动、BBR 部分失败重试、任务详情权限、分页边界、日期精度及分享结果窗口。`Task.details` 是服务端生成的详情访问描述，前端不再维护任务类型白名单。
 
@@ -201,7 +201,7 @@ go vet ./...
 
 任务历史新增 `GET /api/tasks?before=<id>&limit=50`，响应 `{items,next_before}`，`limit` 为 1–100；0 的 `next_before` 表示没有下一页。概览任务数量固定上界，`task_counts.failed` 是未标记处理的失败总数，`attention` 是未处理失败或 partial/cached/failed 业务结果总数，`active` 是排队/运行中总数。顶部告警与概览统计使用聚合值，不依赖最近 12 条摘要。任务详情权限独立检查。
 
-备份读取返回私有暂存文件路径，调用者必须 `Close` 释放；失败读取自动清理。不要重新把所有条目读回一个内存集合，也不要在密文认证完成前信任数据库。当前备份格式 8、数据库 16、平台 7、节点 5、订阅 6，需新初始化目录。
+备份读取返回私有暂存文件路径，调用者必须 `Close` 释放；失败读取自动清理。不要重新把所有条目读回一个内存集合，也不要在密文认证完成前信任数据库。当前备份格式 8、数据库 17、平台 7、节点 5、订阅 6，需新初始化目录。
 
 ## 5.1 重构回归
 
@@ -260,4 +260,13 @@ Windows 验证先加载 scripts/dev-env.ps1，再设置 MANAGED_CORE_BINARY 指�
 
 `test-panel-refactor.mjs` 覆盖结构化 DNS 解析器在编辑、动态选项和无关字段修改中的保留及错误定位。浏览器验收额外检查 1280/375/320px 登录输入框与显隐按钮宽度、切换行为及溢出。使用 `PANEL_BROWSER_TEST=1` 执行本地 API + 浏览器；可设置 `PANEL_TEST_SCREENSHOT_DIR` 保存证据。
 
-运行 `go test ./internal/manage -run '^$' -bench '^BenchmarkBindingAvailability$' -benchmem -benchtime=1s -count=3` 比较 256 个入站下重复读取完整配置与版本缓存的成本。该指标只覆盖列表可用性计算，不代表 VPN 吞吐或整机内存。
+运行 `go test ./internal/manage -run '^ -bench '^BenchmarkBindingAvailability -benchmem -benchtime=1s -count=3` 比较 256 个入站下重复读取完整配置与版本缓存的成本。该指标只覆盖列表可用性计算，不代表 VPN 吞吐或整机内存。
+
+## 本轮稳定性验证入口
+
+数据库 schema=17 只支持新初始化目录。新增的服务计划与任务能力字段由 Go 契约生成，修改后执行 `go run ./cmd/panel-contract`；CI 使用 `-check` 防止前后端漂移。普通面板类型检查启用 noUnusedLocals/noUnusedParameters，回调占位参数显式使用下划线前缀。
+
+- Go 回归：publication_validation_test、deployment_plan_test、task_cancellation_test、controlstore/task_lifecycle_test、domain/address_test、accounting/reservation_ownership_test。
+- 前端第 12 组：`scripts/test-panel-deployment.mjs`，验证部署计划、主机状态说明、证书回显和服务端驱动的探测取消。
+- 运行中取消与完成竞态、并发认领排他、后台刷新隔离、探测队列容量，以及无效发布字段不推进配置版本都有明确断言。
+- 完整的 Windows 测试、race、真实核心/API 与性能样本记录于 `docs/validation/2026-11-25-stability.json`。Linux systemd/netns/防火墙及磁盘故障由 Linux CI 执行；本地交叉编译不等同于运行验收。

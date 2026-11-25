@@ -117,6 +117,7 @@ export interface ConfigurationOutputPreview {
 }
 
 export interface ConfigurationPreview {
+  deployment: DeploymentPreview;
   valid: boolean;
   ordinary_server: Record<string, unknown> | null;
   outputs: Array<ConfigurationOutputPreview> | null;
@@ -189,6 +190,12 @@ export interface DeliveryResult {
   selected: number;
   items: Array<DeliveryOutcome> | null;
   interrupted: boolean;
+}
+
+export interface DeploymentPreview {
+  changes: Array<ServiceChange> | null;
+  runtime_observed: boolean;
+  applied_revision: number;
 }
 
 export interface Grant {
@@ -354,6 +361,12 @@ export interface ServerTransport {
   host?: string;
   early_data?: number;
   early_data_header?: string;
+}
+
+export interface ServiceChange {
+  name: string;
+  action: string;
+  reason: string;
 }
 
 export interface Session extends Admin {
@@ -627,6 +640,8 @@ export interface Task {
   outcome?: string;
   acknowledged: boolean;
   details: TaskAudience;
+  cancellable: boolean;
+  cancel_requested: boolean;
 }
 
 export interface TaskAudience {

@@ -110,6 +110,18 @@ func (c TaskCommand) GatewayOperation() (string, error) {
 	return v.Op, nil
 }
 
-func (c TaskCommand) Background() bool {
-	return c.Operation == "outbound-probe" || c.Operation == "subscription"
+const (
+	ControlLane      = "control"
+	SubscriptionLane = "subscription"
+	ProbeLane        = "probe"
+)
+
+func (c TaskCommand) Lane() string {
+	if c.Operation == "outbound-probe" || (c.Operation == "subscription" && c.Subscription.Operation == "check") {
+		return ProbeLane
+	}
+	if c.Operation == "subscription" {
+		return SubscriptionLane
+	}
+	return ControlLane
 }

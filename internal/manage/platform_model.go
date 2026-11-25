@@ -44,9 +44,12 @@ func (c PlatformConfig) Validate() error {
 	if c.Schema != PlatformSchema {
 		return fmt.Errorf("platform schema must be %d; old data cannot be imported", PlatformSchema)
 	}
-	if net.ParseIP(c.App.Address) == nil {
-		if err := validateDomain(c.App.Address); err != nil {
-			return err
+	if err := domain.ValidateHost(c.App.Address); err != nil {
+		return &domain.FieldError{Field: "app.address", Message: err.Error()}
+	}
+	if c.App.CDNAddress != "" {
+		if err := domain.ValidateHost(c.App.CDNAddress); err != nil {
+			return &domain.FieldError{Field: "app.cdn_address", Message: err.Error()}
 		}
 	}
 	if len(c.App.Name) == 0 || len(c.App.Name) > 128 {
@@ -86,6 +89,13 @@ func (c PlatformConfig) Validate() error {
 				return errors.New("VPNGate ports conflict")
 			}
 			ports[port] = true
+		}
+		for field, value := range map[string]string{"tls_sni": p.TLSSNI, "reality_sni": p.RealitySNI, "handshake_host": p.HandshakeHost} {
+			if value != "" {
+				if err := domain.ValidateHost(value); err != nil {
+					return &domain.FieldError{Field: "vpn.profiles[" + cc + "]." + field, Message: err.Error()}
+				}
+			}
 		}
 	}
 	if c.Listener.Enabled && (c.Listener.Port < 1 || c.Listener.Port > 65535 || ports[c.Listener.Port] || net.ParseIP(c.Listener.Listen) == nil) {

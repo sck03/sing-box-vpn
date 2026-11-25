@@ -1,4 +1,4 @@
-import { api, getOverview } from "./api.js";
+import { getOverview } from "./api.js";
 import { capabilities } from "./capabilities.js";
 import { tasksCard } from "./tasks.js";
 import { setupGuide } from "./setup-guide.js";

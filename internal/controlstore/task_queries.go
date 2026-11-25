@@ -20,7 +20,7 @@ func (s *Store) TaskCounts(ctx context.Context) (v TaskCounts, err error) {
 
 func (s *Store) TaskPage(ctx context.Context, before int64, limit int) (TaskPage, error) {
 	limit = max(1, min(limit, 100))
-	items, err := s.queryTasks(ctx, `SELECT id,kind,actor,state,phase,'',created,updated,CAST('{}' AS BLOB),outcome,acknowledged FROM control_tasks WHERE (?=0 OR id<?) ORDER BY id DESC LIMIT ?`, before, before, limit+1)
+	items, err := s.queryTasks(ctx, `SELECT id,kind,actor,state,phase,'',created,updated,CAST('{}' AS BLOB),outcome,acknowledged,`+taskCancellationColumns+` FROM control_tasks WHERE (?=0 OR id<?) ORDER BY id DESC LIMIT ?`, before, before, limit+1)
 	page := TaskPage{Items: items}
 	if len(items) > limit {
 		page.Items, page.NextBefore = items[:limit], items[limit-1].ID

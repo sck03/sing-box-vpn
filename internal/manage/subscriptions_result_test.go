@@ -43,7 +43,7 @@ func TestRefreshTasksPersistRejectedResourceReport(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			task, err := s.Store.ClaimLane(t.Context(), "background")
+			task, err := s.Store.ClaimLane(t.Context(), "subscription")
 			if err != nil || task.ID != id {
 				t.Fatal(task, err)
 			}

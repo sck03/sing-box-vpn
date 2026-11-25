@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestBackgroundTaskDoesNotBlockConfiguration(t *testing.T) {
+func TestProbeDoesNotBlockConfigurationOrSubscriptions(t *testing.T) {
 	s, err := Open(filepath.Join(t.TempDir(), "control.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -14,13 +14,21 @@ func TestBackgroundTaskDoesNotBlockConfiguration(t *testing.T) {
 	if err = s.Initialize(t.Context(), []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
-	probe, err := s.QueueBackground(t.Context(), "outbound-probe", "admin", []byte(`{}`))
+	probe, err := s.QueueTask(t.Context(), "probe", "outbound-probe", "admin", []byte(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	background, err := s.ClaimLane(t.Context(), "background")
+	background, err := s.ClaimLane(t.Context(), "probe")
 	if err != nil || background.ID != probe {
 		t.Fatal(background, err)
+	}
+	subscription, err := s.QueueTask(t.Context(), "subscription", "subscription", "scheduler", []byte("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	refresh, err := s.ClaimLane(t.Context(), "subscription")
+	if err != nil || refresh.ID != subscription {
+		t.Fatal(refresh, err)
 	}
 	apply, err := s.Queue(t.Context(), "apply", "admin", []byte(`{}`), 1, []byte(`{"next":true}`))
 	if err != nil {

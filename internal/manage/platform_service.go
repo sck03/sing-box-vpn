@@ -33,6 +33,7 @@ type PlatformService struct {
 	panelMu             sync.RWMutex
 	activePanel         *PanelOptions
 	workerReady         atomic.Bool
+	probes              runningProbes
 	exportView          subscriptionView
 	exportPlans         accountExportCache
 	bindingView         accountBindingCache
