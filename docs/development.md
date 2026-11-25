@@ -4,6 +4,8 @@
 
 源码不依赖旧数据库或测试运行目录。`.test/gocache`、`.test/gomodcache`、`.test/tmp` 是可重建缓存；完成验证并停止相关进程后可清理。`.test/verification` 中旧数据库、日志、截图和测试二进制也可删除，仅保留需要的验收摘要。
 
+Windows 使用 `./scripts/clean-dev.ps1 -WhatIf` 预览，去掉 `-WhatIf` 清理 `.test`、`.build`、`.cleanup-manual`。加 `-Dependencies` 删除可由 `npm ci` 重建的 node_modules，加 `-BrowserTools` 删除本地 Python 浏览器验证依赖。脚本先核对绝对路径、目录链接和目录内正在运行的程序，再逐项删除；不会触及 `.git`、源码、文档示例、当前 Go 工具链及核心校验器。停止正在执行的构建和测试后再使用；清理后首次构建需要重新下载模块和编译。
+
 `.tools/linux-validation.qcow2` 是可重建 Linux 测试虚拟机，可能远大于源码；不再使用时，先运行 `scripts/linux-vm.ps1 stop`，再清理该磁盘、基础镜像、QEMU 和配套测试密钥。不要删除仍在使用的主机部署目录或用户配置。`.build/release` 只需保留当前安装包与 SHA256SUMS，中间构建目录可删除。清缓存后首次构建会重新下载依赖和编译。
 
 任务 API 使用当前 `application.TaskCommand`，不接受调度器 `automatic` 或无关字段。增加操作时同步 `CommandFields`、校验和执行器，再运行 `go run ./cmd/panel-contract`；不要手工修改生成类型。调度器只通过私有入口发起自动刷新/投递。

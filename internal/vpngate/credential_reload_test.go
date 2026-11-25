@@ -58,7 +58,7 @@ func TestManagedCredentialReload(t *testing.T) {
 	if err != nil || len(runtimes) != 1 {
 		t.Fatal(runtimes, err)
 	}
-	started := runtimes[0]["started"]
+	started := runtimes[0].Started
 	echo, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -189,7 +189,7 @@ func TestManagedCredentialReload(t *testing.T) {
 			}
 			connections[kind] = client(kind, "-new", node)
 			now, e := control.Runtimes(t.Context())
-			if e != nil || len(now) != 1 || fmt.Sprint(now[0]["started"]) != fmt.Sprint(started) {
+			if e != nil || len(now) != 1 || now[0].Started != started {
 				t.Fatal("core process restarted", now, e)
 			}
 		})

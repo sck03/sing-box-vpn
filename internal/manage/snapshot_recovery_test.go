@@ -85,9 +85,7 @@ func TestAccountSubscriptionRecoversWithoutRemoteSources(t *testing.T) {
 				t.Fatal(err)
 			}
 			if cause == "quota" || cause == "period" {
-				if _, err := s.Accounts.Reserve(ctx, "lease", "a", "normal", quota, time.Now()); err != nil {
-					t.Fatal(err)
-				}
+				consumeTestQuota(t, s, "a", int(quota))
 			}
 			c.Subscriptions = sub.Config{Version: sub.SchemaVersion, Revision: 2,
 				Sources:     []sub.Source{{ID: "account", Name: "Account", Kind: "account", AccountID: "a", Scope: "normal", Required: true}},
@@ -133,7 +131,7 @@ func TestAccountSubscriptionRecoversWithoutRemoteSources(t *testing.T) {
 			case "subscriber":
 				err = s.Accounts.SaveSubscriber(ctx, accounting.Subscriber{ID: "person", Name: "Person", Revision: 1})
 			case "period":
-				_, err = s.Accounts.Advance(ctx, "a", time.Now().Add(25*time.Hour), false)
+				_, err = s.Accounts.AccountUsage(ctx, "a", time.Now().Add(25*time.Hour))
 			}
 			if err != nil {
 				t.Fatal(err)

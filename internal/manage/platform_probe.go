@@ -8,35 +8,33 @@ import (
 	"time"
 )
 
-func (s *PlatformService) OutboundOptions(ctx context.Context) (Object, error) {
-	state, err := s.Store.State(ctx)
+func (s *PlatformService) OutboundOptions(ctx context.Context) (OutboundOptions, error) {
+	c, state, err := s.appliedConfiguration(ctx)
 	if err != nil {
-		return nil, err
-	}
-	c, err := decodePlatform(state.Applied)
-	if err != nil {
-		return nil, err
+		return OutboundOptions{}, err
 	}
 	config, err := serverForApp(c.App)
 	if err != nil {
-		return nil, err
+		return OutboundOptions{}, err
 	}
-	items := []Object{}
-	for _, item := range append(objects(config["outbounds"]), objects(config["endpoints"])...) {
-		items = append(items, Object{"id": text(item["tag"]), "type": text(item["type"])})
+	items := []OutboundOption{}
+	for _, key := range []string{"outbounds", "endpoints"} {
+		for _, item := range objects(config[key]) {
+			items = append(items, OutboundOption{ID: text(item["tag"]), Type: text(item["type"])})
+		}
 	}
-	return Object{"items": items, "revision": state.AppliedRevision, "pending": state.Revision != state.AppliedRevision}, nil
+	return OutboundOptions{Items: items, Revision: state.AppliedRevision, Pending: state.Revision != state.AppliedRevision}, nil
 }
 
 func (s *PlatformService) probeOutbound(ctx context.Context, task int64, id, endpoint string) error {
 	if err := sub.HTTPURL(endpoint); err != nil {
 		return err
 	}
-	state, err := s.Store.State(ctx)
+	state, err := s.Store.AppliedState(ctx)
 	if err != nil {
 		return err
 	}
-	c, err := decodePlatform(state.Applied)
+	c, err := decodePlatform(state.Config)
 	if err != nil {
 		return err
 	}

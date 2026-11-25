@@ -71,16 +71,12 @@ func (s *PlatformService) writeTunnel(ctx context.Context, c PlatformConfig) err
 func (s *PlatformService) syncTunnel(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	state, err := s.Store.State(ctx)
+	c, state, err := s.appliedConfiguration(ctx)
 	if err != nil {
 		return err
 	}
 	if state.Revision != state.AppliedRevision {
 		return nil
-	}
-	c, err := decodePlatform(state.Applied)
-	if err != nil {
-		return err
 	}
 	previous, err := s.Store.Observation(ctx, "argo-tunnel")
 	if err != nil {

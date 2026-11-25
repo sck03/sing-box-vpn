@@ -15,6 +15,9 @@ var ResourceID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
 
 var Protocols = []string{"vless", "vmess", "hysteria2", "tuic", "anytls"}
 
+// JSON numbers must round-trip exactly through the panel's JavaScript integers.
+const MaxQuotaBytes int64 = 1<<53 - 1
+
 // Account is an independently metered entitlement. Several entitlements may
 // belong to one subscriber without sharing credentials or quota pools.
 type Account struct {
@@ -47,8 +50,8 @@ func (a Account) Validate() error {
 	if !ResourceID.MatchString(a.ID) || len(a.Name) == 0 || len(a.Name) > 128 {
 		return errors.New("account requires a stable ID and a name of 1–128 bytes")
 	}
-	if a.QuotaBytes != nil && (*a.QuotaBytes < 0 || *a.QuotaBytes > 1<<60) {
-		return errors.New("quota must be null (unlimited) or 0–2^60 bytes")
+	if a.QuotaBytes != nil && (*a.QuotaBytes < 0 || *a.QuotaBytes > MaxQuotaBytes) {
+		return errors.New("quota must be null (unlimited) or 0–9007199254740991 bytes")
 	}
 	if a.ExpiresAt != nil && a.ExpiresAt.IsZero() {
 		return errors.New("expiry must be null or a valid timestamp")

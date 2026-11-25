@@ -160,11 +160,8 @@
     },
     "scope": "Configuration-derived binding availability, including database reads; not whole HTTP latency, VPN throughput or process RSS"
   },
-  "screenshots": [
-    "docs/validation/2026-11-25-login-1280.png",
-    "docs/validation/2026-11-25-login-375.png",
-    "docs/validation/2026-11-25-login-320.png"
-  ],
+  "screenshots": [],
+  "screenshots_cleanup": "2026-11-26: obsolete login screenshots removed from the working tree; historical evidence remains in Git history before the boundary refactor.",
   "not_executed_locally": [
     "Linux systemd service lifecycle",
     "Linux namespaces/firewall/storage fault acceptance",

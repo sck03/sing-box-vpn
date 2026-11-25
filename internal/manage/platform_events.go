@@ -67,8 +67,8 @@ func (s *PlatformService) collectOverview(ctx context.Context) ([]byte, error) {
 	}
 	// The overview exposes liveness, not a changing counter. Keep exact heartbeats
 	// in controlstore for readiness checks; idle streams can reuse their snapshot.
-	for _, runtime := range runtimes {
-		delete(runtime, "heartbeat")
+	for i := range runtimes {
+		runtimes[i].Heartbeat = 0
 	}
 	tasks, err := s.Store.RecentTaskSummaries(ctx)
 	if err != nil {

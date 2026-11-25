@@ -10,7 +10,6 @@ import (
 
 type Config gatewayconfig.Config
 
-func defaults() Config            { return Config(gatewayconfig.Default()) }
 func (c *Config) validate() error { return (*gatewayconfig.Config)(c).Validate() }
 func readConfig(path string) (Config, error) {
 	f, err := os.Open(path)

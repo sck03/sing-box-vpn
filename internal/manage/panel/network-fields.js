@@ -141,5 +141,6 @@ export const gatewayFields = (limits) => [
     label: "最大连接数",
     type: "number",
     ...limits.max_connections,
+    help: "客户端连接与转发流分别受此上限约束；UDP 控制连接不额外占用转发额度。",
   },
 ];

@@ -84,7 +84,7 @@ func awaitDial(t *testing.T, requests <-chan net.Conn) net.Conn {
 	}
 }
 
-func TestManagerPendingDialUsesConnectionCapacity(t *testing.T) {
+func TestManagerClientAndForwardBudgetsAreIndependent(t *testing.T) {
 	for _, network := range []string{"tcp", "udp"} {
 		t.Run(network, func(t *testing.T) {
 			m, ticket, requests := pendingDialFixture(t)
@@ -93,9 +93,14 @@ func TestManagerPendingDialUsesConnectionCapacity(t *testing.T) {
 			incoming, peer := net.Pipe()
 			defer incoming.Close()
 			defer peer.Close()
-			if m.track(incoming) {
-				m.untrack(incoming)
-				t.Error("incoming connection stole the pending dial's capacity")
+			if !m.track(incoming) {
+				t.Fatal("pending worker dial consumed client admission")
+			}
+			another, peer2 := net.Pipe()
+			defer another.Close()
+			defer peer2.Close()
+			if m.track(another) {
+				t.Fatal("client admission exceeded its own budget")
 			}
 			second, _ := beginManagerOpen(t, m, ticket, network)
 			if result := awaitOpen(t, second); result.err == nil || result.conn != nil {
@@ -109,12 +114,17 @@ func TestManagerPendingDialUsesConnectionCapacity(t *testing.T) {
 				t.Fatal("reserved dial could not become an active connection", result.err)
 			}
 			defer result.conn.Close()
-			if m.track(incoming) {
-				t.Fatal("active connection lost its reserved capacity")
+			third, _ := beginManagerOpen(t, m, ticket, network)
+			if result := awaitOpen(t, third); !errors.Is(result.err, errConnectionLimit) {
+				t.Fatal("active worker flow lost its reserved capacity", result.err)
 			}
 			m.untrack(result.conn)
-			if !m.track(incoming) {
-				t.Fatal("completed dial retained a second slot")
+			next, _ := beginManagerOpen(t, m, ticket, network)
+			if err := writeObject(awaitDial(t, requests), dialResponse{Address: "203.0.113.5:443"}); err != nil {
+				t.Fatal(err)
+			}
+			if result := awaitOpen(t, next); result.err != nil {
+				t.Fatal("closed worker flow retained its slot", result.err)
 			}
 		})
 	}
@@ -169,11 +179,12 @@ func TestManagerFailedDialReleasesCapacity(t *testing.T) {
 			if result := awaitOpen(t, done); result.err == nil || result.conn != nil {
 				t.Fatal("failed dial returned a connection")
 			}
-			incoming, peer := net.Pipe()
-			defer incoming.Close()
-			defer peer.Close()
-			if !m.track(incoming) {
-				t.Fatal("failed dial retained capacity")
+			next, _ := beginManagerOpen(t, m, ticket, "tcp")
+			if err := writeObject(awaitDial(t, requests), dialResponse{Address: "203.0.113.5:443"}); err != nil {
+				t.Fatal(err)
+			}
+			if result := awaitOpen(t, next); result.err != nil {
+				t.Fatal("failed dial retained forward capacity", result.err)
 			}
 		})
 	}
@@ -225,7 +236,7 @@ func BenchmarkManagerOpenAtCapacity(b *testing.B) {
 	c, peer := net.Pipe()
 	defer c.Close()
 	defer peer.Close()
-	m.track(c)
+	m.connections[c] = false
 	ticket, _ := m.authenticate(cfg.ProxyUser, cfg.ProxyPass)
 	b.ReportAllocs()
 	b.ResetTimer()

@@ -241,6 +241,13 @@ export interface Grant {
   state: string;
 }
 
+export interface GrantOptions {
+  listener_enabled: boolean;
+  pending: boolean;
+  outputs: Array<Option> | null;
+  unavailable?: string;
+}
+
 export interface ManagedNode {
   id: string;
   protocol: string;
@@ -269,6 +276,17 @@ export interface OutboundFields {
   utls: boolean;
 }
 
+export interface OutboundOption {
+  id: string;
+  type: string;
+}
+
+export interface OutboundOptions {
+  revision: number;
+  pending: boolean;
+  items: Array<OutboundOption> | null;
+}
+
 export interface OutputPreview {
   id: string;
   name: string;
@@ -287,8 +305,8 @@ export interface OverviewSnapshot {
   background: Array<BackgroundIssue> | null;
   revision: number;
   applied_revision: number;
-  services: Array<Record<string, unknown> | null> | null;
-  runtimes: Array<Record<string, unknown> | null> | null;
+  services: Array<ServiceState> | null;
+  runtimes: Array<RuntimeState> | null;
   tasks: Array<Task> | null;
   task_counts: TaskCounts;
   credentials: Array<CredentialPublication> | null;
@@ -374,6 +392,15 @@ export interface RefreshResult {
   interrupted: boolean;
 }
 
+export interface RuntimeState {
+  instance: string;
+  version: string;
+  revision: number;
+  started: number;
+  heartbeat?: number;
+  recent: boolean;
+}
+
 export interface Secrets {
   reality: Reality;
   socks_user?: string;
@@ -403,6 +430,22 @@ export interface ServiceChange {
   name: string;
   action: string;
   reason: string;
+}
+
+export interface ServiceState {
+  name: string;
+  label: string;
+  description: string;
+  page: string;
+  section: string;
+  Id?: string;
+  ActiveState?: string;
+  SubState?: string;
+  UnitFileState?: string;
+  LoadState?: string;
+  MainPID?: string;
+  state?: string;
+  error?: string;
 }
 
 export interface Session extends Admin {
@@ -448,6 +491,13 @@ export interface SubscriptionAccountOutputOption {
   diagnostics: Array<SubscriptionDiagnostic> | null;
 }
 
+export interface SubscriptionActionOptions {
+  revision: number;
+  pending: boolean;
+  outputs: Array<Option> | null;
+  deliveries: Array<Option> | null;
+}
+
 export interface SubscriptionActivity {
   id: string;
   name?: string;
@@ -469,8 +519,8 @@ export interface SubscriptionCollection {
 
 export type SubscriptionCommand =
   | { operation: "refresh"; id?: never; probe_url?: never }
-  | { operation: "check"; id: string; probe_url?: string }
-  | { operation: "deliver"; id?: string; probe_url?: never };
+  | { operation: "check"; id: string; probe_url: string }
+  | { operation: "deliver"; id: string; probe_url?: never };
 
 export interface SubscriptionConfig {
   version: number;

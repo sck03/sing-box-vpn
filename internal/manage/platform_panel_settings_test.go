@@ -205,8 +205,8 @@ func TestServiceCatalogNamesAndWorkspaces(t *testing.T) {
 		t.Fatal(status)
 	}
 	for _, service := range status {
-		name := text(service["name"])
-		if page, ok := want[name]; !ok || text(service["page"]) != page || text(service["description"]) == "" {
+		name := service.Name
+		if page, ok := want[name]; !ok || service.Page != page || service.Description == "" {
 			t.Fatal(service)
 		}
 	}

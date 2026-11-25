@@ -324,6 +324,53 @@ assert.equal(
 dialog.close();
 await new Promise((resolve) => setTimeout(resolve, 1550));
 assert.equal(detailReads, 2, "terminal or closed task kept polling");
+const { journalCard } = await import("../internal/manage/panel/log-maintenance.js");
+for (const label of ["查看日志", "查看占用"]) {
+  const page = new AbortController();
+  let resolve, signal;
+  globalThis.fetch = (_path, options) => {
+    signal = options.signal;
+    return new Promise((done) => { resolve = done; });
+  };
+  const card = journalCard([], { signal: page.signal, session: { role: "operator" } });
+  document.querySelector("main").replaceChildren(card);
+  [...card.querySelectorAll("button")].find((button) => button.textContent === label).click();
+  page.abort();
+  formDialog("新页面编辑", [], {}, () => {});
+  resolve({ ok: true, json: async () => ({ log: "旧日志", usage: "旧占用" }) });
+  await tick();
+  assert(signal.aborted, label + " retained its read after navigation");
+  assert.match(dialog.textContent, /新页面编辑/);
+  assert.doesNotMatch(dialog.textContent, /旧日志|旧占用/);
+  dialog.close();
+}
+const { outbounds } = await import("../internal/manage/panel/outbounds.js");
+const { capabilitiesFixture } = await import("./panel-fixtures.mjs");
+globalThis.fetch = async () => ({ ok: true, json: async () => capabilitiesFixture });
+const probePage = new AbortController();
+let resolveOptions, optionsSignal;
+const outboundSections = await outbounds({
+  signal: probePage.signal,
+  session: { role: "admin" },
+  section: "proxy",
+  config: async () => ({ app: { advanced: { outbounds: [{ type: "direct", tag: "direct" }] } } }),
+  request: async () => ({ outbounds: [{ type: "direct", tag: "direct" }] }),
+  workflowRequest: (_path, _body, options) => {
+    optionsSignal = options.signal;
+    return new Promise((resolve) => { resolveOptions = resolve; });
+  },
+  changed() {}, render() {},
+});
+document.querySelector("main").replaceChildren(...outboundSections);
+await tick();
+[...document.querySelectorAll("button")].find((button) => button.textContent === "按需探测").click();
+formDialog("替换后的编辑器", [], {}, () => {});
+await tick();
+assert(optionsSignal.aborted, "replaced outbound probe retained its request");
+resolveOptions({ revision: 1, pending: false, items: [{ id: "direct", type: "direct" }] });
+await tick();
+assert.match(dialog.textContent, /替换后的编辑器/);
+probePage.abort();
 dom.window.close();
 console.log(
   "Panel lifecycle checks passed: navigation abort, competing dialogs, typed errors and contextual resource editors.",

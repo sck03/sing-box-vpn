@@ -1,4 +1,5 @@
 import { api, download } from "./api.js";
+import { loadDialog } from "./dialog-session.js";
 import {
   el,
   card,
@@ -112,19 +113,26 @@ export function journalCard(services, ctx) {
   const controls = row(
     service,
     since,
-    button("查看日志", async () =>
-      showResult("运行日志", (await api("/api/logs" + params())).log),
+    button("查看日志", () =>
+      loadDialog(
+        ctx.signal, "运行日志",
+        (signal) => api("/api/logs" + params(), undefined, { signal }),
+        (value) => showResult("运行日志", value.log),
+      ),
     ),
     button("下载日志", async () =>
       download(
-        await api("/api/logs/download" + params(), undefined, { blob: true }),
+        await api("/api/logs/download" + params(), undefined, { blob: true, signal: ctx.signal }),
         "sb-vpn.log",
       ),
     ),
-    button("查看占用", async () => {
-      const v = await api("/api/logs/usage");
-      showResult("项目日志占用", v.usage + "\n上限 64 MiB，最长保留 7 天。");
-    }),
+    button("查看占用", () =>
+      loadDialog(
+        ctx.signal, "项目日志占用",
+        (signal) => api("/api/logs/usage", undefined, { signal }),
+        (value) => showResult("项目日志占用", value.usage + "\n上限 64 MiB，最长保留 7 天。"),
+      ),
+    ),
   );
   controls.classList.add("journal-controls");
   if (ctx.session.role === "admin")

@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"io"
+
+	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
 type SubscriptionCommand struct {
@@ -21,10 +23,16 @@ func (c SubscriptionCommand) Validate() error {
 			return errors.New("subscription refresh is global and cannot select an id or probe_url")
 		}
 	case "check":
-		if c.ID == "" {
+		if !sub.ValidID(c.ID) {
 			return errors.New("subscription check requires an output id")
 		}
+		if err := sub.HTTPURL(c.ProbeURL); err != nil {
+			return err
+		}
 	case "deliver":
+		if !sub.ValidID(c.ID) {
+			return errors.New("subscription delivery requires a destination id")
+		}
 		if c.ProbeURL != "" {
 			return errors.New("probe_url is only valid for subscription checks")
 		}
@@ -42,12 +50,21 @@ type SubscriptionOperations interface {
 	Deliver(context.Context, string, bool, io.Writer) error
 }
 
-func ExecuteSubscription(ctx context.Context, operations SubscriptionOperations, command SubscriptionCommand, automatic bool, output io.Writer) error {
-	if err := command.Validate(); err != nil {
-		return err
+// ValidateScheduled deliberately excludes manual target and probe parameters.
+func (c SubscriptionCommand) ValidateScheduled() error {
+	if (c.Operation != "refresh" && c.Operation != "deliver") || c.ID != "" || c.ProbeURL != "" {
+		return errors.New("scheduled subscriptions must refresh or deliver globally without probe parameters")
 	}
-	if automatic && (command.Operation == "check" || command.ID != "") {
-		return errors.New("scheduled subscriptions must refresh or deliver globally")
+	return nil
+}
+
+func ExecuteSubscription(ctx context.Context, operations SubscriptionOperations, command SubscriptionCommand, automatic bool, output io.Writer) error {
+	validate := command.Validate
+	if automatic {
+		validate = command.ValidateScheduled
+	}
+	if err := validate(); err != nil {
+		return err
 	}
 	switch command.Operation {
 	case "refresh":

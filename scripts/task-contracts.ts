@@ -32,7 +32,7 @@ const commands: TaskCommand[] = [
   { operation: "gateway", config: { op: "swap" } },
   {
     operation: "subscription",
-    subscription: { operation: "check", id: "output" },
+    subscription: { operation: "check", id: "output", probe_url: "https://example.test" },
   },
 ];
 void commands;
@@ -87,6 +87,18 @@ const deliveryProbe: TaskCommand = {
   subscription: { operation: "deliver", probe_url: "https://example.test" },
 };
 void [scopedRefresh, missingOutput, deliveryProbe];
+
+const missingDeliveryTarget: TaskCommand = {
+  operation: "subscription",
+  // @ts-expect-error manual delivery requires a destination
+  subscription: { operation: "deliver" },
+};
+const missingProbeURL: TaskCommand = {
+  operation: "subscription",
+  // @ts-expect-error a check requires its endpoint before entering the task queue
+  subscription: { operation: "check", id: "output" },
+};
+void [missingDeliveryTarget, missingProbeURL];
 
 // Stateful results and grant limits must remain explicit in generated contracts.
 const refresh: RefreshResult = {

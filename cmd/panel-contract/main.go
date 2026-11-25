@@ -73,8 +73,8 @@ func main() {
 			if t == reflect.TypeFor[application.SubscriptionCommand]() {
 				types[n] = `export type SubscriptionCommand =
   | { operation: "refresh"; id?: never; probe_url?: never }
-  | { operation: "check"; id: string; probe_url?: string }
-  | { operation: "deliver"; id?: string; probe_url?: never };
+  | { operation: "check"; id: string; probe_url: string }
+  | { operation: "deliver"; id: string; probe_url?: never };
 `
 				return n
 			}
@@ -179,6 +179,7 @@ func main() {
 		reflect.TypeFor[application.RefreshResult](),
 		reflect.TypeFor[application.DeliveryResult](),
 		reflect.TypeFor[manage.SubscriptionStatusResponse](),
+		reflect.TypeFor[manage.SubscriptionActionOptions](), reflect.TypeFor[manage.OutboundOptions](), reflect.TypeFor[manage.GrantOptions](),
 		reflect.TypeFor[sub.TemplateImport](), reflect.TypeFor[sub.TemplateImportResult](), reflect.TypeFor[manage.OverviewSnapshot](), reflect.TypeFor[manage.ProgramStatus](), reflect.TypeFor[manage.CertificatePreparation](), reflect.TypeFor[manage.CertificateImport](),
 		reflect.TypeFor[manage.ManagedNode](), reflect.TypeFor[manage.App](), reflect.TypeFor[manage.APIError](), reflect.TypeFor[sub.AccountOutputOption](),
 		reflect.TypeFor[manage.PlatformConfig](), reflect.TypeFor[manage.ConfigurationSave](), reflect.TypeFor[manage.ConfigurationState](), reflect.TypeFor[manage.ConfigurationPreview](), reflect.TypeFor[manage.OutputPreview](), reflect.TypeFor[manage.OutputPreviewRequest](), reflect.TypeFor[manage.QueuedTask](), reflect.TypeFor[application.TaskCommand](),

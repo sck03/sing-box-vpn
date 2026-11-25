@@ -42,7 +42,8 @@ type manager struct {
 	refreshStopped bool
 	sourceClient   *http.Client
 	hostClient     *http.Client
-	connections    map[net.Conn]bool
+	connections    map[net.Conn]bool // true for admitted clients, false for worker flows
+	clients        int
 	pendingDials   map[*pendingDial]struct{}
 	wake           chan struct{}
 	cancel         context.CancelFunc

@@ -29,11 +29,7 @@ func (s *PlatformService) gateway(ctx context.Context, resource string, payload 
 			return nil, errors.New("edit persistent gateway policy in configuration")
 		}
 	}
-	state, err := s.Store.State(ctx)
-	if err != nil {
-		return nil, err
-	}
-	c, err := decodePlatform(state.Applied)
+	c, _, err := s.appliedConfiguration(ctx)
 	if err != nil {
 		return nil, err
 	}

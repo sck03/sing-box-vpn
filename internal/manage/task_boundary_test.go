@@ -13,6 +13,9 @@ func TestPublicTaskRejectsSchedulingMetadata(t *testing.T) {
 		`{"operation":"subscription","automatic":true,"subscription":{"operation":"check","id":"missing"}}`,
 		`{"operation":"service","service":"sb-core","value":"stop","scope":"normal"}`,
 		`{"operation":"service","service":"sb-core","value":"stop","id":"ignored"}`,
+		`{"operation":"subscription","subscription":{"operation":"deliver"}}`,
+		`{"operation":"subscription","subscription":{"operation":"check","id":"output"}}`,
+		`{"operation":"subscription","subscription":{"operation":"check","id":"output","probe_url":"file:///tmp/probe"}}`,
 	} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, panelRequest("POST", "/api/tasks", []byte(body), session))

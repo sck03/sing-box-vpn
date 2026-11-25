@@ -125,6 +125,20 @@ func (s *Store) AppliedStateSince(ctx context.Context, revision int64) (v Applie
 	return
 }
 
+// AppliedView includes pending-state metadata in the same SQLite snapshot.
+// A revision hit returns no configuration body, including when only desired changed.
+type AppliedView struct {
+	Revisions
+	Config json.RawMessage
+}
+
+func (s *Store) AppliedViewSince(ctx context.Context, since int64) (v AppliedView, err error) {
+	var data []byte
+	err = s.db.QueryRowContext(ctx, `SELECT revision,applied_revision,CASE WHEN applied_revision != ? THEN applied ELSE NULL END FROM control_state WHERE id=1`, since).Scan(&v.Revision, &v.AppliedRevision, &data)
+	v.Config = data
+	return
+}
+
 // DesiredState reads the editable configuration and its revisions atomically,
 // without copying the potentially large applied configuration into memory.
 type DesiredState struct {
@@ -314,20 +328,31 @@ func (s *Store) Heartbeat(ctx context.Context, instance, version string, revisio
 	_, err := s.db.ExecContext(ctx, `INSERT INTO runtime_state(instance,revision,version,started,heartbeat) VALUES(?,?,?,?,?) ON CONFLICT(instance) DO UPDATE SET revision=excluded.revision,version=excluded.version,started=excluded.started,heartbeat=excluded.heartbeat`, instance, revision, version, started, now)
 	return err
 }
-func (s *Store) Runtimes(ctx context.Context) ([]map[string]any, error) {
+
+type RuntimeState struct {
+	Instance  string `json:"instance"`
+	Version   string `json:"version"`
+	Revision  int64  `json:"revision"`
+	Started   int64  `json:"started"`
+	Heartbeat int64  `json:"heartbeat,omitempty"`
+	Recent    bool   `json:"recent"`
+}
+
+func (s *Store) Runtimes(ctx context.Context) ([]RuntimeState, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT instance,revision,version,started,heartbeat FROM runtime_state ORDER BY instance`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := []map[string]any{}
+	out := []RuntimeState{}
+	now := time.Now().Unix()
 	for rows.Next() {
-		var id, v string
-		var r, start, h int64
-		if err = rows.Scan(&id, &r, &v, &start, &h); err != nil {
+		var state RuntimeState
+		if err = rows.Scan(&state.Instance, &state.Revision, &state.Version, &state.Started, &state.Heartbeat); err != nil {
 			return nil, err
 		}
-		out = append(out, map[string]any{"instance": id, "version": v, "revision": r, "started": start, "heartbeat": h, "recent": time.Now().Unix()-h < 10})
+		state.Recent = now-state.Heartbeat < 10
+		out = append(out, state)
 	}
 	return out, rows.Err()
 }

@@ -201,10 +201,8 @@ func serveUDP(parent context.Context, control net.Conn, t ticket, access proxyAc
 		return
 	}
 	defer socket.Close()
-	if !access.track(socket) {
-		return
-	}
-	defer access.untrack(socket)
+	// The admitted control connection owns this socket. Closing or revoking it
+	// cancels the association and all worker flows; it needs no second admission.
 	if err := socksReply(control, 0, net.IPv4(127, 0, 0, 1), socket.LocalAddr().(*net.UDPAddr).Port); err != nil {
 		return
 	}

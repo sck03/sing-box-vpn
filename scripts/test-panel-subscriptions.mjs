@@ -360,6 +360,38 @@ await tick();
 assert.match(dialog.textContent, /下一页编辑/);
 assert.doesNotMatch(dialog.textContent, /stale secret/);
 
+const { subscriptions } = await import("../internal/manage/panel/subscriptions.js");
+let queued;
+const subscriptionPage = new AbortController();
+const sections = await subscriptions({
+  signal: subscriptionPage.signal,
+  section: "deliveries",
+  session: { role: "admin" },
+  config: async () => ({ subscriptions: {} }),
+  changed() {}, render() {},
+  request: async (path) => {
+    assert.equal(path, "/api/subscriptions/actions");
+    return { revision: 1, pending: false, outputs: [{ id: "output", name: "Output" }], deliveries: [{ id: "device" }] };
+  },
+  task: async (command) => { queued = command; },
+});
+document.querySelector("#content").replaceChildren(...sections);
+await tick();
+click("分发输出");
+assert.equal(field("目的地").value, "device");
+assert(field("目的地").required);
+document.querySelector("dialog form").requestSubmit();
+await tick();
+assert.deepEqual(queued, { operation: "subscription", subscription: { operation: "deliver", id: "device" } });
+queued = undefined;
+click("检测输出");
+field("探测 URL").value = "";
+assert.equal(document.querySelector("dialog form").checkValidity(), false);
+document.querySelector("dialog form").requestSubmit();
+await tick();
+assert.equal(queued, undefined, "empty probe URL queued a doomed task");
+subscriptionPage.abort();
+
 clearTimeout(notice.timer);
 dom.window.close();
 console.log(

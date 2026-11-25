@@ -1,4 +1,5 @@
 import { api, previewConfiguration, previewOutput } from "./api.js";
+import { subscriptionActions, grantOptions } from "./configuration-api.js";
 import { createShare } from "./account-api.js";
 import { workspace } from "./workspace.js";
 import { disclosure } from "./sections.js";
@@ -458,7 +459,7 @@ export async function subscriptions(ctx) {
         change,
       }),
     sharing: async () => {
-      const applied = await request("/api/grant-options");
+      const applied = await grantOptions(ctx.signal, request);
       const reason =
         applied.unavailable ||
         (!applied.outputs.length && "请先创建并应用一个订阅输出。");
@@ -506,7 +507,7 @@ export async function subscriptions(ctx) {
       );
     },
     diagnostics: async () => {
-      const applied = await request("/api/subscriptions/actions");
+      const applied = await subscriptionActions(ctx.signal, request);
       return card(
         "诊断与立即分发",
         help(
@@ -524,12 +525,13 @@ export async function subscriptions(ctx) {
                       key: "id",
                       label: "输出 ID",
                       type: "select",
+                      required: true,
                       options: applied.outputs.map((v) => [
                         v.id,
                         v.name || v.id,
                       ]),
                     },
-                    { key: "probe_url", label: "探测 URL" },
+                    { key: "probe_url", label: "探测 URL", required: true },
                   ],
                   {
                     id: applied.outputs[0]?.id,
@@ -552,10 +554,11 @@ export async function subscriptions(ctx) {
                       key: "id",
                       label: "目的地",
                       type: "select",
+                      required: true,
                       options: applied.deliveries.map((v) => v.id),
                     },
                   ],
-                  {},
+                  { id: applied.deliveries[0]?.id },
                   (v) =>
                     ctx.task({
                       operation: "subscription",

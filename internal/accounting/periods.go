@@ -42,16 +42,6 @@ func (u *Usage) describe(now time.Time) {
 	}
 }
 
-// Advance is called by runtimes as well as queries. Downloading a subscription
-// never activates a first-use entitlement.
-func (s *Store) Advance(ctx context.Context, id string, now time.Time, activate bool) (Usage, error) {
-	u, err := s.Account(ctx, id)
-	if err != nil {
-		return u, err
-	}
-	return s.advanceUsage(ctx, u, now, activate)
-}
-
 func (s *Store) advanceUsage(ctx context.Context, u Usage, now time.Time, activate bool) (Usage, error) {
 	id := u.ID
 	if u.Archived {

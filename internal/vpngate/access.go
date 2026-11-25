@@ -25,10 +25,11 @@ var errConnectionLimit = errors.New("proxy connection limit reached")
 
 func equalSecret(a, b string) bool { return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
 
-// Capacity includes both accepted sockets and worker dials that have not replied.
-// These helpers require m.mu; reservation and promotion must be one transaction.
-func (m *manager) hasCapacity() bool {
-	return len(m.connections)+len(m.pendingDials) < m.cfg.MaxConnections
+// Client admission and worker flows have independent, equally bounded budgets.
+// A client must never consume the slot needed to establish its worker flow.
+// Requires m.mu; reservation and promotion remain one transaction.
+func (m *manager) hasForwardCapacity() bool {
+	return len(m.connections)-m.clients+len(m.pendingDials) < m.cfg.MaxConnections
 }
 
 func (m *manager) allowedLocked(t ticket) bool {
@@ -41,6 +42,7 @@ func (m *manager) revoke() {
 	m.epoch++
 	connections, pending := m.connections, m.pendingDials
 	m.connections = map[net.Conn]bool{}
+	m.clients = 0
 	m.pendingDials = map[*pendingDial]struct{}{}
 	m.mu.Unlock()
 	for dial := range pending {
@@ -54,14 +56,22 @@ func (m *manager) revoke() {
 func (m *manager) track(c net.Conn) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if !m.hasCapacity() {
+	if m.clients >= m.cfg.MaxConnections {
 		return false
 	}
 	m.connections[c] = true
+	m.clients++
 	return true
 }
 
-func (m *manager) untrack(c net.Conn) { m.mu.Lock(); delete(m.connections, c); m.mu.Unlock() }
+func (m *manager) untrack(c net.Conn) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.connections[c] {
+		m.clients--
+	}
+	delete(m.connections, c)
+}
 
 func (m *manager) authenticate(user, pass string) (ticket, bool) {
 	m.mu.Lock()
@@ -86,7 +96,7 @@ func (m *manager) open(ctx context.Context, t ticket, network, address string) (
 		m.mu.Unlock()
 		return nil, "", errors.New("verified tunnel is unavailable")
 	}
-	if !m.hasCapacity() {
+	if !m.hasForwardCapacity() {
 		m.mu.Unlock()
 		return nil, "", errConnectionLimit
 	}
@@ -104,7 +114,7 @@ func (m *manager) open(ctx context.Context, t ticket, network, address string) (
 			err = errors.New("tunnel changed during dial")
 		} else {
 			// Convert the reservation without releasing its capacity to another caller.
-			m.connections[c] = true
+			m.connections[c] = false
 		}
 	}
 	m.mu.Unlock()

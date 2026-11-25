@@ -25,6 +25,7 @@ export const accountFields = (existing, people) => [
     scale: 1073741824,
     nullable: true,
     min: 0,
+    max: Number.MAX_SAFE_INTEGER / 1073741824,
     help: "留空不限；0 表示零额度。支持小数，保存时取最接近的整数字节。",
   },
   { key: "expires_at", label: "绝对到期时间", type: "date" },

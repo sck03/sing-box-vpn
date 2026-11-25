@@ -135,7 +135,7 @@ func (s *PlatformService) awaitRuntime(ctx context.Context, instance string, sta
 			return err
 		}
 		for _, state := range states {
-			if state["instance"] == instance && state["started"].(int64) >= started && state["recent"] == true {
+			if state.Instance == instance && state.Started >= started && state.Recent {
 				return nil
 			}
 		}

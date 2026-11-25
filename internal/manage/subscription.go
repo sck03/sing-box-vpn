@@ -74,7 +74,7 @@ func RunSubscription(ctx context.Context, args []string, output io.Writer) error
 	}
 	defer control.Close()
 	options := settings.accessOptions()
-	handler := options.Protect(unifiedDownloadHandler(AccountService{Root: *root, Core: filepath.Join(*root, "sing-box"), Store: store, Control: control}))
+	handler := options.Protect(unifiedDownloadHandler(AccountService{Root: *root, Core: filepath.Join(*root, "sing-box"), Store: store, Control: control, configuration: &configurationCache{}}))
 	server := &http.Server{Handler: make(httpserver.Gate, 32).Handler(handler), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 15 * time.Second, MaxHeaderBytes: 16 << 10}
 	if settings.Certificate != "" {
 		server.TLSConfig = options.TLS()

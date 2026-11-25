@@ -61,24 +61,12 @@ func (s *PlatformService) serveGrants(w http.ResponseWriter, r *http.Request, ac
 		if !require(admin) {
 			return true
 		}
-		state, err := s.Store.State(ctx)
+		options, err := s.SubscriptionActions(ctx)
 		if err != nil {
 			platformError(w, err)
 			return true
 		}
-		config, err := decodePlatform(state.Applied)
-		if err != nil {
-			platformError(w, err)
-			return true
-		}
-		outputs, deliveries := []Object{}, []Object{}
-		for _, output := range config.Subscriptions.Outputs {
-			outputs = append(outputs, Object{"id": output.ID, "name": output.Name})
-		}
-		for _, delivery := range config.Subscriptions.Deliveries {
-			deliveries = append(deliveries, Object{"id": delivery.ID})
-		}
-		jsonResponse(w, Object{"revision": state.AppliedRevision, "pending": state.Revision != state.AppliedRevision, "outputs": outputs, "deliveries": deliveries})
+		jsonResponse(w, options)
 		return true
 	}
 	if path == "/api/grant-options" && r.Method == "GET" {
@@ -118,7 +106,7 @@ func (s *PlatformService) serveGrants(w http.ResponseWriter, r *http.Request, ac
 					return true
 				}
 				var token string
-				var options grantOptions
+				var options GrantOptions
 				options, err = s.grantOptions(ctx, access.publicURL)
 				if err == nil {
 					err = options.validate(g.Outputs)

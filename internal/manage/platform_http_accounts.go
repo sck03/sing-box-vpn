@@ -18,31 +18,10 @@ func (s *PlatformService) serveAccounts(w http.ResponseWriter, r *http.Request, 
 		if !require(admin) {
 			return true
 		}
-		state, e := s.Store.State(ctx)
+		options, e := s.InboundOptions(ctx, r.URL.Query().Get("scope"))
 		if e != nil {
 			platformError(w, e)
 			return true
-		}
-		config, e := decodePlatform(state.Applied)
-		if e != nil {
-			platformError(w, e)
-			return true
-		}
-		scope := r.URL.Query().Get("scope")
-		if scope == vpngateScope && config.VPN.ActiveCountry == "" {
-			jsonResponse(w, []application.Option{})
-			return true
-		}
-		entries, e := configuredEntries(config, scope)
-		if e != nil {
-			platformError(w, e)
-			return true
-		}
-		options := []application.Option{}
-		for _, entry := range entries {
-			if !entry.Disabled {
-				options = append(options, application.Option{ID: entry.ID, Name: entry.ID + " · " + entry.Protocol})
-			}
 		}
 		jsonResponse(w, options)
 		return true

@@ -55,6 +55,9 @@ func TestSubscriptionRejectsIgnoredFieldsBeforeExecuting(t *testing.T) {
 		{Operation: "refresh", ID: "source"},
 		{Operation: "refresh", ProbeURL: "https://example.test"},
 		{Operation: "check"},
+		{Operation: "check", ID: "output"},
+		{Operation: "check", ID: "output", ProbeURL: "file:///tmp/probe"},
+		{Operation: "deliver"},
 		{Operation: "deliver", ProbeURL: "https://example.test"},
 		{Operation: "unknown"},
 	} {
@@ -66,7 +69,7 @@ func TestSubscriptionRejectsIgnoredFieldsBeforeExecuting(t *testing.T) {
 			t.Fatal("task admitted invalid command", c)
 		}
 	}
-	for _, c := range []SubscriptionCommand{{Operation: "check", ID: "output"}, {Operation: "deliver", ID: "device"}} {
+	for _, c := range []SubscriptionCommand{{Operation: "check", ID: "output"}, {Operation: "deliver", ID: "device"}, {Operation: "deliver", ProbeURL: "https://example.test"}} {
 		r := &subscriptionRecorder{}
 		if err := ExecuteSubscription(t.Context(), r, c, true, io.Discard); err == nil || r.operation != "" {
 			t.Fatal(c, r, err)

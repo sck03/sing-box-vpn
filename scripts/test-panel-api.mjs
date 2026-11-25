@@ -57,6 +57,8 @@ for (const invalid of [
   { operation: "service", service: "sb-core", value: "stop", id: "ignored" },
   { operation: "subscription", subscription: { operation: "refresh", id: "ignored" } },
   { operation: "subscription", subscription: { operation: "check" } },
+  { operation: "subscription", subscription: { operation: "check", id: "output" } },
+  { operation: "subscription", subscription: { operation: "deliver" } },
   { operation: "subscription", subscription: { operation: "deliver", probe_url: "https://example.test" } },
 ])
   assert.equal(

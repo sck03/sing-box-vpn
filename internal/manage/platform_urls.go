@@ -21,7 +21,7 @@ func appliedDownloadOrigin(c PlatformConfig, fallback string) (string, error) {
 	return origin, nil
 }
 
-type grantOptions struct {
+type GrantOptions struct {
 	ListenerEnabled bool                 `json:"listener_enabled"`
 	Pending         bool                 `json:"pending"`
 	Outputs         []application.Option `json:"outputs"`
@@ -29,13 +29,9 @@ type grantOptions struct {
 	origin          string
 }
 
-func (s *PlatformService) grantOptions(ctx context.Context, fallback string) (grantOptions, error) {
-	v := grantOptions{Outputs: []application.Option{}}
-	state, err := s.Store.State(ctx)
-	if err != nil {
-		return v, err
-	}
-	c, err := decodePlatform(state.Applied)
+func (s *PlatformService) grantOptions(ctx context.Context, fallback string) (GrantOptions, error) {
+	v := GrantOptions{Outputs: []application.Option{}}
+	c, state, err := s.appliedConfiguration(ctx)
 	if err != nil {
 		return v, err
 	}
@@ -51,7 +47,7 @@ func (s *PlatformService) grantOptions(ctx context.Context, fallback string) (gr
 	return v, nil
 }
 
-func (v grantOptions) validate(outputs []string) error {
+func (v GrantOptions) validate(outputs []string) error {
 	if v.Unavailable != "" {
 		return errors.New(v.Unavailable)
 	}

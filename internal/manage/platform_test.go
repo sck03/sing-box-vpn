@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
-	"time"
 )
 
 func TestDeploymentPlanPreservesStoppedAndUnaffected(t *testing.T) {
@@ -47,9 +46,7 @@ func TestEncryptedPlatformBackupDisasterLedger(t *testing.T) {
 	if e := s.Accounts.SaveAccount(ctx, domain.Account{ID: "a", Name: "Alice", QuotaBytes: &quota}); e != nil {
 		t.Fatal(e)
 	}
-	if _, e := s.Accounts.Reserve(ctx, "lease", "a", "normal", 1000, time.Now()); e != nil {
-		t.Fatal(e)
-	}
+	consumeTestQuota(t, s, "a", 1000)
 	token, e := s.Accounts.CreateGrant(ctx, accounting.Grant{ID: "g", AccountID: "a", Profiles: []string{"uri"}})
 	if e != nil {
 		t.Fatal(e)

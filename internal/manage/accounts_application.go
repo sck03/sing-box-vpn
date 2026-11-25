@@ -16,14 +16,15 @@ type AccountService struct {
 	Control configurationReader
 	// Config supplies an explicit immutable candidate for compilation. Downloads
 	// leave it nil and capture the confirmed configuration once per operation.
-	Config   *PlatformConfig
-	view     *subscriptionView
-	exports  *accountExportCache
-	bindings *accountBindingCache
+	Config        *PlatformConfig
+	view          *subscriptionView
+	exports       *accountExportCache
+	bindings      *accountBindingCache
+	configuration *configurationCache
 }
 
 func (s *PlatformService) accountService() AccountService {
-	return AccountService{Root: s.Root, Core: s.Core, Store: s.Accounts, Control: s.Store, view: &s.exportView, exports: &s.exportPlans, bindings: &s.bindingView}
+	return AccountService{Root: s.Root, Core: s.Core, Store: s.Accounts, Control: s.Store, view: &s.exportView, exports: &s.exportPlans, bindings: &s.bindingView, configuration: &s.configuration}
 }
 
 type bindingRepository struct{ *accounting.Store }
@@ -86,6 +87,13 @@ func (s AccountService) configSnapshot(ctx context.Context) (PlatformConfig, err
 	store := s.Control
 	if store == nil {
 		return PlatformConfig{}, errors.New("configuration repository dependency is required")
+	}
+	if source, ok := store.(appliedViewSource); ok && s.configuration != nil {
+		config, _, err := s.configuration.read(ctx, source)
+		if err != nil {
+			return PlatformConfig{}, err
+		}
+		return observedConfig(ctx, store, config)
 	}
 	data, err := store.AppliedConfig(ctx)
 	if err != nil {

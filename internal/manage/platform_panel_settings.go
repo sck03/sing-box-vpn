@@ -79,7 +79,19 @@ func (s *PlatformService) validateConfiguredPanelPort(c PlatformConfig) error {
 	if err != nil {
 		return err
 	}
-	return panelPortAvailable(c, port)
+	if err := panelPortAvailable(c, port); err != nil {
+		return err
+	}
+	s.panelMu.RLock()
+	activePort := 0
+	if s.activePanel != nil {
+		activePort = s.activePanel.port()
+	}
+	s.panelMu.RUnlock()
+	if activePort != 0 && activePort != port {
+		return panelPortAvailable(c, activePort)
+	}
+	return nil
 }
 
 func samePanelOptions(saved, active PanelOptions) bool {

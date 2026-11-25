@@ -1,4 +1,6 @@
 import { api } from "./api.js";
+import { loadDialog } from "./dialog-session.js";
+import { outboundOptions } from "./configuration-api.js";
 import { capabilities } from "./capabilities.js";
 import { workspace } from "./workspace.js";
 import { outboundFields, normalizeOutbound } from "./outbound-fields.js";
@@ -73,36 +75,39 @@ export async function outbounds(ctx) {
             },
           ),
         ),
-        button("按需探测", async () => {
-          const applied = await (ctx.workflowRequest || api)(
-            "/api/outbound-options",
-          );
-          const form = formDialog(
+        button("按需探测", () =>
+          loadDialog(
+            ctx.signal,
             "探测已应用出站",
-            [
-              {
-                key: "id",
-                label: "出站 tag",
-                type: "select",
-                options: applied.items.map((v) => [
-                  v.id,
-                  `${v.id} · ${v.type}`,
-                ]),
-              },
-              { key: "value", label: "探测 URL", required: true },
-            ],
-            {
-              id: applied.items[0]?.id,
-              value: "https://www.gstatic.com/generate_204",
+            (signal) => outboundOptions(signal, ctx.workflowRequest || api),
+            (applied) => {
+              const form = formDialog(
+                "探测已应用出站",
+                [
+                  {
+                    key: "id",
+                    label: "出站 tag",
+                    type: "select",
+                    required: true,
+                    options: applied.items.map((v) => [
+                      v.id,
+                      `${v.id} · ${v.type}`,
+                    ]),
+                  },
+                  { key: "value", label: "探测 URL", required: true },
+                ],
+                {
+                  id: applied.items[0]?.id,
+                  value: "https://www.gstatic.com/generate_204",
+                },
+                (v) => ctx.task({ operation: "outbound-probe", ...v }),
+              );
+              form.form.prepend(
+                help(`使用已应用版本 ${applied.revision}${applied.pending || ctx.dirty ? "；草稿变更尚未参与检测。" : "。"}`),
+              );
             },
-            (v) => ctx.task({ operation: "outbound-probe", ...v }),
-          );
-          form.form.prepend(
-            help(
-              `使用已应用版本 ${applied.revision}${applied.pending || ctx.dirty ? "；草稿变更尚未参与检测。" : "。"}`,
-            ),
-          );
-        }),
+          ),
+        ),
       ),
     );
   const proxy = async () => {

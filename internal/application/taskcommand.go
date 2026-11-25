@@ -38,7 +38,7 @@ var CommandFields = map[string][]string{
 	"outbound-probe":    {"id", "value"},
 }
 
-func (c TaskCommand) Validate() error {
+func (c TaskCommand) validateFields() error {
 	allowed, ok := CommandFields[c.Operation]
 	if !ok {
 		return errors.New("unknown task operation")
@@ -49,6 +49,25 @@ func (c TaskCommand) Validate() error {
 		if !v.Field(i).IsZero() && !slices.Contains(allowed, name) {
 			return fmt.Errorf("field %s is not allowed for %s", name, c.Operation)
 		}
+	}
+	return nil
+}
+
+// ValidateScheduledSubscription shares the public envelope's field constraints,
+// while the scheduler alone selects global due work instead of a manual target.
+func (c TaskCommand) ValidateScheduledSubscription() error {
+	if c.Operation != "subscription" {
+		return errors.New("invalid scheduled task")
+	}
+	if err := c.validateFields(); err != nil {
+		return err
+	}
+	return c.Subscription.ValidateScheduled()
+}
+
+func (c TaskCommand) Validate() error {
+	if err := c.validateFields(); err != nil {
+		return err
 	}
 	switch c.Operation {
 	case "service":

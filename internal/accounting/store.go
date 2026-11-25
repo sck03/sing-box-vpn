@@ -364,17 +364,6 @@ func (s *Store) credentials(ctx context.Context, predicate string, args ...any) 
 	return result, rows.Err()
 }
 
-// Reserve atomically allocates one shared pool across both runtime processes.
-// Cumulative checkpoints make replay idempotent; the reservation itself is the
-// recovery bound if a process dies before its next checkpoint.
-func (s *Store) Reserve(ctx context.Context, id, account, runtime string, want int64, now time.Time) (int64, error) {
-	u, err := s.Advance(ctx, account, now, false)
-	if err != nil {
-		return 0, err
-	}
-	return s.reservePeriod(ctx, id, account, runtime, want, now, u.PeriodID)
-}
-
 func reserveInTransaction(ctx context.Context, tx *sql.Tx, id, account, runtime string, want int64, now time.Time, periodID int64) (int64, error) {
 	// Acquire the SQLite writer before reading the quota, including across processes.
 	if _, err := tx.ExecContext(ctx, `UPDATE accounts SET charged=charged WHERE id=?`, account); err != nil {

@@ -36,6 +36,7 @@ type PlatformService struct {
 	exportView          subscriptionView
 	exportPlans         accountExportCache
 	bindingView         accountBindingCache
+	configuration       configurationCache
 	health              backgroundHealth
 }
 

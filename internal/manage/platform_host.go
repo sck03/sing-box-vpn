@@ -48,26 +48,41 @@ func readUnitStates(ctx context.Context) (map[string]Object, error) {
 	return states, queryErr
 }
 
-func (s *PlatformService) ServiceStatus(ctx context.Context) ([]Object, error) {
+type ServiceState struct {
+	Name          string `json:"name"`
+	Label         string `json:"label"`
+	Description   string `json:"description"`
+	Page          string `json:"page"`
+	Section       string `json:"section"`
+	ID            string `json:"Id,omitempty"`
+	ActiveState   string `json:"ActiveState,omitempty"`
+	SubState      string `json:"SubState,omitempty"`
+	UnitFileState string `json:"UnitFileState,omitempty"`
+	LoadState     string `json:"LoadState,omitempty"`
+	MainPID       string `json:"MainPID,omitempty"`
+	State         string `json:"state,omitempty"`
+	Error         string `json:"error,omitempty"`
+}
+
+func (s *PlatformService) ServiceStatus(ctx context.Context) ([]ServiceState, error) {
 	var states map[string]Object
 	var queryErr error
 	if !s.NoSystem {
 		states, queryErr = readUnitStates(ctx)
 	}
-	result := []Object{}
+	result := []ServiceState{}
 	for _, name := range platformServices {
 		definition := serviceDetails(name)
-		v := Object{"name": name, "label": definition.Label, "description": definition.Description, "page": definition.Page, "section": definition.Section}
+		v := ServiceState{Name: name, Label: definition.Label, Description: definition.Description, Page: definition.Page, Section: definition.Section}
 		if s.NoSystem {
-			v["state"] = "unavailable"
+			v.State = "unavailable"
 		} else if state, ok := states[name]; ok {
-			for key, value := range state {
-				v[key] = value
-			}
+			v.ID, v.ActiveState, v.SubState = text(state["Id"]), text(state["ActiveState"]), text(state["SubState"])
+			v.UnitFileState, v.LoadState, v.MainPID = text(state["UnitFileState"]), text(state["LoadState"]), text(state["MainPID"])
 		} else {
-			v["error"] = "service query failed"
+			v.Error = "service query failed"
 			if queryErr == nil {
-				v["error"] = "service missing from systemctl response"
+				v.Error = "service missing from systemctl response"
 			}
 		}
 		result = append(result, v)

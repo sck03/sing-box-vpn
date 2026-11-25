@@ -1,0 +1,57 @@
+{
+  "date": "2026-11-26",
+  "base_commit": "905e5b29d6a3b62c24e67ddccbc5bb060e76e0be",
+  "platform": "Windows amd64, Go 1.27.3, Node 24.18.0",
+  "scope": "Targeted boundary fixes, immutable configuration reads, typed contracts and development artifact cleanup; not a full acceptance run",
+  "passed": [
+    {
+      "command": "go test ./internal/application ./internal/domain ./internal/controlstore ./internal/accounting ./internal/manage ./internal/vpngate -run 'Test(SubscriptionExecution|SubscriptionRejects|TaskCommand|PublicTaskRejects|AccountQuota|ConfigurationView|PanelPortReservation|PanelSettings|PanelEphemeral|ServiceCatalog|AccountSubscriptionRecovers|EncryptedPlatformBackupDisasterLedger|BindingCache|TunnelObservation|TunnelCandidate|SharedReservation|ReservationBatch|ReservationConflict|PeriodLate|SingleClientBudget|Manager|UDP|Proxy|RevocationReleases)' -count=1 -timeout=90s",
+      "note": "controlstore compiled but had no matching test; its AppliedViewSince path is exercised through the manage configuration view regression"
+    },
+    {
+      "command": "go test -race ./internal/application ./internal/manage ./internal/vpngate -run 'Test(TaskCommand|SubscriptionExecution|SubscriptionRejects|PublicTaskRejects|ConfigurationView|SingleClientBudget|ManagerClientAndForward|ManagerConcurrent|ManagerFailed|ManagerRevocation)' -count=1 -timeout=90s"
+    },
+    {
+      "command": "go vet ./internal/application ./internal/domain ./internal/controlstore ./internal/accounting ./internal/manage ./internal/vpngate",
+      "note": "application and manage were checked again after the final command validation refactor"
+    },
+    { "command": "go run ./cmd/panel-contract -check" },
+    { "command": "npm run typecheck" },
+    { "command": "node scripts/test-panel-lifecycle.mjs" },
+    { "command": "node scripts/test-panel-subscriptions.mjs" },
+    { "command": "node scripts/test-panel-contracts.mjs" },
+    {
+      "command": "go build -trimpath -ldflags '-s -w' -o .test/verification/boundary/manager-linux ./cmd/sbvpn",
+      "environment": { "GOOS": "linux", "GOARCH": "amd64", "CGO_ENABLED": "0" },
+      "bytes": 17576096
+    },
+    {
+      "command": "go build -trimpath -tags with_quic,with_utls,with_wireguard,with_gvisor -ldflags '-s -w' -o .test/verification/boundary/managed-core-linux ./cmd/managed-core",
+      "environment": { "GOOS": "linux", "GOARCH": "amd64", "CGO_ENABLED": "0" },
+      "bytes": 37515424
+    },
+    {
+      "command": "go test -tags with_quic,with_utls,with_wireguard,with_gvisor ./internal/vpngate -run '^$'",
+      "note": "Compile-only check for tagged test callers affected by the runtime DTO change"
+    },
+    { "command": "git diff --check" }
+  ],
+  "not_executed": [
+    "Full go test ./... and full npm test",
+    "Live local HTTP server acceptance script (HTTP admission regression uses httptest)",
+    "Real browser screenshots and end-to-end acceptance",
+    "Linux systemd, namespace, firewall and storage failure acceptance",
+    "Long-running VPN load, production deployment, throughput or RSS comparison"
+  ],
+  "cleanup": {
+    "command": "./scripts/clean-dev.ps1 -Dependencies -BrowserTools",
+    "before_bytes": 9883282617,
+    "after_readable_bytes": 449640421,
+    "approximate_freed_bytes": 9433642196,
+    "status": "artifact files removed; one inaccessible Windows directory entry remains",
+    "residual": ".cleanup-manual files were removed by the cleanup script, but Windows still exposes an inaccessible directory entry (EPERM). A subsequent attempt to remove that entry was rejected by automatic approval policy with blocked by policy and no additional reason. The post-cleanup size excludes that inaccessible entry.",
+    "measurement": "Sum of regular file lengths, including .git and local development tools; excludes filesystem metadata and allocation rounding",
+    "targets": [".test", ".build", ".cleanup-manual", "node_modules", ".tools/python313-packages"],
+    "removed_tracked_files": ["docs/validation/2026-11-25-login-1280.png", "docs/validation/2026-11-25-login-320.png", "docs/validation/2026-11-25-login-375.png"]
+  }
+}

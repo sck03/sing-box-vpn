@@ -2,6 +2,7 @@ package manage
 
 import (
 	"github.com/sck03/sing-box-vpn/internal/accounting"
+	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
@@ -9,6 +10,24 @@ import (
 
 type AccountSave struct {
 	Account domain.Account `json:"account"`
+}
+
+type SubscriptionActionOptions struct {
+	Revision   int64                `json:"revision"`
+	Pending    bool                 `json:"pending"`
+	Outputs    []application.Option `json:"outputs"`
+	Deliveries []application.Option `json:"deliveries"`
+}
+
+type OutboundOption struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
+}
+
+type OutboundOptions struct {
+	Revision int64            `json:"revision"`
+	Pending  bool             `json:"pending"`
+	Items    []OutboundOption `json:"items"`
 }
 type AccountArchive struct {
 	ID       string `json:"id"`
@@ -24,8 +43,8 @@ type OverviewSnapshot struct {
 	Background      []BackgroundIssue                  `json:"background"`
 	Revision        int64                              `json:"revision"`
 	AppliedRevision int64                              `json:"applied_revision"`
-	Services        []Object                           `json:"services"`
-	Runtimes        []map[string]any                   `json:"runtimes"`
+	Services        []ServiceState                     `json:"services"`
+	Runtimes        []controlstore.RuntimeState        `json:"runtimes"`
 	Tasks           []controlstore.Task                `json:"tasks"`
 	TaskCounts      controlstore.TaskCounts            `json:"task_counts"`
 	Credentials     []accounting.CredentialPublication `json:"credentials"`

@@ -221,7 +221,11 @@ VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IP
 
 续期调度使用原子的 `AppliedStateSince` 读取已应用修订，未变化时 SQL 不返回配置正文；只有修订变化才解码并缓存证书登记。每十分钟扫描材料，同一证书成功入队后十二小时内不重复调度；队列错误在下次调度重试。待应用或应用失败的无关配置不会阻断在线证书续期，未应用证书不会提前签发。额度账本 WAL/FULL、预留和撤销保证保持原语义。
 
-订阅手动与自动任务统一经过 `application.ExecuteSubscription`，通过 `SubscriptionOperations` 调用刷新、检测或投递。`manage/subscriptions_application.go` 只适配基础设施，不重复分发。刷新是全局操作，不能携带 ID 或 probe_url；检测必须有输出 ID；投递可指定目标 ID，空 ID 表示所有目标，不能携带探测参数。自动调度信息不属于公开请求。Go 校验、生成的命令联合类型、HTTP 与类型正反例共同约束这些语义。
+订阅手动与自动任务统一经过 `application.ExecuteSubscription`，通过 `SubscriptionOperations` 调用刷新、检测或投递。`manage/subscriptions_application.go` 只适配基础设施，不重复分发。刷新是全局操作，不能携带 ID 或 probe_url；检测必须有有效输出 ID 和 HTTP(S) 探测 URL；手动投递必须指定有效目的地 ID，不能携带探测参数。自动调度单独使用 `ValidateScheduled`，仅允许无目标、无探测参数的全局刷新或到期投递；公开 API 不能设置 automatic。Go 校验、生成的命令联合类型、HTTP 与类型正反例共同约束这些语义。
+
+`configuration_queries.go` 提供只读配置查询用例，将选项构造与 HTTP 适配分开。`AppliedViewSince` 在一次数据库快照中读取 desired/applied 修订号，仅已应用修订变化时返回配置正文。每个服务持有一份不可变解码结果，供选项、网关、隧道轮询与账户导出使用；账户权限、撤销、额度及隧道观察仍实时读取。调用者不得修改共享 map/slice；写命令使用独立候选。服务/运行实例/订阅操作/出站选项采用明确 DTO，前端 `configuration-api.js` 参加 strict 检查。
+
+VPNGate 的客户端准入与 worker 转发流分别受 max_connections 限制，pending dial 与已建立转发流共享后者；UDP 关联套接字归控制连接所有，不再次扣减准入。撤销时关闭两类连接并取消拨号。面板端口校验同时保护保存值与当前监听，重启完成后释放旧端口。账户配额最大为 `2^53-1` 字节，确保 JSON 与前端安全整数一致；null 仍表示不限额。
 
 `subscription.Schedule` 拥有纯调度规则和轻量投影；`manage/platform_scheduler.go` 只加载文件、读取账户有效状态和入队。投影不包含节点正文、模板正文和秘密。缺失投影可从当前配置与期限字段重建，这属于派生缓存恢复，不是旧数据迁移。
 

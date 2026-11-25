@@ -15,6 +15,13 @@ type taskInput struct {
 	Automatic bool `json:"automatic,omitempty"`
 }
 
+func (a taskInput) Validate() error {
+	if !a.Automatic {
+		return a.TaskCommand.Validate()
+	}
+	return a.TaskCommand.ValidateScheduledSubscription()
+}
+
 func (s *PlatformService) Queue(ctx context.Context, a application.TaskCommand, actor string) (int64, error) {
 	if err := a.Validate(); err != nil {
 		return 0, err
@@ -47,13 +54,13 @@ func (s *PlatformService) Queue(ctx context.Context, a application.TaskCommand, 
 }
 
 func (s *PlatformService) queueAutomaticSubscription(ctx context.Context, operation string) (int64, error) {
-	if operation != "refresh" && operation != "deliver" {
-		return 0, errors.New("unsupported scheduled subscription task")
-	}
 	return s.queueTask(ctx, taskInput{TaskCommand: application.TaskCommand{Operation: "subscription", Subscription: application.SubscriptionCommand{Operation: operation}}, Automatic: true}, "scheduler")
 }
 
 func (s *PlatformService) queueTask(ctx context.Context, a taskInput, actor string) (int64, error) {
+	if err := a.Validate(); err != nil {
+		return 0, err
+	}
 	data, err := json.Marshal(a)
 	if err != nil {
 		return 0, err
@@ -68,9 +75,6 @@ func (s *PlatformService) queueTask(ctx context.Context, a taskInput, actor stri
 func (s *PlatformService) execute(ctx context.Context, id int64, a taskInput) error {
 	if err := a.Validate(); err != nil {
 		return err
-	}
-	if a.Automatic && (a.Operation != "subscription" || (a.Subscription.Operation != "refresh" && a.Subscription.Operation != "deliver")) {
-		return errors.New("invalid scheduled task")
 	}
 	if err := s.Store.Phase(ctx, id, "executing"); err != nil {
 		return err
