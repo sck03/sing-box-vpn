@@ -2,10 +2,12 @@ package vpngate
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"path/filepath"
 	"testing"
+	"time"
 
-	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	"github.com/sck03/sing-box-vpn/internal/manage"
@@ -54,17 +56,22 @@ func publishProtocolFixture(t *testing.T, root, core string, app *manage.App) {
 		t.Fatal(err)
 	}
 	config := manage.PlatformConfig{Schema: manage.PlatformSchema, App: *app, VPN: settings, VPNSecrets: secrets}
-	store, err := accounting.Open(filepath.Join(root, "control.db"))
+	if country := settings.ActiveCountry; country != "" {
+		secret := secrets[country]
+		config.Gateway = manage.Object{"country": country, "listen": fmt.Sprintf("127.0.0.1:%d", settings.ProxyPort), "proxy_user": secret.SocksUser, "proxy_pass": secret.SocksPass}
+	}
+	platform, err := manage.OpenPlatform(root, core, "", true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer platform.Close()
+	store := platform.Accounts
 	if err = store.SaveAccount(t.Context(), domain.Account{ID: "export-fixture", Name: "Protocol"}); err != nil {
 		t.Fatal(err)
 	}
 	service := manage.AccountService{Root: root, Core: core, Store: store, Config: &config}
-	snapshot := sub.Snapshot{Version: sub.SchemaVersion, Revision: 1, Artifacts: map[string]sub.Artifact{}}
 	subscriptions := sub.DefaultConfig()
+	var credentials []domain.Credential
 	for _, scope := range []string{"normal", "vpngate"} {
 		entries := app.Inbounds()
 		if scope == "vpngate" {
@@ -75,7 +82,6 @@ func publishProtocolFixture(t *testing.T, root, core string, app *manage.App) {
 			profile.Secrets = secrets[settings.ActiveCountry]
 			entries = manage.MakeInbounds(profile, "vg-"+settings.ActiveCountry+"-")
 		}
-		credentials := []domain.Credential{}
 		for _, entry := range entries {
 			kind := entry["type"].(string)
 			credential := domain.Credential{ID: "fixture-" + scope + "-" + kind, AccountID: "export-fixture", RuntimeID: scope, InboundID: entry["tag"].(string), Protocol: kind, Generation: 1}
@@ -85,7 +91,7 @@ func publishProtocolFixture(t *testing.T, root, core string, app *manage.App) {
 			}
 			credentials = append(credentials, credential)
 		}
-		subscriptions.Sources = append(subscriptions.Sources, sub.Source{ID: scope, Kind: "inline", Format: "nodes", Content: "[]"})
+		subscriptions.Sources = append(subscriptions.Sources, sub.Source{ID: scope, Kind: "account", AccountID: "export-fixture", Scope: scope, Required: true})
 		subscriptions.Collections = append(subscriptions.Collections, sub.Collection{ID: scope, Sources: []string{scope}})
 		for _, target := range []struct{ profile, suffix, file string }{{"sing-box-config", "sing-box", "sbox.json"}, {"mihomo-config", "mihomo", "clmi.yaml"}, {"openclash-provider", "provider", "proxies.yaml"}, {"uri", "uri", "jhsub.txt"}, {"base64", "base64", "jhsub-base64.txt"}} {
 			result, err := service.ExportDetailed(t.Context(), application.AccountExportRequest{ID: "export-fixture", Scope: scope, Profile: target.profile})
@@ -94,7 +100,6 @@ func publishProtocolFixture(t *testing.T, root, core string, app *manage.App) {
 			}
 			id := scope + "-" + target.suffix
 			artifact := result.Artifact
-			snapshot.Artifacts[id] = artifact
 			subscriptions.Outputs = append(subscriptions.Outputs, sub.Output{ID: id, Collection: scope, Template: id})
 			directory := root
 			if scope == "vpngate" {
@@ -104,14 +109,33 @@ func publishProtocolFixture(t *testing.T, root, core string, app *manage.App) {
 				t.Fatal(err)
 			}
 		}
-		for _, credential := range credentials {
-			if err = store.Unbind(t.Context(), credential.ID, credential.Generation); err != nil {
-				t.Fatal(err)
-			}
+	}
+	config.Subscriptions = subscriptions
+	data, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = platform.Store.Initialize(t.Context(), data); err != nil {
+		t.Fatal(err)
+	}
+	// Rebuild through the production recovery/compiler path. It owns the
+	// confirmed generation, contributor records and all publication projections.
+	if err = manage.RunPanel(t.Context(), []string{"--root", root, "--core", core, "--no-system", "recover"}, nil, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	var snapshot sub.Snapshot
+	if _, err = manage.ReadJSON(filepath.Join(root, "subscriptions", "published.json"), &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	for _, output := range subscriptions.Outputs {
+		if err := sub.PolicyForOutput(subscriptions, snapshot, output.ID).Validate(time.Now()); err != nil {
+			t.Fatalf("fixture publication %s: %v; diagnostics: %v", output.ID, err, snapshot.Diagnostics[output.ID])
 		}
 	}
-	for name, value := range map[string]any{"app.json": app, "subscriptions/config.json": subscriptions, "subscriptions/published.json": snapshot} {
-		if err = manage.AtomicJSON(filepath.Join(root, name), value); err != nil {
+	// Runtime isolation tests bind the same fixture identities to their own
+	// accounts after capturing the published client material.
+	for _, credential := range credentials {
+		if err = store.Unbind(t.Context(), credential.ID, credential.Generation); err != nil {
 			t.Fatal(err)
 		}
 	}

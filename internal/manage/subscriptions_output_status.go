@@ -20,15 +20,15 @@ type SubscriptionOutputStatus struct {
 }
 
 type subscriptionOutputProjection struct {
-	Revision uint64                              `json:"revision"`
-	Outputs  []SubscriptionOutputStatus          `json:"outputs"`
-	Policies map[string]subscriptionOutputPolicy `json:"policies"`
+	Revision uint64                      `json:"revision"`
+	Outputs  []SubscriptionOutputStatus  `json:"outputs"`
+	Policies map[string]sub.OutputPolicy `json:"policies"`
 }
 
 func outputProjection(c sub.Config, snapshot sub.Snapshot) subscriptionOutputProjection {
-	projection := subscriptionOutputProjection{Revision: snapshot.Revision, Outputs: outputStatus(c, snapshot), Policies: map[string]subscriptionOutputPolicy{}}
+	projection := subscriptionOutputProjection{Revision: snapshot.Revision, Outputs: outputStatus(c, snapshot), Policies: map[string]sub.OutputPolicy{}}
 	for _, output := range c.Outputs {
-		projection.Policies[output.ID] = outputPolicy(c, snapshot, output.ID)
+		projection.Policies[output.ID] = sub.PolicyForOutput(c, snapshot, output.ID)
 	}
 	return projection
 }

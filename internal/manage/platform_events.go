@@ -39,7 +39,7 @@ func (s *PlatformService) overviewSnapshot(ctx context.Context) ([]byte, error) 
 		s.statusLoading = pending
 		s.statusMu.Unlock()
 		child, cancel := context.WithTimeout(ctx, 10*time.Second)
-		data, err := s.collectOverview(child)
+		data, err := s.collectOverview(child, version)
 		cancel()
 		s.statusMu.Lock()
 		if err == nil && version == s.statusVersion {
@@ -52,7 +52,7 @@ func (s *PlatformService) overviewSnapshot(ctx context.Context) ([]byte, error) 
 	}
 }
 
-func (s *PlatformService) collectOverview(ctx context.Context) ([]byte, error) {
+func (s *PlatformService) collectOverview(ctx context.Context, version uint64) ([]byte, error) {
 	state, err := s.Store.Revisions(ctx)
 	if err != nil {
 		return nil, err
@@ -90,7 +90,7 @@ func (s *PlatformService) collectOverview(ctx context.Context) ([]byte, error) {
 			tasks[i].Error = "任务失败，请查看任务详情"
 		}
 	}
-	return json.Marshal(OverviewSnapshot{Background: s.health.snapshot(), Revision: state.Revision, AppliedRevision: state.AppliedRevision, Services: services, Runtimes: runtimes, Tasks: tasks, TaskCounts: counts, Credentials: publications})
+	return json.Marshal(OverviewSnapshot{ResourceVersion: version, Background: s.health.snapshot(), Revision: state.Revision, AppliedRevision: state.AppliedRevision, Services: services, Runtimes: runtimes, Tasks: tasks, TaskCounts: counts, Credentials: publications})
 }
 func (s *PlatformService) streamOverview(w http.ResponseWriter, r *http.Request, token string) {
 	controller := http.NewResponseController(w)

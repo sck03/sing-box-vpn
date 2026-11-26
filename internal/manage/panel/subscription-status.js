@@ -1,5 +1,6 @@
 import { api, getSubscriptionStatus } from "./api.js";
 import { validationLabel } from "./validation.js";
+import { observeStatus } from "./status-observer.js";
 import {
   el,
   card,
@@ -71,27 +72,8 @@ export async function subscriptionStatus(ctx) {
   const body = el("div");
   const error = el("p", { class: "form-error", role: "alert", hidden: true });
   const panel = el("section", { "aria-label": "订阅运行状态" }, error, body);
-  let pending;
-  let dirty = false;
-  let visible = !ctx.activeSection || ctx.activeSection === "status";
-  let version;
-  function refresh() {
-    if (!visible || document.hidden || ctx.signal?.aborted) {
-      dirty = true;
-      return Promise.resolve();
-    }
-    if (pending) {
-      dirty = true;
-      return pending;
-    }
-    dirty = false;
-    pending = render().finally(() => {
-      pending = null;
-      if (dirty && visible && !document.hidden && !ctx.signal?.aborted)
-        void refresh();
-    });
-    return pending;
-  }
+  let rendered;
+  const { refresh } = observeStatus(ctx, render, { section: "status" });
   async function render() {
     try {
       const status = await getSubscriptionStatus(
@@ -100,6 +82,8 @@ export async function subscriptionStatus(ctx) {
       );
       if (ctx.signal?.aborted) return;
       error.hidden = true;
+      const next = JSON.stringify(status);
+      if (next === rendered) return;
       const outputs = status.outputs || [];
       const available = outputs.filter((output) => output.available).length;
       const notification = status.notification;
@@ -213,6 +197,7 @@ export async function subscriptionStatus(ctx) {
           ),
         );
       body.replaceChildren(...content);
+      rendered = next;
     } catch (failure) {
       if (failure.name === "AbortError" || ctx.signal?.aborted) return;
       error.hidden = false;
@@ -222,33 +207,6 @@ export async function subscriptionStatus(ctx) {
       );
     }
   }
-  ctx.updateOverview = (snapshot) => {
-    const next = JSON.stringify([
-      snapshot?.applied_revision,
-      snapshot?.tasks?.map((task) => [
-        task.id,
-        task.state,
-        task.phase,
-        task.updated,
-      ]),
-    ]);
-    if (next === version) return;
-    version = next;
-    void refresh();
-  };
-  ctx.sectionChanged = (section) => {
-    visible = section === "status";
-    if (visible) void refresh();
-  };
-  const visibility = () => {
-    if (!document.hidden && visible) void refresh();
-  };
-  document.addEventListener("visibilitychange", visibility);
-  ctx.signal?.addEventListener(
-    "abort",
-    () => document.removeEventListener("visibilitychange", visibility),
-    { once: true },
-  );
   await refresh();
   return panel;
 }

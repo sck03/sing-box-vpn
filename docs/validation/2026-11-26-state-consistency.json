@@ -1,0 +1,172 @@
+{
+  "date": "2026-11-26",
+  "timezone": "Asia/Shanghai",
+  "baseline_commit": "1851f7d50671a6c0134ac88ac2a7647240a8fd68",
+  "scope": "State synchronization, applied/runtime versus draft presentation, tunnel observations, shared recovery, subscription policy boundaries, test fixture reliability, documentation and rebuildable artifact cleanup.",
+  "environment": {
+    "os": "windows",
+    "architecture": "amd64",
+    "go": "go1.27.3",
+    "node": "v24.18.0"
+  },
+  "evidence": "Individual successful command outputs were verified across the original implementation and its continuation. The original conversation stopped on an API rate limit; its completed targeted checks are retained here. Full-suite results from the earlier analysis are not counted as implementation validation.",
+  "prerequisites": [
+    "PowerShell: . ./scripts/dev-env.ps1",
+    "npm ci",
+    "go build -tags with_quic,with_utls,with_wireguard,with_gvisor -o .test/review-managed-core.exe ./cmd/managed-core",
+    "Set MANAGED_CORE_BINARY to the built core; dev-env.ps1 supplies the pinned client validators."
+  ],
+  "checks": [
+    {
+      "command": "go test -race -count=1 -run '^(TestTunnelSyncContinuesWithFailedDesiredRevision|TestOverviewInvalidatesBeyondTaskSummary|TestStartupRecoveryDoesNotWaitForRestartHelper|TestDefaultGrantRejectsPrefixImpersonation|TestSubscriptionDownloadRequiresConfirmedGeneration|TestSubscriptionFreshnessUsesContributingOrRequiredSources|TestSubscriptionAuthorizesActualContributors|TestDisabledSubscriberBlocksCustomOutputAndExport|TestExpiredPublicCertificatesDoNotBlockWorkerRecovery)$' ./internal/manage",
+      "result": "passed",
+      "stage": "continuation"
+    },
+    {
+      "command": "go test -count=1 -run '^(TestDownloadOriginAndIdleScheduler|TestShareRejectsLoopbackBeforeCreatingGrant)$' ./internal/manage",
+      "result": "passed after consolidating share URLs into GrantOptions.PublicURL",
+      "stage": "continuation"
+    },
+    {
+      "command": "go test -count=1 -run '^(TestExpiredPublicCertificatesDoNotBlockWorkerRecovery|TestStartupWaitsForWriterAndRecoversBeforeAction|TestStartupLockCancellationDoesNotApplyFirewall|TestDamagedRecoveryPreventsStartupAction|TestRecoverWaitsForCurrentConfigurationOperation)$' ./internal/manage",
+      "result": "passed",
+      "stage": "original implementation"
+    },
+    {
+      "command": "go test -race -count=10 -run '^(TestProxyTCPHalfClosePreservesResponse|TestProxyShutdownClosesHalfClosedRelay)$' ./internal/vpngate",
+      "result": "passed; ten repetitions of each selected case",
+      "stage": "original implementation"
+    },
+    {
+      "command": "go test -race -count=1 -run '^(TestManagedAccountIsolation|TestManagedCredentialReload|TestProxyAuthAndTCPRelay|TestProxyUDPRelayAndFragmentRejection|TestProxyUDPLargeAndEmptyDatagrams|TestWorkerCancellationClosesActiveTCPRelay|TestProxyShutdownClosesIncompleteHandshake)$' ./internal/vpngate",
+      "result": "passed with MANAGED_CORE_BINARY set",
+      "stage": "original implementation"
+    },
+    {
+      "command": "go test -count=1 -v -run '^TestRealFiveProtocolsTCPUDP$/.*/provider/(vmess|hysteria2)$' ./internal/vpngate",
+      "result": "passed; ordinary and VPNGate provider downloads, VMess and Hysteria2, TCP and UDP; four cases and eight traffic paths",
+      "stage": "original implementation"
+    },
+    {
+      "command": "npm run typecheck",
+      "result": "passed; general JS, strict contract cases and strict boundary modules, including status-observer.js",
+      "stage": "continuation"
+    },
+    {
+      "commands": [
+        "node scripts/test-panel-state-sync.mjs",
+        "node scripts/test-panel-subscription-lifecycle.mjs",
+        "node scripts/test-panel-navigation.mjs"
+      ],
+      "result": "passed",
+      "stage": "continuation"
+    },
+    {
+      "commands": [
+        "node scripts/test-panel-contracts.mjs",
+        "node scripts/test-panel-lifecycle.mjs"
+      ],
+      "result": "passed",
+      "stage": "original implementation"
+    },
+    {
+      "command": "go vet ./internal/manage ./internal/subscription ./internal/vpngate",
+      "result": "passed",
+      "stage": "continuation"
+    },
+    {
+      "command": "go run ./cmd/panel-contract -check",
+      "result": "passed after final Go edits",
+      "stage": "continuation"
+    },
+    {
+      "command": "go build -trimpath -o .test/review-manager.exe ./cmd/sbvpn",
+      "result": "passed after final Go edits",
+      "stage": "continuation"
+    },
+    {
+      "command": "node scripts/test-panel-local.mjs",
+      "environment": "GATEWAY_BINARY=.test/review-manager.exe; MANAGED_CORE_BINARY=.test/review-managed-core.exe; pinned SING_BOX_BINARY from dev-env.ps1",
+      "result": "passed; real HTTP constraints, schemas, account binding/export, cross-site sharing, download limits, candidate preview, durable apply and deleted-task errors",
+      "stage": "continuation"
+    },
+    {
+      "commands": [
+        "gofmt -l <all changed and new Go files>",
+        "git diff --check"
+      ],
+      "result": "passed",
+      "stage": "continuation"
+    }
+  ],
+  "limitations": [
+    "The half-close fixture now creates listeners synchronously, joins worker/proxy shutdown and uses separate authentication/transfer deadlines with error diagnostics. Repeated targeted passes do not prove the cause of the earlier whole-suite timing failures or establish load stability.",
+    "No VPN throughput or RSS improvement was measured. Accounting durability, quota reservations and authorization boundaries were preserved."
+  ],
+  "cleanup": {
+    "status": "completed_with_inaccessible_residue",
+    "command": "./scripts/clean-dev.ps1 -Dependencies -BrowserTools",
+    "measurement": "Sum of readable file lengths in the checkout, including Git history and current validation tools. Measured immediately before and after cleanup, before this record and final commit metadata. Inaccessible .cleanup-manual has unknown size and is excluded.",
+    "before": {
+      "files": 55360,
+      "bytes": 2972632784
+    },
+    "after": {
+      "files": 20998,
+      "bytes": 450327298
+    },
+    "removed_bytes": 2522305486,
+    "removed": [
+      {
+        "directory": ".test",
+        "files": 32358,
+        "bytes": 2472523364
+      },
+      {
+        "directory": "node_modules",
+        "files": 2004,
+        "bytes": 49782122
+      }
+    ],
+    "absent_after_cleanup": [
+      ".test",
+      ".build",
+      "node_modules",
+      ".tools/python313-packages"
+    ],
+    "retained": {
+      "current_tools_bytes": 434791929,
+      "items": [
+        "Current Go and client validation tools",
+        "Source and regression tests",
+        "Third-party licenses",
+        "Git history and tags",
+        "Referenced documentation image",
+        "Compact validation summaries"
+      ]
+    },
+    "skipped": [
+      {
+        "path": "E:/sing-box-vpn/.cleanup-manual",
+        "reason": "Windows filesystem access denied. Earlier ACL inspection/reset and ownership repair were also denied. Independent cache cleanup completed; no permission bypass attempted.",
+        "bytes": null
+      }
+    ]
+  },
+  "branches": {
+    "local": [
+      "main"
+    ],
+    "remote_heads": [
+      "main"
+    ],
+    "other_unmerged_branches": []
+  },
+  "not_run": [
+    "Full Go/frontend test suites",
+    "Real browser acceptance",
+    "Linux systemd/network namespace/firewall execution",
+    "Long-duration load and RSS measurement",
+    "New release packaging or production deployment"
+  ]
+}

@@ -74,7 +74,7 @@ func TestDownloadOriginAndIdleScheduler(t *testing.T) {
 	if err = s.Store.Finish(t.Context(), id, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := s.grantOptions(t.Context(), "https://admin.example"); err != nil || got.origin != "https://download.example/sub" {
+	if got, err := s.grantOptions(t.Context(), "https://admin.example"); err != nil || got.PublicURL != "https://download.example/sub" {
 		t.Fatal(got, err)
 	}
 	if err = AtomicJSON(filepath.Join(root, subscriptionsConfig), c.Subscriptions); err != nil {
@@ -111,7 +111,7 @@ func TestDisabledSubscriberBlocksCustomOutputAndExport(t *testing.T) {
 	c.Collections = []sub.Collection{{ID: "all", Sources: []string{"a"}}}
 	c.Outputs = []sub.Output{{ID: "custom", Collection: "all", Template: c.Templates[0].ID}}
 	snapshot := sub.Snapshot{Version: sub.SchemaVersion, Revision: c.Revision, Contributors: map[string][]string{"custom": {"a"}}, Artifacts: map[string]sub.Artifact{"custom": {}}}
-	if err := outputPolicy(c, snapshot, "custom").check(ctx, s.Accounts, time.Now()); err == nil {
+	if err := checkOutputPolicy(ctx, sub.PolicyForOutput(c, snapshot, "custom"), s.Accounts, time.Now()); err == nil {
 		t.Fatal("disabled subscriber authorized")
 	}
 	if _, err := (s.accountService()).ExportDetailed(ctx, application.AccountExportRequest{ID: "a", Profile: "uri"}); err == nil {

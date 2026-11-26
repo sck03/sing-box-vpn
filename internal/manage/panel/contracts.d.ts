@@ -296,6 +296,7 @@ export interface Grant {
 
 export interface GrantOptions {
   listener_enabled: boolean;
+  public_url: string;
   pending: boolean;
   outputs: Array<Option> | null;
   unavailable?: string;
@@ -383,6 +384,7 @@ export interface OutputPreviewRequest {
 }
 
 export interface OverviewSnapshot {
+  resource_version: number;
   background: Array<BackgroundIssue> | null;
   revision: number;
   applied_revision: number;

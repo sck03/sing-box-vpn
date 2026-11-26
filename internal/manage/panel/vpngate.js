@@ -1,5 +1,6 @@
 import { workspace } from "./workspace.js";
-import { getGatewayStatus } from "./api.js";
+import { api, getGatewayStatus } from "./api.js";
+import { observeStatus } from "./status-observer.js";
 import { boundCertificate, certificateChoices } from "./certificate-fields.js";
 import { capabilities } from "./capabilities.js";
 import { showFacts, loadRecords } from "./details.js";
@@ -21,16 +22,36 @@ export async function vpngate(ctx) {
   const c = admin ? await ctx.config() : null;
   const metadata = await capabilities();
   const active = c?.vpn.active_country || (admin ? "尚未选择" : "运行控制");
+  const runtime = el("div", { role: "status" }, help("正在读取网关运行状态…"));
+  const gateway = async () => {
+    const { refresh } = observeStatus(ctx, async () => {
+      try {
+        const current = await getGatewayStatus(ctx.signal, ctx.request || api);
+        if (ctx.signal?.aborted) return;
+        const state = ({ ready: "已就绪", stopped: "已停止", starting: "正在启动", switching: "正在切换", failed: "失败", degraded: "异常" })[current.state] || current.state;
+        runtime.replaceChildren(
+          row(badge(state || "暂无运行状态", current.state === "ready" ? "good" : "warn"),
+            help("运行国家：" + (current.country || "尚未运行"))),
+          ...(current.reason ? [help(current.reason)] : []),
+        );
+      } catch (error) {
+        if (error.name === "AbortError" || ctx.signal?.aborted) return;
+        runtime.replaceChildren(help("运行状态暂不可读取：" + error.message), button("重试", refresh));
+      }
+    }, { section: "gateway" });
+    await refresh();
+    return status;
+  };
   const status = card(
     "VPNGate 运行状态",
+    runtime,
     row(
-      badge(active),
       button("查询出口验证", async () => {
         const session = dialogSession(ctx.signal);
         session.replace(help("正在加载出口验证…"));
         let status;
         try {
-          status = await getGatewayStatus(session.signal);
+          status = await getGatewayStatus(session.signal, ctx.request || api);
         } catch (error) {
           session.fail(error);
           return;
@@ -99,13 +120,14 @@ export async function vpngate(ctx) {
                 "sb-vpngate-core 负责用户接入、认证和计量；入口配置由管理员管理。",
               ),
             ),
-          gateway: () => status,
+          gateway,
         },
         ctx,
       ),
     ];
   const controls = card(
     "国家与独立入口",
+    help("草稿国家：" + active + "；配置应用成功后生效。"),
     button(
       "选择 / 新增国家",
       () =>
@@ -258,8 +280,8 @@ export async function vpngate(ctx) {
           help("sb-vpngate-core 负责用户接入、认证和计量。"),
           controls,
         ],
-        gateway: () => [
-          status,
+        gateway: async () => [
+          await gateway(),
           help("sb-vpngate-gateway 负责 OpenVPN 隧道、出口验证与节点切换。"),
           policy,
         ],

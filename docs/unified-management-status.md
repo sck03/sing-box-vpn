@@ -1,6 +1,6 @@
 # 当前实施状态
 
-更新：2026-11-26。面向首次部署，不迁移旧数据库、备份或管理接口。本轮订阅授权、绑定查询和异步分享修复见[实施报告](refactor-review.md)，测试与清理范围见[验证记录](validation/2026-11-26-subscription-binding-refactor.json)。此前恢复、选择交互和计量样本分别保留在[恢复记录](validation/2026-11-26-recovery-resource-refactor.json)、[选择交互记录](validation/2026-11-25-selection-refactor.json)与[计量记录](validation/2026-11-25-stability.json)。
+更新：2026-11-26。面向首次部署，不迁移旧数据库、备份或管理接口。本轮状态同步、运行态展示、发布恢复和测试初始化修复见[实施报告](refactor-review.md)，测试与清理范围见[验证记录](validation/2026-11-26-state-consistency.json)。此前订阅授权与绑定查询、恢复、选择交互和计量样本分别保留在[绑定记录](validation/2026-11-26-subscription-binding-refactor.json)、[恢复记录](validation/2026-11-26-recovery-resource-refactor.json)、[选择交互记录](validation/2026-11-25-selection-refactor.json)与[计量记录](validation/2026-11-25-stability.json)。
 
 | 契约 | 当前版本 |
 | --- | --- |

@@ -118,7 +118,7 @@ func (s *PlatformService) serveGrants(w http.ResponseWriter, r *http.Request, ac
 					token, err = s.Accounts.CreateGrant(ctx, g)
 				}
 				if err == nil {
-					origin := options.origin
+					origin := options.PublicURL
 					urls := []string{}
 					for _, id := range g.Outputs {
 						urls = append(urls, origin+"/s/"+token+"/"+id)

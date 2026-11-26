@@ -30,30 +30,39 @@ func (s *PlatformService) Run(ctx context.Context) error {
 		return err
 	}
 	// Restore projections from the confirmed database state before serving tasks.
-	state, err := s.Store.State(ctx)
-	if err != nil {
-		return err
-	}
-	c, err := decodePlatform(state.Applied)
-	if err != nil {
-		return err
-	}
-	if err = withStartupLock(ctx, s.Root, func() error {
-		if e := recoverSubscriptionRuntime(s.Root); e != nil {
-			return e
-		}
-		files, e := s.buildApplied(ctx, c)
-		if e != nil {
-			return e
-		}
-		if e = files.json("runtime-revision.json", state.AppliedRevision); e != nil {
-			return e
-		}
-		return publish(s.Root, files)
-	}); err != nil {
+	if err := s.recoverApplied(ctx); err != nil {
 		return err
 	}
 	s.workerReady.Store(true)
 	defer s.workerReady.Store(false)
 	return s.runWorkers(ctx)
+}
+
+// Startup and explicit recovery read and publish one confirmed snapshot under
+// the publication lock. Startup must not acquire the service transition lock:
+// the restart helper holds it while waiting for this worker to become ready.
+func (s *PlatformService) recoverApplied(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return withStartupLock(ctx, s.Root, func() error {
+		if err := recoverSubscriptionRuntime(s.Root); err != nil {
+			return err
+		}
+		c, state, err := s.appliedConfiguration(ctx)
+		if err != nil {
+			return err
+		}
+		files, err := s.buildApplied(ctx, c)
+		if err != nil {
+			return err
+		}
+		if err := files.json("runtime-revision.json", state.AppliedRevision); err != nil {
+			return err
+		}
+		if err := publish(s.Root, files); err != nil {
+			return err
+		}
+		s.invalidateOverview()
+		return nil
+	})
 }

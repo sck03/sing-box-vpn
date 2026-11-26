@@ -175,20 +175,20 @@ func TestSubscriptionFreshnessUsesContributingOrRequiredSources(t *testing.T) {
 		{ID: "valid", Kind: "inline"}, {ID: "remote", Kind: "remote", MaxStaleSeconds: 60},
 	}, Collections: []sub.Collection{{ID: "all", Sources: []string{"valid", "remote"}}}, Outputs: []sub.Output{{ID: "out", Collection: "all"}}}
 	snapshot := sub.Snapshot{Version: sub.SchemaVersion, Revision: 1, Artifacts: map[string]sub.Artifact{"out": {}}, Contributors: map[string][]string{"out": {"valid"}}, SourceTimes: map[string]time.Time{"remote": now.Add(-time.Minute)}}
-	if err := outputPolicy(config, snapshot, "out").check(t.Context(), nil, now); err != nil {
+	if err := sub.PolicyForOutput(config, snapshot, "out").Validate(now); err != nil {
 		t.Fatal("unused optional source blocked output", err)
 	}
 	snapshot.Contributors["out"] = []string{"valid", "remote"}
-	if err := outputPolicy(config, snapshot, "out").check(t.Context(), nil, now); err == nil {
+	if err := sub.PolicyForOutput(config, snapshot, "out").Validate(now); err == nil {
 		t.Fatal("expired contributor accepted")
 	}
 	snapshot.Contributors["out"] = []string{"valid"}
 	config.Sources[1].Required = true
-	if err := outputPolicy(config, snapshot, "out").check(t.Context(), nil, now); err == nil {
+	if err := sub.PolicyForOutput(config, snapshot, "out").Validate(now); err == nil {
 		t.Fatal("expired required source accepted")
 	}
 	snapshot.SourceTimes["remote"] = now
-	if err := outputPolicy(config, snapshot, "out").check(t.Context(), nil, now); err != nil {
+	if err := sub.PolicyForOutput(config, snapshot, "out").Validate(now); err != nil {
 		t.Fatal("fresh required source rejected", err)
 	}
 }

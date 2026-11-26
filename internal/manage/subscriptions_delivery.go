@@ -123,7 +123,7 @@ func deliverSubscription(ctx context.Context, client *http.Client, root string, 
 	digest := sub.Digest([]byte(hash + artifact.ETag))
 	status := "unchanged"
 	var err error
-	if e := outputPolicy(config, snapshot, destination.Output).check(ctx, accounts, time.Now()); e != nil {
+	if e := checkOutputPolicy(ctx, sub.PolicyForOutput(config, snapshot, destination.Output), accounts, time.Now()); e != nil {
 		err = e
 	} else if state.Digest != digest {
 		err = sendSubscriptionArtifact(ctx, client, destination, artifact)

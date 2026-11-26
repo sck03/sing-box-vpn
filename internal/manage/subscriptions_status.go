@@ -132,7 +132,7 @@ func (s *PlatformService) SubscriptionStatus(ctx context.Context) (SubscriptionS
 			output := &result.Outputs[i]
 			if generationErr != nil || outputs.Revision != applied.Subscriptions.Revision {
 				output.Available, output.Reason = false, "发布尚未确认，请稍后重试"
-			} else if err := outputs.Policies[output.ID].check(ctx, s.Accounts, time.Now()); err != nil {
+			} else if err := checkOutputPolicy(ctx, outputs.Policies[output.ID], s.Accounts, time.Now()); err != nil {
 				output.Available, output.Reason = false, err.Error()
 			}
 		}

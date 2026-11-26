@@ -21,6 +21,7 @@ func TestDefaultGrantRejectsPrefixImpersonation(t *testing.T) {
 	if err := AtomicJSON(filepath.Join(root, subscriptionsConfig), c); err != nil {
 		t.Fatal(err)
 	}
+	confirmSubscriptionFixture(t, root)
 	response := httptest.NewRecorder()
 	subscriptionHandler(root).ServeHTTP(response, httptest.NewRequest("GET", "/s/"+token+"/normal-private", nil))
 	if response.Code != 404 {

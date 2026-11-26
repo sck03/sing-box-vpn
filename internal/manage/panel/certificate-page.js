@@ -1,6 +1,7 @@
 import { api, getCertificates } from "./api.js";
 import { certificateEditor } from "./certificate-editor.js";
 import { certificateSources } from "./certificate-fields.js";
+import { observeStatus } from "./status-observer.js";
 import { el, card, row, button, help, table } from "./ui.js";
 
 /** @param {string} id @param {import("./contracts.js").CertificateStatus | undefined} status */
@@ -27,43 +28,20 @@ export async function certificates(ctx) {
     ...[...status.values()].filter((a) => !draftIDs.has(a.id)),
   ].map((asset) => ({ ...asset, status: status.get(asset.id) }));
   const problem = el("div", { role: "status", hidden: true });
-  let listing, pending, queued = false, version;
-  function refresh() {
-    queued = true;
-    if (pending) return pending;
-    pending = (async () => {
-      while (queued && !ctx.signal?.aborted) {
-        queued = false;
-        try {
-          const next = await getCertificates(ctx.signal, ctx.request || api);
-          if (ctx.signal?.aborted) return;
-          status = new Map(next.map((asset) => [asset.id, asset]));
-          listing.updateItems(assets());
-          problem.hidden = true;
-        } catch (error) {
-          if (error.name === "AbortError" || ctx.signal?.aborted) return;
-          problem.hidden = false;
-          problem.replaceChildren(help("证书状态更新失败：" + error.message), button("重试", refresh));
-        }
-      }
-    })().finally(() => { pending = null; });
-    return pending;
-  }
-  const signature = (snapshot) => JSON.stringify([
-    snapshot?.revision, snapshot?.applied_revision,
-    snapshot?.tasks?.filter((task) => ["apply", "certificate-renew"].includes(task.kind))
-      .map((task) => [task.id, task.state, task.phase, task.updated]),
-  ]);
-  version = signature(ctx.overview);
-  ctx.updateOverview = (snapshot) => {
-    const next = signature(snapshot);
-    if (next === version) return;
-    version = next;
-    void refresh();
-  };
-  const visibility = () => { if (!document.hidden) void refresh(); };
-  document.addEventListener("visibilitychange", visibility);
-  ctx.signal?.addEventListener("abort", () => document.removeEventListener("visibilitychange", visibility), { once: true });
+  let listing;
+  const { refresh } = observeStatus(ctx, async () => {
+    try {
+      const next = await getCertificates(ctx.signal, ctx.request || api);
+      if (ctx.signal?.aborted) return;
+      status = new Map(next.map((asset) => [asset.id, asset]));
+      listing.updateItems(assets());
+      problem.hidden = true;
+    } catch (error) {
+      if (error.name === "AbortError" || ctx.signal?.aborted) return;
+      problem.hidden = false;
+      problem.replaceChildren(help("证书状态更新失败：" + error.message), button("重试", refresh));
+    }
+  });
   const changed = () => {
     ctx.changed();
     ctx.render();

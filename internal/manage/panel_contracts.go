@@ -82,6 +82,7 @@ type ShareCreated struct {
 }
 
 type OverviewSnapshot struct {
+	ResourceVersion uint64                             `json:"resource_version"`
 	Background      []BackgroundIssue                  `json:"background"`
 	Revision        int64                              `json:"revision"`
 	AppliedRevision int64                              `json:"applied_revision"`

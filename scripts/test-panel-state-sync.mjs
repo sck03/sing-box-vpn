@@ -90,5 +90,72 @@ assert.deepEqual(submitted.port_overrides, {}, "hidden runtimes must not leak ov
 assert.equal(submitted.scope, "normal");
 exportSignal.abort();
 document.querySelector("dialog").close();
+
+const { observeStatus } = await import("../internal/manage/panel/status-observer.js");
+const observerLife = new AbortController();
+const tasks = Array.from({ length: 12 }, (_, i) => ({ id: i + 2, state: "queued" }));
+const initial = { resource_version: 1, revision: 1, applied_revision: 1, tasks, task_counts: { active: 13 } };
+const observerContext = { signal: observerLife.signal, overview: initial, section: "status" };
+let observed = 0, fallback, stopped = false;
+const nativeInterval = window.setInterval, nativeClear = window.clearInterval;
+window.setInterval = (fn, delay) => { assert.equal(delay, 60000); fallback = fn; return 123; };
+window.clearInterval = (id) => { assert.equal(id, 123); stopped = true; };
+const observer = observeStatus(observerContext, async () => { observed++; }, { section: "status" });
+await observer.refresh();
+observerContext.updateOverview({ ...initial, task_counts: { active: 12 } });
+await flush();
+assert.equal(observed, 2, "completion outside 12 summaries must refresh");
+observerContext.updateOverview({ ...initial, resource_version: 2, task_counts: { active: 12 } });
+await flush();
+assert.equal(observed, 3, "resource changes must refresh even with identical tasks");
+observerContext.sectionChanged("sources");
+fallback();
+await flush();
+assert.equal(observed, 3, "hidden sections must not poll");
+observerContext.sectionChanged("status");
+await flush();
+fallback();
+await flush();
+assert.equal(observed, 5, "visible fallback covers expiry without tasks");
+observerLife.abort();
+assert.equal(stopped, true);
+fallback();
+await flush();
+assert.equal(observed, 5);
+window.setInterval = nativeInterval;
+window.clearInterval = nativeClear;
+
+const { vpngate } = await import("../internal/manage/panel/vpngate.js");
+const gatewayLife = new AbortController();
+const gatewayContext = {
+  signal: gatewayLife.signal, session: { role: "admin" }, section: "gateway",
+  config: async () => ({ vpn: { active_country: "KR", profiles: {} }, gateway: {}, certificates: [] }),
+  task() {}, changed() {}, render() {},
+  request: async () => ({ state: "ready", country: "JP", source_refresh: {} }),
+};
+root.replaceChildren(...await vpngate(gatewayContext));
+await flush();
+const gatewayPanel = root.querySelector('[role="tabpanel"]:not([hidden])');
+assert.match(gatewayPanel.textContent, /运行国家：JP/);
+assert.doesNotMatch(gatewayPanel.textContent, /运行国家：KR/);
+gatewayLife.abort();
+
+const { access } = await import("../internal/manage/panel/access.js");
+const accessLife = new AbortController();
+const accessContext = {
+  signal: accessLife.signal, session: { role: "admin" }, section: "subscription",
+  config: async () => ({ certificates: [], listener: { enabled: true, public_base_url: "https://draft.example.test", listen: "127.0.0.1", port: 2097 } }),
+  request: async (path) => {
+    if (path === "/api/certificates") return [];
+    if (path === "/api/panel/settings") return { revision: 1, options: { listen: "127.0.0.1:2096" }, restart_required: false };
+    if (path === "/api/grant-options") return { listener_enabled: false, pending: true, outputs: [], public_url: "https://panel.example.test" };
+    throw Error("Unexpected request " + path);
+  },
+};
+root.replaceChildren(...await access(accessContext));
+await flush();
+assert.match(root.textContent, /已应用：分享使用面板地址/);
+assert.match(root.textContent, /草稿：启用独立下载监听/);
+accessLife.abort();
 dom.window.close();
-console.log("State synchronization passed: certificate completion, coalescing, cancellation and per-inbound export ports.");
+console.log("State synchronization passed: resource invalidation, hidden summaries, fallback cleanup, applied/draft separation, certificates and per-inbound export ports.");

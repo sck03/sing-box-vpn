@@ -1,6 +1,8 @@
 import { api, query, mutate, getCertificates } from "./api.js";
 import { card, help, el, row, button, formDialog, notice } from "./ui.js";
 import { workspace } from "./workspace.js";
+import { grantOptions } from "./configuration-api.js";
+import { observeStatus } from "./status-observer.js";
 import { dialogSession } from "./dialog-session.js";
 import { withCertificateStatus } from "./certificate-fields.js";
 import { certificateEditor } from "./certificate-editor.js";
@@ -176,18 +178,37 @@ export async function access(ctx) {
           : []),
       ),
     );
-  const subscription = () =>
-    card(
+  const subscription = async () => {
+    const live = el("div", { role: "status" });
+    const { refresh } = observeStatus(ctx, async () => {
+      try {
+        const current = await grantOptions(ctx.signal, request);
+        if (ctx.signal?.aborted) return;
+        live.replaceChildren(
+          help(current.listener_enabled
+            ? "已应用：独立下载监听 · " + (current.public_url || "地址不可用")
+            : "已应用：分享使用面板地址。"),
+          ...(current.pending ? [help("服务器有待应用的配置变更。下载仍使用已应用配置。")] : []),
+          ...(current.unavailable ? [help(current.unavailable)] : []),
+        );
+      } catch (error) {
+        if (error.name === "AbortError" || ctx.signal?.aborted) return;
+        live.replaceChildren(help("已应用状态暂不可读取：" + error.message), button("重试", refresh));
+      }
+    }, { section: "subscription" });
+    await refresh();
+    return card(
       "独立订阅地址（可选）",
       help(
         "将订阅和后台分开时启用。直接 HTTPS 使用内置 TLS，无需额外代理；反向代理方式需要事先自行安装和配置 Nginx/Caddy。普通分享与高级输出都会使用这个地址。",
       ),
+      live,
       el(
         "p",
         {},
         c.listener.enabled
-          ? "已启用：" + (c.listener.public_base_url || "尚未填写公网 URL")
-          : "未启用，分享使用面板地址。",
+          ? "草稿：启用独立下载监听 · " + (c.listener.public_base_url || "尚未填写公网 URL")
+          : "草稿：关闭独立下载监听。",
       ),
       button("配置独立下载监听", () => {
         const options = {
@@ -225,5 +246,6 @@ export async function access(ctx) {
         editSubscription();
       }),
     );
+  };
   return [workspace("access", { panel, subscription }, ctx)];
 }

@@ -57,7 +57,7 @@ func OpenPlatform(root, core, runtime string, noSystem bool) (*PlatformService, 
 		auth.Close()
 		return nil, err
 	}
-	return &PlatformService{Root: root, Core: core, Runtime: runtime, Store: store, Auth: auth, Accounts: accounts, NoSystem: noSystem, wake: make(chan struct{}, 1)}, nil
+	return &PlatformService{Root: root, Core: core, Runtime: runtime, Store: store, Auth: auth, Accounts: accounts, NoSystem: noSystem, wake: make(chan struct{}, 1), statusVersion: uint64(time.Now().UnixMilli())}, nil
 }
 func (s *PlatformService) Close() error {
 	return errors.Join(s.Store.Close(), s.Auth.Close(), s.Accounts.Close())

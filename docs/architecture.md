@@ -20,6 +20,12 @@
 
 ## 模块边界
 
+订阅可用性由 subscription/policy.go 的 OutputPolicy/PolicyForOutput 统一推导贡献来源、账户归属与新鲜度；manage/subscriptions_policy.go 仅完成实时账户授权适配。状态投影、下载和投递不得各自维护一套可用性判定。
+
+启动和 CLI 恢复复用 recoverApplied，在发布锁内读取数据库已确认配置并重建同一代次产物。显式 CLI 恢复先取得服务切换锁；worker 启动不取得该锁，因为重启助手会持锁等待 worker 就绪。临时 Argo 观察依据 applied 配置独立更新，desired/applied 差异不能暂停在线观察；服务切换和域名发布仍需序列化。
+
+Overview 的 resource_version 表示当前管理进程的状态失效代次，不是持久化配置版本，也不用于授权。它与 revision、applied_revision、task_counts 共同驱动前端 status-observer.js；12 条任务摘要仅用于展示。观察器合并并发刷新，隐藏标签/页面停止读取，离页清理资源，可见页每 60 秒兜底处理自然到期或外部修改。运行标签读取实测或已应用状态，草稿仅用于编辑与候选预览。
+
 订阅流水线为 Source → ParseResult → normalize/Process → PreparedOutput → renderer → Snapshot。纯解析、连接模型、账户模板策略与声明式模板位于 `internal/subscription`；`renderers.go` 显式登记编码器，sing-box、Mihomo、URI 的字段映射各自独立。`internal/clientprofile` 描述客户端、协议、传输、加密、插件、设备平台与已核实的导入方式；Stash 和 Mihomo 各自拥有完整模板，仅共用明确一致的策略组和路由规则构造。新增客户端必须登记编码器和能力，补充字段往返及核心/应用验收，不使用隐式文本回退。
 
 编译缓存以 SchemaVersion、CompilerVersion、选定节点和有效模板的摘要为键，复用前验证产物 ETag/正文摘要。连接、证书、模板或规则变化会失效；来源/能力/路由安全仍每次检查。解析语义变化时递增 ParserVersion，使来源正文与条件请求缓存失效；渲染语义变化时递增 CompilerVersion；持久化结构变化时递增 SchemaVersion。sing-box 核心校验另以核心身份和产物 ETag 缓存。
@@ -167,7 +173,7 @@ VPNGate 转发必须通过独立 namespace 的已验证出口，DNS 和公网 IP
 | `GET /api/accounts`          | 默认分页查询当前权益。`archived=true` 只查归档记录。`expires_at` 是配置值，`effective_expires_at` 是计算结果。                                                                                                               |
 | `GET /api/accounts` 分享字段 | `download_scopes` 是有启用入口与对应凭据的实例列表；`download_denial` 是权益或入口禁止原因，不返回凭据秘密。                                                                                                                 |
 | `POST /api/accounts/archive` | 管理员提交 `id`、`revision`。成功释放名额，过期 revision 或重复归档返回 409。                                                                                                                                                |
-| `GET /api/grant-options`     | 管理员读取已应用的输出 ID、名称、监听启用状态 `listener_enabled`、版本差异 `pending` 及地址问题 `unavailable`。创建授权时服务端重新校验。                                                                                    |
+| `GET /api/grant-options`     | 管理员读取已应用的输出 ID、名称、监听启用状态 `listener_enabled`、分享入口 `public_url`、版本差异 `pending` 及地址问题 `unavailable`。创建授权时服务端重新校验。 |
 | `GET /u/{token}/usage`       | 返回 `effective_expires_at` 和 `download_denial`。空字符串表示入口就绪；`no_bound_inbound`、`quota_exhausted`、`download_limit` 分别表示无可用绑定、流量耗尽和下载次数耗尽，仍可查看用量。客户端格式兼容性在导出时再次校验。 |
 
 `accounting/reservations.go` 按需启动每 Store 的预留写入器；队列和批次各有 64 个请求上限，只合并已经等待的请求，不增加聚合定时器。每个池仍受原有额度与代次检查，批次内用保存点隔离业务失败，整个事务 FULL 提交后才返回可转发字节。关闭 Store 前排空已接收请求。无预留的面板查询不会创建该写入器。
@@ -318,7 +324,7 @@ loadDialog 在首次查询前占有对话框；切页、关闭或替换会取消
 ## 订阅授权、确认版本与绑定查询（2026-11-26）
 
 - 编译阶段将节点来源归属重置为配置中的 source ID，在过滤、去重和客户端适配后保存每个输出的实际 contributors。CompilerVersion=8 使旧渲染缓存失效；缺失来源记录的旧派生快照必须重新发布，不能回退猜测授权范围。
-- subscriptions_policy.go 统一下载、投递和状态页的输出可用性：仅校验实际贡献账户的实时权益，并校验贡献远程源或必需远程源的截止时间。可选账户源缺失或被过滤后不阻断其他有效节点；产物仍包含该账户凭据时必须拒绝已失效权益。
+- subscription/policy.go 与管理层账户授权适配统一下载、投递和状态页的输出可用性：仅校验实际贡献账户的实时权益，并校验贡献远程源或必需远程源的截止时间。可选账户源缺失或被过滤后不阻断其他有效节点；产物仍包含该账户凭据时必须拒绝已失效权益。
 - 下载和状态页同样核对 runtime-revision.json 与数据库 applied revision。公开下载还比较订阅配置及快照 revision，未确认候选返回 503。配置正文复用不可变版本缓存，确认版本和权益每次实时读取；配置文件替换会清除下载视图的确认记录。
 - output-status.json 是含 revision、输出摘要与无秘密策略的对象；状态查询不读取大体积节点缓存或产物正文。公开 DTO 只暴露 available/reason 等展示字段，不暴露账户列表或远程凭据。可用表示产物及来源权益满足条件，具体分享令牌仍须单独授权。
 - subscriptions_response.go 将条件请求及 Range 决策交给 http.ServeContent，在最终 GET 200/206 响应头提交前原子扣减下载次数。HEAD、304、412、416 不计次；计次失败后丢弃正文，删除 ETag/范围/用量头并返回 404。不再维护第二套 ETag 解析器。

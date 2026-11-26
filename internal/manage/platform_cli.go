@@ -220,25 +220,7 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 		}
 		return withServiceLock(ctx, s.Root, func() error { return s.renewCertificate(ctx, value.ID) })
 	case "recover":
-		if e := withStartupLock(ctx, s.Root, func() error { return recoverSubscriptionRuntime(s.Root) }); e != nil {
-			return e
-		}
-		state, e := s.Store.State(ctx)
-		if e != nil {
-			return e
-		}
-		c, e := decodePlatform(state.Applied)
-		if e != nil {
-			return e
-		}
-		files, e := s.buildApplied(ctx, c)
-		if e != nil {
-			return e
-		}
-		if e = files.json("runtime-revision.json", state.AppliedRevision); e != nil {
-			return e
-		}
-		return withStartupLock(ctx, s.Root, func() error { return publishPlatformFiles(s.Root, files) })
+		return withServiceLock(ctx, s.Root, func() error { return s.recoverApplied(ctx) })
 	case "install-services":
 		if *noSystem {
 			return errors.New("system operations are disabled")

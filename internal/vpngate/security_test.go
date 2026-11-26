@@ -237,27 +237,27 @@ func startProxyFixture(t testing.TB) (string, *testAccess, context.CancelFunc) {
 	w := worker{socket: socket, dialOverride: func(ctx context.Context, n, a string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, n, a)
 	}}
-	go w.serve(ctx)
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		c, e := net.Dial("unix", socket)
-		if e == nil {
-			c.Close()
-			break
-		}
-		if time.Now().After(deadline) {
-			cancel()
-			t.Fatal("worker did not bind")
-		}
-		time.Sleep(10 * time.Millisecond)
+	workerListener, err := net.Listen("unix", socket)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
 	}
+	workerDone := make(chan error, 1)
+	go func() { workerDone <- serveConnections(ctx, workerListener, nil, w.handle) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-workerDone; err != nil {
+			t.Error("worker shutdown:", err)
+		}
+	})
 	ln, e := net.Listen("tcp4", "127.0.0.1:0")
 	if e != nil {
 		cancel()
 		t.Fatal(e)
 	}
 	access := &testAccess{socket: socket, ready: true, conns: map[net.Conn]bool{}}
-	go serveProxy(ctx, ln, access)
+	proxyDone := make(chan error, 1)
+	go func() { proxyDone <- serveProxy(ctx, ln, access) }()
 	t.Cleanup(func() {
 		cancel()
 		access.mu.Lock()
@@ -265,6 +265,9 @@ func startProxyFixture(t testing.TB) (string, *testAccess, context.CancelFunc) {
 			c.Close()
 		}
 		access.mu.Unlock()
+		if err := <-proxyDone; err != nil {
+			t.Error("proxy shutdown:", err)
+		}
 	})
 	return ln.Addr().String(), access, cancel
 }
@@ -274,6 +277,7 @@ func authProxy(t testing.TB, address string, pass string) net.Conn {
 	if e != nil {
 		t.Fatal(e)
 	}
+	t.Cleanup(func() { c.Close() })
 	_ = c.SetDeadline(time.Now().Add(3 * time.Second))
 	_, _ = c.Write([]byte{5, 1, 2})
 	var h [2]byte

@@ -69,14 +69,15 @@ func (s *PlatformService) writeTunnel(ctx context.Context, c PlatformConfig) err
 }
 
 func (s *PlatformService) syncTunnel(ctx context.Context) error {
+	return withServiceLock(ctx, s.Root, func() error { return s.syncTunnelWith(ctx, hostCommand) })
+}
+
+func (s *PlatformService) syncTunnelWith(ctx context.Context, run hostservice.Command) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	c, state, err := s.appliedConfiguration(ctx)
+	c, _, err := s.appliedConfiguration(ctx)
 	if err != nil {
 		return err
-	}
-	if state.Revision != state.AppliedRevision {
-		return nil
 	}
 	previous, err := s.Store.Observation(ctx, "argo-tunnel")
 	if err != nil {
@@ -86,7 +87,11 @@ func (s *PlatformService) syncTunnel(ctx context.Context) error {
 		if previous == "" {
 			return nil
 		}
-		return s.Store.Observe(ctx, "argo-tunnel", "")
+		if err := s.Store.Observe(ctx, "argo-tunnel", ""); err != nil {
+			return err
+		}
+		s.invalidateOverview()
+		return nil
 	}
 	var next tunnelObservation
 	if previous != "" {
@@ -97,7 +102,7 @@ func (s *PlatformService) syncTunnel(ctx context.Context) error {
 	if next.Settings != c.Argo {
 		next = tunnelObservation{Settings: c.Argo}
 	}
-	next.Runtime, err = hostservice.ObserveTunnel(ctx, hostCommand, next.Runtime)
+	next.Runtime, err = hostservice.ObserveTunnel(ctx, run, next.Runtime)
 	if err != nil {
 		return err
 	}
@@ -116,6 +121,8 @@ func (s *PlatformService) syncTunnel(ctx context.Context) error {
 		recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		err = errors.Join(err, s.Store.Observe(recovery, "argo-tunnel", previous))
+	} else {
+		s.invalidateOverview()
 	}
 	return err
 }

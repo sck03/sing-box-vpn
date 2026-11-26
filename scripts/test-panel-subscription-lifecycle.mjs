@@ -73,6 +73,7 @@ assert(status().textContent.includes("远端接收状态未知"));
 assert(status().textContent.includes("连续失败"));
 label = "completed output";
 context.updateOverview({
+  resource_version: 1,
   applied_revision: 1,
   tasks: [{ id: 1, state: "succeeded", updated: 1 }],
 });
@@ -85,6 +86,7 @@ await context.showSection("sources");
 const before = reads;
 label = "returned output";
 context.updateOverview({
+  resource_version: 2,
   applied_revision: 1,
   tasks: [{ id: 2, state: "succeeded", updated: 2 }],
 });
@@ -98,10 +100,12 @@ assert(
 );
 hold = true;
 context.updateOverview({
+  resource_version: 3,
   applied_revision: 1,
   tasks: [{ id: 3, state: "running" }],
 });
 context.updateOverview({
+  resource_version: 4,
   applied_revision: 1,
   tasks: [{ id: 3, state: "succeeded" }],
 });
@@ -114,6 +118,7 @@ pending.shift()(snapshot());
 await tick();
 assert(status().textContent.includes(label));
 context.updateOverview({
+  resource_version: 5,
   applied_revision: 1,
   tasks: [{ id: 4, state: "running" }],
 });

@@ -23,10 +23,10 @@ func appliedDownloadOrigin(c PlatformConfig, fallback string) (string, error) {
 
 type GrantOptions struct {
 	ListenerEnabled bool                 `json:"listener_enabled"`
+	PublicURL       string               `json:"public_url"`
 	Pending         bool                 `json:"pending"`
 	Outputs         []application.Option `json:"outputs"`
 	Unavailable     string               `json:"unavailable,omitempty"`
-	origin          string
 }
 
 func (s *PlatformService) grantOptions(ctx context.Context, fallback string) (GrantOptions, error) {
@@ -37,7 +37,7 @@ func (s *PlatformService) grantOptions(ctx context.Context, fallback string) (Gr
 	}
 	v.Pending = state.Revision != state.AppliedRevision
 	v.ListenerEnabled = c.Listener.Enabled
-	v.origin, err = appliedDownloadOrigin(c, fallback)
+	v.PublicURL, err = appliedDownloadOrigin(c, fallback)
 	if err != nil {
 		v.Unavailable = err.Error()
 	}

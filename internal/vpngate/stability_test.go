@@ -28,17 +28,24 @@ func TestProxyTCPHalfClosePreservesResponse(t *testing.T) {
 	}
 	defer server.Close()
 	response := strings.Repeat("response-after-request-eof", 4096)
+	serverResult := make(chan error, 1)
 	go func() {
 		c, err := server.Accept()
 		if err != nil {
+			serverResult <- err
 			return
 		}
 		defer c.Close()
-		_ = c.SetDeadline(time.Now().Add(3 * time.Second))
+		stop := context.AfterFunc(t.Context(), func() { c.Close() })
+		defer stop()
+		_ = c.SetDeadline(time.Now().Add(10 * time.Second))
 		request, err := io.ReadAll(c)
 		if err == nil && string(request) == "request" {
-			_, _ = io.WriteString(c, response)
+			_, err = io.WriteString(c, response)
+		} else if err == nil {
+			err = errors.New("server received an incomplete request")
 		}
+		serverResult <- err
 	}()
 	c := authProxy(t, proxy, "password")
 	defer c.Close()
@@ -47,13 +54,22 @@ func TestProxyTCPHalfClosePreservesResponse(t *testing.T) {
 	if _, err = io.ReadFull(c, reply[:]); err != nil || reply[1] != 0 {
 		t.Fatal("connect failed", err, reply)
 	}
-	_, _ = io.WriteString(c, "request")
+	// Give the transfer its own budget; the authentication deadline belongs to
+	// an earlier phase and can be mostly consumed on a loaded race-test host.
+	_ = c.SetDeadline(time.Now().Add(10 * time.Second))
+	if _, err = io.WriteString(c, "request"); err != nil {
+		t.Fatal("request write:", err)
+	}
 	if err = c.(*net.TCPConn).CloseWrite(); err != nil {
 		t.Fatal(err)
 	}
 	got, err := io.ReadAll(c)
+	serverError := <-serverResult
 	if err != nil || string(got) != response {
-		t.Fatalf("half-close lost response: got %d of %d bytes, %v", len(got), len(response), err)
+		t.Fatalf("half-close lost response: got %d of %d bytes, client: %v, server: %v", len(got), len(response), err, serverError)
+	}
+	if serverError != nil {
+		t.Fatal("server:", serverError)
 	}
 }
 
