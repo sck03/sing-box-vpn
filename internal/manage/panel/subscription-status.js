@@ -106,9 +106,9 @@ export async function subscriptionStatus(ctx) {
       const activity = notification.activity;
       const content = [
         card(
-          "已发布输出",
+          "订阅输出",
           help(
-            `${available} / ${outputs.length} 个输出已发布。客户端格式检查和实际连通性分别记录。`,
+            `${available} / ${outputs.length} 个输出当前可用。下载仍受分享链接权限限制；格式检查与实际连通性分别记录。`,
           ),
           outputs.length
             ? table(
@@ -118,13 +118,14 @@ export async function subscriptionStatus(ctx) {
                   { key: "nodes", label: "有效节点" },
                   {
                     label: "状态",
-                    value: (v) => (v.available ? "已发布" : "已撤下"),
+                    value: (v) => (v.available ? "可用" : "暂不可用"),
                     render: (v) =>
                       badge(
-                        v.available ? "已发布" : "已撤下",
+                        v.available ? "可用" : "暂不可用",
                         v.available ? "good" : "bad",
                       ),
                   },
+                  { key: "reason", label: "原因", value: (v) => v.reason || "—" },
                   {
                     label: "实际验证",
                     value: (v) => validationLabel(v.validation),

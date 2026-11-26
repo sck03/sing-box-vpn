@@ -14,16 +14,6 @@ import (
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
-func (s *PlatformService) executeAccount(ctx context.Context, id int64, command application.AccountCommand) error {
-	if err := s.mutateAccount(ctx, id, command); err != nil {
-		return err
-	}
-	if err := s.reconcileCredentials(ctx); err != nil {
-		return fmt.Errorf("credentials saved; publication will retry automatically: %w", err)
-	}
-	return nil
-}
-
 func (s *PlatformService) mutateAccount(ctx context.Context, id int64, command application.AccountCommand) error {
 	if command.Operation != "bind" && command.Scope != "" {
 		found, err := s.Accounts.HasCredential(ctx, command.Scope, command.ID)

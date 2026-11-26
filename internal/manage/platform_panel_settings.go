@@ -136,7 +136,7 @@ func (s *PlatformService) servePanelSettings(w http.ResponseWriter, r *http.Requ
 		if err != nil {
 			platformError(w, err)
 		} else {
-			jsonResponse(w, Object{"options": o, "active": active, "revision": revision, "restart_required": !samePanelOptions(o, active)})
+			jsonResponse(w, PanelSettingsState{o, active, revision, !samePanelOptions(o, active)})
 		}
 		return true
 	}
@@ -144,10 +144,7 @@ func (s *PlatformService) servePanelSettings(w http.ResponseWriter, r *http.Requ
 		apiFailure(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", false)
 		return true
 	}
-	var input struct {
-		Options  PanelOptions `json:"options"`
-		Revision string       `json:"revision"`
-	}
+	var input PanelSettingsInput
 	if err := decodeRequest(w, r, &input, 8192); err != nil {
 		platformError(w, err)
 		return true
@@ -161,7 +158,7 @@ func (s *PlatformService) servePanelSettings(w http.ResponseWriter, r *http.Requ
 		return true
 	}
 	if r.URL.Path == "/api/panel/settings/preview" {
-		jsonResponse(w, Object{"options": input.Options, "restart_required": !samePanelOptions(input.Options, active)})
+		jsonResponse(w, PanelSettingsPreview{input.Options, !samePanelOptions(input.Options, active)})
 		return true
 	}
 	if !access.audit("panel-settings", "panel.json") {
@@ -188,7 +185,7 @@ func (s *PlatformService) servePanelSettings(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		platformError(w, err)
 	} else {
-		jsonResponse(w, Object{"ok": true, "restart_required": !samePanelOptions(input.Options, active), "public_url": input.Options.PublicURL})
+		jsonResponse(w, PanelSettingsSaved{true, !samePanelOptions(input.Options, active), input.Options.PublicURL})
 	}
 	return true
 }

@@ -67,12 +67,23 @@ export interface AccountSummary extends Usage {
   download_denial: string;
 }
 
+export interface ActionResult {
+  ok: boolean;
+}
+
 export interface Admin {
   id: string;
   role: string;
   disabled: boolean;
   mfa: boolean;
   revision: number;
+}
+
+export interface AdministratorInput {
+  admin?: Admin;
+  id?: string;
+  password?: string;
+  code?: string;
 }
 
 export interface App {
@@ -290,6 +301,13 @@ export interface GrantOptions {
   unavailable?: string;
 }
 
+export interface MFAEnrollment {
+  secret: string;
+  issuer: string;
+  account: string;
+  expires_seconds: number;
+}
+
 export interface ManagedNode {
   id: string;
   protocol: string;
@@ -309,6 +327,16 @@ export interface MutationContracts {
   "/api/config/preview": { input: PlatformConfig; result: ConfigurationPreview };
   "/api/config/preview-output": { input: OutputPreviewRequest; result: OutputPreview };
   "/api/accounts/export": { input: AccountExportRequest; result: AccountExportResponse };
+  "/api/accounts": { input: AccountSave; result: ActionResult };
+  "/api/accounts/archive": { input: AccountArchive; result: ActionResult };
+  "/api/grants": { input: Grant; result: ShareCreated };
+  "/api/subscribers": { input: Subscriber; result: ActionResult };
+  "/api/panel/settings": { input: PanelSettingsInput; result: PanelSettingsSaved };
+  "/api/panel/settings/preview": { input: PanelSettingsInput; result: PanelSettingsPreview };
+  "/api/admins": { input: AdministratorInput; result: ActionResult };
+  "/api/admin/revoke": { input: AdministratorInput; result: ActionResult };
+  "/api/mfa/enroll": { input: AdministratorInput; result: MFAEnrollment };
+  "/api/mfa/confirm": { input: AdministratorInput; result: ActionResult };
 }
 
 export interface NotificationActivity {
@@ -363,6 +391,37 @@ export interface OverviewSnapshot {
   tasks: Array<Task> | null;
   task_counts: TaskCounts;
   credentials: Array<CredentialPublication> | null;
+}
+
+export interface PanelOptions {
+  listen: string;
+  public_url: string;
+  certificate: string;
+  key: string;
+  trusted_proxy: Array<string> | null;
+}
+
+export interface PanelSettingsInput {
+  options: PanelOptions;
+  revision?: string;
+}
+
+export interface PanelSettingsPreview {
+  options: PanelOptions;
+  restart_required: boolean;
+}
+
+export interface PanelSettingsSaved {
+  ok: boolean;
+  restart_required: boolean;
+  public_url: string;
+}
+
+export interface PanelSettingsState {
+  options: PanelOptions;
+  active: PanelOptions;
+  revision: string;
+  restart_required: boolean;
 }
 
 export interface PeriodPolicy {
@@ -425,6 +484,9 @@ export interface QueryResponses {
   "/api/certificates": Array<CertificateStatus>;
   "/api/accounts/ports": Array<AccountPortOption>;
   "/api/subscriptions/status": SubscriptionStatusResponse;
+  "/api/panel/settings": PanelSettingsState;
+  "/api/admins": Array<Admin>;
+  "/api/subscribers": Array<Subscriber>;
 }
 
 export interface QueuedTask {
@@ -519,6 +581,13 @@ export interface ShareCreated {
   token: string;
   user_url: string;
   urls: Array<string> | null;
+}
+
+export interface Subscriber {
+  id: string;
+  name: string;
+  disabled: boolean;
+  revision: number;
 }
 
 export interface SubscriptionAccountExportOverride extends SubscriptionAccountExportPolicy {
@@ -646,6 +715,7 @@ export interface SubscriptionOutputStatus {
   client: string;
   nodes: number;
   available: boolean;
+  reason?: string;
   validation: SubscriptionValidation;
   diagnostic_count: number;
   diagnostics: Array<SubscriptionDiagnostic> | null;

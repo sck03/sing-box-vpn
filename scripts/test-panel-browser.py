@@ -136,7 +136,7 @@ def check(browser, base):
         page.screenshot(path=os.path.join(screenshots, "user-mobile.png"), full_page=True)
         page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(base + "/#subscriptions/status")
-    expect(page.get_by_role("heading", name="已发布输出", exact=True)).to_be_visible()
+    expect(page.get_by_role("heading", name="订阅输出", exact=True)).to_be_visible()
     expect(page.get_by_text("已发布", exact=True)).to_be_visible()
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     if screenshots:

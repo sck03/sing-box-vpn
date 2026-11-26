@@ -89,7 +89,7 @@ Windows 先加载 `scripts/dev-env.ps1`，将 `GATEWAY_BINARY` 和 `MANAGED_CORE
 
 可对该独立面板运行真实 HTTP 工作流：设置 `PANEL_TEST_URL`、`PANEL_TEST_USERNAME`（默认 reviewadmin）和 `PANEL_TEST_PASSWORD`，执行 `node scripts/test-panel-api.mjs`。脚本只接受回环 URL，并在创建数据前确认服务均处于 no-system 状态。验证绑定/导出、下载次数、跨站分享、完整候选预览和任务应用；不能指向真实安装。
 
-配置预览为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回普通服务端脱敏配置、输出节点数/变化、结构化验证和 `deployment` 服务变更计划（`changes`、`runtime_observed`、`applied_revision`）。`POST /api/config/preview-output` 接受 `{id,config}`，只编译目标图并返回有界脱敏内容。旧 `/api/subscriptions/preview` 不恢复。节点文档 schema=6、订阅 schema=6、CompilerVersion=7、模板 version=1、平台 schema=8；备份容器为 8，数据库为 17，旧订阅内容明确拒绝。
+配置预览为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回普通服务端脱敏配置、输出节点数/变化、结构化验证和 `deployment` 服务变更计划（`changes`、`runtime_observed`、`applied_revision`）。`POST /api/config/preview-output` 接受 `{id,config}`，只编译目标图并返回有界脱敏内容。旧 `/api/subscriptions/preview` 不恢复。节点文档 schema=6、订阅 schema=6、CompilerVersion=8、模板 version=1、平台 schema=8；备份容器为 8，数据库为 17，旧订阅内容明确拒绝。
 
 新增回归 `compiler_regression_test.go`、`preview_test.go` 覆盖 URI 认证/端口、SIP003、WS early-data、gRPC/XHTTP、名称和策略组范围、脱敏与真实核心检查。`TestImportedTrojanTransportsWithMihomo` 使用真实 sing-box 服务端和 Mihomo 客户端验证 WS/gRPC，错误路径或服务名必须失败。`TestRefreshValidationDoesNotHoldPublicationLock` 覆盖锁外编译与过期配置拒绝，`TestLimitedServerPreservesTLSAndHTTP2` 覆盖 TLS 状态及协议协商。
 
@@ -180,7 +180,7 @@ python3 -m playwright install --with-deps chromium
 PANEL_BROWSER_TEST=1 PYTHON_BINARY=python3 GATEWAY_BINARY=... MANAGED_CORE_BINARY=... SING_BOX_BINARY=... node scripts/test-panel-local.mjs
 ```
 
-前端共13 组回归，新增跨页面任务详情、并发弹窗归属、错误契约和按需资源编辑器检查。CI 先运行严格协议夹具预检，再运行完整 race/协议矩阵；实际 API 与桌面/手机浏览器验收均启用。浏览器只属于开发/CI 依赖，VPS 运行不安装 Node、TypeScript、Playwright 或 Python。
+前端共有 15 组回归，新增跨页面任务详情、并发弹窗归属、错误契约和按需资源编辑器检查。CI 先运行严格协议夹具预检，再运行完整 race/协议矩阵；实际 API 与桌面/手机浏览器验收均启用。浏览器只属于开发/CI 依赖，VPS 运行不安装 Node、TypeScript、Playwright 或 Python。
 
 更改 Go 面板边界模型后运行 `go run ./cmd/panel-contract`，同时提交生成类型。`tsconfig.json` 对全部 JS 运行 checkJs；`tsconfig.contracts.json` 检查命令正反例，`tsconfig.boundaries.json` 对 API、账户 API 和证书字段模块启用 strict。`npm run typecheck` 顺序执行三者。没有宣称所有 UI 都已启用 strict。边界测试夹具与旧 CLI 回归辅助函数只编译进 `_test.go`，生产程序没有旧接口兼容层。
 
@@ -207,7 +207,7 @@ go vet ./...
 
 ## 5.1 重构回归
 
-前端回归共有13 组，覆盖密钥可见性、证书回选、访问预览草稿、迟到响应、协议字段、自动绑定、平台选择和输出用途。浏览器验收使用明确的提交按钮定位，避免把显示密码按钮当作登录操作。
+前端共有 15 组回归，覆盖密钥可见性、证书回选、访问预览草稿、迟到响应、协议字段、自动绑定、平台选择和输出用途。浏览器验收使用明确的提交按钮定位，避免把显示密码按钮当作登录操作。
 
 `manifest_test.go` 要求组件版本与 go.mod 一致。模板导入测试拒绝有损逻辑条件、非末尾 MATCH、脚本、未知字段和过量输入。发行包选择测试拒绝草稿、预发行、错误资产地址/摘要和重复资产；升级 Shell 测试同时断言校验器回滚。
 
@@ -300,3 +300,14 @@ Windows 验证先加载 scripts/dev-env.ps1，再设置 MANAGED_CORE_BINARY 指�
 平台 schema 8 / 节点文档 schema 6 不兼容旧配置；数据库表结构仍为 schema 17。测试应创建新临时目录，不复用之前审核生成的数据库。需要启动真实管理集成夹具时设置 MANAGED_CORE_BINARY；没有该变量的跳过不能记作通过。
 
 验证结束后使用 scripts/clean-dev.ps1 -Dependencies 清理项目内 .test、.build、.cleanup-manual 和 node_modules，其中包括旧测试数据库、二进制、缓存、日志与截图。脚本会先确认路径和运行程序。当前使用的 Go 工具链、官方验证核心以及文档仍引用的示例图保留。npm ci 和模块下载可恢复开发依赖。
+
+## 订阅与绑定修复验证（2026-11-26）
+
+本次继续完成中断的实现，基线为 5ef4a39；结果见 [验证与清理记录](validation/2026-11-26-subscription-binding-refactor.json)。只验证受影响模块，不把历史全量检查记作本轮结果。
+
+- subscriptions_policy_test.go 覆盖真实响应计次（GET/HEAD/304/206/412/416、无效 ETag 前缀、多段 Range）、并发限次、未确认发布、快照版本不匹配、同版本配置文件替换及实际贡献账户授权。远程源过期覆盖可选未贡献、贡献和必需三种语义。
+- accounting/bindings_test.go 检查账户、实例和入站查询范围；accounts_test.go 检查重复绑定不创建新凭据；refactor_regression_test.go 通过真实 runAccountBatch 入口检查发布重试不会再次轮换。
+- test-panel-workflows.mjs 覆盖提交完成前关闭、打开新编辑器、离页、登出，以及已完成链接的主动查看和清除。相关契约、订阅生命周期、弹窗生命周期、输出配置、恢复和状态同步脚本按需执行。
+- 三组类型检查和 panel-contract -check 验证 Go 生成契约。scripts/task-contracts.ts 增加面板设置修订类型、订阅者状态和 MFA 代码类型的错误输入用例。真实浏览器断言已同步“订阅输出”标题，本轮不运行浏览器验收。
+
+绑定查询基准命令：`go test ./internal/accounting -run '^$' -bench '^BenchmarkBindingKeyLookup$' -benchmem -benchtime=20x -count=3`。同一磁盘 SQLite 比较全凭据读取并建立关系表与定向关系查询，初始化不计时；串行执行，避免并行构建干扰。该结果仅表示关系读取的耗时和累计分配，不表示整机 RSS、完整绑定事务或 VPN 吞吐。

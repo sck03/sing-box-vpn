@@ -1,9 +1,8 @@
 package manage
 
 import (
-	"bytes"
+	"context"
 	"errors"
-	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,6 +19,7 @@ type subscriptionView struct {
 	configInfo, snapshotInfo os.FileInfo
 	config                   sub.Config
 	snapshot                 sub.Snapshot
+	confirmedRevision        int64
 }
 
 func sameSubscriptionFile(a, b os.FileInfo) bool {
@@ -57,6 +57,7 @@ func (v *subscriptionView) load(root string) error {
 			return err
 		}
 		v.config, v.configInfo = c, infos[0]
+		v.confirmedRevision = -1
 	}
 	if !sameSubscriptionFile(v.snapshotInfo, infos[1]) {
 		var snapshot sub.Snapshot
@@ -78,52 +79,30 @@ func (v *subscriptionView) load(root string) error {
 	return nil
 }
 
-func subscriptionFresh(c sub.Config, snapshot sub.Snapshot, outputID string, now time.Time) bool {
-	var collection string
-	for _, output := range c.Outputs {
-		if output.ID == outputID {
-			collection = output.Collection
-		}
+// Revalidate the database generation on every request; compare the immutable
+// configuration only when the publication or confirmed revision changes.
+func (v *subscriptionView) confirm(ctx context.Context, root string, service AccountService) error {
+	applied, revision, err := confirmedSubscriptionState(ctx, root, service)
+	if err != nil {
+		return err
 	}
-	var sources []string
-	for _, set := range c.Collections {
-		if set.ID == collection {
-			sources = set.Sources
+	if v.confirmedRevision != revision {
+		if err := checkSubscriptionConfig(applied.Subscriptions, v.config); err != nil {
+			return err
 		}
+		v.confirmedRevision = revision
 	}
-	for _, source := range c.Sources {
-		if source.Kind != "remote" || !slices.Contains(sources, source.ID) {
-			continue
-		}
-		last, exists := snapshot.SourceTimes[source.ID]
-		if !exists {
-			if source.Required {
-				return false
-			}
-			continue
-		}
-		limit := source.MaxStaleSeconds
-		if limit == 0 {
-			limit = 86400
-		}
-		if now.Sub(last) > time.Duration(limit)*time.Second {
-			return false
-		}
-	}
-	return true
+	return nil
 }
 
-func matchesETag(header, tag string) bool {
-	for value := range strings.SplitSeq(header, ",") {
-		value = strings.TrimSpace(value)
-		if value == "*" || strings.TrimPrefix(value, "W/") == tag {
-			return true
-		}
+func subscriptionHandlerView(service AccountService) http.Handler {
+	if service.configuration == nil {
+		service.configuration = &configurationCache{}
 	}
-	return false
-}
-
-func subscriptionHandlerView(root string, view *subscriptionView, store *accounting.Store) http.Handler {
+	root, view, store := service.Root, service.view, service.Store
+	if view == nil {
+		view = &subscriptionView{}
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet && request.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
@@ -149,39 +128,23 @@ func subscriptionHandlerView(root string, view *subscriptionView, store *account
 			if err := view.load(root); err != nil {
 				return err
 			}
+			if err := view.confirm(request.Context(), root, service); err != nil {
+				return err
+			}
 			grant, err := store.LookupGrant(request.Context(), parts[2])
 			if err != nil || grant.AccountID != "" || !slices.Contains(grant.Outputs, parts[3]) || (grant.MaxDownloads != nil && grant.Downloads >= *grant.MaxDownloads) {
 				status = http.StatusNotFound
 				return errors.New("invalid authorization")
 			}
-			if err := checkOutputAccounts(request.Context(), view.config, parts[3], store); err != nil {
-				status = http.StatusNotFound
+			if err := outputPolicy(view.config, view.snapshot, parts[3]).check(request.Context(), store, time.Now()); err != nil {
+				if errors.Is(err, errOutputAccountUnavailable) {
+					status = http.StatusNotFound
+				}
 				return err
 			}
-			var found bool
-			artifact, found = view.snapshot.Artifacts[parts[3]]
-			if !found || !subscriptionFresh(view.config, view.snapshot, parts[3], time.Now()) {
-				return errors.New("subscription unavailable")
-			}
-			if request.Method == http.MethodGet && !matchesETag(request.Header.Get("If-None-Match"), artifact.ETag) {
-				if err := store.CountDownload(request.Context(), parts[2], parts[3]); err != nil {
-					status = http.StatusNotFound
-					return err
-				}
-			}
+			artifact = view.snapshot.Artifacts[parts[3]]
 			// Only expose upstream quota when exactly one remote account contributes.
-			var refs []string
-			var collection string
-			for _, out := range view.config.Outputs {
-				if out.ID == parts[3] {
-					collection = out.Collection
-				}
-			}
-			for _, set := range view.config.Collections {
-				if set.ID == collection {
-					refs = set.Sources
-				}
-			}
+			refs := view.snapshot.Contributors[parts[3]]
 			if len(refs) == 1 {
 				if value, found := view.snapshot.Usage[refs[0]]; found {
 					copy := value
@@ -208,6 +171,8 @@ func subscriptionHandlerView(root string, view *subscriptionView, store *account
 		if usage != nil {
 			w.Header().Set("subscription-userinfo", formatSubscriptionUsage(*usage))
 		}
-		http.ServeContent(w, request, parts[3], time.Time{}, bytes.NewReader(artifact.Data))
+		serveSubscriptionArtifact(w, request, artifact, func() error {
+			return store.CountDownload(request.Context(), parts[2], parts[3])
+		})
 	})
 }

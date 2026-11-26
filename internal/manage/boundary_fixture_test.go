@@ -56,17 +56,18 @@ func ensureObject(m Object, key string) Object {
 
 func subscriptionHandler(root string, stores ...*accounting.Store) http.Handler {
 	view := &subscriptionView{}
-	if len(stores) > 0 {
-		return subscriptionHandlerView(root, view, stores[0])
-	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		store, err := accounting.Open(filepath.Join(root, "control.db"))
+		service, closeSource, err := openAccountSource(root)
 		if err != nil {
 			http.Error(w, err.Error(), 503)
 			return
 		}
-		defer store.Close()
-		subscriptionHandlerView(root, view, store).ServeHTTP(w, r)
+		defer closeSource()
+		service.view = view
+		if len(stores) > 0 {
+			service.Store = stores[0]
+		}
+		subscriptionHandlerView(service).ServeHTTP(w, r)
 	})
 }
 

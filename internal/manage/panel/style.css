@@ -447,6 +447,9 @@ footer {
   flex-wrap: wrap;
   gap: 8px;
 }
+.workflow-result {
+  position: static;
+}
 .task-status {
   display: block;
   margin-bottom: 18px;

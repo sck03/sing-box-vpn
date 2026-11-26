@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sck03/sing-box-vpn/internal/accounting"
+	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	"github.com/sck03/sing-box-vpn/internal/database"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
@@ -27,7 +28,23 @@ func subscriptionFixture(t *testing.T, root, token, body string) sub.Config {
 		t.Fatal(err)
 	}
 	writeTestSnapshot(t, root, body)
+	confirmTestSubscriptions(t, root, c)
 	return c
+}
+
+func confirmTestSubscriptions(t *testing.T, root string, config sub.Config) {
+	t.Helper()
+	store, err := controlstore.Open(filepath.Join(root, database.Filename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.Initialize(t.Context(), mustJSON(t, PlatformConfig{Schema: PlatformSchema, Subscriptions: config})); err != nil {
+		t.Fatal(err)
+	}
+	if err := AtomicJSON(filepath.Join(root, "runtime-revision.json"), int64(1)); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func seedOutputGrant(t *testing.T, root, token string, outputs []string, limit *int64) {
@@ -52,7 +69,16 @@ func seedOutputGrant(t *testing.T, root, token string, outputs []string, limit *
 func writeTestSnapshot(t *testing.T, root, body string) {
 	t.Helper()
 	a := sub.Artifact{Name: "test", MIME: "application/json", Data: []byte(body), ETag: `"` + sub.Digest([]byte(body)) + `"`}
-	if err := AtomicJSON(filepath.Join(root, subscriptionsSnapshot), sub.Snapshot{Version: sub.SchemaVersion, Artifacts: map[string]sub.Artifact{"normal-sing-box": a, "vpngate-sing-box": {Name: "vpn", MIME: "application/json", Data: []byte(`{"scope":"vpngate"}`), ETag: `"` + sub.Digest([]byte(`{"scope":"vpngate"}`)) + `"`}}}); err != nil {
+	c := fixtureSubscriptionConfig()
+	contributors := map[string][]string{}
+	for _, output := range c.Outputs {
+		for _, collection := range c.Collections {
+			if collection.ID == output.Collection {
+				contributors[output.ID] = collection.Sources
+			}
+		}
+	}
+	if err := AtomicJSON(filepath.Join(root, subscriptionsSnapshot), sub.Snapshot{Version: sub.SchemaVersion, Revision: c.Revision, Contributors: contributors, Artifacts: map[string]sub.Artifact{"normal-sing-box": a, "vpngate-sing-box": {Name: "vpn", MIME: "application/json", Data: []byte(`{"scope":"vpngate"}`), ETag: `"` + sub.Digest([]byte(`{"scope":"vpngate"}`)) + `"`}}}); err != nil {
 		t.Fatal(err)
 	}
 }

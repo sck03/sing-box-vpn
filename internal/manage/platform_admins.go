@@ -1,7 +1,6 @@
 package manage
 
 import (
-	"github.com/sck03/sing-box-vpn/internal/adminauth"
 	"net/http"
 )
 
@@ -32,12 +31,7 @@ func (s *PlatformService) serveAdministrators(w http.ResponseWriter, r *http.Req
 		apiFailure(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", false)
 		return
 	}
-	var v struct {
-		Admin    adminauth.Admin `json:"admin"`
-		ID       string          `json:"id"`
-		Password string          `json:"password"`
-		Code     string          `json:"code"`
-	}
+	var v AdministratorInput
 	if err := decodeRequest(w, r, &v, 8192); err != nil {
 		platformError(w, err)
 		return
@@ -54,7 +48,7 @@ func (s *PlatformService) serveAdministrators(w http.ResponseWriter, r *http.Req
 		var secret string
 		secret, err = s.Auth.Enroll(ctx, actor, v.Password)
 		if err == nil {
-			jsonResponse(w, Object{"secret": secret, "issuer": "sing-box-vpn", "account": actor, "expires_seconds": 600})
+			jsonResponse(w, MFAEnrollment{secret, "sing-box-vpn", actor, 600})
 			return
 		}
 	case "/api/mfa/confirm":
@@ -66,6 +60,6 @@ func (s *PlatformService) serveAdministrators(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		platformError(w, err)
 	} else {
-		jsonResponse(w, Object{"ok": true})
+		jsonResponse(w, ActionResult{OK: true})
 	}
 }

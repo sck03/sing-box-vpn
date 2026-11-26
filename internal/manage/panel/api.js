@@ -27,6 +27,8 @@ export function errorMessage(error) {
 }
 let sessionGeneration = 0;
 let sessionRequests = new AbortController();
+// Completed workflow results live for this authenticated session, not a page.
+export const sessionSignal = () => sessionRequests.signal;
 /** @param {string | null | undefined} value */
 export function setCSRF(value) {
   sessionRequests.abort();

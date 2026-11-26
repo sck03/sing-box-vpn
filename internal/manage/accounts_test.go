@@ -96,6 +96,14 @@ func TestAccountBatchBindingIsIndependentAndAtomic(t *testing.T) {
 	if err != nil || len(credentials) != 2 || credentials[0].Identity() == credentials[1].Identity() {
 		t.Fatal("batch did not create independent credentials", err)
 	}
+	var repeated bytes.Buffer
+	if err := svc.Execute(t.Context(), command, &repeated); err != nil {
+		t.Fatal(err)
+	}
+	var result application.BindingResult
+	if err := json.Unmarshal(repeated.Bytes(), &result); err != nil || result.Created != 0 || result.Accounts != 2 {
+		t.Fatal("repeated selection changed existing bindings", result, err)
+	}
 	one := credentials[0]
 	one.ID = "new-id"
 	one.InboundID = "another"

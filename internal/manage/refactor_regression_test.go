@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sck03/sing-box-vpn/internal/application"
+	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
@@ -33,7 +34,15 @@ func TestCredentialPublicationRetryDoesNotRepeatRotation(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Runtime = filepath.Join(root, "missing-runtime")
-	if err = s.executeAccount(ctx, id, command); err == nil {
+	task, err := s.Store.Task(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.runAccountBatch(ctx, []controlstore.Task{task}); err != nil {
+		t.Fatal(err)
+	}
+	finished, err := s.Store.Task(ctx, id)
+	if err != nil || finished.State != "failed" {
 		t.Fatal("missing runtime did not fail publication")
 	}
 	s.Runtime = runtimeBinary

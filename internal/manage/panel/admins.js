@@ -1,4 +1,4 @@
-import { api } from "./api.js";
+import { api, query, mutate } from "./api.js";
 import { capabilities } from "./capabilities.js";
 import { loadRecords } from "./details.js";
 import {
@@ -15,7 +15,7 @@ import {
 } from "./ui.js";
 export async function admins(ctx) {
   const policy = (await capabilities()).password_bytes;
-  const users = await (ctx.request || api)("/api/admins");
+  const users = await query("/api/admins", ctx.signal, ctx.request || api);
   const edit = (a) =>
     formDialog(
       "管理员",
@@ -44,7 +44,7 @@ export async function admins(ctx) {
       a,
       async (v) => {
         const { password, ...admin } = v;
-        await api("/api/admins", { admin, password });
+        await mutate("/api/admins", { admin, password });
         notice("管理员已保存，其旧会话已撤销");
         if (v.id === ctx.session.id) ctx.logoutLocal();
         else ctx.render();
@@ -93,7 +93,7 @@ export async function admins(ctx) {
         (a) => [
           button("编辑", () => edit(a)),
           button("撤销会话", async () => {
-            await api("/api/admin/revoke", { id: a.id });
+            await mutate("/api/admin/revoke", { id: a.id });
             notice("会话已撤销");
             if (a.id === ctx.session.id) ctx.logoutLocal();
           }),
@@ -119,7 +119,7 @@ export async function admins(ctx) {
             ],
             {},
             async (v) => {
-              const result = await api("/api/mfa/enroll", v);
+              const result = await mutate("/api/mfa/enroll", v);
               showResult("TOTP 密钥（10 分钟内确认）", result);
             },
           ),
@@ -130,7 +130,7 @@ export async function admins(ctx) {
             [{ key: "code", label: "6 位动态验证码", required: true }],
             {},
             async (v) => {
-              await api("/api/mfa/confirm", v);
+              await mutate("/api/mfa/confirm", v);
               ctx.logoutLocal();
               notice("TOTP 已启用，请重新登录");
             },

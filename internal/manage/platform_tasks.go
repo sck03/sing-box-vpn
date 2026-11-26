@@ -85,8 +85,6 @@ func (s *PlatformService) execute(ctx context.Context, id int64, a taskInput) er
 		return err
 	}
 	switch a.Operation {
-	case "account":
-		return s.executeAccount(ctx, id, a.Account)
 	case "subscription":
 		var out bytes.Buffer
 		operationErr := application.ExecuteSubscription(ctx, subscriptionOperations{AccountService{Root: s.Root, Core: s.Core, Store: s.Accounts, Control: s.Store}}, a.Subscription, a.Automatic, &out)

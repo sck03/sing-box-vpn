@@ -13,9 +13,24 @@ type SubscriptionOutputStatus struct {
 	Client          string           `json:"client"`
 	Nodes           int              `json:"nodes"`
 	Available       bool             `json:"available"`
+	Reason          string           `json:"reason,omitempty"`
 	Validation      sub.Validation   `json:"validation"`
 	DiagnosticCount int              `json:"diagnostic_count"`
 	Diagnostics     []sub.Diagnostic `json:"diagnostics"`
+}
+
+type subscriptionOutputProjection struct {
+	Revision uint64                              `json:"revision"`
+	Outputs  []SubscriptionOutputStatus          `json:"outputs"`
+	Policies map[string]subscriptionOutputPolicy `json:"policies"`
+}
+
+func outputProjection(c sub.Config, snapshot sub.Snapshot) subscriptionOutputProjection {
+	projection := subscriptionOutputProjection{Revision: snapshot.Revision, Outputs: outputStatus(c, snapshot), Policies: map[string]subscriptionOutputPolicy{}}
+	for _, output := range c.Outputs {
+		projection.Policies[output.ID] = outputPolicy(c, snapshot, output.ID)
+	}
+	return projection
 }
 
 func outputStatus(c sub.Config, snapshot sub.Snapshot) []SubscriptionOutputStatus {

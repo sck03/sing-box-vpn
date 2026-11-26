@@ -107,7 +107,7 @@ export async function accountOutputDialog({
           )
             throw new Error("请选择当前权益可用的客户端格式。");
           const { device_platform, ...payload } = value;
-          await save(payload);
+          await save(payload, controller.active);
         },
       );
       const summary = el("div", {

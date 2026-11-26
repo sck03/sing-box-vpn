@@ -200,5 +200,16 @@ async function endpointContracts() {
  await mutate("/api/config", { operation: "certificate-renew", id: "live" });
  // @ts-expect-error unknown endpoint has no response contract
  await query("/api/nonexistent");
+ const settings = await query("/api/panel/settings");
+ await mutate("/api/panel/settings", { options: settings.options, revision: settings.revision });
+ const enrollment = await mutate("/api/mfa/enroll", { password: "test-password" });
+ const secret: string = enrollment.secret;
+ void secret;
+ // @ts-expect-error panel settings use a string revision, not a configuration revision
+ await mutate("/api/panel/settings", { options: settings.options, revision: 3 });
+ // @ts-expect-error subscriber state is boolean
+ await mutate("/api/subscribers", { id: "test", name: "Test", disabled: "false" });
+ // @ts-expect-error MFA confirmation codes are strings
+ await mutate("/api/mfa/confirm", { code: 123456 });
 }
 void endpointContracts;

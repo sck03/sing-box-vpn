@@ -32,6 +32,7 @@ func TestSubscriptionURLsReachBothAddressFamilies(t *testing.T) {
 	if err := AtomicJSON(filepath.Join(root, subscriptionsConfig), fixtureSubscriptionConfig()); err != nil {
 		t.Fatal(err)
 	}
+	confirmTestSubscriptions(t, root, fixtureSubscriptionConfig())
 	var settings subscriptionSettings
 	ReadJSON(filepath.Join(root, "subscription.json"), &settings)
 	token := strings.Repeat("a", 64)

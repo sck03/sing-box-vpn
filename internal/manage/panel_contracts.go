@@ -2,6 +2,7 @@ package manage
 
 import (
 	"github.com/sck03/sing-box-vpn/internal/accounting"
+	"github.com/sck03/sing-box-vpn/internal/adminauth"
 	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	"github.com/sck03/sing-box-vpn/internal/domain"
@@ -10,6 +11,47 @@ import (
 
 type AccountSave struct {
 	Account domain.Account `json:"account"`
+}
+
+type ActionResult struct {
+	OK bool `json:"ok"`
+}
+
+type PanelSettingsInput struct {
+	Options  PanelOptions `json:"options"`
+	Revision string       `json:"revision,omitempty"`
+}
+
+type PanelSettingsState struct {
+	Options         PanelOptions `json:"options"`
+	Active          PanelOptions `json:"active"`
+	Revision        string       `json:"revision"`
+	RestartRequired bool         `json:"restart_required"`
+}
+
+type PanelSettingsPreview struct {
+	Options         PanelOptions `json:"options"`
+	RestartRequired bool         `json:"restart_required"`
+}
+
+type PanelSettingsSaved struct {
+	OK              bool   `json:"ok"`
+	RestartRequired bool   `json:"restart_required"`
+	PublicURL       string `json:"public_url"`
+}
+
+type AdministratorInput struct {
+	Admin    adminauth.Admin `json:"admin,omitempty"`
+	ID       string          `json:"id,omitempty"`
+	Password string          `json:"password,omitempty"`
+	Code     string          `json:"code,omitempty"`
+}
+
+type MFAEnrollment struct {
+	Secret         string `json:"secret"`
+	Issuer         string `json:"issuer"`
+	Account        string `json:"account"`
+	ExpiresSeconds int    `json:"expires_seconds"`
 }
 
 type SubscriptionActionOptions struct {

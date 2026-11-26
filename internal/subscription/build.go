@@ -102,6 +102,7 @@ type Snapshot struct {
 	InputCounts  map[string]int          `json:"input_counts,omitempty"`
 	NodeKeys     map[string][]string     `json:"node_keys,omitempty"`
 	Validations  map[string]Validation   `json:"validations,omitempty"`
+	Contributors map[string][]string     `json:"contributors"`
 }
 
 func SourceHash(source Source) string {
@@ -165,6 +166,7 @@ func buildCached(c Config, runtime Runtime, local map[string][]Node, now time.Ti
 	result.InputCounts = map[string]int{}
 	result.NodeKeys = map[string][]string{}
 	result.Validations = map[string]Validation{}
+	result.Contributors = map[string][]string{}
 	if err := c.Validate(); err != nil {
 		return result, previews, err
 	}
@@ -211,7 +213,13 @@ func buildCached(c Config, runtime Runtime, local map[string][]Node, now time.Ti
 		if nodeCount > MaxNodes {
 			return result, previews, errors.New("combined source node limit exceeded")
 		}
-		sources[source.ID] = nodes
+		// Provenance belongs to the configured source, never to imported metadata.
+		owned := make([]Node, len(nodes))
+		for i, node := range nodes {
+			node.SourceID = source.ID
+			owned[i] = node
+		}
+		sources[source.ID] = owned
 	}
 	expanded := 0
 	for _, collection := range c.Collections {
@@ -294,6 +302,15 @@ func buildCached(c Config, runtime Runtime, local map[string][]Node, now time.Ti
 			keys[i] = Digest([]byte(node.Identity() + "\n" + node.Name))[:24]
 		}
 		result.NodeKeys[output.ID] = keys
+		contributors := []string{}
+		seenSources := map[string]bool{}
+		for _, node := range selected {
+			if !seenSources[node.SourceID] {
+				contributors = append(contributors, node.SourceID)
+				seenSources[node.SourceID] = true
+			}
+		}
+		result.Contributors[output.ID] = contributors
 		result.Artifacts[output.ID] = artifact
 		total += len(artifact.Data)
 		if total > MaxBody {

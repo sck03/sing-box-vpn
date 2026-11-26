@@ -206,6 +206,9 @@ func main() {
 		{"/api/certificates", reflect.TypeFor[[]certificates.CertificateStatus]()},
 		{"/api/accounts/ports", reflect.TypeFor[[]application.AccountPortOption]()},
 		{"/api/subscriptions/status", reflect.TypeFor[manage.SubscriptionStatusResponse]()},
+		{"/api/panel/settings", reflect.TypeFor[manage.PanelSettingsState]()},
+		{"/api/admins", reflect.TypeFor[[]adminauth.Admin]()},
+		{"/api/subscribers", reflect.TypeFor[[]accounting.Subscriber]()},
 	} {
 		result := describe(endpoint.result)
 		// Collection handlers initialize their results even when empty.
@@ -229,6 +232,16 @@ func main() {
 		{"/api/config/preview", reflect.TypeFor[manage.PlatformConfig](), reflect.TypeFor[manage.ConfigurationPreview]()},
 		{"/api/config/preview-output", reflect.TypeFor[manage.OutputPreviewRequest](), reflect.TypeFor[manage.OutputPreview]()},
 		{"/api/accounts/export", reflect.TypeFor[application.AccountExportRequest](), reflect.TypeFor[manage.AccountExportResponse]()},
+		{"/api/accounts", reflect.TypeFor[manage.AccountSave](), reflect.TypeFor[manage.ActionResult]()},
+		{"/api/accounts/archive", reflect.TypeFor[manage.AccountArchive](), reflect.TypeFor[manage.ActionResult]()},
+		{"/api/grants", reflect.TypeFor[accounting.Grant](), reflect.TypeFor[manage.ShareCreated]()},
+		{"/api/subscribers", reflect.TypeFor[accounting.Subscriber](), reflect.TypeFor[manage.ActionResult]()},
+		{"/api/panel/settings", reflect.TypeFor[manage.PanelSettingsInput](), reflect.TypeFor[manage.PanelSettingsSaved]()},
+		{"/api/panel/settings/preview", reflect.TypeFor[manage.PanelSettingsInput](), reflect.TypeFor[manage.PanelSettingsPreview]()},
+		{"/api/admins", reflect.TypeFor[manage.AdministratorInput](), reflect.TypeFor[manage.ActionResult]()},
+		{"/api/admin/revoke", reflect.TypeFor[manage.AdministratorInput](), reflect.TypeFor[manage.ActionResult]()},
+		{"/api/mfa/enroll", reflect.TypeFor[manage.AdministratorInput](), reflect.TypeFor[manage.MFAEnrollment]()},
+		{"/api/mfa/confirm", reflect.TypeFor[manage.AdministratorInput](), reflect.TypeFor[manage.ActionResult]()},
 	} {
 		fmt.Fprintf(&mutations, "  %q: { input: %s; result: %s };\n", endpoint.path, describe(endpoint.input), describe(endpoint.result))
 	}

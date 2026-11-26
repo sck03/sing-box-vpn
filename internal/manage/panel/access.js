@@ -1,4 +1,4 @@
-import { api, getCertificates } from "./api.js";
+import { api, query, mutate, getCertificates } from "./api.js";
 import { card, help, el, row, button, formDialog, notice } from "./ui.js";
 import { workspace } from "./workspace.js";
 import { dialogSession } from "./dialog-session.js";
@@ -14,7 +14,7 @@ import {
 export async function access(ctx) {
   const request = ctx.request || api;
   const [settings, c, status] = await Promise.all([
-    request("/api/panel/settings"),
+    query("/api/panel/settings", ctx.signal, request),
     ctx.config(),
     getCertificates(ctx.signal, request),
   ]);
@@ -90,10 +90,10 @@ export async function access(ctx) {
           help("检查监听地址、证书有效期和域名匹配…"),
         );
         try {
-          const validated = await api(
+          const validated = await mutate(
             "/api/panel/settings/preview",
             { options: next },
-            { signal: session.signal },
+            session.signal,
           );
           if (!session.active()) return;
           session.replace(
@@ -107,14 +107,12 @@ export async function access(ctx) {
               button(
                 "保存配置",
                 async () => {
-                  await api(
+                  await mutate(
                     "/api/panel/settings",
                     { options: validated.options, revision: settings.revision },
-                    { signal: session.signal },
+                    session.signal,
                   );
-                  const saved = await api("/api/panel/settings", undefined, {
-                    signal: session.signal,
-                  });
+                  const saved = await query("/api/panel/settings", session.signal);
                   if (!session.active()) return;
                   settings.options = saved.options;
                   settings.revision = saved.revision;

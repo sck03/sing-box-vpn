@@ -133,7 +133,65 @@ for (const scope of ["normal", "vpngate"]) for (const failed of [false, true]) {
   document.querySelector("dialog").close();
   clearTimeout(notice.timer);
 }
+const { createAccountShare } = await import("../internal/manage/panel/sharing.js");
+const { formDialog } = await import("../internal/manage/panel/form-dialog.js");
+for (const mode of ["active", "replaced", "closed", "navigated", "logged-out"]) {
+  setCSRF("sharing-" + mode);
+  let completeShare, refreshes = 0;
+  const sourcePage = new AbortController();
+  const workflowRequest = async (path) => {
+    if (path.startsWith("/api/accounts/outputs?"))
+      return [{ profile: "uri", client: "uri", label: "URI", available: true, nodes: 1, input_nodes: 1, mode: "nodes" }];
+    assert.equal(path, "/api/grants");
+    return new Promise((resolve) => { completeShare = resolve; });
+  };
+  await createAccountShare([{ id: "alice", name: "Alice", download_scopes: ["normal"] }], {
+    workflowRequest, signal: sourcePage.signal,
+    render() { refreshes++; sourcePage.abort(); },
+  });
+  document.querySelector("dialog form").dispatchEvent(new Event("submit", { cancelable: true }));
+  await tick();
+  assert(completeShare, "share write did not start");
+  const dialog = document.querySelector("dialog");
+  if (mode === "replaced" || mode === "navigated") {
+    if (mode === "navigated") sourcePage.abort();
+    formDialog("新编辑器", [{ key: "name", label: "新草稿" }], { name: "保留未保存内容" }, async () => {});
+  } else if (mode === "closed") dialog.close();
+  else if (mode === "logged-out") {
+    setCSRF("");
+    dialog.close();
+    dialog.replaceChildren();
+  }
+  completeShare({ user_url: "http://localhost/user#late-" + mode });
+  await tick(); await tick();
+  const results = document.querySelector("#workflow-results");
+  if (mode === "logged-out") {
+    assert.equal(results.children.length, 0, "late result survived logout");
+    assert.equal(dialog.open, false);
+  } else {
+    assert.equal(results.children.length, 1, "completed link became unreachable");
+    if (mode === "active") assert.match(dialog.textContent, /分享已创建/);
+    if (mode === "replaced" || mode === "navigated") {
+      assert.match(dialog.textContent, /新编辑器/);
+      assert.equal(dialog.querySelector('[aria-label="新草稿"]').value, "保留未保存内容");
+    }
+    if (mode === "closed") assert.equal(dialog.open, false, "late response reopened a dismissed editor");
+    dialog.close();
+    click("查看分享地址", results);
+    assert.equal(dialog.querySelector('[aria-label="分享地址"]').value, "http://localhost/user#late-" + mode);
+    click("完成", dialog);
+    assert.equal(results.children.length, 0);
+    assert.equal(results.hidden, true);
+    assert.equal(dialog.textContent, "");
+  }
+  assert.equal(refreshes, mode === "active" ? 1 : 0, "late write cancelled a newer page or dialog");
+}
+// A result already retained also belongs to its authenticated session.
+const { retainDialogResult } = await import("../internal/manage/panel/workflow-results.js");
+retainDialogResult("待保存", () => {});
+setCSRF("");
+assert.equal(document.querySelector("#workflow-results").children.length, 0);
 dom.window.close();
 console.log(
-  "Panel workflow checks passed: post-create binding survives page cancellation; unbound shares are unavailable.",
+  "Panel workflow checks passed: binding, share limits, dialog ownership, late result recovery and logout cleanup.",
 );

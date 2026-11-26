@@ -392,6 +392,47 @@ await tick();
 assert.equal(queued, undefined, "empty probe URL queued a doomed task");
 subscriptionPage.abort();
 
+const { setCSRF } = await import("../internal/manage/panel/api.js");
+setCSRF("output-sharing");
+let finishOutputShare, shareRefreshes = 0;
+const sharePage = new AbortController();
+const shareSections = await subscriptions({
+  signal: sharePage.signal, session: { role: "admin" }, section: "outputs",
+  config: async () => ({ subscriptions: {} }), changed() {},
+  render() { shareRefreshes++; sharePage.abort(); },
+  request: async (path) => {
+    assert.equal(path, "/api/grant-options");
+    return { revision: 1, pending: false, outputs: [{ id: "output", name: "Output" }] };
+  },
+  workflowRequest: async (path, value) => {
+    assert.equal(path, "/api/grants");
+    assert.deepEqual(value.outputs, ["output"]);
+    return new Promise((resolve) => { finishOutputShare = resolve; });
+  },
+});
+document.querySelector("#content").replaceChildren(...shareSections);
+await tick();
+click("创建输出分享");
+field("授权 ID").value = "output-share";
+dialog.querySelector('.choice-control[aria-label="选择输出"] .choice-trigger').click();
+dialog.querySelector('input[type="checkbox"][value="output"]').click();
+submit();
+await tick();
+assert(finishOutputShare, "output share write did not start");
+formDialog("新输出草稿", [{ key: "name", label: "新名称" }], { name: "保留" }, () => {});
+const outputURLs = ["http://localhost/s/fixture/output", "http://localhost/s/fixture/other"];
+finishOutputShare({ urls: outputURLs });
+await tick(); await tick();
+assert.match(dialog.textContent, /新输出草稿/);
+assert.equal(field("新名称").value, "保留");
+assert.equal(shareRefreshes, 0);
+dialog.close();
+click("查看分享地址", document.querySelector("#workflow-results"));
+assert.equal(field("分享地址").value, outputURLs.join("\n"));
+click("完成");
+sharePage.abort();
+setCSRF("");
+
 clearTimeout(notice.timer);
 dom.window.close();
 console.log(

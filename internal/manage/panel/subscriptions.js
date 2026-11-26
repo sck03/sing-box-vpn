@@ -1,6 +1,6 @@
 import { api, previewConfiguration, previewOutput } from "./api.js";
 import { subscriptionActions, grantOptions } from "./configuration-api.js";
-import { createShare } from "./account-api.js";
+import { createShareResult } from "./sharing.js";
 import { workspace } from "./workspace.js";
 import { disclosure } from "./sections.js";
 import { requestConfiguration } from "./config-preview.js";
@@ -473,8 +473,8 @@ export async function subscriptions(ctx) {
           : null,
         reason
           ? help(reason)
-          : button("创建输出分享", () =>
-              formDialog(
+          : button("创建输出分享", () => {
+              const controller = formDialog(
                 "输出授权",
                 [
                   { key: "id", label: "授权 ID", required: true },
@@ -497,12 +497,10 @@ export async function subscriptions(ctx) {
                 { id: "", outputs: [], max_downloads: null },
                 async (v) => {
                   if (!v.outputs.length) throw new Error("请选择已生效的输出");
-                  const result = await createShare(v);
-                  showResult("请保存分享链接", result.urls.join("\n"));
-                  ctx.render();
+                  await createShareResult(v, ctx, controller.active);
                 },
-              ),
-            ),
+              );
+            }),
         el("p", {}, el("a", { href: "#grants" }, "查看与撤销分享链接 →")),
       );
     },

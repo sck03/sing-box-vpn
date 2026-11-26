@@ -1,7 +1,8 @@
-import { api } from "./api.js";
+import { api, sessionSignal } from "./api.js";
 import { createShare } from "./account-api.js";
 import { accountOutputDialog } from "./account-outputs.js";
 import { $, el, button, row, help, notice } from "./ui.js";
+import { retainDialogResult } from "./workflow-results.js";
 
 // Link limits can narrow the entitlement; they never extend its time or quota.
 export async function createAccountShare(accounts, ctx) {
@@ -9,7 +10,6 @@ export async function createAccountShare(accounts, ctx) {
     (a) => !a.download_denial && a.download_scopes?.length,
   );
   if (!accounts.length) throw new Error("请先创建权益并绑定入站。");
-  const request = ctx.workflowRequest || api;
   await accountOutputDialog({
     accounts,
     ctx,
@@ -29,15 +29,31 @@ export async function createAccountShare(accounts, ctx) {
       expires_at: null,
       max_downloads: null,
     },
-    save: async (value) => {
-      const result = await createShare(value, request);
+    save: (value, active) => createShareResult(
+      value, ctx, active,
+      accounts.find((account) => account.id === value.account_id)?.name || value.account_id,
+    ),
+  });
+}
+
+// Account and compiled-output shares have the same result ownership rules.
+export async function createShareResult(value, ctx, active, name = value.id) {
+  const signal = sessionSignal();
+  const result = await createShare(value, ctx.workflowRequest || api);
+  signal.throwIfAborted();
+  const retained = retainDialogResult(
+    `${name}：分享已创建，请保存地址`,
+    (clear) => {
       const dialog = $("#dialog");
-      const address = el("input", { "aria-label": "分享地址", readonly: true });
-      address.value = result.user_url;
+      const urls = result.user_url ? [result.user_url] : result.urls;
+      const address = el(urls.length > 1 ? "textarea" : "input", {
+        "aria-label": "分享地址", readonly: true,
+      });
+      address.value = urls.join("\n");
       dialog.replaceChildren(
         el("h2", {}, "分享已创建"),
         help(
-          "请保存这个地址，之后无法再次查看完整链接。链接限制与权益有效期、流量同时生效；可在「用户与分享 → 分享链接」撤销。",
+          "请保存这个地址。点击完成后无法再次查看完整链接；关闭窗口后仍可从页面上方查看，退出登录后清除。可在「用户与分享 → 分享链接」撤销。",
         ),
         address,
         row(
@@ -55,7 +71,11 @@ export async function createAccountShare(accounts, ctx) {
             },
             "primary",
           ),
-          button("完成", () => dialog.close()),
+          button("完成", () => {
+            clear();
+            dialog.close();
+            dialog.replaceChildren();
+          }),
           el(
             "a",
             { href: "#grants", onclick: () => dialog.close() },
@@ -64,7 +84,13 @@ export async function createAccountShare(accounts, ctx) {
         ),
       );
       dialog.showModal();
-      ctx.render();
     },
-  });
+    signal,
+  );
+  // Refreshing a page also aborts its dialog requests. Only the editor
+  // that submitted this write may replace its dialog or refresh the page.
+  if (active() && !ctx.signal?.aborted) {
+    retained.show();
+    ctx.render();
+  }
 }

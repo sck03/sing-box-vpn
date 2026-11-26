@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
@@ -31,7 +32,13 @@ func TestSubscriptionStatusUsesSmallSecretFreeProjection(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	service := PlatformService{Root: root}
+	confirmTestSubscriptions(t, root, config)
+	accounts, closeSource, err := openAccountSource(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeSource()
+	service := PlatformService{Root: root, Store: accounts.Control.(*controlstore.Store), Accounts: accounts.Store}
 	status, err := service.SubscriptionStatus(t.Context())
 	if err != nil {
 		t.Fatal(err)

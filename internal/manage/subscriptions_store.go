@@ -200,7 +200,7 @@ func compilePreparedSubscriptions(ctx context.Context, root, core string, c sub.
 	if err := files.subscriptionRuntime(c, r); err != nil {
 		return nil, snapshot, previews, err
 	}
-	for name, value := range map[string]any{subscriptionsConfig: c, subscriptionsSnapshot: snapshot, subscriptionsOutputStatus: outputStatus(c, snapshot)} {
+	for name, value := range map[string]any{subscriptionsConfig: c, subscriptionsSnapshot: snapshot, subscriptionsOutputStatus: outputProjection(c, snapshot)} {
 		if err := files.json(name, value); err != nil {
 			return nil, snapshot, previews, err
 		}

@@ -1,7 +1,7 @@
-import { api } from "./api.js";
+import { api, query, mutate } from "./api.js";
 import { formDialog, card, help, button, table, badge } from "./ui.js";
 export async function subscribers(ctx) {
-  const people = await (ctx.request || api)("/api/subscribers");
+  const people = await query("/api/subscribers", ctx.signal, ctx.request || api);
   const edit = (v) =>
     formDialog(
       "订阅者",
@@ -12,7 +12,7 @@ export async function subscribers(ctx) {
       ],
       v,
       async (v) => {
-        await api("/api/subscribers", v);
+        await mutate("/api/subscribers", v);
         ctx.render();
       },
     );

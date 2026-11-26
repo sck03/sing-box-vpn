@@ -117,8 +117,24 @@ func (s *PlatformService) SubscriptionStatus(ctx context.Context) (SubscriptionS
 		}
 		result.Revision, result.Sources, result.Resources, result.Deliveries = cached.Revision, cached.Sources, cached.Resources, cached.Deliveries
 		result.Outputs = []SubscriptionOutputStatus{}
-		if _, err = ReadJSON(filepath.Join(s.Root, subscriptionsOutputStatus), &result.Outputs); err != nil {
+		var outputs subscriptionOutputProjection
+		if _, err = ReadJSON(filepath.Join(s.Root, subscriptionsOutputStatus), &outputs); err != nil {
 			return err
+		}
+		if outputs.Outputs != nil {
+			result.Outputs = outputs.Outputs
+		}
+		if s.Store == nil {
+			return errors.New("configuration repository dependency is required")
+		}
+		applied, _, generationErr := confirmedSubscriptionState(ctx, s.Root, s.accountService())
+		for i := range result.Outputs {
+			output := &result.Outputs[i]
+			if generationErr != nil || outputs.Revision != applied.Subscriptions.Revision {
+				output.Available, output.Reason = false, "发布尚未确认，请稍后重试"
+			} else if err := outputs.Policies[output.ID].check(ctx, s.Accounts, time.Now()); err != nil {
+				output.Available, output.Reason = false, err.Error()
+			}
 		}
 		var state sub.NotificationState
 		if _, err = ReadJSON(filepath.Join(s.Root, subscriptionNotification), &state); err != nil {

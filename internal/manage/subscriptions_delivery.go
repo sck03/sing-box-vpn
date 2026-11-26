@@ -119,14 +119,12 @@ func deliverSubscription(ctx context.Context, client *http.Client, root string, 
 	if state.ConfigHash != hash {
 		state = sub.DeliveryState{ConfigHash: hash}
 	}
-	artifact, exists := snapshot.Artifacts[destination.Output]
+	artifact := snapshot.Artifacts[destination.Output]
 	digest := sub.Digest([]byte(hash + artifact.ETag))
 	status := "unchanged"
 	var err error
-	if !exists || !subscriptionFresh(config, snapshot, destination.Output, time.Now()) {
-		err = errors.New("output unavailable or stale")
-	} else if e := checkOutputAccounts(ctx, config, destination.Output, accounts); e != nil {
-		err = errors.New("output contains an inactive entitlement")
+	if e := outputPolicy(config, snapshot, destination.Output).check(ctx, accounts, time.Now()); e != nil {
+		err = e
 	} else if state.Digest != digest {
 		err = sendSubscriptionArtifact(ctx, client, destination, artifact)
 		status = "delivered"

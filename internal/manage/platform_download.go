@@ -128,7 +128,7 @@ func unifiedDownloadHandler(service AccountService) http.Handler {
 	if service.view == nil {
 		service.view = &subscriptionView{}
 	}
-	outputs := subscriptionHandlerView(service.Root, service.view, service.Store)
+	outputs := subscriptionHandlerView(service)
 	downloads := make(httpserver.Gate, 4)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/u/") {

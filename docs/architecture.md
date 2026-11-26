@@ -235,7 +235,7 @@ VPNGate 的客户端准入与 worker 转发流分别受 max_connections 限制�
 
 clientprofile/output.go 定义稳定输出身份（格式与用途）；subscription/account_output.go 负责纯兼容性规划，account_policy.go 校验模板 client/mode。manage 负责配置快照、授权、编译缓存和核心验证；HTTP 不重新定义模板业务。账户导出请求与凭据命令为不同的 application 类型。
 
-授权 profiles 精确匹配输出身份；数据库 schema=17 的 profiles 列取代旧 clients 列。平台 schema=8、订阅 schema=6，CompilerVersion=7；旧数据或旧接口明确拒绝。内置默认不再复制成账户配置，远程模板发布故障不阻断不依赖它的内置输出。
+授权 profiles 精确匹配输出身份；数据库 schema=17 的 profiles 列取代旧 clients 列。平台 schema=8、订阅 schema=6，CompilerVersion=8；旧数据或旧接口明确拒绝。内置默认不再复制成账户配置，远程模板发布故障不阻断不依赖它的内置输出。
 
 列表只分析节点，创建授权与下载才编译所选格式。面板配置预览、保存、导出、授权等重请求独立限制为 2 并发；每个下载监听的账户请求限制为 4 并发；状态、任务及 SSE 保持独立预算。ConfigurationState、AccountExportRequest 与 AccountExportResponse 由 Go 类型生成前端契约。只读状态递归擦除结构化秘密值，保留字段类型。
 
@@ -292,14 +292,14 @@ loadDialog 在首次查询前占有对话框；切页、关闭或替换会取消
 - 数据库 schema=17 增加 probe/subscription 队列及 cancel_requested。仅运行中的 probe 和排队中的非 apply 任务可取消。取消先落库，再中断已注册上下文；注册后再次读取持久标志，覆盖认领到注册之间的竞态。运行资源释放前保持 running，Finish 原子产生 cancelled；进程恢复尊重取消请求。Task.cancellable 与 Task.cancel_requested 是前端唯一的取消能力来源。
 - Argo 观察与日志管理共用 servicecatalog.Journal。读取当前 invocation 的日志时指定 --namespace=sb-vpn；已确认域名仍按 invocation 缓存。
 
-旧数据库及包含旧数据库的备份直接拒绝，无迁移器、旧队列别名或旧接口适配层。平台/节点/订阅配置 schema 与备份容器版本未因任务表变化一起递增；ParserVersion=3、CompilerVersion=7 使收紧地址语义前的解析与编译缓存失效。
+旧数据库及包含旧数据库的备份直接拒绝，无迁移器、旧队列别名或旧接口适配层。平台/节点/订阅配置 schema 与备份容器版本未因任务表变化一起递增；ParserVersion=3、CompilerVersion=8 使收紧地址语义前的解析与编译缓存失效。
 
 ## 选择模型、显式绑定与后台诊断（2026-11-25）
 
 - `selection-model.js` 只管理去重、顺序、限额和选中状态；`choice-field.js` 负责原生复选框、过滤、分页、键盘和可选排序；`token-field.js` 负责自由多值输入。它们不发请求，也不持有页面全局监听。`form-dialog.js` 组合控件、依赖更新、验证和保存；候选列表未变化时不重建，普通勾选保留焦点。新业务只提供字段元数据，避免每页维护一套多选实现。
 - 账户输出表单负责查询生命周期，区分查询中、检查成功和检查失败；失败后禁止用旧权益的能力保存，重试入口不被设备筛选覆盖。设备过滤只控制可见项，实际能力改变才移除无效选择并提示。协议选项来自客户端目录，出站/路由/规则集使用当前资源列表。
 - `account-api.js` 集中账户保存/归档、候选、凭据和分享请求。DTO 从 Go 生成，绑定任务的 `inbound_ids` 是非空元组，运行时同样验证。application 只处理明确选择的入口；不在执行时扩张为全部。HTTP 继续负责解码、角色和 CSRF，账户存储仍由 repository 注入。
-- 分发任务一次打开账户仓储供两个 worker 共用，关闭由任务拥有者负责；每次发送前仍实时校验权益。已经取得确认配置的订阅捕获只打开所需的账户仓储，不再重复打开控制仓储。`checkOutputAccounts` 要求显式仓储依赖，调用者不能依赖函数隐式打开/关闭数据库。
+- 分发任务一次打开账户仓储供两个 worker 共用，关闭由任务拥有者负责；每次发送前仍实时校验权益。已经取得确认配置的订阅捕获只打开所需的账户仓储，不再重复打开控制仓储。输出可用性策略要求显式仓储依赖，调用者不能依赖函数隐式打开/关闭数据库。
 - 生产发布始终要求数据库确认代际。未初始化订阅的特殊放行分支已移除；纯编译测试通过 `_test.go` 初始化实际确认状态，不改变生产路径。
 - `backgroundHealth` 保存进程内有界摘要，最多 16 类问题，按操作记录首次/最近失败与累计次数；成功清除，进程退出丢弃。只暴露固定分类消息，同类型日志至少间隔五分钟，不把 URL、令牌或原始命令错误写进概览。它不替代任务和审计账本。概览快照/SSE 推送该字段，前端展示对应说明；调度器、凭据发布和审计写入错误不再被静默忽略。
 
@@ -314,3 +314,14 @@ loadDialog 在首次查询前占有对话框；切页、关闭或替换会取消
 - 订阅刷新和投递从 PlatformService 借用账户及控制仓储，独立调用只在入口创建并关闭一组仓储。代际确认、编译前后账户捕获与投递授权复用这一组依赖，不逐检查重新打开 SQLite。
 - 预留请求复用对象及响应通道，返回后清除上下文和账户标识。队列容量、FULL 提交后才返回额度、取消后的确定提交结果与 64 KiB 单池边界保持不变。
 - panel-contract 生成关键查询的 QueryResponses 和写入的 MutationContracts。前端 query/mutate 按端点推导请求与响应；类型反例阻止错误端点、错用 DTO 和遗漏证书申请字段。其余动态查询继续由现有具名 API 包装器约束，未声称全前端 strict。
+
+## 订阅授权、确认版本与绑定查询（2026-11-26）
+
+- 编译阶段将节点来源归属重置为配置中的 source ID，在过滤、去重和客户端适配后保存每个输出的实际 contributors。CompilerVersion=8 使旧渲染缓存失效；缺失来源记录的旧派生快照必须重新发布，不能回退猜测授权范围。
+- subscriptions_policy.go 统一下载、投递和状态页的输出可用性：仅校验实际贡献账户的实时权益，并校验贡献远程源或必需远程源的截止时间。可选账户源缺失或被过滤后不阻断其他有效节点；产物仍包含该账户凭据时必须拒绝已失效权益。
+- 下载和状态页同样核对 runtime-revision.json 与数据库 applied revision。公开下载还比较订阅配置及快照 revision，未确认候选返回 503。配置正文复用不可变版本缓存，确认版本和权益每次实时读取；配置文件替换会清除下载视图的确认记录。
+- output-status.json 是含 revision、输出摘要与无秘密策略的对象；状态查询不读取大体积节点缓存或产物正文。公开 DTO 只暴露 available/reason 等展示字段，不暴露账户列表或远程凭据。可用表示产物及来源权益满足条件，具体分享令牌仍须单独授权。
+- subscriptions_response.go 将条件请求及 Range 决策交给 http.ServeContent，在最终 GET 200/206 响应头提交前原子扣减下载次数。HEAD、304、412、416 不计次；计次失败后丢弃正文，删除 ETag/范围/用量头并返回 404。不再维护第二套 ETag 解析器。
+- application.BindingRepository 通过 BindingKeys 按目标账户、运行实例和入站查询关系，只返回 account/inbound，不解码 secret 或加载无关凭据。创建仍使用 BindBatch 的原子写入。账户任务统一走 worker 的 runAccountBatch，移除独立 executeAccount 发布路径。
+- 分享写入结果由 workflow-results.js 按登录会话保留；迟到响应不替换新弹窗，也不刷新并取消新页面的请求。用户主动查看结果，完成或退出登录后清除。沿用共享组件和窄屏样式，不增加生产依赖。
+- 端点契约扩展至面板设置、管理员/MFA、用户分组、账户保存/归档及分享创建；由 Go DTO 生成查询/写入映射，前端消费 query/mutate，保留渐进严格检查的边界。

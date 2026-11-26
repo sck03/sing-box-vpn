@@ -84,26 +84,29 @@ func (s AccountService) configSnapshot(ctx context.Context) (PlatformConfig, err
 		c.normalize()
 		return c, nil
 	}
-	store := s.Control
-	if store == nil {
-		return PlatformConfig{}, errors.New("configuration repository dependency is required")
-	}
-	if source, ok := store.(appliedViewSource); ok && s.configuration != nil {
-		config, _, err := s.configuration.read(ctx, source)
-		if err != nil {
-			return PlatformConfig{}, err
-		}
-		return observedConfig(ctx, store, config)
-	}
-	state, err := store.AppliedState(ctx)
-	if err != nil {
-		return PlatformConfig{}, err
-	}
-	c, err := decodePlatform(state.Config)
+	c, _, err := s.appliedSnapshot(ctx)
 	if err != nil {
 		return c, err
 	}
-	return observedConfig(ctx, store, c)
+	return observedConfig(ctx, s.Control, c)
+}
+
+// Return immutable confirmed configuration without adding live observations.
+func (s AccountService) appliedSnapshot(ctx context.Context) (PlatformConfig, int64, error) {
+	store := s.Control
+	if store == nil {
+		return PlatformConfig{}, 0, errors.New("configuration repository dependency is required")
+	}
+	if source, ok := store.(appliedViewSource); ok && s.configuration != nil {
+		config, revisions, err := s.configuration.read(ctx, source)
+		return config, revisions.AppliedRevision, err
+	}
+	state, err := store.AppliedState(ctx)
+	if err != nil {
+		return PlatformConfig{}, 0, err
+	}
+	c, err := decodePlatform(state.Config)
+	return c, state.Revision, err
 }
 
 func configuredEntries(c PlatformConfig, scope string) ([]ManagedNode, error) {

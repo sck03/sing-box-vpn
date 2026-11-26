@@ -17,7 +17,7 @@ type BindingEntry struct {
 }
 type BindingRepository interface {
 	RequireAccount(context.Context, string) error
-	Credentials(context.Context, string) ([]domain.Credential, error)
+	BindingKeys(context.Context, string, []string, []string) (map[[2]string]bool, error)
 	BindBatch(context.Context, []domain.Credential) error
 }
 
@@ -71,13 +71,9 @@ func BindAccounts(ctx context.Context, repository BindingRepository, c AccountCo
 			selected = append(selected, entry)
 		}
 	}
-	existing, err := repository.Credentials(ctx, c.Scope)
+	bound, err := repository.BindingKeys(ctx, c.Scope, ids, c.InboundIDs)
 	if err != nil {
 		return result, err
-	}
-	bound := make(map[[2]string]bool, len(existing))
-	for _, credential := range existing {
-		bound[[2]string{credential.AccountID, credential.InboundID}] = true
 	}
 	seen := map[string]bool{}
 	pending := []domain.Credential{}
