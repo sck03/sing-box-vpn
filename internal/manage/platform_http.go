@@ -324,7 +324,7 @@ func (s *PlatformService) Handler(options PanelOptions) http.Handler {
 }
 
 func (s *PlatformService) Serve(ctx context.Context, options PanelOptions, out io.Writer) error {
-	if err := options.validate(s.NoSystem); err != nil {
+	if err := publicaccess.Options(options).ValidateTransport(publicaccess.Rules{Development: s.NoSystem}); err != nil {
 		return err
 	}
 	listener, err := net.Listen("tcp", options.Listen)

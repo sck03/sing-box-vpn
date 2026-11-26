@@ -22,3 +22,15 @@ func openAccountSource(root string) (AccountService, func(), error) {
 	}
 	return AccountService{Root: root, Store: accounts, Control: control}, func() { _ = errors.Join(accounts.Close(), control.Close()) }, nil
 }
+
+// Long-lived services lend repositories; standalone operations own one pair for
+// their whole execution, including generation rechecks and account captures.
+func subscriptionSource(root string, services []AccountService) (AccountService, func(), error) {
+	if len(services) == 0 {
+		return openAccountSource(root)
+	}
+	if len(services) != 1 || services[0].Root != root || services[0].Store == nil || services[0].Control == nil {
+		return AccountService{}, func() {}, errors.New("subscription operation requires matching repositories")
+	}
+	return services[0], func() {}, nil
+}

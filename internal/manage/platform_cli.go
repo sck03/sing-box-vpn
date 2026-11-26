@@ -37,7 +37,7 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 		return err
 	}
 	if len(f.Args()) != 1 && !(len(f.Args()) == 2 && f.Arg(0) == "restart-settings") {
-		return errors.New("panel requires init, serve, configure, reset-admin, status, command, apply, recover or restore")
+		return errors.New("panel requires init, serve, configure, reset-admin, status, command, apply, recover, renew-certificate or restore")
 	}
 	if *core == "" {
 		*core = filepath.Join(*root, "sing-box")
@@ -211,6 +211,14 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 			return e
 		}
 		return json.NewEncoder(output).Encode(Object{"task_id": id})
+	case "renew-certificate":
+		var value struct {
+			ID string `json:"id"`
+		}
+		if err := decode(&value); err != nil {
+			return err
+		}
+		return withServiceLock(ctx, s.Root, func() error { return s.renewCertificate(ctx, value.ID) })
 	case "recover":
 		if e := withStartupLock(ctx, s.Root, func() error { return recoverSubscriptionRuntime(s.Root) }); e != nil {
 			return e
@@ -223,7 +231,7 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 		if e != nil {
 			return e
 		}
-		files, e := s.build(ctx, c)
+		files, e := s.buildApplied(ctx, c)
 		if e != nil {
 			return e
 		}

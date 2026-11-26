@@ -89,12 +89,22 @@ export async function api(
   return value;
 }
 
+/** @template {keyof import("./contracts.js").QueryResponses} Path
+ * @param {Path} path @param {AbortSignal} [signal] @param {typeof api} [request]
+ * @returns {Promise<import("./contracts.js").QueryResponses[Path]>} */
+export const query = (path, signal, request = api) => request(path, undefined, { signal });
+/** @template {keyof import("./contracts.js").MutationContracts} Path
+ * @param {Path} path @param {import("./contracts.js").MutationContracts[Path]["input"]} input
+ * @param {AbortSignal} [signal] @param {typeof api} [request]
+ * @returns {Promise<import("./contracts.js").MutationContracts[Path]["result"]>} */
+export const mutate = (path, input, signal, request = api) => request(path, input, { signal });
+
 /** @param {import("./contracts.js").ConfigurationSave} input
  * @returns {Promise<import("./contracts.js").QueuedTask>} */
-export const saveConfiguration = (input) => api("/api/config", input);
+export const saveConfiguration = (input) => mutate("/api/config", input);
 /** @param {import("./contracts.js").TaskCommand} input
  * @returns {Promise<import("./contracts.js").QueuedTask>} */
-export const submitTask = (input) => api("/api/tasks", input);
+export const submitTask = (input) => mutate("/api/tasks", input);
 /** @param {number} id @param {AbortSignal} [signal]
  * @returns {Promise<import("./contracts.js").Task>} */
 export const getTask = (id, signal) =>
@@ -106,23 +116,23 @@ export const getTasks = (before = 0, signal) =>
 /** @param {AbortSignal} [signal]
  * @returns {Promise<import("./contracts.js").OverviewSnapshot>} */
 export const getOverview = (signal) =>
-  api("/api/overview", undefined, { signal });
+  query("/api/overview", signal);
 /** @param {AbortSignal} [signal] @param {typeof api} [request]
  * @returns {Promise<import("./contracts.js").SubscriptionStatusResponse>} */
 export const getSubscriptionStatus = (signal, request = api) =>
-  request("/api/subscriptions/status", undefined, { signal });
+  query("/api/subscriptions/status", signal, request);
 /** @param {AbortSignal} [signal] @param {typeof api} [request]
  * @returns {Promise<import("./contracts.js").CertificateStatus[]>} */
 export const getCertificates = (signal, request = api) =>
-  request("/api/certificates", undefined, { signal });
+  query("/api/certificates", signal, request);
 /** @param {import("./contracts.js").CertificateImport} input @param {AbortSignal} [signal]
  * @returns {Promise<import("./contracts.js").CertificateAsset>} */
 export const importCertificate = (input, signal) =>
-  api("/api/certificates", input, { signal });
+  mutate("/api/certificates", input, signal);
 /** @param {import("./contracts.js").CertificatePreparation} input @param {AbortSignal} [signal]
  * @returns {Promise<import("./contracts.js").CertificateAsset>} */
 export const prepareCertificate = (input, signal) =>
-  api("/api/certificates/prepare", input, { signal });
+  mutate("/api/certificates/prepare", input, signal);
 /** @param {Blob} blob @param {string} name */
 export function download(blob, name) {
   const url = URL.createObjectURL(blob),
@@ -170,7 +180,7 @@ export const getAccountOutputs = (id, scope, signal, request = api) =>
 /** @param {import("./contracts.js").AccountExportRequest} input @param {typeof api} [request]
  * @returns {Promise<import("./contracts.js").AccountExportResponse>} */
 export const exportAccount = (input, request = api) =>
-  request("/api/accounts/export", input);
+  mutate("/api/accounts/export", input, undefined, request);
 /** @param {string} id @param {AbortSignal} [signal] @param {typeof api} [request]
  * @returns {Promise<import("./contracts.js").AccountSummary>} */
 export const getAccount = (id, signal, request = api) =>
@@ -180,13 +190,13 @@ export const getAccount = (id, signal, request = api) =>
 /** @param {boolean} secret @param {AbortSignal} [signal]
  * @returns {Promise<import("./contracts.js").ConfigurationState>} */
 export const getConfiguration = (secret, signal) =>
-  api(secret ? "/api/config" : "/api/state", undefined, { signal });
+  query(secret ? "/api/config" : "/api/state", signal);
 
 /** @param {import("./contracts.js").PlatformConfig} config @param {AbortSignal} [signal] @param {typeof api} [request]
  * @returns {Promise<import("./contracts.js").ConfigurationPreview>} */
 export const previewConfiguration = (config, signal, request = api) =>
-  request("/api/config/preview", config, { signal });
+  mutate("/api/config/preview", config, signal, request);
 /** @param {import("./contracts.js").OutputPreviewRequest} input @param {AbortSignal} [signal] @param {typeof api} [request]
  * @returns {Promise<import("./contracts.js").OutputPreview>} */
 export const previewOutput = (input, signal, request = api) =>
-  request("/api/config/preview-output", input, { signal });
+  mutate("/api/config/preview-output", input, signal, request);

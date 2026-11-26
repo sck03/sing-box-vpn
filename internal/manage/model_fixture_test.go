@@ -36,8 +36,15 @@ func fixtureNodes(inbounds []Object) []ManagedNode {
 }
 
 func (a App) fixtureProfile() Profile {
-	p := a.profile()
+	p := Profile{Ports: map[string]int{}}
 	for _, n := range a.Nodes {
+		p.Ports[n.Protocol] = n.Port
+		if n.Protocol == "hysteria2" {
+			p.Hopping = n.UDPPorts
+		}
+		if n.Protocol == "tuic" {
+			p.TUICPorts = n.UDPPorts
+		}
 		if n.Protocol == "vless" {
 			p.RealitySNI = n.TLS.ServerName
 			p.HandshakeHost = n.TLS.HandshakeHost
@@ -55,7 +62,17 @@ func (a App) fixtureProfile() Profile {
 	return p
 }
 func fixtureApp(p Profile) App {
-	return App{Nodes: MakeNodes(p, ""), Hopping: p.Hopping, TUICPorts: p.TUICPorts}
+	return App{Nodes: MakeNodes(p, "")}
+}
+
+func setFixtureUDPPorts(app *App, protocol string, ports []string) {
+	for i := range app.Nodes {
+		if app.Nodes[i].Protocol == protocol {
+			app.Nodes[i].UDPPorts = ports
+			return
+		}
+	}
+	panic("fixture protocol is missing: " + protocol)
 }
 
 func fixtureCredential(kind string) domain.Credential {

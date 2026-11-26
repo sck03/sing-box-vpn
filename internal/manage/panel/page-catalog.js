@@ -41,7 +41,7 @@ const definitions = [
     "证书管理",
     "申请、导入与续期节点和面板证书。",
     "申请证书 续期证书 导入证书 TLS PEM ACME SSL https",
-    "./network.js",
+    "./certificate-page.js",
     "certificates",
   ],
   [

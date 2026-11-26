@@ -28,8 +28,12 @@ func loadSubscriptionSchedule(root string) (sub.Schedule, error) {
 	if err := config.Validate(); err != nil {
 		return schedule, err
 	}
-	_, err := ReadJSON(filepath.Join(root, subscriptionsRuntime), &schedule)
+	if _, err := ReadJSON(filepath.Join(root, subscriptionsRuntime), &schedule); err != nil {
+		return schedule, err
+	}
+	operations, err := loadSubscriptionOperations(root)
 	schedule.Config = sub.NewSchedule(config, sub.Runtime{}).Config
+	schedule.Deliveries = sub.NewSchedule(config, sub.Runtime{Deliveries: operations.Deliveries}).Deliveries
 	return schedule, err
 }
 

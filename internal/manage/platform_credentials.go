@@ -79,7 +79,7 @@ func (s *PlatformService) reconcileCredentials(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		files, err := s.build(ctx, config)
+		files, err := s.buildApplied(ctx, config)
 		if err != nil {
 			return err
 		}

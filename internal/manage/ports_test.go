@@ -41,7 +41,7 @@ func TestPortProbeRejectsLoopbackAndIPv6Listeners(t *testing.T) {
 }
 
 func TestAllocationAndSubscriptionRespectForwardRanges(t *testing.T) {
-	app := App{TUICPorts: []string{"20000:59998"}}
+	app := App{Nodes: []ManagedNode{{ID: "tuic", Protocol: "tuic", Port: 60000, UDPPorts: []string{"20000:59998"}}}}
 	ranges, err := usedPortRanges(app, VPNSettings{})
 	if err != nil {
 		t.Fatal(err)

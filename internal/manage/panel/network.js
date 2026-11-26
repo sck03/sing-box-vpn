@@ -1,12 +1,10 @@
 /** @typedef {import("./contracts.js").ManagedNode} ManagedNode */
-import { api, getCertificates } from "./api.js";
+import { api } from "./api.js";
 import { loadResult } from "./details.js";
 import { capabilities } from "./capabilities.js";
-import { certificateEditor } from "./certificate-editor.js";
 import {
   boundCertificate,
   certificateChoices,
-  certificateSources,
 } from "./certificate-fields.js";
 import {
   el,
@@ -31,6 +29,13 @@ const nodeFields = (protocols, protocol) => {
     },
     { key: "port", label: "监听端口", type: "number", min: 1, max: 65535 },
     { key: "disabled", label: "停用入站", type: "bool" },
+    {
+      key: "udp_ports",
+      label: protocol === "hysteria2" ? "UDP 跳跃端口" : "额外 UDP 端口",
+      type: "csv",
+      visible: (v) => ["hysteria2", "tuic"].includes(v.protocol),
+      help: "仅转发到当前入站，支持单端口或范围，如 30000:30100；不能与其他入站或服务端口重叠。",
+    },
     { key: "tls.server_name", label: "TLS / Reality SNI" },
     {
       key: "tls.enabled",
@@ -195,6 +200,7 @@ export async function inbounds(ctx) {
       { key: "id", label: "入站" },
       { key: "protocol", label: "协议" },
       { key: "port", label: "端口" },
+      { label: "额外 UDP 端口", value: (n) => (n.udp_ports || []).join(", ") || "—" },
       {
         label: "状态",
         value: (n) => (n.disabled ? "已停用" : "已启用"),
@@ -251,7 +257,7 @@ export async function inbounds(ctx) {
         formDialog(
           "复制入站",
           nodeFields(protocols, n.protocol),
-          { ...structuredClone(n), id: n.id + "-copy", port: n.port + 1 },
+          { ...structuredClone(n), id: n.id + "-copy", port: n.port + 1, udp_ports: [] },
           (v) => {
             items.push(v);
             changeNodes();
@@ -289,35 +295,6 @@ export async function inbounds(ctx) {
       ),
     ],
   );
-  const ports = card(
-    "UDP 转发端口",
-    help(
-      "Hy2 跳跃与 TUIC 多端口共用端口冲突检查和防火墙事务。填写端口或范围，例如 30000:30100。",
-    ),
-    button("编辑端口范围", () =>
-      formDialog(
-        "UDP 端口范围",
-        [
-          { key: "hopping", label: "Hy2 跳跃端口，逗号分隔", type: "csv" },
-          { key: "tuic_ports", label: "TUIC 复用端口，逗号分隔", type: "csv" },
-        ],
-        c.app,
-        (v) => {
-          c.app = v;
-          change();
-        },
-      ),
-    ),
-    el(
-      "pre",
-      {},
-      JSON.stringify(
-        { hopping: c.app.hopping || [], tuic_ports: c.app.tuic_ports || [] },
-        null,
-        2,
-      ),
-    ),
-  );
   count.textContent = `${items.length} 个入站`;
   return [
     host,
@@ -325,103 +302,6 @@ export async function inbounds(ctx) {
       "入站管理",
       row(add, count),
       list,
-    ),
-    el(
-      "details",
-      { class: "advanced" },
-      el("summary", {}, "高级：UDP 跳跃与多端口"),
-      ports,
-    ),
-  ];
-}
-
-export async function certificates(ctx) {
-  const c = await ctx.config(),
-    status = new Map(
-      (await getCertificates(ctx.signal, ctx.request || api)).map((asset) => [
-        asset.id,
-        asset,
-      ]),
-    );
-  const changed = () => {
-    ctx.changed();
-    ctx.render();
-  };
-  return [
-    card(
-      "证书资产",
-      el(
-        "a",
-        { href: "#maintenance/upgrade" },
-        "查看证书签发组件版本 / 检查程序更新",
-      ),
-      help(
-        "导入前验证域名、有效期和私钥匹配。内置 ACME 自动申请与续期，无需额外安装程序；域名须指向本机，端口 80 需要空闲且从公网可达。",
-      ),
-      row(
-        button(
-          "导入 PEM",
-          () => certificateEditor(ctx, c, "import"),
-          "primary",
-        ),
-        button("申请自动证书", () => certificateEditor(ctx, c, "acme")),
-      ),
-      table(
-        [
-          { key: "id", label: "资产" },
-          { key: "domain", label: "域名" },
-          {
-            label: "续期归属",
-            value: (a) => certificateSources[a.provider] || a.provider,
-          },
-          {
-            label: "自动续期",
-            value: (a) =>
-              ({
-                automatic: "已登记",
-                registration_pending: "待自动登记（需端口 80）",
-                manual: "手动更新",
-              })[status.get(a.id)?.renewal_state] || "待应用",
-          },
-          {
-            label: "有效期",
-            value: (a) =>
-              status.get(a.id)?.days_left != null
-                ? `剩余 ${status.get(a.id).days_left} 天`
-                : status.get(a.id)?.error || "待申请",
-          },
-          {
-            label: "引用",
-            value: (a) => (status.get(a.id)?.used_by || []).join(", "),
-          },
-        ],
-        c.certificates,
-        (a) => [
-          ...(a.provider === "acme"
-            ? [
-                button("申请 / 续期", () =>
-                  ctx.task({ operation: "certificate-renew", id: a.id }),
-                ),
-              ]
-            : []),
-          button(
-            "移除",
-            () => {
-              if (confirm("移除证书资产？请先解除入口引用。")) {
-                c.certificates.splice(c.certificates.indexOf(a), 1);
-                changed();
-              }
-            },
-            "danger",
-          ),
-        ],
-      ),
-    ),
-    card(
-      "使用方式",
-      help(
-        "证书材料保存为受限文件，配置保存引用。前往「入站」→「证书」选择资产。导入新的资产后再切换引用，可保留旧证书用于回滚。",
-      ),
     ),
   ];
 }

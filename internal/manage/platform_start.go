@@ -42,7 +42,7 @@ func (s *PlatformService) Run(ctx context.Context) error {
 		if e := recoverSubscriptionRuntime(s.Root); e != nil {
 			return e
 		}
-		files, e := s.build(ctx, c)
+		files, e := s.buildApplied(ctx, c)
 		if e != nil {
 			return e
 		}

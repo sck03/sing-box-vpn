@@ -178,7 +178,7 @@ func TestSubscriptionApplyPrunesUnusedResourcesWithoutRemoteSources(t *testing.T
 	r.Sources = map[string]sub.SourceCache{}
 	r.Resources = map[string]sub.ResourceCache{"rules:deleted": {URL: "https://example.com/old"}}
 	r.Deliveries = map[string]sub.DeliveryState{"deleted": {Digest: "old"}}
-	if err := AtomicJSON(filepath.Join(root, subscriptionsRuntime), r); err != nil {
+	if err := writeSubscriptionRuntime(root, c, r); err != nil {
 		t.Fatal(err)
 	}
 	service, config, _ := platformFixture(t, root, core)

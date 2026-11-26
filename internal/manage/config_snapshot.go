@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	"github.com/sck03/sing-box-vpn/internal/hostservice"
 )
 
@@ -14,7 +15,7 @@ type tunnelObservation struct {
 
 // Consumers depend only on the immutable configuration and observation reads.
 type configurationReader interface {
-	AppliedConfig(context.Context) (json.RawMessage, error)
+	AppliedState(context.Context) (controlstore.AppliedState, error)
 	Observation(context.Context, string) (string, error)
 }
 

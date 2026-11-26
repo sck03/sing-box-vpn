@@ -8,6 +8,7 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	strict "github.com/sck03/sing-box-vpn/internal/encoding"
 	"github.com/sck03/sing-box-vpn/internal/gatewayconfig"
+	"github.com/sck03/sing-box-vpn/internal/publicaccess"
 	"github.com/sck03/sing-box-vpn/internal/runtimeconfig"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 	"net"
@@ -15,7 +16,7 @@ import (
 	"strings"
 )
 
-const PlatformSchema = 7
+const PlatformSchema = 8
 
 // PlatformConfig is the single authoritative aggregate stored in control.db.
 // JSON files consumed by the gateway and compiler are generated projections.
@@ -41,6 +42,12 @@ type TunnelSettings struct {
 }
 
 func (c PlatformConfig) Validate() error {
+	return c.validate(true)
+}
+
+// Applied configuration must remain recoverable when renewable TLS material
+// expires. Only configuration writes require currently valid public certificates.
+func (c PlatformConfig) validate(requireCertificate bool) error {
 	if c.Schema != PlatformSchema {
 		return fmt.Errorf("platform schema must be %d; old data cannot be imported", PlatformSchema)
 	}
@@ -73,9 +80,6 @@ func (c PlatformConfig) Validate() error {
 		}
 		ports[n.Port] = true
 	}
-	if len(nodes) > 256 {
-		return errors.New("at most 256 inbounds")
-	}
 	if c.VPN.ProxyPort < 1 || c.VPN.ProxyPort > 65535 || ports[c.VPN.ProxyPort] {
 		return errors.New("invalid or conflicting gateway proxy port")
 	}
@@ -102,7 +106,13 @@ func (c PlatformConfig) Validate() error {
 		return errors.New("invalid or conflicting download listener")
 	}
 	if c.Listener.Enabled {
-		if err := c.Listener.Validate(); err != nil {
+		var err error
+		if requireCertificate {
+			err = c.Listener.Validate()
+		} else {
+			err = c.Listener.accessOptions().ValidateTransport(publicaccess.Rules{AllowProxyPath: true, RequireHTTPS: true})
+		}
+		if err != nil {
 			return err
 		}
 	}
@@ -183,19 +193,6 @@ func (c PlatformConfig) Validate() error {
 	}
 	if _, _, err := firewallRules(c.App, c.VPN, gateway, c.Listener); err != nil {
 		return err
-	}
-	for _, ranges := range [][]string{c.App.Hopping, c.App.TUICPorts} {
-		parsed, err := parsePortRanges(ranges)
-		if err != nil {
-			return err
-		}
-		for _, r := range parsed {
-			for _, n := range nodes {
-				if n.Port >= r.first && n.Port <= r.last {
-					return errors.New("forwarding range overlaps an inbound listener")
-				}
-			}
-		}
 	}
 	for _, service := range c.App.Advanced.Services {
 		port := number(service["listen_port"])

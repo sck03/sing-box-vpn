@@ -95,11 +95,11 @@ func (s AccountService) configSnapshot(ctx context.Context) (PlatformConfig, err
 		}
 		return observedConfig(ctx, store, config)
 	}
-	data, err := store.AppliedConfig(ctx)
+	state, err := store.AppliedState(ctx)
 	if err != nil {
 		return PlatformConfig{}, err
 	}
-	c, err := decodePlatform(data)
+	c, err := decodePlatform(state.Config)
 	if err != nil {
 		return c, err
 	}

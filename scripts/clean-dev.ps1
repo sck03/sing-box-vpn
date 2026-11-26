@@ -16,6 +16,7 @@ if ($Dependencies) { $cleanupNames += 'node_modules' }
 if ($BrowserTools) { $cleanupNames += '.tools/python313-packages' }
 
 # Validate every target before deleting anything. Never follow directory links.
+$cleanupSkipped = [Collections.Generic.List[string]]::new()
 $cleanupTargets = foreach ($name in $cleanupNames) {
     $candidate = Join-Path $cleanupRoot $name
     if (-not (Test-Path -LiteralPath $candidate)) { continue }
@@ -29,7 +30,13 @@ $cleanupTargets = foreach ($name in $cleanupNames) {
             throw "Refusing linked cleanup target: $($ancestor.FullName)"
         }
     }
-    $children = @(Get-ChildItem -LiteralPath $resolved -Force -Recurse)
+    try {
+        $children = @(Get-ChildItem -LiteralPath $resolved -Force -Recurse -ErrorAction Stop)
+    } catch [UnauthorizedAccessException] {
+        # An inaccessible old tree must not block cleanup of independent caches.
+        $cleanupSkipped.Add($resolved)
+        continue
+    }
     if ($children.Where({ $_.Attributes -band [IO.FileAttributes]::ReparsePoint }).Count) {
         throw "Refusing a cleanup tree containing links: $resolved"
     }
@@ -41,6 +48,7 @@ $cleanupTargets = foreach ($name in $cleanupNames) {
     }
 }
 
+$cleanupBytes = 0L
 foreach ($target in $cleanupTargets) {
     if ($PSCmdlet.ShouldProcess($target.Path, 'Remove rebuildable development artifacts')) {
         # Explicit files first: module caches can contain read-only files, and
@@ -51,6 +59,11 @@ foreach ($target in $cleanupTargets) {
             Sort-Object { $_.FullName.Length } -Descending |
             ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
         Remove-Item -LiteralPath $target.Path -Force
+        $cleanupBytes += $target.Bytes
         Write-Output ('Removed {0}: {1:N2} MiB' -f $target.Path, ($target.Bytes / 1MB))
     }
+}
+Write-Output ('Freed rebuildable artifacts: {0:N2} MiB' -f ($cleanupBytes / 1MB))
+foreach ($path in $cleanupSkipped) {
+    Write-Warning "Skipped inaccessible directory: $path. Its Windows permissions require separate repair."
 }

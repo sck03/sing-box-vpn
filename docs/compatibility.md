@@ -1,12 +1,12 @@
 # 兼容性与验证边界
 
-本版只接受新数据库 schema 17 / 备份格式 8，不迁移旧账户或管理接口。平台配置 schema 7 与数据库版本独立。Linux Debian/Ubuntu + systemd，amd64/arm64；Windows 用于开发与本机测试。数据目录由 root 独占，面板默认回环。
+本版只接受新数据库 schema 17 / 备份格式 8，不迁移旧账户或管理接口。平台配置 schema 8 与数据库版本独立。Linux Debian/Ubuntu + systemd，amd64/arm64；Windows 用于开发与本机测试。数据目录由 root 独占，面板默认回环。
 
 账户绑定命令必须提供非空 `inbound_ids` 数组；省略或传空数组均返回参数错误，不再解释为“绑定全部”。面板默认选择当前启用入口并提交具体 ID，执行时再次校验；期间新建入口不会被隐式绑定。轮换、解绑不接受绑定专用字段。Go 校验、生成的任务联合类型和页面使用同一契约；不提供旧客户端兜底。此次只收紧任务输入并新增概览诊断字段，没有改变持久数据格式，因此不增加 schema 版本。
 
 订阅刷新和分发必须具备 `runtime-revision.json`，并与数据库已应用配置一致。缺少标记时应重新应用配置以重建发布，不再根据目录标记接受未初始化状态；测试夹具也通过独立的测试初始化函数创建确认状态。
 
-订阅配置 schema=6，不接受旧订阅配置。模板 version=1、平台 schema=7、数据库 schema=17 与备份容器 8 保持独立；同数据库版本中的旧订阅内容也会被拒绝。转换新增受控 SIP003、WS early-data、gRPC 参数、VLESS XHTTP 和 Hysteria2 地址规范化，按客户端/协议/传输/加密方式筛选。sing-box 1.14.4 不接受 XHTTP，相关输出或探测使用支持它的目标；未知 XHTTP extra 字段明确拒绝。
+订阅配置 schema=6，不接受旧订阅配置。模板 version=1、平台 schema=8、数据库 schema=17 与备份容器 8 保持独立；同数据库版本中的旧订阅内容也会被拒绝。转换新增受控 SIP003、WS early-data、gRPC 参数、VLESS XHTTP 和 Hysteria2 地址规范化，按客户端/协议/传输/加密方式筛选。sing-box 1.14.4 不接受 XHTTP，相关输出或探测使用支持它的目标；未知 XHTTP extra 字段明确拒绝。
 
 Release 标签使用 `vMAJOR.MINOR.PATCH`，主版本号与数据格式无绑定：v5.0.0 等正式标签可安装，但包内容必须满足当前平台约定。版本号变化不会自动迁移数据库。证书提供方接受 `acme` / `import` / `generated`（自签名测试证书），旧 `certbot` 标记不兼容。
 

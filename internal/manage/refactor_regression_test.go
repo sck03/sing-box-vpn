@@ -10,7 +10,6 @@ import (
 
 	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/domain"
-	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
 func TestCredentialPublicationRetryDoesNotRepeatRotation(t *testing.T) {
@@ -62,9 +61,8 @@ func TestCorruptedSubscriptionCacheIsQuarantined(t *testing.T) {
 	if err := recoverSubscriptionRuntime(root); err != nil {
 		t.Fatal(err)
 	}
-	var state sub.Runtime
-	if _, err := ReadJSON(path, &state); err != nil || len(state.Runs) != 1 || state.Runs[0].Operation != "cache-recovery" {
-		t.Fatal(state, err)
+	if current, err := loadSubscriptionRuntime(root); err != nil || len(current.Runs) != 1 || current.Runs[0].Operation != "cache-recovery" {
+		t.Fatal(current, err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "subscriptions/runtime.corrupt.json")); err != nil {
 		t.Fatal(err)

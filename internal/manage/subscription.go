@@ -52,7 +52,7 @@ func RunSubscription(ctx context.Context, args []string, output io.Writer) error
 	if !found || !settings.Enabled {
 		return errors.New("订阅监听服务未启用")
 	}
-	if err := settings.Validate(); err != nil {
+	if err := settings.accessOptions().ValidateTransport(publicaccess.Rules{AllowProxyPath: true, RequireHTTPS: true}); err != nil {
 		return err
 	}
 	listener, err := net.Listen("tcp", net.JoinHostPort(settings.Listen, strconv.Itoa(settings.Port)))

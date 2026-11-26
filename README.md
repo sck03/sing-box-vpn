@@ -20,7 +20,7 @@ bash <(wget -qO- https://raw.githubusercontent.com/sck03/sing-box-vpn/main/insta
 
 证书申请与续期内置 **lego Go 库**，当前使用 HTTP-01 验证；自签证书与 PEM 导入也由 Go 完成。OpenVPN 仍是 VPNGate 建立隧道所需的系统程序，Go 管理器不能代替它。VPNGate 需要 IPv4、TUN 与 network namespace。
 
-**当前平台使用数据库 schema 17、平台配置 schema 7、节点文档 schema 5、备份格式 8，首次安装要求空目录，不迁移旧数据或兼容旧管理接口。** 发行标签使用 `v主版本.次版本.补丁版本`，例如 `v6.0.0`；不限定主版本号。版本标签与平台数据格式分别校验，缺少当前架构管理器、受管核心或维护文件的包会被拒绝。开发者构建和本地发行包安装见[开发与发布](docs/development.md)。
+**当前平台使用数据库 schema 17、平台配置 schema 8、节点文档 schema 6、备份格式 8，首次安装要求空目录，不迁移旧数据或兼容旧管理接口。** 发行标签使用 `v主版本.次版本.补丁版本`，例如 `v6.0.0`；不限定主版本号。版本标签与平台数据格式分别校验，缺少当前架构管理器、受管核心或维护文件的包会被拒绝。开发者构建和本地发行包安装见[开发与发布](docs/development.md)。
 
 安装后可随时使用：
 
@@ -83,3 +83,7 @@ Reality 私钥及密码输入提供显示/隐藏按钮，默认隐藏。证书�
 许可证 GPL-3.0。历史分析与测量资料保留在 Git 历史中，不代表当前版本已重新通过其中所有实验。
 
 当前主干的重构与接口变更见 [当前实施报告](docs/refactor-review.md)。服务端使用 sing-box，Mihomo 等客户端格式由内置转换器生成，无需安装客户端核心。纯节点、Provider 和完整配置使用独立输出标识，授权不会相互扩大。
+
+### 当前配置边界
+
+普通 Hysteria2/TUIC 的额外 UDP 范围由具体入站的 udp_ports 保存，已移除全局 hopping/tuic_ports。证书页面区分草稿与生效状态；证书到期不会阻止管理 worker 恢复，TLS 继续拒绝无效材料。独立续期与救援说明见[公网访问](docs/public-access.md)，定向验证与本地缓存清理见[开发与发布](docs/development.md)。

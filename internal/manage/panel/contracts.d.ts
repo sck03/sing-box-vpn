@@ -69,13 +69,11 @@ export interface Admin {
 }
 
 export interface App {
-  schema: 5;
+  schema: 6;
   version: string;
   name: string;
   address: string;
   nodes: Array<ManagedNode> | null;
-  hopping?: Array<string> | null;
-  tuic_ports?: Array<string> | null;
   cdn_address?: string;
   advanced: CoreSettings;
 }
@@ -124,6 +122,11 @@ export interface CertificateStatus {
   id: string;
   domain: string;
   provider: string;
+  saved: boolean;
+  applied: boolean;
+  pending: boolean;
+  can_renew: boolean;
+  renewal_unavailable?: string;
   used_by: Array<string> | null;
   ready: boolean;
   renewal_state: string;
@@ -253,9 +256,20 @@ export interface ManagedNode {
   protocol: string;
   port: number;
   disabled: boolean;
+  udp_ports?: Array<string> | null;
   flow?: string;
   tls: ServerTLS;
   transport?: ServerTransport;
+}
+
+export interface MutationContracts {
+  "/api/config": { input: ConfigurationSave; result: QueuedTask };
+  "/api/tasks": { input: TaskCommand; result: QueuedTask };
+  "/api/certificates": { input: CertificateImport; result: CertificateAsset };
+  "/api/certificates/prepare": { input: CertificatePreparation; result: CertificateAsset };
+  "/api/config/preview": { input: PlatformConfig; result: ConfigurationPreview };
+  "/api/config/preview-output": { input: OutputPreviewRequest; result: OutputPreview };
+  "/api/accounts/export": { input: AccountExportRequest; result: AccountExportResponse };
 }
 
 export interface NotificationActivity {
@@ -320,7 +334,7 @@ export interface PeriodPolicy {
 }
 
 export interface PlatformConfig {
-  schema: 7;
+  schema: 8;
   app: App;
   vpn: VPNSettings;
   vpn_secrets: Record<string, Secrets> | null;
@@ -363,6 +377,14 @@ export interface ProgramStatus {
   release_url?: string;
   update_available: boolean;
   check_error?: string;
+}
+
+export interface QueryResponses {
+  "/api/config": ConfigurationState;
+  "/api/state": ConfigurationState;
+  "/api/overview": OverviewSnapshot;
+  "/api/certificates": Array<CertificateStatus>;
+  "/api/subscriptions/status": SubscriptionStatusResponse;
 }
 
 export interface QueuedTask {

@@ -18,12 +18,12 @@ func publishPlatformFiles(root string, files fileBundle) error {
 	if err := json.Unmarshal(files[subscriptionsRuntime], &runtime); err != nil {
 		return err
 	}
-	latest, err := loadSubscriptionRuntime(root)
+	latest, err := loadSubscriptionOperations(root)
 	if err != nil {
 		return err
 	}
 	runtime.Runs = latest.Runs
-	runtime.Deliveries = sub.PruneRuntime(config, latest).Deliveries
+	runtime.Deliveries = sub.PruneRuntime(config, sub.Runtime{Deliveries: latest.Deliveries}).Deliveries
 	if err := files.subscriptionRuntime(config, runtime); err != nil {
 		return err
 	}

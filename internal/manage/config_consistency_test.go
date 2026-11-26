@@ -237,7 +237,7 @@ func TestCandidatePortConflictsDoNotPublish(t *testing.T) {
 				config.Listener.Enabled = true
 				config.Listener.Port = port
 			case "forwarding":
-				config.App.TUICPorts = []string{fmt.Sprint(port)}
+				setFixtureUDPPorts(&config.App, "tuic", []string{fmt.Sprint(port)})
 			}
 			if _, err := service.QueueApply(t.Context(), config, 1, "test"); err == nil {
 				t.Fatal("accepted conflicting ports")

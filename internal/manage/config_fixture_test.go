@@ -97,7 +97,7 @@ func fixtureSubscriptionNodes(app App, settings VPNSettings, private map[string]
 	local := map[string][]sub.Node{normalScope: {}, vpngateScope: {}}
 	cache := certificateCache{}
 	add := func(in Object, p Profile, name, scope string) error {
-		managed, err := managedNodes(App{Nodes: fixtureNodes([]Object{in}), Hopping: p.Hopping, TUICPorts: p.TUICPorts})
+		managed, err := managedNodes(App{Nodes: fixtureNodes([]Object{in})})
 		if err != nil {
 			return err
 		}

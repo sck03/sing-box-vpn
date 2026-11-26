@@ -54,6 +54,23 @@ func ShareableURL(value string) error {
 }
 
 func (o Options) Validate(rules Rules) error {
+	if err := o.ValidateTransport(rules); err != nil {
+		return err
+	}
+	if o.Certificate != "" {
+		u, _ := url.Parse(o.PublicURL)
+		pair, err := tlsconfig.Read(o.Certificate, o.Key, u.Hostname())
+		if err != nil {
+			return err
+		}
+		return tlsconfig.ValidAt(pair, time.Now())
+	}
+	return nil
+}
+
+// ValidateTransport checks the saved listener policy independently of renewable
+// material. TLS handshakes still require a valid certificate through TLS().
+func (o Options) ValidateTransport(rules Rules) error {
 	host, port, err := net.SplitHostPort(o.Listen)
 	ip := net.ParseIP(host)
 	n, parseErr := strconv.Atoi(port)
@@ -95,13 +112,6 @@ func (o Options) Validate(rules Rules) error {
 			}
 		} else if !LoopbackHost(u.Hostname()) {
 			return errors.New("公网地址需要 HTTPS")
-		}
-		if o.Certificate != "" {
-			pair, err := tlsconfig.Read(o.Certificate, o.Key, u.Hostname())
-			if err != nil {
-				return err
-			}
-			return tlsconfig.ValidAt(pair, time.Now())
 		}
 	}
 	return nil

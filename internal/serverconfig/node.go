@@ -7,6 +7,7 @@ type Node struct {
 	Protocol  string    `json:"protocol"`
 	Port      int       `json:"port"`
 	Disabled  bool      `json:"disabled"`
+	UDPPorts  []string  `json:"udp_ports,omitempty"`
 	Flow      string    `json:"flow,omitempty"`
 	TLS       TLS       `json:"tls"`
 	Transport Transport `json:"transport,omitempty"`

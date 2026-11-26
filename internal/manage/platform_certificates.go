@@ -7,11 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/sck03/sing-box-vpn/internal/certificates"
-	"github.com/sck03/sing-box-vpn/internal/domain"
 	"net/mail"
 	"os"
 	"path/filepath"
-	"sort"
 	"time"
 )
 
@@ -49,94 +47,13 @@ func (s *PlatformService) ImportCertificate(ctx context.Context, v CertificateIm
 	})
 	return asset, err
 }
-func (s *PlatformService) CertificateStatus(ctx context.Context) ([]certificates.CertificateStatus, error) {
-	state, err := s.Store.State(ctx)
-	if err != nil {
-		return nil, err
-	}
-	c, err := decodePlatform(state.Desired)
-	if err != nil {
-		return nil, err
-	}
-	nodes, err := managedNodes(c.App)
-	if err != nil {
-		return nil, err
-	}
-	usedBy := make(map[string][]string)
-	if c.Listener.Certificate != "" {
-		usedBy[c.Listener.Certificate] = append(usedBy[c.Listener.Certificate], "独立订阅（已保存）")
-	}
-	for _, node := range nodes {
-		usedBy[node.TLS.Certificate] = append(usedBy[node.TLS.Certificate], node.ID)
-	}
-	for cc, profile := range c.VPN.Profiles {
-		usedBy[profile.Certificate] = append(usedBy[profile.Certificate], "vpngate/"+cc)
-	}
-	panels, err := s.panelCertificateRefs()
-	if err != nil {
-		return nil, err
-	}
-	for label, ref := range panels {
-		if ref.Certificate != "" {
-			usedBy[ref.Certificate] = append(usedBy[ref.Certificate], label)
-		}
-	}
-	for _, uses := range usedBy {
-		sort.Strings(uses)
-	}
-	result := make([]certificates.CertificateStatus, 0, len(c.Certificates))
-	for _, asset := range c.Certificates {
-		uses := usedBy[asset.Certificate]
-		if uses == nil {
-			uses = []string{}
-		}
-		v := certificates.CertificateStatus{ID: asset.ID, Domain: asset.Domain, Provider: asset.Provider, UsedBy: uses, RenewalState: "manual"}
-		material, err := certificates.Read(asset)
-		if certificates.Automatic(asset) {
-			v.RenewalState = "automatic"
-			if !acmeRegistrationReady(s.Root, asset, material) {
-				v.RenewalState = "registration_pending"
-			}
-		}
-		if err == nil {
-			now := time.Now()
-			err = material.ValidAt(now)
-			if err == nil {
-				v.Ready = true
-				v.DNSNames = material.Leaf.DNSNames
-				v.NotBefore = &material.Leaf.NotBefore
-				v.ExpiresAt = &material.Leaf.NotAfter
-				days := int(material.Leaf.NotAfter.Sub(now).Hours() / 24)
-				v.DaysLeft = &days
-			}
-		}
-		if err != nil {
-			v.Error = err.Error()
-		}
-		result = append(result, v)
-	}
-	return result, nil
-}
 func (s *PlatformService) renewCertificate(ctx context.Context, id string) error {
 	if s.NoSystem {
 		return errors.New("certificate issuance requires the Linux deployment host")
 	}
-	state, err := s.Store.State(ctx)
+	c, asset, err := s.appliedCertificate(ctx, id)
 	if err != nil {
 		return err
-	}
-	c, err := decodePlatform(state.Applied)
-	if err != nil {
-		return err
-	}
-	var asset CertificateAsset
-	for _, v := range c.Certificates {
-		if v.ID == id {
-			asset = v
-		}
-	}
-	if !certificates.Automatic(asset) || !domain.ResourceID.MatchString(asset.ID) {
-		return errors.New("certificate is not managed by ACME")
 	}
 	address, err := mail.ParseAddress(asset.Email)
 	if err != nil || address.Address != asset.Email {
@@ -176,7 +93,7 @@ func (s *PlatformService) renewCertificate(ctx context.Context, id string) error
 	if err = withStartupLock(ctx, s.Root, func() error { return publish(s.Root, next) }); err != nil {
 		return err
 	}
-	files, err := s.build(ctx, c)
+	files, err := s.buildApplied(ctx, c)
 	if err == nil {
 		err = s.checkRuntime(ctx, files)
 	}

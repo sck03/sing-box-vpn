@@ -56,8 +56,6 @@ type App struct {
 	Name       string        `json:"name"`
 	Address    string        `json:"address"`
 	Nodes      []ManagedNode `json:"nodes"`
-	Hopping    []string      `json:"hopping,omitempty"`
-	TUICPorts  []string      `json:"tuic_ports,omitempty"`
 	CDNAddress string        `json:"cdn_address,omitempty"`
 	Advanced   CoreSettings  `json:"advanced"`
 }

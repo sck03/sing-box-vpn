@@ -25,6 +25,9 @@ func (n Node) Validate() error {
 	default:
 		return invalid("protocol", "unsupported managed protocol")
 	}
+	if len(n.UDPPorts) > 0 && n.Protocol != "hysteria2" && n.Protocol != "tuic" {
+		return invalid("udp_ports", "only Hysteria2 and TUIC support additional UDP ports")
+	}
 	if n.Protocol != "vmess" && !n.TLS.Enabled {
 		return invalid("tls.enabled", "TLS is required")
 	}

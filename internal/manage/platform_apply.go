@@ -123,7 +123,7 @@ func (s *PlatformService) apply(ctx context.Context, id int64, input applyInput)
 		},
 		Confirm: func(ctx context.Context) error { return s.Store.Applied(ctx, state.Revision) },
 		Recover: func(ctx context.Context) error {
-			old, err := s.build(ctx, previous)
+			old, err := s.buildApplied(ctx, previous)
 			if err != nil {
 				return err
 			}

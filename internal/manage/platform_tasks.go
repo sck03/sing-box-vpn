@@ -26,6 +26,11 @@ func (s *PlatformService) Queue(ctx context.Context, a application.TaskCommand, 
 	if err := a.Validate(); err != nil {
 		return 0, err
 	}
+	if a.Operation == "certificate-renew" {
+		if _, _, err := s.appliedCertificate(ctx, a.ID); err != nil {
+			return 0, err
+		}
+	}
 	if a.Operation == "gateway" {
 		operation, err := a.GatewayOperation()
 		if err != nil {
@@ -84,7 +89,7 @@ func (s *PlatformService) execute(ctx context.Context, id int64, a taskInput) er
 		return s.executeAccount(ctx, id, a.Account)
 	case "subscription":
 		var out bytes.Buffer
-		operationErr := application.ExecuteSubscription(ctx, subscriptionOperations{s.Root, s.Core}, a.Subscription, a.Automatic, &out)
+		operationErr := application.ExecuteSubscription(ctx, subscriptionOperations{AccountService{Root: s.Root, Core: s.Core, Store: s.Accounts, Control: s.Store}}, a.Subscription, a.Automatic, &out)
 		return s.storeTaskOutput(ctx, id, out.Bytes(), operationErr)
 	case "service":
 		if s.NoSystem {

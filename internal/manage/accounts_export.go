@@ -48,10 +48,6 @@ func accountNodes(ctx context.Context, store *accounting.Store, config PlatformC
 		if err != nil {
 			return nil, err
 		}
-		profile := app.profile()
-		if runtime == vpngateScope {
-			profile = settings.Profiles[settings.ActiveCountry]
-		}
 		byID := make(map[string]ManagedNode, len(entries))
 		for _, entry := range entries {
 			byID[entry.ID] = entry
@@ -61,21 +57,18 @@ func accountNodes(ctx context.Context, store *accounting.Store, config PlatformC
 			if !exists || entry.Protocol != credential.Protocol || entry.Disabled {
 				continue
 			}
-			ports := []string(nil)
-			if profile.Ports["hysteria2"] == entry.Port {
-				ports = profile.Hopping
-			}
+			ports := entry.UDPPorts
 			node, err := entry.subscriptionNode(app.Address, usage.Name+"-"+entry.ID, runtime, ports, certificates, credential)
 			if err != nil {
 				return nil, err
 			}
 			node.ID = runtime + "-" + credential.ID
 			if node.Protocol == "tuic" && tuicPort != 0 {
-				ranges, err := parsePortRanges(profile.TUICPorts)
+				ranges, err := parsePortRanges(entry.UDPPorts)
 				if err != nil {
 					return nil, err
 				}
-				if tuicPort != node.Port && (profile.Ports["tuic"] != node.Port || !portInRanges(tuicPort, ranges)) {
+				if tuicPort != node.Port && !portInRanges(tuicPort, ranges) {
 					return nil, errors.New("TUIC port is not configured for this inbound")
 				}
 				node.Port = tuicPort

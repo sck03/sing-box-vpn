@@ -2,7 +2,7 @@
 
 [使用指南](usage.md) · [架构](architecture.md) · [兼容性](compatibility.md)
 
-当前订阅配置为 **schema=6**，CompilerVersion=7、ParserVersion=3。只接受当前配置，不迁移旧数据或恢复旧管理接口。平台配置 schema=7、节点文档 schema=5、模板 version=1、数据库 schema=17 和备份容器格式 8 分别维护，不能一起机械递增。
+当前订阅配置为 **schema=6**，CompilerVersion=7、ParserVersion=3。只接受当前配置，不迁移旧数据或恢复旧管理接口。平台配置 schema=8、节点文档 schema=6、模板 version=1、数据库 schema=17 和备份容器格式 8 分别维护，不能一起机械递增。
 
 ## 普通账户分享
 
@@ -209,3 +209,9 @@ Egern 独立渲染 IPv4 `ip_cidr` 与 IPv6 `ip_cidr6`，支持 UDP 中继、Hyst
 订阅发布只保存已配置输出的快照和必要运行投影，不再隐式创建 `sbox.json`、`clmi.yaml`、`proxies.yaml`、`jhsub.txt`、`jhsub-base64.txt` 或 `share.json`（包括 VPNGate 子目录）。通过账户下载或配置输出的授权 URL 获取内容；输出 ID 不再决定额外的本地文件路径。
 
 固定 Argo 隧道在应用前的候选预览中就会包含对应节点；更换域名和关闭隧道同样影响预览、应用后快照与账户下载。临时隧道只复用与候选隧道设置一致的观察值。
+
+## 运行状态文件
+
+subscriptions/runtime.json 保存来源节点和资源正文缓存；subscriptions/operations.json 保存投递确认与有界运行历史。schedule.json、activity.json 保持轻量投影。普通投递仅更新 operations/schedule/activity，同一次发布日志保证三者一起恢复；配置和来源重新编译时合并最新操作记录，避免覆盖已确认投递。文件仍受 16 MiB 上限约束。
+
+后台刷新与投递复用服务仓储；独立操作在入口管理一组仓储生命周期。公开下载授权仍在每次发送前重新检查，不缓存授权结果。

@@ -213,7 +213,7 @@ func refreshSource(ctx context.Context, client *http.Client, source sub.Source, 
 
 // The separate cross-process lock coalesces scheduled and manual refreshes. It
 // never holds the configuration lock while waiting on a remote server.
-func refreshSubscriptionsResult(ctx context.Context, root, core string, force bool, report *application.RefreshResult) error {
+func refreshSubscriptionsResult(ctx context.Context, root, core string, force bool, report *application.RefreshResult, services ...AccountService) error {
 	*report = application.RefreshResult{Failures: []application.RefreshFailure{}}
 	defer func() {
 		report.Interrupted = ctx.Err() != nil
@@ -230,6 +230,11 @@ func refreshSubscriptionsResult(ctx context.Context, root, core string, force bo
 	if err := lockFile(lock); err != nil {
 		return fmt.Errorf("订阅刷新已在运行: %w", err)
 	}
+	service, closeSource, err := subscriptionSource(root, services)
+	if err != nil {
+		return err
+	}
+	defer closeSource()
 	var config sub.Config
 	var runtime sub.Runtime
 	err = withStartupLock(ctx, root, func() error {
@@ -238,7 +243,7 @@ func refreshSubscriptionsResult(ctx context.Context, root, core string, force bo
 		if err != nil {
 			return err
 		}
-		_, _, err = confirmedSubscriptionConfig(ctx, root, config)
+		_, _, err = confirmedSubscriptionConfig(ctx, root, config, service)
 		return err
 	})
 	if err != nil {
@@ -286,7 +291,7 @@ func refreshSubscriptionsResult(ctx context.Context, root, core string, force bo
 	if err := ctx.Err(); err != nil {
 		return errors.Join(err, checkpointSubscriptionSources(ctx, root, config, results))
 	}
-	events, err = publishSubscriptionRefresh(ctx, root, core, config, results, resources, events, now, resourceChanged, report, compilePreparedSubscriptions)
+	events, err = publishSubscriptionRefresh(ctx, root, core, config, results, resources, events, now, resourceChanged, report, compilePreparedSubscriptions, service)
 	if ctx.Err() != nil && !report.Published {
 		return errors.Join(err, ctx.Err(), checkpointSubscriptionSources(ctx, root, config, results))
 	}

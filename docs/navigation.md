@@ -56,3 +56,9 @@
 成员顺序具有含义的出站组、策略组和规则集使用同一选择模型，新增成员追加到末尾，提供上移/下移按钮。筛选、分页和卡片分组只改变展示。选择器用原生 checkbox；搜索框按方向下键进入选项，Escape 收起选择面板并回到展开按钮。少量协议的内联复选框不拦截外层弹窗 Escape。长表单底部操作栏保持可见，320px 窄屏也可操作。
 
 参考的是成熟设计系统的交互模式：[Carbon Dropdown](https://carbondesignsystem.com/components/dropdown/usage/) 的过滤多选与摘要、[Ant Design Select](https://ant.design/components/select/) 的搜索/选择上限、[MUI Autocomplete](https://mui.com/material-ui/react-autocomplete/) 的复选框多选与标签输入。本项目用原生模块实现，不增加相应框架、组件库或生产依赖。具体视觉与行为以项目真实浏览器回归为准。
+
+## 证书与入站操作边界
+
+证书页由 certificate-page.js 独立加载，沿用统一表格、按钮、帮助文本和弹窗。列表同时保留草稿和生效资产；不可续期按钮旁显示原因，不能只依赖颜色或提示气泡。有效期按生效材料展示，待移除仍在线的资产保留引用信息。
+
+Hy2/TUIC 的额外 UDP 端口在所属入站的编辑表单中设置，列表直接显示范围；不再使用全局高级面板。复制入站清空端口范围，避免不易察觉的资源占用冲突。

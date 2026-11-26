@@ -23,7 +23,7 @@ type deliveryResult struct {
 	State sub.DeliveryState
 }
 
-func deliverSubscriptions(ctx context.Context, root, id string, automatic bool, output io.Writer) (operationErr error) {
+func deliverSubscriptions(ctx context.Context, root, id string, automatic bool, output io.Writer, services ...AccountService) (operationErr error) {
 	report := application.DeliveryResult{Items: []application.DeliveryOutcome{}}
 	defer func() {
 		report.Interrupted = ctx.Err() != nil
@@ -36,21 +36,17 @@ func deliverSubscriptions(ctx context.Context, root, id string, automatic bool, 
 	if err := os.MkdirAll(filepath.Join(root, "subscriptions"), 0700); err != nil {
 		return err
 	}
+	service, closeSource, err := subscriptionSource(root, services)
+	if err != nil {
+		return err
+	}
+	defer closeSource()
 	return withNamedFileLock(filepath.Join(root, "subscriptions"), ".delivery.lock", func() error {
-		config, runtime, snapshot, err := captureSubscriptionDelivery(ctx, root)
+		config, runtime, snapshot, err := captureSubscriptionDelivery(ctx, root, service)
 		if err != nil {
 			return err
 		}
-		// One explicit repository lifetime for all destinations in this task.
-		// Output checks still authorize each account immediately before sending.
-		var accounts *accounting.Store
-		if slices.ContainsFunc(config.Sources, func(source sub.Source) bool { return source.Kind == "account" }) {
-			accounts, err = accounting.Open(filepath.Join(root, "control.db"))
-			if err != nil {
-				return err
-			}
-			defer accounts.Close()
-		}
+		accounts := service.Store
 		client := newHTTPClient(20 * time.Second)
 		defer client.CloseIdleConnections()
 		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
@@ -165,10 +161,17 @@ func checkpointDeliveries(ctx context.Context, root string, results []deliveryRe
 		return events, nil
 	}
 	err := withStartupLock(ctx, root, func() error {
-		config, state, err := loadSubscriptionState(root)
+		var config sub.Config
+		if found, err := ReadJSON(filepath.Join(root, subscriptionsConfig), &config); err != nil {
+			return err
+		} else if !found {
+			return errors.New("subscription configuration is missing")
+		}
+		operations, err := loadSubscriptionOperations(root)
 		if err != nil {
 			return err
 		}
+		state := sub.Runtime{Deliveries: operations.Deliveries, Runs: operations.Runs}
 		current := map[string]string{}
 		for _, destination := range config.Deliveries {
 			current[destination.ID] = sub.DeliveryHash(destination)
@@ -191,7 +194,7 @@ func checkpointDeliveries(ctx context.Context, root string, results []deliveryRe
 				events = append(events, sub.Run{Time: result.State.Checked, Operation: "delivery", ObjectID: result.ID, Message: result.Status})
 			}
 		}
-		return writeSubscriptionRuntime(root, config, state)
+		return writeSubscriptionOperations(root, config, state)
 	})
 	return events, err
 }

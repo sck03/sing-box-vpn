@@ -153,52 +153,56 @@ func firewallRules(app App, settings VPNSettings, gateway Object, subscription s
 	for _, name := range names {
 		fmt.Fprintf(&input, "-A %s -p %s -j ACCEPT\n", inputChain, name)
 	}
-	profiles := []Profile{app.profile()}
+	forward := func(owner, kind string, port int, values []string, disabled bool) error {
+		if len(values) == 0 {
+			return nil
+		}
+		ranges, err := parsePortRanges(values)
+		if err != nil {
+			return err
+		}
+		if err = validateReservedPorts(reservations, owner, kind, ranges); err != nil {
+			return err
+		}
+		if disabled {
+			return nil
+		}
+		for _, r := range ranges {
+			// Only redirect packets addressed to this host; preserve transit traffic.
+			fmt.Fprintf(&udp, "-A %s -p udp -m addrtype --dst-type LOCAL --dport %s -j REDIRECT --to-ports %d\n", udpChain, r.String(), port)
+		}
+		return nil
+	}
+	for _, node := range app.Nodes {
+		if len(node.UDPPorts) > 0 && node.Protocol != "hysteria2" && node.Protocol != "tuic" {
+			return "", "", errors.New("additional UDP ports require Hysteria2 or TUIC")
+		}
+		if err := forward(inboundPortOwner(node.ID), node.Protocol, node.Port, node.UDPPorts, node.Disabled); err != nil {
+			return "", "", err
+		}
+	}
 	if settings.ActiveCountry != "" {
 		profile, exists := settings.Profiles[settings.ActiveCountry]
 		if !exists {
 			return "", "", errors.New("当前 VPNGate 国家缺少端口配置")
-		}
-		profiles = append(profiles, profile)
-	}
-	for i, profile := range profiles {
-		entries := app.Inbounds()
-		if i > 0 {
-			entries = objects(gateway["inbounds"])
 		}
 		for _, kind := range []string{"hysteria2", "tuic"} {
 			values := forwardPorts(profile, kind)
 			if len(values) == 0 {
 				continue
 			}
-			if !slices.ContainsFunc(entries, func(in Object) bool {
-				return in["type"] == kind && number(in["listen_port"]) == profile.Ports[kind]
-			}) {
+			var matched Object
+			for _, in := range objects(gateway["inbounds"]) {
+				if in["type"] == kind && number(in["listen_port"]) == profile.Ports[kind] {
+					matched = in
+					break
+				}
+			}
+			if matched == nil {
 				return "", "", fmt.Errorf("%s 多端口的主端口与入口配置不一致", kind)
 			}
-			if slices.ContainsFunc(entries, func(in Object) bool {
-				return in["type"] == kind && number(in["listen_port"]) == profile.Ports[kind] && in["_disabled"] == true
-			}) {
-				continue
-			}
-			scope := normalScope
-			if i > 0 {
-				scope = vpngateScope
-			}
-			owner := normalScope
-			if scope == vpngateScope {
-				owner = profileOwner(settings.ActiveCountry)
-			}
-			ranges, err := parsePortRanges(values)
-			if err != nil {
+			if err := forward(profileOwner(settings.ActiveCountry), kind, profile.Ports[kind], values, matched["_disabled"] == true); err != nil {
 				return "", "", err
-			}
-			if err := validateReservedPorts(reservations, owner, kind, ranges); err != nil {
-				return "", "", err
-			}
-			for _, r := range ranges {
-				// Forward only packets addressed to this host, preserving transit traffic.
-				fmt.Fprintf(&udp, "-A %s -p udp -m addrtype --dst-type LOCAL --dport %s -j REDIRECT --to-ports %d\n", udpChain, r.String(), profile.Ports[kind])
 			}
 		}
 	}

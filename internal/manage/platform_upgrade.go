@@ -143,7 +143,7 @@ func (s *PlatformService) rollbackRuntime(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	files, err := s.build(ctx, c)
+	files, err := s.buildApplied(ctx, c)
 	if err != nil {
 		return err
 	}

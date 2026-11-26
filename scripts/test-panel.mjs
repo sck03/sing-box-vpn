@@ -19,8 +19,8 @@ dom.window.HTMLDialogElement.prototype.close = function () {
   this.open = false;
 };
 globalThis.confirm = () => true;
-const { inbounds, certificates } =
-  await import("../internal/manage/panel/network.js");
+const { inbounds } = await import("../internal/manage/panel/network.js");
+const { certificates } = await import("../internal/manage/panel/certificate-page.js");
 const { routing } = await import("../internal/manage/panel/routing.js");
 const { outbounds } = await import("../internal/manage/panel/outbounds.js");
 const { vpngate } = await import("../internal/manage/panel/vpngate.js");

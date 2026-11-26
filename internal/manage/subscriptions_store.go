@@ -34,7 +34,11 @@ func loadSubscriptionState(root string) (sub.Config, sub.Runtime, error) {
 
 func loadSubscriptionRuntime(root string) (sub.Runtime, error) {
 	r := sub.Runtime{Sources: map[string]sub.SourceCache{}}
-	_, err := ReadJSON(filepath.Join(root, subscriptionsRuntime), &r)
+	if _, err := ReadJSON(filepath.Join(root, subscriptionsRuntime), &r); err != nil {
+		return r, err
+	}
+	operations, err := loadSubscriptionOperations(root)
+	r.Deliveries, r.Runs = operations.Deliveries, operations.Runs
 	return r, err
 }
 
@@ -54,9 +58,21 @@ func recoverSubscriptionRuntime(root string) error {
 	if err = os.Rename(path, filepath.Join(root, "subscriptions/runtime.corrupt.json")); err != nil {
 		return err
 	}
-	state = sub.Runtime{Sources: map[string]sub.SourceCache{}}
+	operations, err := loadSubscriptionOperations(root)
+	if err != nil {
+		return err
+	}
+	state = sub.Runtime{Sources: map[string]sub.SourceCache{}, Runs: operations.Runs, Deliveries: operations.Deliveries}
 	state.Record("cache-recovery", "", "Damaged subscription cache quarantined; remote sources must refresh", time.Now())
-	return AtomicJSON(path, state)
+	files := fileBundle{}
+	if err := files.subscriptionJSON(subscriptionsOperations, subscriptionOperationsState{state.Deliveries, state.Runs}); err != nil {
+		return err
+	}
+	state.Runs, state.Deliveries = nil, nil
+	if err := files.subscriptionJSON(subscriptionsRuntime, state); err != nil {
+		return err
+	}
+	return publish(root, files)
 }
 
 func compileSubscriptions(ctx context.Context, root, core string, c sub.Config, r sub.Runtime, local map[string][]sub.Node, mode sub.BuildMode, services ...AccountService) (fileBundle, sub.Snapshot, map[string]sub.Preview, error) {
@@ -212,12 +228,11 @@ func writeSubscriptionRuntime(root string, config sub.Config, runtime sub.Runtim
 }
 
 func (files fileBundle) subscriptionRuntime(config sub.Config, runtime sub.Runtime) error {
-	for name, value := range map[string]any{subscriptionsRuntime: runtime, subscriptionsSchedule: sub.NewSchedule(config, runtime), subscriptionsActivity: subscriptionActivityStatus(config, runtime)} {
-		if err := files.json(name, value); err != nil {
+	cache := runtime
+	cache.Runs, cache.Deliveries = nil, nil
+	for name, value := range map[string]any{subscriptionsRuntime: cache, subscriptionsOperations: subscriptionOperationsState{runtime.Deliveries, runtime.Runs}, subscriptionsSchedule: sub.NewSchedule(config, runtime), subscriptionsActivity: subscriptionActivityStatus(config, runtime)} {
+		if err := files.subscriptionJSON(name, value); err != nil {
 			return err
-		}
-		if len(files[name]) > maxJSONFile {
-			return errors.New("subscription state exceeds 16 MiB")
 		}
 	}
 	return nil

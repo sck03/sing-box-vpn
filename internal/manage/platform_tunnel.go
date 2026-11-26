@@ -108,7 +108,7 @@ func (s *PlatformService) syncTunnel(ctx context.Context) error {
 	if err = s.Store.Observe(ctx, "argo-tunnel", string(data)); err != nil {
 		return err
 	}
-	files, err := s.build(ctx, c)
+	files, err := s.buildApplied(ctx, c)
 	if err == nil {
 		err = withStartupLock(ctx, s.Root, func() error { return publishPlatformFiles(s.Root, files) })
 	}

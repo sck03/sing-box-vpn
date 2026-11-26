@@ -178,3 +178,19 @@ app.routing = {};
 // @ts-expect-error SOCKS endpoints are explicit outbound resources
 app.socks_port = 40000;
 void [preview, output, badPreview];
+
+// Endpoint names select both the write DTO and response type.
+import { query, mutate } from "../internal/manage/panel/api.js";
+async function endpointContracts() {
+ const certificates = await query("/api/certificates");
+ const available: boolean = certificates[0].can_renew;
+ void available;
+ await mutate("/api/tasks", { operation: "certificate-renew", id: "live" });
+ // @ts-expect-error certificate preparation requires its contact and domain
+ await mutate("/api/certificates/prepare", { id: "draft" });
+ // @ts-expect-error task input cannot be sent as a configuration save
+ await mutate("/api/config", { operation: "certificate-renew", id: "live" });
+ // @ts-expect-error unknown endpoint has no response contract
+ await query("/api/nonexistent");
+}
+void endpointContracts;

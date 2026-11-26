@@ -6,6 +6,7 @@ import (
 	"net/mail"
 	"path/filepath"
 
+	"github.com/sck03/sing-box-vpn/internal/certificates"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
@@ -34,17 +35,21 @@ func (s *PlatformService) certificateIDAvailable(ctx context.Context, id string)
 	if !domain.ResourceID.MatchString(id) {
 		return errors.New("invalid certificate ID")
 	}
-	state, err := s.Store.DesiredState(ctx)
+	state, err := s.Store.State(ctx)
 	if err != nil {
 		return err
 	}
-	c, err := decodePlatform(state.Config)
-	if err != nil {
-		return err
-	}
-	for _, asset := range c.Certificates {
-		if asset.ID == id {
-			return errors.New("certificate ID already exists; choose a new ID before replacing bindings")
+	// A failed apply may remove an asset from desired while it is still live.
+	// Reserve both registries so preparation cannot reuse its material directory.
+	for _, raw := range [][]byte{state.Desired, state.Applied} {
+		c, err := decodePlatform(raw)
+		if err != nil {
+			return err
+		}
+		for _, asset := range c.Certificates {
+			if asset.ID == id {
+				return errors.New("certificate ID already exists; choose a new ID before replacing bindings")
+			}
 		}
 	}
 	return nil
@@ -63,4 +68,21 @@ func (s *PlatformService) PrepareCertificate(ctx context.Context, value Certific
 	}
 	dir := filepath.Join(s.Root, "certificates", value.ID)
 	return CertificateAsset{ID: value.ID, Domain: value.Domain, Email: value.Email, Provider: "acme", Certificate: filepath.ToSlash(filepath.Join(dir, "cert.pem")), Key: filepath.ToSlash(filepath.Join(dir, "key.pem"))}, nil
+}
+
+func (s *PlatformService) appliedCertificate(ctx context.Context, id string) (PlatformConfig, CertificateAsset, error) {
+	state, err := s.Store.AppliedState(ctx)
+	if err != nil {
+		return PlatformConfig{}, CertificateAsset{}, err
+	}
+	c, err := decodePlatform(state.Config)
+	if err != nil {
+		return c, CertificateAsset{}, err
+	}
+	for _, asset := range c.Certificates {
+		if asset.ID == id && certificates.Automatic(asset) && domain.ResourceID.MatchString(id) {
+			return c, asset, nil
+		}
+	}
+	return c, CertificateAsset{}, &domain.FieldError{Field: "id", Message: "请先应用对应的 ACME 证书配置"}
 }

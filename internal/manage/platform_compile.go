@@ -15,6 +15,14 @@ func (s *PlatformService) build(ctx context.Context, c PlatformConfig) (fileBund
 	return s.buildConfig(ctx, c, sub.Available, nil)
 }
 
+func (s *PlatformService) buildApplied(ctx context.Context, c PlatformConfig) (fileBundle, error) {
+	c.normalize()
+	if err := c.validate(false); err != nil {
+		return nil, err
+	}
+	return s.compileConfig(ctx, c, sub.Available, nil)
+}
+
 func configurationOutcome(files fileBundle) ([]byte, error) {
 	var snapshot sub.Snapshot
 	var config sub.Config
@@ -127,6 +135,10 @@ func (s *PlatformService) buildConfig(ctx context.Context, c PlatformConfig, mod
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
+	return s.compileConfig(ctx, c, mode, prepared)
+}
+
+func (s *PlatformService) compileConfig(ctx context.Context, c PlatformConfig, mode sub.BuildMode, prepared map[string]sub.SourceCache) (fileBundle, error) {
 	for _, path := range certificatePaths(c) {
 		rel, err := filepath.Rel(s.Root, path)
 		if err != nil || !filepath.IsLocal(rel) {

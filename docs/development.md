@@ -4,7 +4,7 @@
 
 源码不依赖旧数据库或测试运行目录。`.test/gocache`、`.test/gomodcache`、`.test/tmp` 是可重建缓存；完成验证并停止相关进程后可清理。`.test/verification` 中旧数据库、日志、截图和测试二进制也可删除，仅保留需要的验收摘要。
 
-Windows 使用 `./scripts/clean-dev.ps1 -WhatIf` 预览，去掉 `-WhatIf` 清理 `.test`、`.build`、`.cleanup-manual`。加 `-Dependencies` 删除可由 `npm ci` 重建的 node_modules，加 `-BrowserTools` 删除本地 Python 浏览器验证依赖。脚本先核对绝对路径、目录链接和目录内正在运行的程序，再逐项删除；不会触及 `.git`、源码、文档示例、当前 Go 工具链及核心校验器。停止正在执行的构建和测试后再使用；清理后首次构建需要重新下载模块和编译。
+Windows 使用 `./scripts/clean-dev.ps1 -WhatIf` 预览，去掉 `-WhatIf` 清理 `.test`、`.build`、`.cleanup-manual`。加 `-Dependencies` 删除可由 `npm ci` 重建的 node_modules，加 `-BrowserTools` 删除本地 Python 浏览器验证依赖。脚本先核对绝对路径、目录链接和目录内正在运行的程序，再逐项删除；无法读取的旧目录单独跳过并报告，不阻塞其他可重建缓存；不会触及 `.git`、源码、文档示例、当前 Go 工具链及核心校验器。停止正在执行的构建和测试后再使用；清理后首次构建需要重新下载模块和编译。
 
 `.tools/linux-validation.qcow2` 是可重建 Linux 测试虚拟机，可能远大于源码；不再使用时，先运行 `scripts/linux-vm.ps1 stop`，再清理该磁盘、基础镜像、QEMU 和配套测试密钥。不要删除仍在使用的主机部署目录或用户配置。`.build/release` 只需保留当前安装包与 SHA256SUMS，中间构建目录可删除。清缓存后首次构建会重新下载依赖和编译。
 
@@ -14,7 +14,7 @@ Windows 使用 `./scripts/clean-dev.ps1 -WhatIf` 预览，去掉 `-WhatIf` 清�
 
 按入站重载的回归入口为 `TestManagedCredentialReload`（真实五协议、跨入站 TCP/UDP 连接、核心启动标识），`internal/runtime/reload_test.go` 还覆盖构造/启动恢复和失败关闭。修改凭据生命周期必须同时运行带四个发布标签的 runtime 竞态测试；单独 `go test ./...` 不替代该检查。
 
-当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载、订阅模板与预览、弹窗生命周期、组件流程、输出身份、订阅生命周期、部署影响和选择交互十三组。数据库使用 schema 17，所有旧数据库及其备份明确拒绝。
+当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载、订阅模板与预览、弹窗生命周期、组件流程、输出身份、订阅生命周期、部署影响和选择交互十四组。数据库使用 schema 17，所有旧数据库及其备份明确拒绝。
 
 `scripts/test-panel-navigation.mjs` 覆盖角色过滤、搜索定位、空/非法路由、同页标签的前进/返回与表单复用、延迟读取合并与取消、错误重试、权益初始读取预算、稀疏订阅草稿和 SSE 启动。`TestPanelEphemeralDevelopmentListener` 实际启动回环随机端口、请求能力接口并关闭服务，同时拒绝公网随机端口；设置校验仍拒绝保存端口 0。`TestPanelHealthSurvivesSaturatedRequests` 验证 32 个业务请求占满限额时，本机健康检查仍能准确判断 worker 就绪状态。
 
@@ -73,7 +73,7 @@ shellcheck --severity=warning sb.sh install.sh lib/*.sh scripts/*.sh
 
 Linux root 专项通过 `RUN_NETNS_TESTS=1`、`RUN_FIREWALL_TESTS=1`、`RUN_SERVICE_TESTS=1`、`RUN_STORAGE_TESTS=1` 启用，测试定义明确需要的二进制环境变量。仅使用专门 VM，真实 systemd/firewall 测试会创建系统资源。
 
-`npm test` 执行13 组回归，覆盖重复提交、客户端字段联动、短暂断网、用户页路径前缀、状态搜索、焦点保留、单位换算、授权分页与导航加载。Mihomo 仅作为开发/CI 测试客户端，版本及 Linux amd64 摘要位于 scripts/client-test-versions.json，使用官方基础 amd64-v1 构建。CI 仍执行原生配置与真实链路测试；面板 API/浏览器测试刻意设置无效 MIHOMO_BINARY，证明部署功能不依赖它。
+`npm test` 执行 14 组回归，覆盖重复提交、客户端字段联动、短暂断网、用户页路径前缀、状态搜索、焦点保留、单位换算、授权分页与导航加载。Mihomo 仅作为开发/CI 测试客户端，版本及 Linux amd64 摘要位于 scripts/client-test-versions.json，使用官方基础 amd64-v1 构建。CI 仍执行原生配置与真实链路测试；面板 API/浏览器测试刻意设置无效 MIHOMO_BINARY，证明部署功能不依赖它。
 
 本地面板使用独立目录：manager `panel --root <空目录> --core <官方核心> --runtime <受管核心> --address 127.0.0.1 --no-system init`，stdin 为 username/password JSON；随后同样参数 `recover`、`serve`。仅在 `serve` 命令之前加 `--listen 127.0.0.1:0` 自动分配开发端口，日志返回实际 URL；`init` 和 `configure` 保存的端口必须为 1–65535。`--no-system` 仅用于开发，系统动作明确拒绝。Windows 的 Unix socket 测试需要较短的 TEMP/TMP 路径，例如项目下 `.test/tmp`。
 
@@ -89,7 +89,7 @@ Windows 先加载 `scripts/dev-env.ps1`，将 `GATEWAY_BINARY` 和 `MANAGED_CORE
 
 可对该独立面板运行真实 HTTP 工作流：设置 `PANEL_TEST_URL`、`PANEL_TEST_USERNAME`（默认 reviewadmin）和 `PANEL_TEST_PASSWORD`，执行 `node scripts/test-panel-api.mjs`。脚本只接受回环 URL，并在创建数据前确认服务均处于 no-system 状态。验证绑定/导出、下载次数、跨站分享、完整候选预览和任务应用；不能指向真实安装。
 
-配置预览为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回普通服务端脱敏配置、输出节点数/变化、结构化验证和 `deployment` 服务变更计划（`changes`、`runtime_observed`、`applied_revision`）。`POST /api/config/preview-output` 接受 `{id,config}`，只编译目标图并返回有界脱敏内容。旧 `/api/subscriptions/preview` 不恢复。节点文档 schema=5、订阅 schema=6、CompilerVersion=7、模板 version=1、平台 schema=7；备份容器为 8，数据库为 17，旧订阅内容明确拒绝。
+配置预览为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回普通服务端脱敏配置、输出节点数/变化、结构化验证和 `deployment` 服务变更计划（`changes`、`runtime_observed`、`applied_revision`）。`POST /api/config/preview-output` 接受 `{id,config}`，只编译目标图并返回有界脱敏内容。旧 `/api/subscriptions/preview` 不恢复。节点文档 schema=6、订阅 schema=6、CompilerVersion=7、模板 version=1、平台 schema=8；备份容器为 8，数据库为 17，旧订阅内容明确拒绝。
 
 新增回归 `compiler_regression_test.go`、`preview_test.go` 覆盖 URI 认证/端口、SIP003、WS early-data、gRPC/XHTTP、名称和策略组范围、脱敏与真实核心检查。`TestImportedTrojanTransportsWithMihomo` 使用真实 sing-box 服务端和 Mihomo 客户端验证 WS/gRPC，错误路径或服务名必须失败。`TestRefreshValidationDoesNotHoldPublicationLock` 覆盖锁外编译与过期配置拒绝，`TestLimitedServerPreservesTLSAndHTTP2` 覆盖 TLS 状态及协议协商。
 
@@ -286,3 +286,11 @@ Windows 验证先加载 scripts/dev-env.ps1，再设置 MANAGED_CORE_BINARY 指�
 真实浏览器脚本验证搜索和勾选、跨搜索保留、Escape 焦点、分享的设备筛选，以及 390px/320px 视口中选择器和保存栏。截图是临时验证产物；公开文档只记录测试范围，不提交临时账户、数据库或日志。当前命令、结果和环境限制见 `docs/validation/2026-11-25-selection-refactor.json`。
 
 增加选择组件时优先扩展共享字段协议，不引入页面私有状态副本。动态候选通过字段工厂在打开表单时读取；候选不足 40 项也走同一组件。仅在选项或依赖变化时刷新候选，单次勾选不重建复选框。格式分组使用服务端的 mode，协议使用 `/api/clients` 目录，不按展示文字猜测后端能力。
+
+## 本轮定向验证与清理（2026-11-26）
+
+本轮按改动范围执行验证，不运行完整测试套件。[验证结果与清理记录](validation/2026-11-26-recovery-resource-refactor.json)。证书恢复、状态能力、UDP 归属、账户导出和订阅小文件检查位于 recovery_boundaries_test.go；前端新增第 14 组 test-panel-recovery.mjs。已有发布/投递生命周期、端口防火墙、证书调度、前端导航及部署回归按需运行。计量请求复用执行 accounting 的定向 race 检查。类型检查和 panel-contract -check 检查生成契约，编译检查不等同于 Linux 运行验收。
+
+平台 schema 8 / 节点文档 schema 6 不兼容旧配置；数据库表结构仍为 schema 17。测试应创建新临时目录，不复用之前审核生成的数据库。需要启动真实管理集成夹具时设置 MANAGED_CORE_BINARY；没有该变量的跳过不能记作通过。
+
+验证结束后使用 scripts/clean-dev.ps1 -Dependencies 清理项目内 .test、.build、.cleanup-manual 和 node_modules，其中包括旧测试数据库、二进制、缓存、日志与截图。脚本会先确认路径和运行程序。当前使用的 Go 工具链、官方验证核心以及文档仍引用的示例图保留。npm ci 和模块下载可恢复开发依赖。

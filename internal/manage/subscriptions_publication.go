@@ -22,12 +22,17 @@ func subscriptionInputsDigest(local map[string][]sub.Node, accounts map[string]s
 
 // Fetching and core validation own no publication lock. The final transaction
 // rechecks both configuration and independently changing account credentials.
-func publishSubscriptionRefresh(ctx context.Context, root, core string, expected sub.Config, sources map[string]sub.SourceCache, resources map[string]sub.ResourceCache, events []sub.Run, now time.Time, resourceChanged bool, report *application.RefreshResult, compile subscriptionSnapshotCompiler) ([]sub.Run, error) {
+func publishSubscriptionRefresh(ctx context.Context, root, core string, expected sub.Config, sources map[string]sub.SourceCache, resources map[string]sub.ResourceCache, events []sub.Run, now time.Time, resourceChanged bool, report *application.RefreshResult, compile subscriptionSnapshotCompiler, services ...AccountService) ([]sub.Run, error) {
+	service, closeSource, err := subscriptionSource(root, services)
+	if err != nil {
+		return events, err
+	}
+	defer closeSource()
 	var config sub.Config
 	var state sub.Runtime
 	var local map[string][]sub.Node
 	var generation int64
-	err := withStartupLock(ctx, root, func() error {
+	err = withStartupLock(ctx, root, func() error {
 		var err error
 		config, state, err = loadSubscriptionState(root)
 		if err != nil {
@@ -36,7 +41,7 @@ func publishSubscriptionRefresh(ctx context.Context, root, core string, expected
 		if err = validateSubscriptionsRevision(config, expected); err != nil {
 			return err
 		}
-		local, state.Accounts, generation, err = captureConfirmedSubscriptionSources(ctx, root, config)
+		local, state.Accounts, generation, err = captureConfirmedSubscriptionSources(ctx, root, config, service)
 		return err
 	})
 	if err != nil {
@@ -113,7 +118,7 @@ func publishSubscriptionRefresh(ctx context.Context, root, core string, expected
 		if err = validateSubscriptionsRevision(current, config); err != nil {
 			return err
 		}
-		currentNodes, accounts, currentGeneration, err := captureConfirmedSubscriptionSources(ctx, root, current)
+		currentNodes, accounts, currentGeneration, err := captureConfirmedSubscriptionSources(ctx, root, current, service)
 		if err != nil {
 			return err
 		}

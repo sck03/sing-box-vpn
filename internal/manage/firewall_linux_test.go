@@ -140,7 +140,7 @@ func TestLinuxMultiportFirewall(t *testing.T) {
 	for _, ports := range [][2]int{{31000, 20002}, {31002, 20002}, {31100, 20003}, {31112, 20003}, {32002, 22002}, {32100, 22003}, {34100, 0}, {33333, 0}} {
 		probe(ports[0], ports[1])
 	}
-	app.TUICPorts = nil
+	setFixtureUDPPorts(&app, "tuic", nil)
 	jp := settings.Profiles["JP"]
 	jp.TUICPorts = nil
 	settings.Profiles["JP"] = jp

@@ -120,6 +120,8 @@ type portReservation struct {
 	owner, protocol string
 }
 
+func inboundPortOwner(id string) string { return normalScope + ":" + id }
+
 // Keep ranges compact: reserving 1:65535 must not allocate 65,535 map entries.
 func portReservations(app App, settings VPNSettings) ([]portReservation, error) {
 	var out []portReservation
@@ -135,12 +137,15 @@ func portReservations(app App, settings VPNSettings) ([]portReservation, error) 
 		}
 		return nil
 	}
-	owner := normalScope
 	for _, node := range app.Nodes {
-		out = append(out, portReservation{portRange{node.Port, node.Port}, owner, node.Protocol})
-	}
-	if err := add(app.profile(), owner); err != nil {
-		return nil, err
+		out = append(out, portReservation{portRange{node.Port, node.Port}, "", node.Protocol})
+		ranges, err := parsePortRanges(node.UDPPorts)
+		if err != nil {
+			return nil, fmt.Errorf("inbound %s: %w", node.ID, err)
+		}
+		for _, r := range ranges {
+			out = append(out, portReservation{r, inboundPortOwner(node.ID), node.Protocol})
+		}
 	}
 	for country, profile := range settings.Profiles {
 		owner := profileOwner(country)
@@ -237,10 +242,3 @@ func probePort(port int) error {
 	}
 	return nil
 }
-
-// Scope validation belongs to the caller; both node types share this mutation.
-
-// TUIC forwarding changes only firewall metadata. Its single server listener,
-// credentials and exported primary node stay identical, so no core process or
-// subscription regeneration is needed. The caller holds the configuration lock
-// and validates reservations and system sockets before entering this path.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"sync"
 	"time"
 )
 
@@ -20,6 +21,13 @@ type reservationRequest struct {
 	now                  time.Time
 	result               chan reservationResult
 }
+
+// The channel is consumed before reuse; clear request metadata to avoid
+// retaining contexts and account identities between reservations.
+var reservationRequests = sync.Pool{New: func() any {
+	return &reservationRequest{result: make(chan reservationResult, 1)}
+}}
+
 type reservationWriter struct {
 	requests chan *reservationRequest
 	done     chan struct{}
@@ -31,7 +39,12 @@ func (s *Store) reservePeriod(ctx context.Context, id, account, runtime string, 
 	if want < 1 || want > ReservationBytes {
 		return 0, errors.New("invalid reservation size")
 	}
-	r := &reservationRequest{ctx: ctx, id: id, account: account, runtime: runtime, want: want, period: periodID, now: now, result: make(chan reservationResult, 1)}
+	r := reservationRequests.Get().(*reservationRequest)
+	*r = reservationRequest{ctx: ctx, id: id, account: account, runtime: runtime, want: want, period: periodID, now: now, result: r.result}
+	defer func() {
+		*r = reservationRequest{result: r.result}
+		reservationRequests.Put(r)
+	}()
 	s.reservationMu.Lock()
 	if s.closed {
 		s.reservationMu.Unlock()
