@@ -148,7 +148,7 @@ func TestAccountSourceUsesCandidatePublishingAddress(t *testing.T) {
 	}
 	c.App.Address = "192.0.2.44"
 	service.Config = &c
-	nodes, e := service.accountNodes(ctx, "a", "normal", 0)
+	nodes, e := service.accountNodes(ctx, "a", "normal", nil)
 	if e != nil || len(nodes) != 5 {
 		t.Fatal(len(nodes), e)
 	}

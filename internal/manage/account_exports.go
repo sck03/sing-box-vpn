@@ -43,7 +43,7 @@ func (s AccountService) exportInputs(ctx context.Context, command application.Ac
 		if err != nil {
 			return err
 		}
-		nodes, err := accountNodes(ctx, store, config, usage, command.Scope, command.TUICPort)
+		nodes, err := accountNodes(ctx, store, config, usage, command.Scope, command.PortOverrides)
 		if err != nil {
 			return err
 		}

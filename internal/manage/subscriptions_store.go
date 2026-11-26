@@ -135,7 +135,7 @@ func captureSubscriptionSources(ctx context.Context, root string, c sub.Config, 
 			var nodes []sub.Node
 			if state.Available {
 				var err error
-				nodes, err = accountNodes(ctx, service.Store, *service.Config, usage, source.Scope, 0)
+				nodes, err = accountNodes(ctx, service.Store, *service.Config, usage, source.Scope, nil)
 				if err != nil {
 					return c, nil, nil, err
 				}

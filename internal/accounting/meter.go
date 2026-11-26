@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -452,16 +453,32 @@ func (m *Meter) Close(ctx context.Context) error {
 	}
 	m.mu.Unlock()
 	var result error
-	for _, p := range pools {
-		p.mu.Lock()
-		if p.reserved {
-			err := m.store.Checkpoint(ctx, p.id, p.upload, p.download, true)
-			result = errors.Join(result, err)
-			if err == nil {
+	// Shutdown drains transfers; maintenance excludes ticks and compaction.
+	// Bound transactions so large account sets can settle within the deadline.
+	for batch := range slices.Chunk(pools, 64) {
+		points := make([]UsageCheckpoint, 0, len(batch))
+		for _, p := range batch {
+			p.mu.Lock()
+			if p.reserved {
+				points = append(points, UsageCheckpoint{p.id, p.upload, p.download, true})
+			}
+			p.mu.Unlock()
+		}
+		if len(points) == 0 {
+			continue
+		}
+		err := m.store.CheckpointBatch(ctx, points)
+		result = errors.Join(result, err)
+		if err == nil {
+			for _, p := range batch {
+				p.mu.Lock()
 				p.reserved = false
+				p.mu.Unlock()
 			}
 		}
-		p.mu.Unlock()
+		if ctx.Err() != nil {
+			break
+		}
 	}
 	if result == nil {
 		result = m.store.compactScope(ctx, m.epoch, m.poolSequence, true)

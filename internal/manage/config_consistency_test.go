@@ -77,7 +77,7 @@ func TestTunnelCandidateApplyAndDownloadAgree(t *testing.T) {
 		if after.Preview != preview.Preview {
 			t.Fatal("preview differs after apply", preview, after)
 		}
-		nodes, err := service.accountService().accountNodes(ctx, "tunnel", normalScope, 0)
+		nodes, err := service.accountService().accountNodes(ctx, "tunnel", normalScope, nil)
 		if err != nil || len(nodes) != expected {
 			t.Fatal("download differs", len(nodes), err)
 		}

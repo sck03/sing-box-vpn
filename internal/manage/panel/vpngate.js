@@ -1,5 +1,5 @@
 import { workspace } from "./workspace.js";
-import { api } from "./api.js";
+import { getGatewayStatus } from "./api.js";
 import { boundCertificate, certificateChoices } from "./certificate-fields.js";
 import { capabilities } from "./capabilities.js";
 import { showFacts, loadRecords } from "./details.js";
@@ -30,9 +30,7 @@ export async function vpngate(ctx) {
         session.replace(help("正在加载出口验证…"));
         let status;
         try {
-          status = await api("/api/gateway?resource=status", undefined, {
-            signal: session.signal,
-          });
+          status = await getGatewayStatus(session.signal);
         } catch (error) {
           session.fail(error);
           return;
@@ -48,6 +46,10 @@ export async function vpngate(ctx) {
             ["ISP", status.exit?.isp],
             ["ASN", status.exit?.asn],
             ["最近更新", status.updated],
+            ["候选刷新", ({ passed: "刷新成功", partial: "部分完成", cached: "刷新失败，使用旧缓存", failed: "刷新失败", running: "正在刷新", not_run: "尚未刷新" })[status.source_refresh?.outcome] || "尚未刷新"],
+            ["候选数量", status.source_refresh?.nodes],
+            ["最近抓取成功", status.source_refresh?.last_success || "尚无成功记录"],
+            ["刷新说明", status.source_refresh?.reason],
           ],
           status.reason,
         );
@@ -72,7 +74,7 @@ export async function vpngate(ctx) {
       ),
     ),
     help(
-      "国家验证、ISP / hosting 筛选和无普通出口回退由独立网关执行。「家宽候选」不是住宅出口保证。",
+      "国家验证、ISP / hosting 筛选和无普通出口回退由独立网关执行。「家宽候选」不是住宅出口保证。刷新候选任务会等待抓取完成；失败时明确显示使用旧缓存或刷新失败。",
     ),
     row(
       ...[

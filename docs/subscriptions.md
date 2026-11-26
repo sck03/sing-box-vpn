@@ -24,7 +24,8 @@
 
 - GET /api/output-profiles：稳定输出目录，包含 id、client、mode、label、description。
 - GET /api/accounts/outputs?id=...&scope=...：按账户及实例分析可用节点，不启动核心、不渲染全部格式。
-- POST /api/accounts/export：请求 {id, scope, profile, tuic_port?}，返回 content、mime、extension、output 和 validation。
+- GET /api/accounts/ports?id=...：管理员读取该账户已绑定、已应用的 TUIC 入口，返回 runtime_id、inbound_id、port、udp_ports；不包含凭据。
+- POST /api/accounts/export：请求 {id, scope, profile, port_overrides?}，返回 content、mime、extension、output 和 validation。port_overrides 以“实例/入站 ID”为键，例如 {"normal/tuic-a":62001,"normal/tuic-b":62002}。未覆盖入口使用各自主端口；指定端口必须属于对应入口，未知、未绑定或不在所选实例中的键明确拒绝。旧 tuic_port 字段不再接受。
 - POST /api/grants：账户授权通过 profiles: ["uri", "mihomo-provider", "mihomo-config"] 精确选择用途；高级输出仍通过 outputs 选择。
 - 用户页 /user#TOKEN，用量 /u/TOKEN/usage，下载 /u/TOKEN/PROFILE。旧 clients 字段及账户客户端列表接口不再接受。
 
@@ -33,6 +34,8 @@
 列表的 pending 表示兼容性已分析、实际配置待下载时检查；unavailable 只表示 sing-box 配置检查不可用。passed 结合 scope 区分 sing-box 核心检查与内置节点格式检查。parser 不代表目标应用已接受完整配置；Mihomo/OpenClash 不依赖服务器安装客户端核心。
 
 下载时重新检查授权、权益、绑定及模板，并且只生成与校验所选格式。HEAD 不计数，GET 在生成和校验后原子计数；下载次数 null 不限、0 禁止。账户状态与用量不进入编译缓存。创建分享或下载不会激活首次使用权益。
+
+直接导出的高级设置按 TUIC 入站分别显示端口及允许范围，切换运行实例会隐藏并排除其他实例的覆盖值。端口选项来自已应用配置，不使用尚未应用的页面草稿；提交时服务端重新验证，避免加载选项后绑定或端口已经变化。导出处理与端口选择共用账户绑定查询，入口顺序不影响端口归属。
 
 ## 账户下载模板
 

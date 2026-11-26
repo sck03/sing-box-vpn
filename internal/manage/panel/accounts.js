@@ -3,11 +3,10 @@ import {
   openAccountBindingTask,
   accountCreated,
 } from "./account-onboarding.js";
-import { api, exportAccount } from "./api.js";
+import { api } from "./api.js";
 import { saveAccount, archiveAccount, inboundOptions, accountOptions, accountCredentials } from "./account-api.js";
 import { createAccountShare } from "./sharing.js";
-import { accountOutputDialog } from "./account-outputs.js";
-import { showExport } from "./export-results.js";
+import { exportAccountDialog } from "./account-export.js";
 import { loadRecords } from "./details.js";
 import { dialogSession, loadDialog } from "./dialog-session.js";
 import { disclosure } from "./sections.js";
@@ -479,30 +478,7 @@ export async function accounts(ctx) {
                   },
                   "danger",
                 ),
-                button("导出 / 二维码", async () =>
-                  accountOutputDialog({
-                    accounts: [item],
-                    ctx,
-                    title: "账户专属导出",
-                    fields: [
-                      {
-                        key: "tuic_port",
-                        label: "指定 TUIC 端口（0 使用主端口）",
-                        type: "number",
-                      },
-                    ],
-                    defaults: { scope: "", tuic_port: 0 },
-                    save: async (v) => {
-                      const result = await exportAccount({
-                        id: item.id,
-                        scope: v.scope,
-                        profile: v.profile,
-                        tuic_port: v.tuic_port,
-                      });
-                      showExport(result, v.profile);
-                    },
-                  }),
-                ),
+                button("导出 / 二维码", () => exportAccountDialog(item, ctx)),
               ]
             : []),
           button("历史", async () =>

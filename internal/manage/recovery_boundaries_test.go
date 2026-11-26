@@ -244,7 +244,7 @@ func TestAccountExportKeepsEachInboundUDPPorts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, err := accountNodes(t.Context(), service.Accounts, config, usage, normalScope, 0)
+	nodes, err := accountNodes(t.Context(), service.Accounts, config, usage, normalScope, nil)
 	if err != nil || len(nodes) != 2 {
 		t.Fatal(nodes, err)
 	}

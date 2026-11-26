@@ -21,6 +21,7 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/manage"
 	"github.com/sck03/sing-box-vpn/internal/runtimeconfig"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
+	"github.com/sck03/sing-box-vpn/internal/vpngate"
 )
 
 func main() {
@@ -36,6 +37,9 @@ func main() {
 		}
 		if strings.HasSuffix(t.PkgPath(), "/serverconfig") {
 			n = "Server" + n
+		}
+		if strings.HasSuffix(t.PkgPath(), "/vpngate") {
+			n = "Gateway" + n
 		}
 		return n
 	}
@@ -110,7 +114,7 @@ func main() {
 							fieldType = `"enable" | "restore"`
 						}
 						if key == "account" && operation == "account" {
-							fieldType = `Omit<AccountCommand, "operation" | "inbound_ids" | "account_ids"> & { client?: never; tuic_port?: never } & ({ operation: "bind"; inbound_ids: [string, ...string[]]; account_ids?: string[] } | { operation: "rotate" | "unbind"; inbound_ids?: never; account_ids?: never })`
+							fieldType = `Omit<AccountCommand, "operation" | "inbound_ids" | "account_ids"> & { profile?: never; port_overrides?: never } & ({ operation: "bind"; inbound_ids: [string, ...string[]]; account_ids?: string[] } | { operation: "rotate" | "unbind"; inbound_ids?: never; account_ids?: never })`
 						}
 						optional := "?"
 						if allowed && key != "value" {
@@ -186,6 +190,7 @@ func main() {
 		reflect.TypeFor[domain.Account](), reflect.TypeFor[domain.Credential](), reflect.TypeFor[accounting.Usage](), reflect.TypeFor[accounting.Grant](),
 		reflect.TypeFor[application.AccountCommand](), reflect.TypeFor[application.AccountExportRequest](), reflect.TypeFor[manage.AccountExportResponse](), reflect.TypeFor[application.SubscriptionCommand](), reflect.TypeFor[controlstore.Task](), reflect.TypeFor[adminauth.Session](), reflect.TypeFor[runtimeconfig.Capabilities](),
 		reflect.TypeFor[manage.CredentialSummary](), reflect.TypeFor[accounting.CredentialPublication](), reflect.TypeFor[controlstore.TaskPage](), reflect.TypeFor[controlstore.TaskCounts](),
+		reflect.TypeFor[vpngate.Status](),
 	} {
 		describe(t)
 	}
@@ -199,6 +204,7 @@ func main() {
 		{"/api/state", reflect.TypeFor[manage.ConfigurationState]()},
 		{"/api/overview", reflect.TypeFor[manage.OverviewSnapshot]()},
 		{"/api/certificates", reflect.TypeFor[[]certificates.CertificateStatus]()},
+		{"/api/accounts/ports", reflect.TypeFor[[]application.AccountPortOption]()},
 		{"/api/subscriptions/status", reflect.TypeFor[manage.SubscriptionStatusResponse]()},
 	} {
 		result := describe(endpoint.result)

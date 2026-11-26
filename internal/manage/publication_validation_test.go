@@ -105,12 +105,12 @@ func TestPublicationValidCDNPreviewApplyAndAccountExport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodes, err := accountNodes(ctx, service.Accounts, config, usage, "normal", 0)
+	nodes, err := accountNodes(ctx, service.Accounts, config, usage, "normal", nil)
 	if err != nil || len(nodes) != 1 || nodes[0].Server != "cdn.example.test" {
 		t.Fatal(nodes, err)
 	}
 	config.App.CDNAddress = "https://bad.example/path"
-	if _, err = accountNodes(ctx, service.Accounts, config, usage, "normal", 0); err == nil {
+	if _, err = accountNodes(ctx, service.Accounts, config, usage, "normal", nil); err == nil {
 		t.Fatal("transformed node escaped final validation")
 	}
 }

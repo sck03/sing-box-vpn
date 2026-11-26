@@ -13,8 +13,15 @@ type AccountCommand struct {
 }
 
 type AccountExportRequest struct {
-	ID       string `json:"id"`
-	Scope    string `json:"scope,omitempty"`
-	Profile  string `json:"profile"`
-	TUICPort int    `json:"tuic_port,omitempty"`
+	ID            string         `json:"id"`
+	Scope         string         `json:"scope,omitempty"`
+	Profile       string         `json:"profile"`
+	PortOverrides map[string]int `json:"port_overrides,omitempty"` // runtime/inbound ID -> TUIC port
+}
+
+type AccountPortOption struct {
+	RuntimeID string   `json:"runtime_id"`
+	InboundID string   `json:"inbound_id"`
+	Port      int      `json:"port"`
+	UDPPorts  []string `json:"udp_ports"`
 }

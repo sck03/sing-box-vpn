@@ -18,18 +18,22 @@ func (s *PlatformService) State(ctx context.Context, secret bool) (Configuration
 	return ConfigurationState{state.Revision, state.AppliedRevision, config, s.Root}, nil
 }
 func redactPlatform(v any) {
+	redactPlatformAt(v, "")
+}
+
+func redactPlatformAt(v any, path string) {
 	switch x := v.(type) {
 	case map[string]any:
 		for k, value := range x {
-			if secretField(k) {
+			if secretFieldAt(path, k) {
 				x[k] = redactSecretValue(value)
 			} else {
-				redactPlatform(value)
+				redactPlatformAt(value, path+"/"+k)
 			}
 		}
 	case []any:
 		for _, item := range x {
-			redactPlatform(item)
+			redactPlatformAt(item, path)
 		}
 	}
 }

@@ -18,6 +18,7 @@ func TestStateRolesDoNotExposeCredentialFieldFamilies(t *testing.T) {
 	config.Subscriptions.Templates[0].Origin = &sub.TemplateOrigin{SourceURL: "https://example.invalid/template?token=sentinel-origin", Format: "rule-list"}
 	config.Subscriptions.Templates[0].ProbeURL = "https://example.invalid/probe?key=sentinel-probe"
 	config.App.Advanced.Outbounds = []Object{{"type": "hysteria2", "obfs": Object{"password": "sentinel-obfs"}, "obfs_password": "sentinel-flat"}}
+	config.Gateway["sources"] = []string{"https://example.invalid/nodes?token=sentinel-gateway"}
 	if _, err := s.Store.Queue(t.Context(), "apply", "admin", []byte(`{}`), 1, mustJSON(t, config)); err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +44,7 @@ func TestStateRolesDoNotExposeCredentialFieldFamilies(t *testing.T) {
 	}
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, panelRequest("GET", "/api/config", nil, admin))
-	if w.Code != 200 || !bytes.Contains(w.Body.Bytes(), []byte("sentinel-origin")) {
+	if w.Code != 200 || !bytes.Contains(w.Body.Bytes(), []byte("sentinel-origin")) || !bytes.Contains(w.Body.Bytes(), []byte("sentinel-gateway")) {
 		t.Fatal("admin secret view lost", w.Code)
 	}
 }

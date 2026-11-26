@@ -12,7 +12,7 @@ func TestCheckpointBatchAtomicReplayAndRefund(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	invalid := []UsageCheckpoint{{"a", 100, 200, true}, {"b", ReservationBytes + 1, 0, false}}
+	invalid := []UsageCheckpoint{{fixtureLeaseID("a"), 100, 200, true}, {fixtureLeaseID("b"), ReservationBytes + 1, 0, false}}
 	if err := s.CheckpointBatch(t.Context(), invalid); err == nil {
 		t.Fatal("invalid batch accepted")
 	}
@@ -20,7 +20,7 @@ func TestCheckpointBatchAtomicReplayAndRefund(t *testing.T) {
 	if u.Upload != 0 || u.Charged != 2*ReservationBytes {
 		t.Fatal("partial batch committed", u)
 	}
-	valid := []UsageCheckpoint{{"a", 100, 200, true}, {"b", 300, 400, true}}
+	valid := []UsageCheckpoint{{fixtureLeaseID("a"), 100, 200, true}, {fixtureLeaseID("b"), 300, 400, true}}
 	for range 2 {
 		if err := s.CheckpointBatch(t.Context(), valid); err != nil {
 			t.Fatal(err)

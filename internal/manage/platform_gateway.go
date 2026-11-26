@@ -61,7 +61,7 @@ func (s *PlatformService) gateway(ctx context.Context, resource string, payload 
 		return nil, err
 	}
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return nil, fmt.Errorf("gateway operation failed (HTTP %d)", res.StatusCode)
+		return data, fmt.Errorf("gateway operation failed (HTTP %d)", res.StatusCode)
 	}
 	return data, nil
 }

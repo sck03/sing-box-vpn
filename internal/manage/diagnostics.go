@@ -22,6 +22,12 @@ func secretField(key string) bool {
 	return key == "private_key"
 }
 
+// Source URLs are credentials even though the collection has no secret suffix.
+// Keep this path policy shared by configuration, task and validation projections.
+func secretFieldAt(path, key string) bool {
+	return secretField(key) || (strings.EqualFold(key, "sources") && strings.HasSuffix(strings.ToLower(path), "/gateway"))
+}
+
 // Keep bounded, printable validation context without publishing values from
 // secret fields. The raw configuration itself is never included in errors.
 func validationDiagnostic(output, config []byte) string {
@@ -30,16 +36,16 @@ func validationDiagnostic(output, config []byte) string {
 	if json.Unmarshal(config, &root) != nil {
 		return ""
 	}
-	var visit func(any, bool)
-	visit = func(value any, secret bool) {
+	var visit func(any, string, bool)
+	visit = func(value any, path string, secret bool) {
 		switch v := value.(type) {
 		case map[string]any:
 			for key, child := range v {
-				visit(child, secret || secretField(key))
+				visit(child, path+"/"+key, secret || secretFieldAt(path, key))
 			}
 		case []any:
 			for _, child := range v {
-				visit(child, secret)
+				visit(child, path, secret)
 			}
 		case string:
 			if secret && v != "" {
@@ -47,7 +53,7 @@ func validationDiagnostic(output, config []byte) string {
 			}
 		}
 	}
-	visit(root, false)
+	visit(root, "", false)
 	text = strings.TrimSpace(strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) && r != '\n' && r != '\t' {
 			return -1

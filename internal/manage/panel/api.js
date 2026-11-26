@@ -182,6 +182,14 @@ export const getAccountOutputs = (id, scope, signal, request = api) =>
 export const exportAccount = (input, request = api) =>
   mutate("/api/accounts/export", input, undefined, request);
 /** @param {string} id @param {AbortSignal} [signal] @param {typeof api} [request]
+ * @returns {Promise<import("./contracts.js").AccountPortOption[]>} */
+export const getAccountPorts = (id, signal, request = api) =>
+  request("/api/accounts/ports?id=" + encodeURIComponent(id), undefined, { signal });
+/** @param {AbortSignal} [signal] @param {typeof api} [request]
+ * @returns {Promise<import("./contracts.js").GatewayStatus>} */
+export const getGatewayStatus = (signal, request = api) =>
+  request("/api/gateway?resource=status", undefined, { signal });
+/** @param {string} id @param {AbortSignal} [signal] @param {typeof api} [request]
  * @returns {Promise<import("./contracts.js").AccountSummary>} */
 export const getAccount = (id, signal, request = api) =>
   request("/api/accounts/detail?id=" + encodeURIComponent(id), undefined, {

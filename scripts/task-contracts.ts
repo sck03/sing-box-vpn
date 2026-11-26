@@ -1,5 +1,6 @@
 import type {
   TaskCommand,
+  AccountExportRequest,
   RefreshResult,
   DeliveryResult,
   SubscriptionStatusResponse,
@@ -62,10 +63,17 @@ const unrelated: TaskCommand = {
   value: "stop",
   id: "ignored",
 };
+const exportOptions: AccountExportRequest = {
+  id: "alice", profile: "uri", port_overrides: { "normal/in": 62001 },
+};
+const bindingWithExportOptions = {
+  ...exportOptions, operation: "bind" as const, scope: "normal",
+  inbound_ids: ["in"] as [string, ...string[]],
+};
 const exported: TaskCommand = {
   operation: "account",
   // @ts-expect-error credential tasks cannot carry download/export options
-  account: { operation: "bind", scope: "normal", client: "uri" },
+  account: bindingWithExportOptions,
 };
 // @ts-expect-error operation-specific values must agree
 const invalid: TaskCommand = { operation: "bbr", value: "disable" };

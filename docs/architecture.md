@@ -251,6 +251,8 @@ loadDialog 在首次查询前占有对话框；切页、关闭或替换会取消
 
 `platform_service.go` 仅组装资源与生命周期；configuration_view 负责脱敏投影，platform_start 负责恢复后启动，node_presets 负责预设与国家准备。读取不带秘密的配置直接从持久 JSON 生成脱敏视图，减少重复往返；查看或修改界面不会改写原始秘密。单协议预设仅分配该协议的端口，VLESS / 默认 VMess 不生成未使用的 PEM。
 
+配置、任务投影和核心校验诊断共用路径感知的敏感字段规则。除字段名之外，gateway.sources 作为 URL 集合整体脱敏，保留数组结构；订阅集合中的来源 ID 不因此被隐藏。新增可携带凭据的复杂字段时必须登记完整路径并覆盖非管理员响应，不能只依赖字段名后缀。
+
 历史回收拥有独立有界 worker；不在每次交互任务认领前串行执行清理。证书回收仍持有配置和发布锁，SQLite 回收仍可能与写入竞争，不能承诺零等待。关闭时取消并等待所有 worker。凭据对账、配置应用和主机状态变更继续由控制通道按顺序执行。
 
 `runtimeconfig.Capabilities.outbound_fields` 统一 TLS / 必需 TLS / uTLS 字段能力，前端显隐与清理消费同一目录。AnyTLS 改名保留指纹，QUIC 协议不显示 TCP uTLS。编辑用节点和证书集合规范化为空数组，避免表单写入临时数组。

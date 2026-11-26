@@ -42,7 +42,7 @@ export interface AccountExportRequest {
   id: string;
   scope?: string;
   profile: string;
-  tuic_port?: number;
+  port_overrides?: Record<string, number> | null;
 }
 
 export interface AccountExportResponse {
@@ -51,6 +51,13 @@ export interface AccountExportResponse {
   extension: string;
   output: SubscriptionAccountOutputOption;
   validation: SubscriptionValidation;
+}
+
+export interface AccountPortOption {
+  runtime_id: string;
+  inbound_id: string;
+  port: number;
+  udp_ports: Array<string> | null;
 }
 
 export interface AccountSave { account: Pick<Account, "id" | "name"> & Partial<Account>; }
@@ -231,6 +238,38 @@ export interface DeploymentPreview {
   applied_revision: number;
 }
 
+export interface GatewayGeo {
+  ip: string;
+  country: string;
+  asn: number;
+  isp: string;
+  hosting: boolean;
+  hosting_known: boolean;
+  asn_type: string;
+}
+
+export interface GatewayRefreshStatus {
+  outcome: string;
+  nodes: number;
+  cached: boolean;
+  failed_sources: number;
+  reason?: string;
+  updated: string;
+  last_success?: string | null;
+}
+
+export interface GatewayStatus {
+  version: string;
+  state: string;
+  country: string;
+  mode: string;
+  node?: string;
+  exit?: GatewayGeo | null;
+  reason?: string;
+  updated: string;
+  source_refresh: GatewayRefreshStatus;
+}
+
 export interface Grant {
   id: string;
   account_id: string;
@@ -384,6 +423,7 @@ export interface QueryResponses {
   "/api/state": ConfigurationState;
   "/api/overview": OverviewSnapshot;
   "/api/certificates": Array<CertificateStatus>;
+  "/api/accounts/ports": Array<AccountPortOption>;
   "/api/subscriptions/status": SubscriptionStatusResponse;
 }
 
@@ -763,7 +803,7 @@ export interface TaskAudience {
 }
 
 export type TaskCommand =
-  | { operation: "account"; service?: never; id?: never; value?: never; config?: never; account: Omit<AccountCommand, "operation" | "inbound_ids" | "account_ids"> & { client?: never; tuic_port?: never } & ({ operation: "bind"; inbound_ids: [string, ...string[]]; account_ids?: string[] } | { operation: "rotate" | "unbind"; inbound_ids?: never; account_ids?: never }); subscription?: never }
+  | { operation: "account"; service?: never; id?: never; value?: never; config?: never; account: Omit<AccountCommand, "operation" | "inbound_ids" | "account_ids"> & { profile?: never; port_overrides?: never } & ({ operation: "bind"; inbound_ids: [string, ...string[]]; account_ids?: string[] } | { operation: "rotate" | "unbind"; inbound_ids?: never; account_ids?: never }); subscription?: never }
   | { operation: "bbr"; service?: never; id?: never; value: "enable" | "restore"; config?: never; account?: never; subscription?: never }
   | { operation: "certificate-renew"; service?: never; id: string; value?: never; config?: never; account?: never; subscription?: never }
   | { operation: "gateway"; service?: never; id?: never; value?: never; config: { op: "start" | "stop" | "swap" | "refresh" }; account?: never; subscription?: never }

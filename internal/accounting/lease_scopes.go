@@ -12,7 +12,7 @@ import (
 func checkLeaseScope(ctx context.Context, tx *sql.Tx, id string) error {
 	scope, number, scoped := strings.Cut(id, "/")
 	if !scoped {
-		return nil
+		return ErrDenied
 	}
 	decoded, err := hex.DecodeString(scope)
 	sequence, e := strconv.ParseInt(number, 10, 64)

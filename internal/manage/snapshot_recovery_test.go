@@ -45,7 +45,7 @@ func TestExportIgnoresUnconfirmedAndBrokenProjections(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		nodes, err := service.accountNodes(t.Context(), "a", "normal", 0)
+		nodes, err := service.accountNodes(t.Context(), "a", "normal", nil)
 		if err != nil || len(nodes) != 5 {
 			t.Fatal(len(nodes), err)
 		}

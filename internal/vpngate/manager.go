@@ -35,6 +35,7 @@ type manager struct {
 	previous       Node
 	nodes          []Node
 	nodesUpdated   time.Time
+	sourceRefresh  RefreshStatus
 	sourceEpoch    uint64
 	refreshSlot    chan struct{}
 	refreshDone    chan struct{}
@@ -69,12 +70,14 @@ func newManager(c Config, path string, transaction func(string, func() error) er
 	if cached := loadSourceCache[[]Node](c, "nodes.json"); len(cached) <= maxNodes {
 		m.nodes = cached
 	}
+	m.sourceRefresh = RefreshStatus{Outcome: "not_run", Nodes: len(m.nodes), Cached: len(m.nodes) > 0}
 	return m
 }
 func (m *manager) snapshot() Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s := m.status
+	s.SourceRefresh = m.sourceRefresh
 	if s.State == "ready" && !m.ready {
 		s.State, s.Reason, s.Exit = "waiting", "forwarding blocked; waiting for exit verification", nil
 	}
@@ -114,6 +117,7 @@ func (m *manager) apply(c Config, swap bool) error {
 		m.sourceEpoch++
 		m.nodes, m.previous = nil, Node{}
 		m.nodesUpdated = time.Time{}
+		m.sourceRefresh = RefreshStatus{Outcome: "not_run"}
 		clear(m.failed)
 		if m.refreshCancel != nil {
 			m.refreshCancel()

@@ -30,12 +30,24 @@ func readConfig(path string) (Config, error) {
 func atomicJSON(path string, value any) error { return statefile.AtomicJSON(path, value) }
 
 type Status struct {
-	Version string    `json:"version"`
-	State   string    `json:"state"`
-	Country string    `json:"country"`
-	Mode    string    `json:"mode"`
-	Node    string    `json:"node,omitempty"`
-	Exit    *Geo      `json:"exit,omitempty"`
-	Reason  string    `json:"reason,omitempty"`
-	Updated time.Time `json:"updated"`
+	Version       string        `json:"version"`
+	State         string        `json:"state"`
+	Country       string        `json:"country"`
+	Mode          string        `json:"mode"`
+	Node          string        `json:"node,omitempty"`
+	Exit          *Geo          `json:"exit,omitempty"`
+	Reason        string        `json:"reason,omitempty"`
+	Updated       time.Time     `json:"updated"`
+	SourceRefresh RefreshStatus `json:"source_refresh"`
+}
+
+// Public diagnostics deliberately exclude source URLs and raw transport errors.
+type RefreshStatus struct {
+	Outcome       string     `json:"outcome"`
+	Nodes         int        `json:"nodes"`
+	Cached        bool       `json:"cached"`
+	FailedSources int        `json:"failed_sources"`
+	Reason        string     `json:"reason,omitempty"`
+	Updated       time.Time  `json:"updated"`
+	LastSuccess   *time.Time `json:"last_success,omitempty"`
 }

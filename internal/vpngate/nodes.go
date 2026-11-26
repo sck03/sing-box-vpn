@@ -7,8 +7,16 @@ import (
 	"time"
 )
 
+const sourceRefreshTimeout = 30 * time.Second
+
 func (m *manager) refresh(ctx context.Context, c Config, force bool) []Node {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	nodes, _ := m.refreshResult(ctx, c, force)
+	return nodes
+}
+
+func (m *manager) refreshResult(ctx context.Context, c Config, force bool) (nodes []Node, result RefreshStatus) {
+	result = RefreshStatus{Outcome: "failed", Reason: "refresh cancelled or source configuration changed"}
+	ctx, cancel := context.WithTimeout(ctx, sourceRefreshTimeout)
 	defer cancel()
 	m.mu.Lock()
 	epoch := m.sourceEpoch
@@ -18,45 +26,72 @@ func (m *manager) refresh(ctx context.Context, c Config, force bool) []Node {
 	case m.refreshSlot <- struct{}{}:
 		defer func() { <-m.refreshSlot }()
 	case <-ctx.Done():
-		return nil
+		return nil, result
 	}
 	m.mu.Lock()
 	if ctx.Err() != nil || epoch != m.sourceEpoch || !slices.Equal(c.Sources, m.cfg.Sources) {
 		m.mu.Unlock()
-		return nil
+		return nil, result
 	}
-	nodes := m.nodes // Published node slices are immutable.
+	nodes = m.nodes // Published node slices are immutable.
 	fresh := len(nodes) > 0 && time.Since(m.nodesUpdated) < time.Minute && (!force || m.nodesUpdated.After(started))
-	m.mu.Unlock()
 	if fresh {
-		return nodes
+		result = m.sourceRefresh
+		m.mu.Unlock()
+		return nodes, result
 	}
+	result = RefreshStatus{Outcome: "passed", Nodes: len(nodes), LastSuccess: m.sourceRefresh.LastSuccess}
+	m.sourceRefresh = RefreshStatus{Outcome: "running", Nodes: len(nodes), Cached: len(nodes) > 0, Updated: time.Now(), LastSuccess: result.LastSuccess}
+	m.mu.Unlock()
+	defer func() {
+		result.Updated = time.Now()
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		if epoch == m.sourceEpoch && slices.Equal(c.Sources, m.cfg.Sources) {
+			m.sourceRefresh = result
+		}
+	}()
 	for _, source := range c.Sources {
 		if ctx.Err() != nil {
-			return nil
+			break
 		}
 		nodes, e := readNodeSource(ctx, m.sourceClient, source)
 		if e != nil {
+			result.FailedSources++
 			continue
 		}
 		m.mu.Lock()
 		if ctx.Err() != nil || epoch != m.sourceEpoch || !slices.Equal(c.Sources, m.cfg.Sources) {
 			m.mu.Unlock()
-			return nil
+			result.Outcome, result.Reason = "failed", "refresh cancelled or source configuration changed"
+			return nil, result
 		}
 		m.nodes = nodes
-		m.nodesUpdated = time.Now()
+		succeeded := time.Now()
+		m.nodesUpdated = succeeded
+		result.Nodes, result.LastSuccess = len(nodes), &succeeded
 		m.mu.Unlock()
-		_ = saveSourceCache(c, "nodes.json", nodes)
-		return nodes
+		if err := saveSourceCache(c, "nodes.json", nodes); err != nil {
+			result.Outcome, result.Reason = "partial", "nodes refreshed but the local cache could not be saved"
+		}
+		return nodes, result
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if ctx.Err() != nil || epoch != m.sourceEpoch || !slices.Equal(c.Sources, m.cfg.Sources) {
-		return nil
+	result.Outcome, result.Reason = "failed", "all node sources failed to download or validate"
+	if ctx.Err() != nil {
+		result.Reason = "node source refresh timed out or was cancelled"
+	}
+	if epoch != m.sourceEpoch || !slices.Equal(c.Sources, m.cfg.Sources) {
+		result.Reason = "source configuration changed during refresh"
+		return nil, result
 	}
 	nodes = m.nodes
-	return nodes
+	result.Nodes, result.Cached = len(nodes), len(nodes) > 0
+	if result.Cached {
+		result.Outcome = "cached"
+	}
+	return nodes, result
 }
 
 func (m *manager) scheduleRefresh(parent context.Context, c Config, force bool) {

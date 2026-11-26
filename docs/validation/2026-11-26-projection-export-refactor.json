@@ -1,0 +1,133 @@
+{
+  "date": "2026-11-26",
+  "timezone": "Asia/Shanghai",
+  "base_commit": "368e4311525a86d6366a372f35f47b59fd96d687",
+  "environment": {
+    "os": "windows",
+    "arch": "amd64",
+    "go": "1.27.3",
+    "official_core": "sing-box 1.14.4",
+    "managed_core": "Built with with_quic,with_utls,with_wireguard,with_gvisor and explicitly provided to integration fixtures"
+  },
+  "changes": [
+    "Path-aware gateway source URL redaction for configuration, task results and validation diagnostics; viewer/operator HTTP regression",
+    "Per-runtime/per-inbound TUIC port overrides and applied-configuration port options shared by the export dialog and renderer",
+    "Gateway refresh completion, cached/partial/failed outcomes, optional last-success time and preserved cache-write errors on reused results",
+    "Certificate table updates after apply/renewal, notification coalescing, cancellation and draft preservation",
+    "Meter close checkpoints in batches of at most 64 with replay and retry semantics preserved",
+    "Credential publication rebuilds only stale runtime projections; skips subscription compilation and input cache reads when there are no related account sources",
+    "Removed production single-checkpoint wrapper, unscoped lease-ID acceptance and unused documentation screenshots"
+  ],
+  "checks": [
+    {
+      "command": "npm run typecheck",
+      "result": "passed",
+      "scope": "All three existing TypeScript configurations, including regenerated task/query contracts and current export-field rejection"
+    },
+    {
+      "command": "node scripts/test-panel-{state-sync,recovery,contracts,output-profiles,workflows}.mjs",
+      "result": "passed",
+      "note": "Five scripts executed individually; DOM simulation, not a real browser"
+    },
+    {
+      "command": "go test -race -tags with_quic,with_utls,with_wireguard,with_gvisor -timeout=4m ./internal/runtime -run 'Test(ManagedCredentialReload|.*Reload)' -count=1 -v",
+      "result": "passed",
+      "seconds": 1.313,
+      "scope": "Runtime listener replacement, rollback/fail-closed behavior, construction failures, and reload/shutdown serialization"
+    },
+    {
+      "command": "go test -race -tags with_quic,with_utls,with_wireguard,with_gvisor -timeout=4m ./internal/accounting ./internal/vpngate -run 'Test(Meter|CheckpointBatch|ReplayCrash|Reservation|InvalidCheckpoint|PeriodLate|RefreshControl|RefreshReuse|FailedNodeRefresh|SourceChange|RefreshRejects|ConcurrentRefresh|SourceCache|ManagedCredentialReload)' -count=1 -v",
+      "result": "passed",
+      "package_seconds": {
+        "accounting": 5.462,
+        "vpngate": 19.834
+      },
+      "scope": "Batch settlement/replay boundaries; source refresh/cache/configuration races; actual VLESS, VMess, Hysteria2, TUIC and AnyTLS managed-core credential reload"
+    },
+    {
+      "command": "go test -race -timeout=4m ./internal/manage -run 'Test(CredentialPublication|GatewaySourceProjection|AccountExportOverrides|ConfigurationView|PanelRolesOriginHostAndCSRF|AccountExportKeeps|PublicationValid|ExportIgnores|AccountCommandsAndExportsKeep|DisabledSubscriberBlocks|AccountSourceUsesCandidate|TunnelCandidate)' -count=1 -v",
+      "result": "passed",
+      "seconds": 93.403
+    },
+    {
+      "command": "go test -timeout=2m ./internal/manage -run '^TestStateRolesDoNotExposeCredentialFieldFamilies$' -count=1 -v",
+      "result": "passed",
+      "seconds": 1.992,
+      "scope": "HTTP handler authorization and projection using synthetic gateway URL credentials"
+    },
+    {
+      "command": "go test ./... -run '^$' -timeout=3m",
+      "result": "passed",
+      "scope": "Compilation only; no full test-suite execution"
+    },
+    {
+      "command": "go vet ./internal/accounting ./internal/manage ./internal/vpngate ./internal/application ./cmd/panel-contract",
+      "result": "passed"
+    },
+    {
+      "command": "go run ./cmd/panel-contract -check",
+      "result": "passed"
+    },
+    {
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "limitations": [
+    "No full test-suite execution in this implementation pass",
+    "No Linux systemd, firewall, network-namespace or live OpenVPN host integration run",
+    "No real-browser acceptance run",
+    "No production-scale throughput, memory or latency benchmark; disk cleanup does not imply reduced process RSS",
+    "Related subscriptions still use the existing whole-configuration compiler; no per-output incremental compiler was introduced"
+  ],
+  "cleanup": {
+    "command": "./scripts/clean-dev.ps1 -Dependencies",
+    "preview_command": "./scripts/clean-dev.ps1 -Dependencies -WhatIf",
+    "removed": [
+      {
+        "path": ".test",
+        "mebibytes": 2769.54,
+        "contents": "Rebuildable Go caches and temporary files, isolated audit databases/logs and obsolete audit/refactor executables"
+      },
+      {
+        "path": "node_modules",
+        "mebibytes": 47.48,
+        "contents": "Development dependencies restorable with npm ci"
+      },
+      {
+        "paths": [
+          "docs/images/mobile-accounts.png",
+          "docs/images/subscription-preview.png",
+          "docs/images/subscriptions.png"
+        ],
+        "bytes": 336953,
+        "contents": "Unreferenced old screenshots; the referenced subscription-templates image is retained"
+      }
+    ],
+    "artifact_mebibytes_freed": 2817.02,
+    "readable_workspace_bytes_after_cleanup_before_record_and_commit": 449837700,
+    "readable_workspace_mebibytes_after_cleanup": 429,
+    "retained": [
+      "Source, current documentation and its referenced screenshot",
+      "Current Go toolchain, official sing-box validator, Mihomo test client and shellcheck",
+      ".git history"
+    ],
+    "skipped": [
+      {
+        "path": ".cleanup-manual",
+        "reason": "Windows denies directory enumeration and ACL reads; contents and size could not be verified; no permission changes attempted"
+      }
+    ],
+    "measurement_note": "Logical file sizes; the unreadable directory is excluded. Clearing caches reduces disk usage, not production process memory."
+  },
+  "git": {
+    "target_branch": "main",
+    "local_branches_verified": [
+      "main"
+    ],
+    "remote_heads_verified": [
+      "main"
+    ],
+    "note": "Both sides already contained only main; no branch deletion, forced update or history rewrite was needed."
+  }
+}

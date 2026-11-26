@@ -13,6 +13,7 @@ export async function accountOutputDialog({
   multiple = false,
   defaults = {},
   fields = [],
+  loadFields = null,
   save,
 }) {
   const request = ctx.workflowRequest || api;
@@ -23,8 +24,8 @@ export async function accountOutputDialog({
   return loadDialog(
     ctx.signal,
     title,
-    (signal) => load(initial, signal),
-    (options) => {
+    (signal) => Promise.all([load(initial, signal), loadFields ? loadFields(signal) : fields]),
+    ([options, extraFields]) => {
       let pending = false,
         verified = true,
         generation = 0,
@@ -91,7 +92,7 @@ export async function accountOutputDialog({
           { key: "device_platform", label: "设备平台", type: "select",
             options: () => [["", "全部设备"], ...platformChoices(options)] },
           clientField,
-          ...fields,
+          ...extraFields,
         ],
         initial,
         async (value) => {

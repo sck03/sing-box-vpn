@@ -14,7 +14,7 @@ Windows 使用 `./scripts/clean-dev.ps1 -WhatIf` 预览，去掉 `-WhatIf` 清�
 
 按入站重载的回归入口为 `TestManagedCredentialReload`（真实五协议、跨入站 TCP/UDP 连接、核心启动标识），`internal/runtime/reload_test.go` 还覆盖构造/启动恢复和失败关闭。修改凭据生命周期必须同时运行带四个发布标签的 runtime 竞态测试；单独 `go test ./...` 不替代该检查。
 
-当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载、订阅模板与预览、弹窗生命周期、组件流程、输出身份、订阅生命周期、部署影响和选择交互十四组。数据库使用 schema 17，所有旧数据库及其备份明确拒绝。
+当前新增验证入口：`go test ./internal/manage -run 'TestInitializeRejects|TestUsageSurvives|TestPanelStreams|TestForwarded'`；`npm test` 包含页面/草稿、可靠性、表格质量、创建后绑定与分享工作流、页面契约、导航与延迟加载、订阅模板与预览、弹窗生命周期、组件流程、输出身份、订阅生命周期、部署影响、选择交互、恢复界面和状态同步十五组。数据库使用 schema 17，所有旧数据库及其备份明确拒绝。
 
 `scripts/test-panel-navigation.mjs` 覆盖角色过滤、搜索定位、空/非法路由、同页标签的前进/返回与表单复用、延迟读取合并与取消、错误重试、权益初始读取预算、稀疏订阅草稿和 SSE 启动。`TestPanelEphemeralDevelopmentListener` 实际启动回环随机端口、请求能力接口并关闭服务，同时拒绝公网随机端口；设置校验仍拒绝保存端口 0。`TestPanelHealthSurvivesSaturatedRequests` 验证 32 个业务请求占满限额时，本机健康检查仍能准确判断 worker 就绪状态。
 
@@ -73,7 +73,7 @@ shellcheck --severity=warning sb.sh install.sh lib/*.sh scripts/*.sh
 
 Linux root 专项通过 `RUN_NETNS_TESTS=1`、`RUN_FIREWALL_TESTS=1`、`RUN_SERVICE_TESTS=1`、`RUN_STORAGE_TESTS=1` 启用，测试定义明确需要的二进制环境变量。仅使用专门 VM，真实 systemd/firewall 测试会创建系统资源。
 
-`npm test` 执行 14 组回归，覆盖重复提交、客户端字段联动、短暂断网、用户页路径前缀、状态搜索、焦点保留、单位换算、授权分页与导航加载。Mihomo 仅作为开发/CI 测试客户端，版本及 Linux amd64 摘要位于 scripts/client-test-versions.json，使用官方基础 amd64-v1 构建。CI 仍执行原生配置与真实链路测试；面板 API/浏览器测试刻意设置无效 MIHOMO_BINARY，证明部署功能不依赖它。
+`npm test` 执行 15 组回归，覆盖重复提交、客户端字段联动、短暂断网、用户页路径前缀、状态搜索、焦点保留、单位换算、授权分页、导航加载、恢复界面和状态同步。Mihomo 仅作为开发/CI 测试客户端，版本及 Linux amd64 摘要位于 scripts/client-test-versions.json，使用官方基础 amd64-v1 构建。CI 仍执行原生配置与真实链路测试；面板 API/浏览器测试刻意设置无效 MIHOMO_BINARY，证明部署功能不依赖它。
 
 本地面板使用独立目录：manager `panel --root <空目录> --core <官方核心> --runtime <受管核心> --address 127.0.0.1 --no-system init`，stdin 为 username/password JSON；随后同样参数 `recover`、`serve`。仅在 `serve` 命令之前加 `--listen 127.0.0.1:0` 自动分配开发端口，日志返回实际 URL；`init` 和 `configure` 保存的端口必须为 1–65535。`--no-system` 仅用于开发，系统动作明确拒绝。Windows 的 Unix socket 测试需要较短的 TEMP/TMP 路径，例如项目下 `.test/tmp`。
 
@@ -287,7 +287,13 @@ Windows 验证先加载 scripts/dev-env.ps1，再设置 MANAGED_CORE_BINARY 指�
 
 增加选择组件时优先扩展共享字段协议，不引入页面私有状态副本。动态候选通过字段工厂在打开表单时读取；候选不足 40 项也走同一组件。仅在选项或依赖变化时刷新候选，单次勾选不重建复选框。格式分组使用服务端的 mode，协议使用 `/api/clients` 目录，不按展示文字猜测后端能力。
 
-## 本轮定向验证与清理（2026-11-26）
+## 本轮权限、导出与状态同步验证（2026-11-26）
+
+本轮只运行相关回归及全包编译检查，结果见[验证记录](validation/2026-11-26-projection-export-refactor.json)。projection_export_test.go 覆盖来源 URL 脱敏、多 TUIC 入站端口覆盖和凭据发布范围；audit_consistency_test.go 通过真实 HTTP handler 验证 viewer/operator 看不到来源令牌而管理员仍可编辑。refresh_result_test.go 覆盖刷新等待、旧缓存、失败、缓存写入失败、重复读取和最近成功时间；close_batch_test.go 覆盖多批退出结算、防重放与旧租约 ID 拒绝。
+
+前端第 15 组 test-panel-state-sync.mjs 验证证书状态局部刷新、并发通知合并、离页取消和按入站导出端口；恢复、契约、输出与账户工作流脚本按需运行。凭据变更同时执行四个发布标签下的 runtime 竞态检查及五协议真实核心热重载；集成夹具显式提供 MANAGED_CORE_BINARY，跳过的测试不能记作通过。本轮没有执行 Linux 主机联动、真实浏览器或生产规模性能测试。
+
+## 此前恢复与资源验证（2026-11-26）
 
 本轮按改动范围执行验证，不运行完整测试套件。[验证结果与清理记录](validation/2026-11-26-recovery-resource-refactor.json)。证书恢复、状态能力、UDP 归属、账户导出和订阅小文件检查位于 recovery_boundaries_test.go；前端新增第 14 组 test-panel-recovery.mjs。已有发布/投递生命周期、端口防火墙、证书调度、前端导航及部署回归按需运行。计量请求复用执行 accounting 的定向 race 检查。类型检查和 panel-contract -check 检查生成契约，编译检查不等同于 Linux 运行验收。
 

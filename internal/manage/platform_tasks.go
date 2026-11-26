@@ -97,8 +97,8 @@ func (s *PlatformService) execute(ctx context.Context, id int64, a taskInput) er
 		}
 		return s.service(ctx, a.Service, a.Value)
 	case "gateway":
-		_, err := s.gateway(ctx, "actions", a.Config)
-		return err
+		data, err := s.gateway(ctx, "actions", a.Config)
+		return s.storeTaskOutput(ctx, id, data, err)
 	case "certificate-renew":
 		return s.renewCertificate(ctx, a.ID)
 	case "bbr":

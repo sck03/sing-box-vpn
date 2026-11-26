@@ -14,18 +14,56 @@ function renewalButton(id, status, ctx) {
 }
 
 export async function certificates(ctx) {
-  const c = await ctx.config(),
-    status = new Map(
+  const c = await ctx.config();
+  let status = new Map(
       (await getCertificates(ctx.signal, ctx.request || api)).map((asset) => [
         asset.id,
         asset,
       ]),
     );
   const draftIDs = new Set(c.certificates.map((a) => a.id));
-  const assets = [
+  const assets = () => [
     ...c.certificates,
     ...[...status.values()].filter((a) => !draftIDs.has(a.id)),
-  ];
+  ].map((asset) => ({ ...asset, status: status.get(asset.id) }));
+  const problem = el("div", { role: "status", hidden: true });
+  let listing, pending, queued = false, version;
+  function refresh() {
+    queued = true;
+    if (pending) return pending;
+    pending = (async () => {
+      while (queued && !ctx.signal?.aborted) {
+        queued = false;
+        try {
+          const next = await getCertificates(ctx.signal, ctx.request || api);
+          if (ctx.signal?.aborted) return;
+          status = new Map(next.map((asset) => [asset.id, asset]));
+          listing.updateItems(assets());
+          problem.hidden = true;
+        } catch (error) {
+          if (error.name === "AbortError" || ctx.signal?.aborted) return;
+          problem.hidden = false;
+          problem.replaceChildren(help("证书状态更新失败：" + error.message), button("重试", refresh));
+        }
+      }
+    })().finally(() => { pending = null; });
+    return pending;
+  }
+  const signature = (snapshot) => JSON.stringify([
+    snapshot?.revision, snapshot?.applied_revision,
+    snapshot?.tasks?.filter((task) => ["apply", "certificate-renew"].includes(task.kind))
+      .map((task) => [task.id, task.state, task.phase, task.updated]),
+  ]);
+  version = signature(ctx.overview);
+  ctx.updateOverview = (snapshot) => {
+    const next = signature(snapshot);
+    if (next === version) return;
+    version = next;
+    void refresh();
+  };
+  const visibility = () => { if (!document.hidden) void refresh(); };
+  document.addEventListener("visibilitychange", visibility);
+  ctx.signal?.addEventListener("abort", () => document.removeEventListener("visibilitychange", visibility), { once: true });
   const changed = () => {
     ctx.changed();
     ctx.render();
@@ -49,7 +87,8 @@ export async function certificates(ctx) {
         ),
         button("申请自动证书", () => certificateEditor(ctx, c, "acme")),
       ),
-      table(
+      problem,
+      listing = table(
         [
           { key: "id", label: "资产" },
           {
@@ -103,7 +142,7 @@ export async function certificates(ctx) {
             value: (a) => (status.get(a.id)?.used_by || []).join(", "),
           },
         ],
-        assets,
+        assets(),
         (a) => [
           ...(a.provider === "acme" || status.get(a.id)?.provider === "acme"
             ? [renewalButton(a.id, status.get(a.id), ctx)]

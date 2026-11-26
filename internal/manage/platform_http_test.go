@@ -93,6 +93,7 @@ func TestPanelRolesOriginHostAndCSRF(t *testing.T) {
 		{"viewer template import", "POST", "/api/subscription-templates/import", viewer, nil, 403},
 		{"viewer options", "GET", "/api/account-options", viewer, nil, 403},
 		{"viewer inbound options", "GET", "/api/inbound-options?scope=normal", viewer, nil, 403},
+		{"viewer export port options", "GET", "/api/accounts/ports?id=alice", viewer, nil, 403},
 		{"admin inbound options", "GET", "/api/inbound-options?scope=normal", admin, nil, 200},
 		{"unconfigured VPN options", "GET", "/api/inbound-options?scope=vpngate", admin, nil, 200},
 		{"CSRF", "POST", "/api/tasks", admin, func(r *http.Request) { r.Header.Del("X-CSRF-Token") }, 401},

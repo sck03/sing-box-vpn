@@ -14,6 +14,18 @@ func (s *PlatformService) serveAccounts(w http.ResponseWriter, r *http.Request, 
 	ctx, path := r.Context(), r.URL.Path
 	admin, require, audit := access.admin, access.require, access.audit
 	var err error
+	if path == "/api/accounts/ports" && r.Method == "GET" {
+		if !require(admin) {
+			return true
+		}
+		options, err := s.accountService().ExportPortOptions(ctx, r.URL.Query().Get("id"))
+		if err != nil {
+			platformError(w, err)
+		} else {
+			jsonResponse(w, options)
+		}
+		return true
+	}
 	if path == "/api/inbound-options" && r.Method == "GET" {
 		if !require(admin) {
 			return true
@@ -66,7 +78,7 @@ func (s *PlatformService) serveAccounts(w http.ResponseWriter, r *http.Request, 
 			return true
 		}
 		var v application.AccountExportRequest
-		if err = decodeRequest(w, r, &v, 8192); err != nil {
+		if err = decodeRequest(w, r, &v, 64<<10); err != nil {
 			platformError(w, err)
 			return true
 		}

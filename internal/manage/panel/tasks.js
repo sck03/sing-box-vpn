@@ -331,6 +331,8 @@ function resultDetails(result) {
   if (result.retained === false)
     return [help("任务详情已按保留策略清理，最终结果仍保留。")];
   const sections = [];
+  if (typeof result.failed_sources === "number" && typeof result.nodes === "number")
+    sections.push(help(`候选节点 ${result.nodes} 个 · ${result.cached ? "使用旧缓存" : result.outcome === "failed" ? "刷新失败" : "已完成抓取"} · 失败来源 ${result.failed_sources} 个`), ...(result.reason ? [help(result.reason)] : []));
   if (Array.isArray(result.items) && typeof result.selected === "number")
     sections.push(...deliveryDetails(result));
   if (typeof result.published === "boolean")

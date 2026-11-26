@@ -158,7 +158,7 @@ func runDaemon(path string, transaction func(string, func() error) error) error 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	m := newManager(c, path, transaction)
-	api := http.Server{Handler: m.handler(ctx), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 15 * time.Second, MaxHeaderBytes: 16 << 10}
+	api := http.Server{Handler: m.handler(ctx), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: sourceRefreshTimeout + 5*time.Second, IdleTimeout: 15 * time.Second, MaxHeaderBytes: 16 << 10}
 	done := make(chan struct{})
 	serveErrors := make(chan error, 2)
 	var listeners sync.WaitGroup

@@ -18,7 +18,7 @@ func TestReservationBatchIsolatesFailuresAndCommitsQuota(t *testing.T) {
 	cancelled, cancel := context.WithCancel(t.Context())
 	cancel()
 	makeRequest := func(id, account string, ctx context.Context) *reservationRequest {
-		return &reservationRequest{ctx: ctx, id: id, account: account, runtime: "normal", want: ReservationBytes, now: time.Now(), period: u.PeriodID, result: make(chan reservationResult, 1)}
+		return &reservationRequest{ctx: ctx, id: fixtureLeaseID(id), account: account, runtime: "normal", want: ReservationBytes, now: time.Now(), period: u.PeriodID, result: make(chan reservationResult, 1)}
 	}
 	batch := []*reservationRequest{makeRequest("first", "alice", t.Context()), makeRequest("missing", "missing", t.Context()), makeRequest("cancelled", "alice", cancelled), makeRequest("last", "alice", t.Context())}
 	s.commitReservations(batch, make([]reservationResult, len(batch)))

@@ -86,11 +86,13 @@ func (m *manager) handler(parent context.Context) http.Handler {
 		}
 		// Keep snapshot and apply serial, but let abandoned requests and daemon
 		// shutdown leave the queue without waiting for another disk commit.
-		select {
-		case m.actionSlot <- struct{}{}:
-			defer func() { <-m.actionSlot }()
-		case <-r.Context().Done():
-		case <-parent.Done():
+		if a.Op != "refresh" {
+			select {
+			case m.actionSlot <- struct{}{}:
+				defer func() { <-m.actionSlot }()
+			case <-r.Context().Done():
+			case <-parent.Done():
+			}
 		}
 		if r.Context().Err() != nil || parent.Err() != nil {
 			respond(w, http.StatusServiceUnavailable, map[string]string{"error": "control action cancelled"})
@@ -105,8 +107,16 @@ func (m *manager) handler(parent context.Context) http.Handler {
 				respond(w, 409, map[string]string{"error": "configure that country's independent entries through sb first"})
 				return
 			}
-			m.scheduleRefresh(parent, c, true)
-			respond(w, 202, m.snapshot())
+			ctx, cancel := context.WithCancel(r.Context())
+			stop := context.AfterFunc(parent, cancel)
+			defer stop()
+			defer cancel()
+			_, result := m.refreshResult(ctx, c, true)
+			code := http.StatusOK
+			if result.Outcome == "failed" {
+				code = http.StatusBadGateway
+			}
+			respond(w, code, result)
 			return
 		}
 		swap := false

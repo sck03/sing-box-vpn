@@ -409,10 +409,6 @@ func reserveInTransaction(ctx context.Context, tx *sql.Tx, id, account, runtime 
 	return want, nil
 }
 
-func (s *Store) Checkpoint(ctx context.Context, id string, upload, download int64, closeLease bool) error {
-	return s.CheckpointBatch(ctx, []UsageCheckpoint{{id, upload, download, closeLease}})
-}
-
 type UsageCheckpoint struct {
 	ID               string
 	Upload, Download int64
