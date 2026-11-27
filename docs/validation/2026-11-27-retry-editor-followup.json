@@ -1,0 +1,80 @@
+{
+  "date": "2026-11-27",
+  "baseline": "71a52e0f8728d8e183730bba7ea425f7b7f73682",
+  "scope": "Follow-up to the implemented refactor: concurrent receipt acknowledgement, isolated storage corruption, history policy and MFA dialog ownership",
+  "schema_changed": false,
+  "production_dependencies_added": false,
+  "reproductions_before_fix": [
+    "Concurrent receipt acknowledgement during digest produced a different request ID",
+    "A malformed neighbouring storage row removed the valid request ID on reload"
+  ],
+  "checks": {
+    "panel_command": "node scripts/run-panel-tests.mjs test-panel-task-requests.mjs test-panel-submissions.mjs test-panel-lifecycle.mjs test-panel-workflows.mjs",
+    "panel_result": "All four selected scripts passed",
+    "static": [
+      "npm run typecheck (three configurations)",
+      "go run ./cmd/panel-contract -check",
+      "Prettier 3.6.2 for modified JS/MJS",
+      "git diff --check",
+      "67 local Markdown links resolved"
+    ],
+    "not_run": [
+      "Go tests (no Go source changes)",
+      "performance benchmarks",
+      "full panel suite",
+      "real browser",
+      "Linux system integration"
+    ],
+    "previous_validation": "2026-11-27-task-submission-retention.json; historical results not counted as a new run"
+  },
+  "cleanup": {
+    "removed_test_dependencies_bytes": 49782122,
+    "dependency_note": "Dependencies restored temporarily for verification, then removed again; not an additional pre-existing artifact cleanup",
+    "git_before_bytes": 4296370,
+    "git_after_gc_bytes": 3804105,
+    "git_reduction_bytes": 492265,
+    "workspace_bytes_at_cleanup": 7203573,
+    "measurement_note": "Final documentation and commit metadata increase workspace bytes slightly",
+    "workspace_old_database_binary_log_count": 0,
+    "blocked": [
+      {
+        "path": "C:/Users/bridge/AppData/Local/Temp/sbvpn-review-6j4slqhl",
+        "bytes": 2180236840
+      },
+      {
+        "path": "C:/Users/bridge/AppData/Local/Temp/sbvpn-audit-20261127",
+        "bytes": 1165611143
+      },
+      {
+        "path": "E:/sbvpn-audit-tmp",
+        "bytes": 927
+      },
+      {
+        "path": "C:/Users/bridge/AppData/Local/Temp/scheduler-http-repro-176925508",
+        "bytes": 192512
+      },
+      {
+        "path": "C:/Users/bridge/AppData/Local/Temp/scheduler-repro-3468405295",
+        "bytes": 69632
+      }
+    ],
+    "blocked_bytes": 3346111054,
+    "blocked_reason": "Automatic approval review rejected deletion even of the two explicitly validated reproduction databases: blocked by policy",
+    "preserved": [
+      "Git history and tags",
+      "current code and focused regression tests",
+      "licenses",
+      "referenced documentation image",
+      "compact validation summaries"
+    ]
+  },
+  "branches": {
+    "local": [
+      "main"
+    ],
+    "origin": [
+      "main"
+    ],
+    "strategy": "Normal incremental commit and push; no other branch exists to merge or delete"
+  }
+}

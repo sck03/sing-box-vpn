@@ -24,6 +24,9 @@ const { loadDialog } = await import(
 );
 const { subscribers } = await import("../internal/manage/panel/subscribers.js");
 const { admins } = await import("../internal/manage/panel/admins.js");
+const { historyControls } = await import(
+  "../internal/manage/panel/log-maintenance.js"
+);
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const response = (value) => ({ ok: true, json: async () => value });
 const command = { operation: "service", service: "sb-core", value: "restart" };
@@ -106,8 +109,12 @@ assert.notEqual(
 );
 
 // Successful old writes cannot abort a newly loading editor, either after
-// navigation or after replacement on the same page. Test both simple editors.
-for (const page of [subscribers, admins]) {
+// navigation or after replacement on the same page, including history policy.
+for (const { page, edit } of [
+  { page: subscribers, edit: "编辑" },
+  { page: admins, edit: "编辑" },
+  { page: async (ctx) => [await historyControls(ctx)], edit: "保留策略" },
+]) {
   for (const navigated of [false, true]) {
     setCSRF("editor-session-" + page.name + navigated);
     let finishSave,
@@ -118,6 +125,11 @@ for (const page of [subscribers, admins]) {
       if (options.method === "POST")
         return new Promise((resolve) => {
           finishSave = resolve;
+        });
+      if (path === "/api/tasks/history")
+        return response({
+          policy: { count: 100, days: 7, result_bytes: 1048576 },
+          usage: { completed: 0, pending: 0, result_bytes: 0 },
         });
       if (path === "/api/capabilities")
         return response({ password_bytes: { min: 8, max: 72 } });
@@ -141,7 +153,7 @@ for (const page of [subscribers, admins]) {
     const context = pageContext(base, current.signal);
     document.querySelector("main").replaceChildren(...(await page(context)));
     [...document.querySelectorAll("main button")]
-      .find((button) => button.textContent === "编辑")
+      .find((button) => button.textContent === edit)
       .click();
     document
       .querySelector("dialog form")
@@ -175,6 +187,63 @@ for (const page of [subscribers, admins]) {
     await loading;
     current.abort();
   }
+}
+// An enrollment response may not reveal a secret over a newer editor.
+for (const navigated of [false, true]) {
+  setCSRF("mfa-session-" + navigated);
+  let finishEnrollment, finishRead;
+  let current = new AbortController();
+  globalThis.fetch = async (path, options) => {
+    if (path === "/api/mfa/enroll")
+      return new Promise((resolve) => {
+        finishEnrollment = resolve;
+      });
+    if (path === "/api/capabilities")
+      return response({ password_bytes: { min: 8, max: 72 } });
+    return response([]);
+  };
+  const context = pageContext(
+    { session: { id: "self", role: "admin" }, render() {} },
+    current.signal,
+  );
+  document.querySelector("main").replaceChildren(...(await admins(context)));
+  [...document.querySelectorAll("main button")]
+    .find((button) => button.textContent === "生成认证器密钥")
+    .click();
+  const form = document.querySelector("dialog form");
+  form.querySelector('input[type="password"]').value = "enrollment-password";
+  assert(form.checkValidity());
+  form.requestSubmit();
+  await tick();
+  assert(finishEnrollment);
+  if (navigated) {
+    current.abort();
+    current = new AbortController();
+  }
+  const loading = loadDialog(
+    current.signal,
+    "新的编辑器",
+    () =>
+      new Promise((resolve) => {
+        finishRead = resolve;
+      }),
+    () => {},
+  );
+  finishEnrollment(
+    response({ secret: "must-not-cover-new-editor", uri: "otpauth://test" }),
+  );
+  await tick();
+  await tick();
+  assert(document.querySelector("dialog").textContent.includes("新的编辑器"));
+  assert(
+    !document
+      .querySelector("dialog")
+      .textContent.includes("must-not-cover-new-editor"),
+  );
+  assert(document.querySelector("#notice").textContent.includes("重新生成"));
+  finishRead({});
+  await loading;
+  current.abort();
 }
 // A stale page's generic render callback is also inert, even without a dialog.
 let renders = 0;

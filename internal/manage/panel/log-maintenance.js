@@ -1,4 +1,5 @@
 import { api, download } from "./api.js";
+import { refreshAfterSave } from "./lifecycle.js";
 import { loadDialog } from "./dialog-session.js";
 import {
   el,
@@ -68,13 +69,13 @@ export async function historyControls(ctx) {
             },
           ],
           p,
-          async (v) => {
+          async (v, editor) => {
             await api("/api/tasks/history", {
               count: v.count,
               days: v.days,
               result_bytes: v.result_bytes,
             });
-            ctx.render();
+            refreshAfterSave(ctx, editor);
           },
           false,
           ctx.signal,
@@ -118,22 +119,31 @@ export function journalCard(services, ctx) {
     since,
     button("查看日志", () =>
       loadDialog(
-        ctx.signal, "运行日志",
+        ctx.signal,
+        "运行日志",
         (signal) => api("/api/logs" + params(), undefined, { signal }),
         (value) => showResult("运行日志", value.log),
       ),
     ),
     button("下载日志", async () =>
       download(
-        await api("/api/logs/download" + params(), undefined, { blob: true, signal: ctx.signal }),
+        await api("/api/logs/download" + params(), undefined, {
+          blob: true,
+          signal: ctx.signal,
+        }),
         "sb-vpn.log",
       ),
     ),
     button("查看占用", () =>
       loadDialog(
-        ctx.signal, "项目日志占用",
+        ctx.signal,
+        "项目日志占用",
         (signal) => api("/api/logs/usage", undefined, { signal }),
-        (value) => showResult("项目日志占用", value.usage + "\n上限 64 MiB，最长保留 7 天。"),
+        (value) =>
+          showResult(
+            "项目日志占用",
+            value.usage + "\n上限 64 MiB，最长保留 7 天。",
+          ),
       ),
     ),
   );

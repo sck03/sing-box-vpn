@@ -26,9 +26,9 @@ control/subscription/probe 各有一个工作协程和容量为 1 的唤醒通�
 
 `draft-controller.js` 拥有草稿、基线、保存确认和代次；`prepareDraft` 对候选请求捕获快照，在取消、编辑器替换、草稿变化时拒绝迟到写回。`app.js` 负责页面与提示协调。
 
-`pageContext` 的只读请求和 render 回调属于当前页面。页面过期后 render 不再刷新新页面；已经提交的写入属于登录会话，可以继续完成。管理员与订阅者保存后的刷新通过 `refreshAfterSave` 检查页面与编辑器归属；`formDialog` 向保存回调提供 dialogSession。分享和账户创建等需要回看结果的流程使用 `workflow-results.js`，迟到结果不能覆盖新窗口。
+`pageContext` 的只读请求和 render 回调属于当前页面。页面过期后 render 不再刷新新页面；已经提交的写入属于登录会话，可以继续完成。管理员、订阅者与任务历史保留策略保存后的刷新通过 `refreshAfterSave` 检查页面与编辑器归属；`formDialog` 向保存回调提供 dialogSession。分享和账户创建等需要回看结果的流程使用 `workflow-results.js`，迟到结果不能覆盖新窗口。TOTP 密钥生成也检查编辑器归属，原窗口已关闭时只提示重新生成，不在新窗口展示密钥。
 
-`task-requests.js` 独立管理任务请求回执，`api.js` 负责 HTTP、会话、错误和响应校验。查询/写入 DTO 由 Go 生成，普通 JS 使用 checkJs，API、回执及其他已列出的边界采用 strict；不宣称整个前端已经严格类型化。
+`task-requests.js` 独立管理任务请求回执，`api.js` 负责 HTTP、会话、错误和响应校验。摘要计算开始时捕获未确认回执视图，确认时替换有界 Map，使已经开始的并发重试仍使用原编号；迟到确认不能删除新操作。存储恢复逐条校验，坏条目不清空其他有效回执。查询/写入 DTO 由 Go 生成，普通 JS 使用 checkJs，API、回执及其他已列出的边界采用 strict；不宣称整个前端已经严格类型化。
 
 `observeStatus` 合并通知、处理可见性并在离页时释放资源。任务历史使用摘要签名，VPNGate 运行标签每 5 秒读取自主状态，其余可见状态默认每 60 秒补读。资源局部编辑保留列表搜索、排序和位置；需要重新推导页面时才刷新。
 

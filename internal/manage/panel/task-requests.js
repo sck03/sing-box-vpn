@@ -32,7 +32,7 @@ export function setTaskRequestSession(value) {
   if (session !== value || !value) {
     session = value;
     generation++;
-    entries.clear();
+    entries = new Map();
     restored = false;
   }
   if (!value) {
@@ -64,7 +64,9 @@ function restore(identity) {
       saved.entries.length > 128
     )
       return;
-    for (const [key, entry] of saved.entries) {
+    for (const value of saved.entries) {
+      if (!Array.isArray(value) || value.length !== 2) continue;
+      const [key, entry] = value;
       if (
         typeof key === "string" &&
         /^[a-f0-9]{64}$/.test(key) &&
@@ -73,7 +75,7 @@ function restore(identity) {
         Number.isSafeInteger(entry.created) &&
         entry.created > 0
       )
-        entries.set(key, entry);
+        entries.set(key, { id: entry.id, created: entry.created });
     }
   } catch {
     entries.clear();
@@ -90,6 +92,9 @@ export function taskRequest(path, body) {
 /** @param {string} path @param {string} body @returns {Promise<Request>} */
 async function prepareTaskRequest(path, body) {
   const current = generation;
+  // Settlement replaces the map. A retry already hashing keeps the identity
+  // that was pending when it started, even if another response confirms it.
+  const pending = entries;
   // Object key order does not make a retry a new intent.
   const canonical = JSON.stringify(JSON.parse(body), (_key, value) =>
     value && typeof value === "object" && !Array.isArray(value)
@@ -107,10 +112,9 @@ async function prepareTaskRequest(path, body) {
   if (current !== generation)
     throw new DOMException("会话已更改", "AbortError");
   restore(identity);
-  let entry = entries.get(key);
+  let entry = pending.get(key) || entries.get(key);
   if (entry && Date.now() - entry.created >= lifetime) {
-    entries.delete(key);
-    persist();
+    if (entries.get(key) === entry) discardEntry(key);
     throw new Error(
       "上次提交已超过重试保留期，请先核对任务结果；再次提交将创建新操作。",
     );
@@ -133,6 +137,12 @@ export function settleTaskRequest(request) {
     entries.get(request.key)?.id !== request.id
   )
     return;
-  entries.delete(request.key);
+  discardEntry(request.key);
+}
+
+/** @param {string} key */
+function discardEntry(key) {
+  entries = new Map(entries);
+  entries.delete(key);
   persist();
 }

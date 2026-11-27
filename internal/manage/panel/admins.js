@@ -121,8 +121,14 @@ export async function admins(ctx) {
               },
             ],
             {},
-            async (v) => {
+            async (v, editor) => {
               const result = await mutate("/api/mfa/enroll", v);
+              if (!editor.active() || ctx.signal?.aborted) {
+                notice(
+                  "认证器密钥已生成；原窗口已关闭，请重新生成后查看并确认。",
+                );
+                return;
+              }
               showResult("TOTP 密钥（10 分钟内确认）", result);
             },
           ),

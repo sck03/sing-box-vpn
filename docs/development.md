@@ -25,11 +25,12 @@ go build -tags with_quic,with_utls,with_wireguard,with_gvisor -o .build/managed-
 本次相关前端入口：
 
 ```bash
-npm test -- test-panel-submissions.mjs test-panel-workflows.mjs test-panel-lifecycle.mjs test-panel-state-sync.mjs
+npm test -- test-panel-task-requests.mjs test-panel-submissions.mjs test-panel-workflows.mjs test-panel-lifecycle.mjs
 npm run typecheck
 ```
 
-- submissions：响应丢失后的重试编号、会话重载与退出清理、管理员/订阅者保存的旧页面归属。
+- task-requests：纯 Node 回执测试，覆盖部分存储损坏、摘要计算期间确认、迟到完成和过期窗口。
+- submissions：响应丢失后的重试编号、会话重载与退出清理、管理员/订阅者/任务保留策略保存及 TOTP 密钥生成的页面与弹窗归属。
 - workflows/lifecycle：共享表单、迟到结果回看、加载弹窗取消和竞争归属。
 - state-sync：资源状态失效、隐藏页、局部刷新和生效/草稿分离。
 - checkJs 覆盖全部面板 JS；contracts 检查命令正反例，boundaries 对列出的请求和状态边界开启 strict。不能把它描述为全前端严格类型检查。
