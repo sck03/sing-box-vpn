@@ -12,6 +12,7 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/certificates"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	"github.com/sck03/sing-box-vpn/internal/database"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 type PlatformService struct {
@@ -21,7 +22,7 @@ type PlatformService struct {
 	Accounts            *accounting.Store
 	NoSystem            bool
 	mu                  sync.Mutex
-	wake                chan struct{}
+	wake                map[string]chan struct{}
 	statusMu            sync.Mutex
 	statusAt            time.Time
 	status              []byte
@@ -57,15 +58,20 @@ func OpenPlatform(root, core, runtime string, noSystem bool) (*PlatformService, 
 		auth.Close()
 		return nil, err
 	}
-	return &PlatformService{Root: root, Core: core, Runtime: runtime, Store: store, Auth: auth, Accounts: accounts, NoSystem: noSystem, wake: make(chan struct{}, 1), statusVersion: uint64(time.Now().UnixMilli())}, nil
+	wake := map[string]chan struct{}{
+		domain.ControlLane:      make(chan struct{}, 1),
+		domain.SubscriptionLane: make(chan struct{}, 1),
+		domain.ProbeLane:        make(chan struct{}, 1),
+	}
+	return &PlatformService{Root: root, Core: core, Runtime: runtime, Store: store, Auth: auth, Accounts: accounts, NoSystem: noSystem, wake: wake, statusVersion: uint64(time.Now().UnixMilli())}, nil
 }
 func (s *PlatformService) Close() error {
 	return errors.Join(s.Store.Close(), s.Auth.Close(), s.Accounts.Close())
 }
-func (s *PlatformService) signal() {
+func (s *PlatformService) signal(lane string) {
 	s.invalidateOverview()
 	select {
-	case s.wake <- struct{}{}:
+	case s.wake[lane] <- struct{}{}:
 	default:
 	}
 }

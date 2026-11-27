@@ -91,6 +91,61 @@ failCompatibility = false; retry.click(); await tick();
 submit(editor.form); await tick();
 assert.equal(saved.account_id, 'b');
 
+// Replacing the editor aborts follow-up compatibility reads as well as its UI.
+let compatibilitySignal, releaseCompatibility;
+editor = await accountOutputDialog({ accounts: [
+  { id: 'a', name: 'A', download_scopes: ['normal'] },
+  { id: 'b', name: 'B', download_scopes: ['normal'] },
+], ctx: { workflowRequest: async (path, _, options) => {
+  if (path.includes('id=a')) return profiles;
+  compatibilitySignal = options.signal;
+  return new Promise((resolve) => { releaseCompatibility = resolve; });
+} }, title: 'compatibility lifetime', save() {} });
+editor.setValue('account_id', 'b');
+editor.input('account_id').dispatchEvent(new Event('change', { bubbles: true }));
+const { jsonDialog } = await import('../internal/manage/panel/ui.js');
+jsonDialog('replacement', {}, () => {});
+await tick();
+assert.equal(editor.signal.aborted, true);
+assert.equal(compatibilitySignal.aborted, true, 'replaced dialog left its query running');
+releaseCompatibility(profiles); await tick();
+assert.equal(document.querySelector('dialog h2').textContent, 'replacement');
+
+const { accessFields, accessValue, accessOptions, wireAccessMode } = await import('../internal/manage/panel/public-access-fields.js');
+for (const trusted_proxy of [[], ['10.2.0.0/24']]) {
+  editor = formDialog('access mode', accessFields([]), accessValue({
+    listen: '127.0.0.1:2096', public_url: 'https://panel.example.com', trusted_proxy,
+  }), (value) => { saved = accessOptions(value, []); });
+  wireAccessMode(editor);
+  for (const mode of ['tls', 'proxy']) {
+    editor.setValue('mode', mode);
+    editor.input('mode').dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  assert(editor.form.checkValidity());
+  editor.form.requestSubmit(); await tick();
+  assert.deepEqual(saved.trusted_proxy, trusted_proxy.length ? trusted_proxy : ['127.0.0.1/32']);
+}
+
+const { dnsServerFields, normalizeDNSServer } = await import('../internal/manage/panel/dns-server-fields.js');
+for (const type of ['udp', 'tls', 'https', 'local']) {
+  editor = formDialog('DNS protocol', dnsServerFields(['udp', 'tls', 'https', 'local'], []),
+    { tag: 'dns-test', type: 'udp', server: '1.1.1.1' }, (value) => { saved = normalizeDNSServer(value); });
+  editor.setValue('type', type);
+  editor.input('type').dispatchEvent(new Event('change', { bubbles: true }));
+  assert(editor.form.checkValidity());
+  editor.form.requestSubmit(); await tick();
+  assert.equal(saved.type, type);
+  assert.equal(saved.server_port, undefined, 'an implicit port must follow the transport');
+  assert.equal(saved.path, type === 'https' ? '/dns-query' : undefined);
+  assert.equal(saved.server, type === 'local' ? undefined : '1.1.1.1');
+}
+editor = formDialog('custom DNS', dnsServerFields(['udp', 'tls'], []),
+  { tag: 'custom', type: 'tls', server: '192.0.2.1', server_port: 8853, tls: { server_name: 'dns.example.com', alpn: ['dot'] } },
+  (value) => { saved = normalizeDNSServer(value); }, true);
+editor.form.requestSubmit(); await tick();
+assert.equal(saved.server_port, 8853);
+assert.deepEqual(saved.tls, { server_name: 'dns.example.com', alpn: ['dot'] });
+
 editor = formDialog('tokens', [{ key: 'values', type: 'csv', label: '域名' }, { key: 'numbers', type: 'numbers', label: 'ASN' }], { values: ['old.test'], numbers: [] }, (value) => { saved = value; });
 editor.input('values').value = 'new.test, old.test';
 editor.input('numbers').value = 'abc';

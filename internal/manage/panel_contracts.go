@@ -3,7 +3,6 @@ package manage
 import (
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/adminauth"
-	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
@@ -55,10 +54,10 @@ type MFAEnrollment struct {
 }
 
 type SubscriptionActionOptions struct {
-	Revision   int64                `json:"revision"`
-	Pending    bool                 `json:"pending"`
-	Outputs    []application.Option `json:"outputs"`
-	Deliveries []application.Option `json:"deliveries"`
+	Revision   int64           `json:"revision"`
+	Pending    bool            `json:"pending"`
+	Outputs    []domain.Option `json:"outputs"`
+	Deliveries []domain.Option `json:"deliveries"`
 }
 
 type OutboundOption struct {

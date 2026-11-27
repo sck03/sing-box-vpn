@@ -203,12 +203,14 @@ assert.equal(nameSaves, 1, "128 UTF-8 bytes must be accepted");
 
 const { vpngate } = await import("../internal/manage/panel/vpngate.js");
 const gatewayLife = new AbortController();
+const gatewayConfig = { vpn: { active_country: "KR", profiles: { KR: { ports: {} }, JP: { ports: {} } } },
+  vpn_secrets: { KR: { socks_user: "keep" }, JP: { socks_user: "remove" } }, gateway: {}, certificates: [] };
 let gatewayState = "connecting", gatewayReads = 0, gatewayPoll;
 window.setInterval = (fn, delay) => { assert.equal(delay, 5000); gatewayPoll = fn; return 123; };
 window.clearInterval = () => {};
 const gatewayContext = {
   signal: gatewayLife.signal, session: { role: "admin" }, section: "gateway",
-  config: async () => ({ vpn: { active_country: "KR", profiles: {} }, gateway: {}, certificates: [] }),
+  config: async () => gatewayConfig,
   task() {}, changed() {}, render() {},
   request: async () => { gatewayReads++; return { state: gatewayState, country: "JP", source_refresh: {} }; },
 };
@@ -242,6 +244,17 @@ await flush();
 assert.equal(gatewayReads, pausedReads);
 window.setInterval = nativeInterval;
 window.clearInterval = nativeClear;
+
+// Only inactive profiles can be removed; the backend separately checks bindings.
+const profileContext = { ...gatewayContext, section: "access", signal: new AbortController().signal };
+root.replaceChildren(...await vpngate(profileContext));
+await flush();
+globalThis.confirm = () => true;
+const removeProfile = [...root.querySelectorAll('button')].filter((b) => b.textContent === "删除档案");
+assert.equal(removeProfile.length, 1, "the active country must not offer deletion");
+removeProfile[0].click();
+assert.deepEqual(Object.keys(gatewayConfig.vpn.profiles), ["KR"]);
+assert.deepEqual(Object.keys(gatewayConfig.vpn_secrets), ["KR"]);
 
 const { taskHistory } = await import("../internal/manage/panel/tasks.js");
 const historyLife = new AbortController();

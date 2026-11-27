@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	"github.com/sck03/sing-box-vpn/internal/servicecatalog"
 )
 
@@ -127,18 +128,12 @@ func (c TaskCommand) GatewayOperation() (string, error) {
 	return v.Op, nil
 }
 
-const (
-	ControlLane      = "control"
-	SubscriptionLane = "subscription"
-	ProbeLane        = "probe"
-)
-
 func (c TaskCommand) Lane() string {
 	if c.Operation == "outbound-probe" || (c.Operation == "subscription" && c.Subscription.Operation == "check") {
-		return ProbeLane
+		return domain.ProbeLane
 	}
 	if c.Operation == "subscription" {
-		return SubscriptionLane
+		return domain.SubscriptionLane
 	}
-	return ControlLane
+	return domain.ControlLane
 }

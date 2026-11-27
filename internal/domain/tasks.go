@@ -1,4 +1,10 @@
-package application
+package domain
+
+const (
+	ControlLane      = "control"
+	SubscriptionLane = "subscription"
+	ProbeLane        = "probe"
+)
 
 // TaskAudience is a transport-independent capability description. Actor grants
 // apply only to operators; viewers never gain access to task details.

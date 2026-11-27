@@ -84,19 +84,14 @@ export function accessOptions(v, certificates) {
     trusted_proxy: v.mode === "proxy" ? v.trusted_proxy : [],
   };
 }
-export function wireAccessMode() {
-  const form = document.querySelector("#dialog form");
-  form.addEventListener("change", (event) => {
-    const target = /** @type {HTMLSelectElement} */ (event.target);
-    if (target.getAttribute("aria-label") !== "访问方式") return;
-    const listen = /** @type {HTMLInputElement} */ (
-        form.querySelector('[aria-label="监听地址"]')
-      ),
-      port = listen.value.match(/:(\d+)$/)?.[1] || "2096";
-    listen.value = (target.value === "tls" ? "0.0.0.0:" : "127.0.0.1:") + port;
-    const proxy = /** @type {HTMLInputElement} */ (
-      form.querySelector('[aria-label="可信 HTTPS 代理 CIDR（逗号分隔）"]')
-    );
-    if (target.value === "proxy" && !proxy.value) proxy.value = "127.0.0.1/32";
+export function wireAccessMode(editor) {
+  editor.form.addEventListener("change", (event) => {
+    if (event.target !== editor.input("mode")) return;
+    const value = editor.value();
+    const port = value.listen.match(/:(\d+)$/)?.[1] || "2096";
+    editor.setValue("listen", (value.mode === "tls" ? "0.0.0.0:" : "127.0.0.1:") + port);
+    if (value.mode === "proxy" && !value.trusted_proxy.length)
+      editor.setValue("trusted_proxy", ["127.0.0.1/32"]);
+    editor.refresh();
   });
 }

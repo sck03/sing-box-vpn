@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/sck03/sing-box-vpn/internal/command"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -77,7 +78,7 @@ func (s *PlatformService) servePanelRestart(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		platformError(w, err)
 	} else {
-		s.signal()
+		s.signal(domain.ControlLane)
 		jsonResponse(w, Object{"task_id": id})
 	}
 	return true

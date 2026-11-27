@@ -72,7 +72,7 @@ func (s *PlatformService) queueTask(ctx context.Context, a taskInput, actor stri
 	}
 	id, err := s.Store.QueueTask(ctx, a.Lane(), a.Operation, actor, data)
 	if err == nil {
-		s.signal()
+		s.signal(a.Lane())
 	}
 	return id, err
 }

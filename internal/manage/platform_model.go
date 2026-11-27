@@ -352,6 +352,11 @@ func (c *PlatformConfig) normalize() {
 	if c.VPNSecrets == nil {
 		c.VPNSecrets = map[string]Secrets{}
 	}
+	for cc := range c.VPNSecrets {
+		if _, exists := c.VPN.Profiles[cc]; !exists {
+			delete(c.VPNSecrets, cc)
+		}
+	}
 	if c.Gateway == nil {
 		c.Gateway = Object{}
 	}

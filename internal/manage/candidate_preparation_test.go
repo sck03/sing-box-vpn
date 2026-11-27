@@ -107,3 +107,37 @@ func TestCandidateRejectsOrphanedInboundBeforeCompile(t *testing.T) {
 		t.Fatal("disabled inbound lost membership", err)
 	}
 }
+
+func TestCountryDeletionPreservesBoundProfiles(t *testing.T) {
+	s, err := OpenPlatform(t.TempDir(), "", "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := t.Context()
+	if err = s.Accounts.SaveAccount(ctx, domain.Account{ID: "account", Name: "Account"}); err != nil {
+		t.Fatal(err)
+	}
+	profile := Profile{Ports: map[string]int{}}
+	entry := MakeNodes(profile, "vg-JP-")[0]
+	credential := domain.Credential{ID: "credential", AccountID: "account", RuntimeID: "vpngate", InboundID: entry.ID, Protocol: entry.Protocol, Generation: 1, UUID: "aaaaaaaa-1111-4111-8111-111111111111"}
+	if err = s.Accounts.BindBatch(ctx, []domain.Credential{credential}); err != nil {
+		t.Fatal(err)
+	}
+	c := candidateFixture()
+	c.VPN.Profiles = map[string]Profile{"JP": profile, "KR": profile}
+	c.VPN.ActiveCountry = "KR"
+	if err = s.validateInboundBindings(ctx, c); err != nil {
+		t.Fatal("switching countries must retain inactive bindings", err)
+	}
+	delete(c.VPN.Profiles, "JP")
+	if err = s.validateInboundBindings(ctx, c); err == nil {
+		t.Fatal("removing a bound country was accepted")
+	}
+	if err = s.Accounts.Unbind(ctx, credential.ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.validateInboundBindings(ctx, c); err != nil {
+		t.Fatal("unbound country cannot be removed", err)
+	}
+}

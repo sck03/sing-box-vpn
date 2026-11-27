@@ -2,19 +2,18 @@ package accounting
 
 import (
 	"context"
-
-	"github.com/sck03/sing-box-vpn/internal/application"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
-func (s *Store) BoundInbounds(ctx context.Context, scope string) ([]application.BoundInbound, error) {
+func (s *Store) BoundInbounds(ctx context.Context, scope string) ([]domain.BoundInbound, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT inbound,protocol FROM credentials WHERE runtime=? ORDER BY inbound,protocol`, scope)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var result []application.BoundInbound
+	var result []domain.BoundInbound
 	for rows.Next() {
-		var binding application.BoundInbound
+		var binding domain.BoundInbound
 		if err := rows.Scan(&binding.ID, &binding.Protocol); err != nil {
 			return nil, err
 		}

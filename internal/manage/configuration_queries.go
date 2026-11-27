@@ -2,10 +2,9 @@ package manage
 
 import (
 	"context"
-	"sync"
-
-	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
+	"github.com/sck03/sing-box-vpn/internal/domain"
+	"sync"
 )
 
 type appliedViewSource interface {
@@ -47,12 +46,12 @@ func (s *PlatformService) appliedConfiguration(ctx context.Context) (PlatformCon
 	return s.configuration.read(ctx, s.Store)
 }
 
-func (s *PlatformService) InboundOptions(ctx context.Context, scope string) ([]application.Option, error) {
+func (s *PlatformService) InboundOptions(ctx context.Context, scope string) ([]domain.Option, error) {
 	config, _, err := s.appliedConfiguration(ctx)
 	if err != nil {
 		return nil, err
 	}
-	options := []application.Option{}
+	options := []domain.Option{}
 	if scope == vpngateScope && config.VPN.ActiveCountry == "" {
 		return options, nil
 	}
@@ -62,7 +61,7 @@ func (s *PlatformService) InboundOptions(ctx context.Context, scope string) ([]a
 	}
 	for _, entry := range entries {
 		if !entry.Disabled {
-			options = append(options, application.Option{ID: entry.ID, Name: entry.ID + " · " + entry.Protocol})
+			options = append(options, domain.Option{ID: entry.ID, Name: entry.ID + " · " + entry.Protocol})
 		}
 	}
 	return options, nil
@@ -70,15 +69,15 @@ func (s *PlatformService) InboundOptions(ctx context.Context, scope string) ([]a
 
 func (s *PlatformService) SubscriptionActions(ctx context.Context) (SubscriptionActionOptions, error) {
 	config, state, err := s.appliedConfiguration(ctx)
-	result := SubscriptionActionOptions{Revision: state.AppliedRevision, Pending: state.Revision != state.AppliedRevision, Outputs: []application.Option{}, Deliveries: []application.Option{}}
+	result := SubscriptionActionOptions{Revision: state.AppliedRevision, Pending: state.Revision != state.AppliedRevision, Outputs: []domain.Option{}, Deliveries: []domain.Option{}}
 	if err != nil {
 		return result, err
 	}
 	for _, output := range config.Subscriptions.Outputs {
-		result.Outputs = append(result.Outputs, application.Option{ID: output.ID, Name: output.Name})
+		result.Outputs = append(result.Outputs, domain.Option{ID: output.ID, Name: output.Name})
 	}
 	for _, delivery := range config.Subscriptions.Deliveries {
-		result.Deliveries = append(result.Deliveries, application.Option{ID: delivery.ID})
+		result.Deliveries = append(result.Deliveries, domain.Option{ID: delivery.ID})
 	}
 	return result, nil
 }

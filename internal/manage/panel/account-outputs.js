@@ -161,7 +161,7 @@ export async function accountOutputDialog({
         controller.refresh();
         summary.replaceChildren(help("正在检查当前实例的客户端兼容性…"));
         try {
-          const result = await load(value, query.signal);
+          const result = await load(value, AbortSignal.any([controller.signal, query.signal]));
           if (!controller.active() || generation !== current) return;
           options = result;
           controller.refresh();
@@ -194,9 +194,6 @@ export async function accountOutputDialog({
             if (controller.active()) controller.refresh();
           }
         }
-      });
-      controller.dialog.addEventListener("close", () => query?.abort(), {
-        once: true,
       });
       describe();
       return controller;

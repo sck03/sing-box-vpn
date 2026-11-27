@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	"time"
 
 	"github.com/sck03/sing-box-vpn/internal/application"
@@ -18,9 +19,9 @@ func (s *PlatformService) runWorkers(ctx context.Context) error {
 	child, cancel := context.WithCancel(ctx)
 	defer cancel()
 	workers := []func(context.Context) error{
-		func(ctx context.Context) error { return s.runLane(ctx, application.ControlLane) },
-		func(ctx context.Context) error { return s.runLane(ctx, application.SubscriptionLane) },
-		func(ctx context.Context) error { return s.runLane(ctx, application.ProbeLane) },
+		func(ctx context.Context) error { return s.runLane(ctx, domain.ControlLane) },
+		func(ctx context.Context) error { return s.runLane(ctx, domain.SubscriptionLane) },
+		func(ctx context.Context) error { return s.runLane(ctx, domain.ProbeLane) },
 		s.runRetention,
 		s.runMaintenance,
 	}
@@ -48,7 +49,7 @@ func (s *PlatformService) runLane(ctx context.Context, lane string) error {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-s.wake:
+			case <-s.wake[lane]:
 			case <-ticker.C:
 			}
 			continue
@@ -76,7 +77,7 @@ func (s *PlatformService) runTask(ctx context.Context, task controlstore.Claimed
 	budget := application.ControlTaskTimeout
 	if task.Kind == "subscription" || task.Kind == "outbound-probe" {
 		var action taskInput
-		if json.Unmarshal(task.Input, &action) == nil && action.Lane() == application.ProbeLane {
+		if json.Unmarshal(task.Input, &action) == nil && action.Lane() == domain.ProbeLane {
 			budget = application.ProbeTaskTimeout
 		}
 	}
@@ -94,7 +95,7 @@ func (s *PlatformService) runTask(ctx context.Context, task controlstore.Claimed
 		var action taskInput
 		err = json.Unmarshal(task.Input, &action)
 		if err == nil {
-			if action.Lane() == application.ProbeLane {
+			if action.Lane() == domain.ProbeLane {
 				err = s.runProbe(child, task.ID, func(probe context.Context) error { return s.execute(probe, task.ID, action) })
 			} else if action.Operation == "program-upgrade" || action.Operation == "subscription" {
 				err = s.execute(child, task.ID, action)

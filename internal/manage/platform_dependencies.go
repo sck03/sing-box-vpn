@@ -10,11 +10,22 @@ import (
 )
 
 func (s *PlatformService) validateInboundBindings(ctx context.Context, c PlatformConfig) error {
-	nodes := make([]application.BoundInbound, 0, len(c.App.Nodes))
+	nodes := make([]domain.BoundInbound, 0, len(c.App.Nodes))
 	for _, node := range c.App.Nodes {
-		nodes = append(nodes, application.BoundInbound{ID: node.ID, Protocol: node.Protocol})
+		nodes = append(nodes, domain.BoundInbound{ID: node.ID, Protocol: node.Protocol})
 	}
-	return application.ValidateInboundBindings(ctx, s.Accounts, normalScope, nodes)
+	if err := application.ValidateInboundBindings(ctx, s.Accounts, normalScope, nodes); err != nil {
+		return err
+	}
+	// Country switching keeps every stored profile available for its bindings.
+	// Only removing a profile invalidates those identities.
+	nodes = nil
+	for cc, profile := range c.VPN.Profiles {
+		for _, node := range MakeNodes(profile, "vg-"+cc+"-") {
+			nodes = append(nodes, domain.BoundInbound{ID: node.ID, Protocol: node.Protocol})
+		}
+	}
+	return application.ValidateInboundBindings(ctx, s.Accounts, "vpngate", nodes)
 }
 
 // InboundImpact reports references without exposing authentication material.

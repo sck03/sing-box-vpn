@@ -1,35 +1,35 @@
 export * from "./dom.js";
 export { table, remoteTable } from "./tables.js";
-import { $, el, button, card, help, row } from "./dom.js";
+import { el, button, card, help, row } from "./dom.js";
 import { table } from "./tables.js";
 import { formDialog } from "./form-dialog.js";
+import { dialogSession } from "./dialog-session.js";
 export { formDialog } from "./form-dialog.js";
 
 export function jsonDialog(title, value, save) {
-  const dialog = $("#dialog"),
+  const session = dialogSession(),
     input = el("textarea", {
       class: "json",
       "aria-label": title,
       spellcheck: "false",
     });
   input.value = JSON.stringify(value, null, 2);
-  dialog.replaceChildren(
+  session.replace(
     el("h2", {}, title),
     help("保留已有字段；服务端会校验资源引用、能力与配置版本。"),
     input,
     row(
-      button("取消", () => dialog.close()),
+      button("取消", session.close),
       button(
         "保存到草稿",
         async () => {
           await save(JSON.parse(input.value));
-          if (dialog.contains(input)) dialog.close();
+          if (session.active()) session.close();
         },
         "primary",
       ),
     ),
   );
-  dialog.showModal();
 }
 export function resourceEditor({
   title,

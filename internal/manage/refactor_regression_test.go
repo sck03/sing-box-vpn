@@ -35,7 +35,7 @@ func TestCredentialPublicationRetryDoesNotRepeatRotation(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Runtime = filepath.Join(root, "missing-runtime")
-	task, err := s.Store.ClaimLane(ctx, application.ControlLane)
+	task, err := s.Store.ClaimLane(ctx, domain.ControlLane)
 	if err != nil {
 		t.Fatal(err)
 	}

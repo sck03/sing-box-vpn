@@ -25,13 +25,13 @@ func TestInboundBindingsRequireExplicitUnbind(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		name    string
-		nodes   []application.BoundInbound
+		nodes   []domain.BoundInbound
 		invalid bool
 	}{
-		{"same identity", []application.BoundInbound{{ID: "entry", Protocol: "vless"}}, false},
+		{"same identity", []domain.BoundInbound{{ID: "entry", Protocol: "vless"}}, false},
 		{"removed", nil, true},
-		{"renamed", []application.BoundInbound{{ID: "renamed", Protocol: "vless"}}, true},
-		{"changed protocol", []application.BoundInbound{{ID: "entry", Protocol: "vmess"}}, true},
+		{"renamed", []domain.BoundInbound{{ID: "renamed", Protocol: "vless"}}, true},
+		{"changed protocol", []domain.BoundInbound{{ID: "entry", Protocol: "vmess"}}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := application.ValidateInboundBindings(ctx, store, "normal", tc.nodes)

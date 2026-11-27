@@ -2,6 +2,7 @@ package manage
 
 import (
 	"context"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	"sync"
 )
 
@@ -41,7 +42,7 @@ func (s *PlatformService) CancelTask(ctx context.Context, id int64) error {
 		return err
 	}
 	s.probes.stop(id)
-	s.signal()
+	s.signal(domain.ProbeLane)
 	return nil
 }
 

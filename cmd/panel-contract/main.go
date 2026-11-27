@@ -188,7 +188,7 @@ func main() {
 	}
 	for _, t := range []reflect.Type{
 		reflect.TypeFor[certificates.CertificateStatus](),
-		reflect.TypeFor[manage.AccountSave](), reflect.TypeFor[manage.AccountArchive](), reflect.TypeFor[manage.ShareCreated](), reflect.TypeFor[application.Option](),
+		reflect.TypeFor[manage.AccountSave](), reflect.TypeFor[manage.AccountArchive](), reflect.TypeFor[manage.ShareCreated](), reflect.TypeFor[domain.Option](),
 		reflect.TypeFor[manage.AccountSummary](),
 		reflect.TypeFor[application.RefreshResult](),
 		reflect.TypeFor[application.DeliveryResult](),

@@ -7,7 +7,7 @@ const dom = new JSDOM(
     new URL("../internal/manage/panel/index.html", import.meta.url),
     "utf8",
   ),
-  { url: "http://localhost" },
+  { url: "http://localhost", pretendToBeVisual: true },
 );
 const pageLifetime = new AbortController();
 try {

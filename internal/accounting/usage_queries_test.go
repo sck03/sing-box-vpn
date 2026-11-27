@@ -2,12 +2,10 @@ package accounting
 
 import (
 	"errors"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	"reflect"
 	"testing"
 	"time"
-
-	"github.com/sck03/sing-box-vpn/internal/application"
-	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 func TestAccountUsageMatchesListWithoutActivatingFirstUse(t *testing.T) {
@@ -35,7 +33,7 @@ func TestAccountUsageMatchesListWithoutActivatingFirstUse(t *testing.T) {
 		if err != nil || detail.State != state {
 			t.Fatal(id, detail, err)
 		}
-		page, err := s.AccountPage(ctx, application.PageQuery{Search: id, Limit: 20}, now, false)
+		page, err := s.AccountPage(ctx, domain.PageQuery{Search: id, Limit: 20}, now, false)
 		if err != nil || len(page.Items) != 1 || !reflect.DeepEqual(detail, page.Items[0]) {
 			t.Fatal(id, detail, page, err)
 		}

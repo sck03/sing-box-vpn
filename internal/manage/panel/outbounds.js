@@ -157,7 +157,13 @@ export async function outbounds(ctx) {
         { key: "tag", label: "Tag", required: true },
         { key: "private_key", label: "私钥", type: "password" },
         { key: "address", label: "本地地址 CIDR", type: "csv" },
+        { key: "mtu", label: "MTU", type: "number", min: 576, max: 65535,
+          advanced: true, help: "留空使用核心默认值；根据实际隧道链路调整。" },
       ],
+      normalize: (value) => {
+        if (!value.mtu) delete value.mtu;
+        return value;
+      },
       defaults: {
         type: "wireguard",
         tag: "warp-out",

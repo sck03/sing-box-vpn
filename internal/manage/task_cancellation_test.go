@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/sck03/sing-box-vpn/internal/application"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -85,7 +86,7 @@ func TestRunningOutboundCancellationStopsNetworkAndFinalizes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := service.Store.ClaimLane(t.Context(), application.ProbeLane)
+	task, err := service.Store.ClaimLane(t.Context(), domain.ProbeLane)
 	if err != nil || task.ID != id {
 		t.Fatal(task, err)
 	}

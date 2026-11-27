@@ -8,6 +8,10 @@
 
 ## 本地目录与体积
 
+本轮必要验证与清理结果以 [实施报告](refactor-review.md) 为准。普通可见页面的 JSDOM 夹具使用 `pretendToBeVisual: true`；隐藏页行为单独设置 `document.hidden` 验证。涉及表单保存的回归使用 `checkValidity/requestSubmit`。Unix socket 测试使用短名称临时目录，避免嵌套测试名称超过 Windows 地址长度限制。
+
+相关定向入口：`npm test -- test-panel-quality.mjs test-panel-selection.mjs test-panel-contracts.mjs test-panel-state-sync.mjs test-panel-refactor.mjs`；队列与档案边界使用 `go test ./internal/manage -run 'TestQueuedTasksNotifyTheirOwnLane|TestCountryDeletionPreservesBoundProfiles'`。无需为这些修改执行长时间链路或完整测试套件。
+
 源码不依赖旧数据库或测试运行目录。`.test/gocache`、`.test/gomodcache`、`.test/tmp` 是可重建缓存；完成验证并停止相关进程后可清理。`.test/verification` 中旧数据库、日志、截图和测试二进制也可删除，仅保留需要的验收摘要。
 
 Windows 使用 `./scripts/clean-dev.ps1 -WhatIf` 预览，去掉 `-WhatIf` 清理 `.test`、`.build`、`.cleanup-manual`。加 `-Dependencies` 删除可由 `npm ci` 重建的 node_modules，加 `-Tools` 删除整个项目本地 `.tools`，包括 Go、核心校验器、Mihomo 和其他可重新下载的验证工具；只清 Python 浏览器依赖时用 `-BrowserTools`。脚本核对绝对路径、目录链接和目录内运行程序，无法读取的目录单独报告，不触及 `.git`、源码、文档示例或外部数据库。停止构建和测试后执行；不要把需要发布的唯一发行包留在待清理目录。

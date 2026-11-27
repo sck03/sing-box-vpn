@@ -150,7 +150,7 @@ export async function access(ctx) {
     );
     editor.form.querySelector('button[type="submit"]').textContent =
       "预览访问配置";
-    wireAccessMode();
+    wireAccessMode(editor);
     certificateActions(editor, edit);
   };
   const panel = () =>
@@ -240,7 +240,7 @@ export async function access(ctx) {
               ctx.render();
             },
           );
-          wireAccessMode();
+          wireAccessMode(editor);
           certificateActions(editor, editSubscription);
         };
         editSubscription();

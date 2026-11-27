@@ -3,11 +3,10 @@ package manage
 import (
 	"context"
 	"errors"
+	"github.com/sck03/sing-box-vpn/internal/domain"
+	"github.com/sck03/sing-box-vpn/internal/publicaccess"
 	"slices"
 	"strings"
-
-	"github.com/sck03/sing-box-vpn/internal/application"
-	"github.com/sck03/sing-box-vpn/internal/publicaccess"
 )
 
 func appliedDownloadOrigin(c PlatformConfig, fallback string) (string, error) {
@@ -22,15 +21,15 @@ func appliedDownloadOrigin(c PlatformConfig, fallback string) (string, error) {
 }
 
 type GrantOptions struct {
-	ListenerEnabled bool                 `json:"listener_enabled"`
-	PublicURL       string               `json:"public_url"`
-	Pending         bool                 `json:"pending"`
-	Outputs         []application.Option `json:"outputs"`
-	Unavailable     string               `json:"unavailable,omitempty"`
+	ListenerEnabled bool            `json:"listener_enabled"`
+	PublicURL       string          `json:"public_url"`
+	Pending         bool            `json:"pending"`
+	Outputs         []domain.Option `json:"outputs"`
+	Unavailable     string          `json:"unavailable,omitempty"`
 }
 
 func (s *PlatformService) grantOptions(ctx context.Context, fallback string) (GrantOptions, error) {
-	v := GrantOptions{Outputs: []application.Option{}}
+	v := GrantOptions{Outputs: []domain.Option{}}
 	c, state, err := s.appliedConfiguration(ctx)
 	if err != nil {
 		return v, err
@@ -42,7 +41,7 @@ func (s *PlatformService) grantOptions(ctx context.Context, fallback string) (Gr
 		v.Unavailable = err.Error()
 	}
 	for _, o := range c.Subscriptions.Outputs {
-		v.Outputs = append(v.Outputs, application.Option{ID: o.ID, Name: o.Name})
+		v.Outputs = append(v.Outputs, domain.Option{ID: o.ID, Name: o.Name})
 	}
 	return v, nil
 }
@@ -52,7 +51,7 @@ func (v GrantOptions) validate(outputs []string) error {
 		return errors.New(v.Unavailable)
 	}
 	for _, id := range outputs {
-		if !slices.ContainsFunc(v.Outputs, func(o application.Option) bool { return o.ID == id }) {
+		if !slices.ContainsFunc(v.Outputs, func(o domain.Option) bool { return o.ID == id }) {
 			return errors.New("output is not applied")
 		}
 	}

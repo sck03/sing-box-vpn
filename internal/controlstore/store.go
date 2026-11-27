@@ -7,8 +7,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/database"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	"time"
 )
 
@@ -22,20 +22,20 @@ type State struct {
 	Applied         json.RawMessage `json:"applied"`
 }
 type Task struct {
-	ID              int64                    `json:"id"`
-	Kind            string                   `json:"kind"`
-	Actor           string                   `json:"actor"`
-	State           string                   `json:"state"`
-	Phase           string                   `json:"phase"`
-	Error           string                   `json:"error,omitempty"`
-	Created         int64                    `json:"created"`
-	Updated         int64                    `json:"updated"`
-	Result          json.RawMessage          `json:"result,omitempty"`
-	Outcome         string                   `json:"outcome,omitempty"`
-	Acknowledged    bool                     `json:"acknowledged"`
-	Details         application.TaskAudience `json:"details"`
-	Cancellable     bool                     `json:"cancellable"`
-	CancelRequested bool                     `json:"cancel_requested"`
+	ID              int64               `json:"id"`
+	Kind            string              `json:"kind"`
+	Actor           string              `json:"actor"`
+	State           string              `json:"state"`
+	Phase           string              `json:"phase"`
+	Error           string              `json:"error,omitempty"`
+	Created         int64               `json:"created"`
+	Updated         int64               `json:"updated"`
+	Result          json.RawMessage     `json:"result,omitempty"`
+	Outcome         string              `json:"outcome,omitempty"`
+	Acknowledged    bool                `json:"acknowledged"`
+	Details         domain.TaskAudience `json:"details"`
+	Cancellable     bool                `json:"cancellable"`
+	CancelRequested bool                `json:"cancel_requested"`
 }
 
 // ClaimedTask is execution data, available only after claiming queued work.
@@ -173,7 +173,7 @@ func (s *Store) QueueTask(ctx context.Context, lane, kind, actor string, input [
 }
 
 func validLane(lane string) bool {
-	return lane == application.ControlLane || lane == application.SubscriptionLane || lane == application.ProbeLane
+	return lane == domain.ControlLane || lane == domain.SubscriptionLane || lane == domain.ProbeLane
 }
 
 func (s *Store) queue(ctx context.Context, lane, kind, actor string, input []byte, expected int64, desired []byte) (int64, error) {
@@ -193,7 +193,7 @@ func (s *Store) queue(ctx context.Context, lane, kind, actor string, input []byt
 		return 0, errors.New("task queue is full")
 	}
 	// Leave capacity for configuration repair and automatic refresh under probe load.
-	if lane == application.ProbeLane {
+	if lane == domain.ProbeLane {
 		var probes int
 		if err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM control_tasks WHERE lane='probe' AND state IN ('queued','running')").Scan(&probes); err != nil {
 			return 0, err
@@ -313,7 +313,7 @@ func (s *Store) RecentTaskSummaries(ctx context.Context) ([]Task, error) {
 }
 func (s *Store) Task(ctx context.Context, id int64) (t Task, err error) {
 	err = s.db.QueryRowContext(ctx, `SELECT id,kind,actor,state,phase,error,created,updated,CAST(result AS BLOB),outcome,acknowledged,`+taskCancellationColumns+` FROM control_tasks WHERE id=?`, id).Scan(&t.ID, &t.Kind, &t.Actor, &t.State, &t.Phase, &t.Error, &t.Created, &t.Updated, &t.Result, &t.Outcome, &t.Acknowledged, &t.CancelRequested, &t.Cancellable)
-	t.Details = application.TaskDetails(t.Kind, t.Actor)
+	t.Details = domain.TaskDetails(t.Kind, t.Actor)
 	return
 }
 
@@ -329,7 +329,7 @@ func (s *Store) queryTasks(ctx context.Context, query string, args ...any) ([]Ta
 		if err = rows.Scan(&t.ID, &t.Kind, &t.Actor, &t.State, &t.Phase, &t.Error, &t.Created, &t.Updated, &t.Result, &t.Outcome, &t.Acknowledged, &t.CancelRequested, &t.Cancellable); err != nil {
 			return nil, err
 		}
-		t.Details = application.TaskDetails(t.Kind, t.Actor)
+		t.Details = domain.TaskDetails(t.Kind, t.Actor)
 		v = append(v, t)
 	}
 	return v, rows.Err()

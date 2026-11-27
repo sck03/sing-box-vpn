@@ -245,6 +245,15 @@ export async function vpngate(ctx) {
             },
           ),
         ),
+        ...(p.country === c.vpn.active_country ? [] : [
+          button("删除档案", () => {
+            if (!confirm(`删除 ${p.country} 的未启用档案？保存时会检查权益绑定；仍有关联凭据时须先解除绑定。`)) return;
+            delete c.vpn.profiles[p.country];
+            delete c.vpn_secrets?.[p.country];
+            ctx.changed();
+            ctx.render();
+          }, "danger"),
+        ]),
       ],
     ),
   );

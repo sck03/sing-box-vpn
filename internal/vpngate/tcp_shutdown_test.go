@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -18,7 +19,17 @@ func TestProxyShutdownClosesHalfClosedRelay(t *testing.T) {
 			name = "listener-failure"
 		}
 		t.Run(name, func(t *testing.T) {
-			workerListener, err := net.Listen("unix", filepath.Join(t.TempDir(), "worker.sock"))
+			// Nested test names can exceed the Unix socket path limit on Windows.
+			dir, err := os.MkdirTemp("", "sbvpn-sock-")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := os.RemoveAll(dir); err != nil {
+					t.Error(err)
+				}
+			})
+			workerListener, err := net.Listen("unix", filepath.Join(dir, "worker.sock"))
 			if err != nil {
 				t.Fatal(err)
 			}

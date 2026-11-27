@@ -4,6 +4,12 @@
 
 ## 运行状态、调度与执行基线（2026-11-27）
 
+control/subscription/probe 各自拥有容量为 1 的唤醒通道；入队按任务所属队列发送通知，探测取消只唤醒 probe。通知合并不会丢任务，worker 持续领取到队列为空；保留每秒轮询以发现其他进程的入队。不存在多个队列竞争同一通知的情况。
+
+分页查询、选项、无秘密入站身份、任务详情权限和队列标识属于 `domain` 的稳定值对象。`accounting` 与 `controlstore` 不依赖 `application`；用例层依赖窄仓储接口，管理器负责装配。公开 JSON 结构与数据库 schema 不因内部类型移动而变化，不保留旧类型别名。
+
+DNS 服务器字段及规范化集中在 `dns-server-fields.js`；空端口由核心使用协议默认值，显式端口保留。TLS 服务器名与自定义 CA 通过高级表单编辑，其他参数保留 JSON 入口。访问方式联动通过 formDialog 控制器读取完整字段值，不能读取 token 控件内部 input 来判断集合是否为空。JSON 编辑器同样使用 dialogSession；兼容性复查信号组合编辑器生命周期和单次查询取消。
+
 `platform_worker.go` 只负责领取和执行 control/subscription/probe 任务；`platform_maintenance.go` 独立拥有有界的凭据重试、回执核对、订阅调度、隧道同步与证书调度。维护使用一个按下次到期时间唤醒的计时器，不在每次领取控制任务前同步运行。所有 worker 共用取消上下文并在退出时等待释放；需要主机状态一致性的操作仍共用服务锁。
 
 凭据 `revision/published/loaded` 各自表示持久意图、文件发布、核心确认。维护先用 SQL EXISTS 检查未发布意图，没有待发布内容时不取得服务锁、不执行 systemctl、不失效概览。新发布仍等待当时活动核心的确认；已发布的加载重试由核心负责，停用核心的 loaded 不被伪造推进，概览继续显示真实差异。
@@ -22,7 +28,7 @@
 
 `formDialog` 与加载弹窗共用 `dialogSession`，保存回调取得编辑器的 signal/active。候选读取随关闭/替换/离页取消；已提交的权益写入属于登录会话，由 `account-editor.js` 编排，`account-onboarding.js` 展示下一步。迟到结果通过 `workflow-results.js` 留存，只允许活动编辑器主动切换弹窗和刷新页面。
 
-普通入站的 ID/协议创建后在编辑器中固定，复制时可指定新 ID。`application.ValidateInboundBindings` 仅依赖返回 ID/协议的窄仓储接口；accounting 不读取凭据秘密即可提供绑定集合。预览、排队提交和执行前都拒绝删除、改名或更换仍有绑定的入站，停用保留绑定。VPNGate 国家切换仍沿用独立的实例规则，不把普通入站删除约束套到国家切换上。已确认配置恢复不受新候选检查阻断。
+普通入站的 ID/协议创建后在编辑器中固定，复制时可指定新 ID。`application.ValidateInboundBindings` 仅依赖返回 ID/协议的窄仓储接口；accounting 不读取凭据秘密即可提供绑定集合。预览、排队提交和执行前都拒绝删除、改名或更换仍有绑定的入站，停用保留绑定。VPNGate 按所有保留的国家档案校验身份，因此切换国家不解除绑定；删除档案前须解除其凭据绑定。前端只提供未启用档案的删除入口，配置规范化清除无对应档案的秘密。已确认配置恢复不受新候选检查阻断。
 
 状态观察器支持显式 dispose，并在页面取消时释放资源；通知使用页面 window 的计时器。测试必须关闭 DOM/取消页面，运行器按脚本限制 60 秒并将未退出判为失败，不通过强制成功退出掩盖泄漏。
 
@@ -80,8 +86,8 @@ subscriptions/schedule.json 是截止时间与权益修订的小型投影，不�
 
 | 模块                                                             | 职责                                                                                            |
 | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| internal/domain                                                  | 稳定身份、权益/周期规则，不依赖 HTTP 或 SQLite                                                  |
-| internal/application                                             | 类型化命令、账户批量绑定及轮换/解绑用例、任务详情访问规则与仓储边界；不解析 HTTP 或操作 systemd |
+| internal/domain                                                  | 稳定身份、权益/周期规则、分页与任务值对象，不依赖 HTTP、SQLite 或应用用例                       |
+| internal/application                                             | 类型化命令、账户批量绑定及轮换/解绑用例、发布编排与仓储边界；不解析 HTTP 或操作 systemd         |
 | internal/backuparchive                                           | 有界 tar 格式、age 认证加密与磁盘暂存；不依赖配置、SQL schema 或证书提供方                      |
 | internal/clientprofile                                           | 无存储/HTTP 依赖的客户端、模式与特性目录，统一表单、授权和渲染能力                              |
 | internal/manage/accounts_queries                                 | 返回结构化账户查询、凭据摘要和渲染产物；传输层负责编码                                          |

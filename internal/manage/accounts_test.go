@@ -49,7 +49,7 @@ func TestAccountCommandsAndExportsKeepIndependentCredentials(t *testing.T) {
 	if outputs["alice"] == "" || outputs["alice"] == outputs["bob"] {
 		t.Fatal("accounts share a credential")
 	}
-	page, err := store.AccountPage(t.Context(), application.PageQuery{Limit: 20}, time.Now(), false)
+	page, err := store.AccountPage(t.Context(), domain.PageQuery{Limit: 20}, time.Now(), false)
 	if err != nil {
 		t.Fatal(err)
 	}

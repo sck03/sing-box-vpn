@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 
 	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
@@ -71,7 +72,7 @@ func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revi
 		return err
 	})
 	if err == nil {
-		s.signal()
+		s.signal(domain.ControlLane)
 	}
 	return id, err
 }

@@ -4,10 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	"strings"
 	"time"
-
-	"github.com/sck03/sing-box-vpn/internal/application"
 )
 
 // AccountUsage is the effective, non-activating view used by all read APIs.
@@ -36,15 +35,15 @@ func (s *Store) effectiveUsage(ctx context.Context, u Usage, now time.Time) (Usa
 	return next, err
 }
 
-func (s *Store) AccountOptions(ctx context.Context) ([]application.Option, error) {
+func (s *Store) AccountOptions(ctx context.Context) ([]domain.Option, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id,name FROM accounts WHERE archived=0 ORDER BY name,id LIMIT 1000`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	result := []application.Option{}
+	result := []domain.Option{}
 	for rows.Next() {
-		var v application.Option
+		var v domain.Option
 		if err = rows.Scan(&v.ID, &v.Name); err != nil {
 			return nil, err
 		}
@@ -53,8 +52,8 @@ func (s *Store) AccountOptions(ctx context.Context) ([]application.Option, error
 	return result, rows.Err()
 }
 
-func (s *Store) AccountPage(ctx context.Context, q application.PageQuery, now time.Time, archived bool) (application.Page[Usage], error) {
-	result := application.Page[Usage]{Items: []Usage{}, Offset: q.Offset, Limit: q.Limit}
+func (s *Store) AccountPage(ctx context.Context, q domain.PageQuery, now time.Time, archived bool) (domain.Page[Usage], error) {
+	result := domain.Page[Usage]{Items: []Usage{}, Offset: q.Offset, Limit: q.Limit}
 	if err := q.Validate(); err != nil {
 		return result, err
 	}

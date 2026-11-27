@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	"slices"
 	"time"
 
@@ -99,9 +100,9 @@ func (s *PlatformService) validateShare(ctx context.Context, g accounting.Grant)
 	}
 	return nil
 }
-func (s *PlatformService) shareAccountPage(ctx context.Context, q application.PageQuery, archived bool) (application.Page[AccountSummary], error) {
+func (s *PlatformService) shareAccountPage(ctx context.Context, q domain.PageQuery, archived bool) (domain.Page[AccountSummary], error) {
 	page, err := s.Accounts.AccountPage(ctx, q, time.Now(), archived)
-	result := application.Page[AccountSummary]{Total: page.Total, Limit: page.Limit, Offset: page.Offset}
+	result := domain.Page[AccountSummary]{Total: page.Total, Limit: page.Limit, Offset: page.Offset}
 	if err == nil {
 		result.Items, err = s.accountService().shareAccounts(ctx, s.Accounts, page.Items)
 	}
