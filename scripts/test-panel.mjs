@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { EventEmitter, once } from "node:events";
 import { capabilitiesFixture } from "./panel-fixtures.mjs";
 import { JSDOM } from "jsdom";
 import { readFile } from "node:fs/promises";
@@ -194,6 +195,7 @@ const configReads = [],
   configWrites = [],
   countries = [],
   previews = [];
+const configRequests = new EventEmitter();
 const reply = (value) => ({ ok: true, json: async () => value });
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 globalThis.fetch = (path, options) => {
@@ -212,13 +214,23 @@ globalThis.fetch = (path, options) => {
             : configWrites
           : null;
   assert(queue, `unexpected application request: ${path}`);
-  return new Promise((resolve) =>
+  return new Promise((resolve) => {
     queue.push({
       body: options.body ? JSON.parse(options.body) : undefined,
       resolve: (value) => resolve(reply(value)),
-    }),
-  );
+    });
+    if (queue === configWrites) configRequests.emit("write");
+  });
 };
+async function saveConfig() {
+  // Request receipt hashing is asynchronous. Wait for the actual POST before
+  // inspecting it or starting edits that must overlap an in-flight save.
+  const sent = once(configRequests, "write", {
+    signal: AbortSignal.timeout(5000),
+  });
+  document.querySelector("#save").click();
+  await sent;
+}
 await import("../internal/manage/panel/app.js");
 await tick();
 document.querySelector("#refresh").click();
@@ -245,7 +257,7 @@ async function editPublish(label, value) {
   await tick();
 }
 await editPublish("节点名称", "submitted");
-document.querySelector("#save").click();
+await saveConfig();
 assert.equal(configWrites[0].body.config.app.name, "submitted");
 await editPublish("节点名称", "edited-during-save");
 configWrites[0].resolve({ task_id: 1 });
@@ -255,7 +267,7 @@ assert.equal(
   false,
   "edits made during a save must remain unsaved",
 );
-document.querySelector("#save").click();
+await saveConfig();
 assert.equal(configWrites[1].body.revision, 2);
 assert.equal(configWrites[1].body.config.app.name, "edited-during-save");
 configWrites[1].resolve({ task_id: 2 });
@@ -271,7 +283,7 @@ assert.equal(
   null,
   "preview diff must describe the validated snapshot",
 );
-document.querySelector("#save").click();
+await saveConfig();
 document.querySelector("#discard").click();
 await tick();
 configReads[1].resolve({
@@ -288,7 +300,7 @@ assert.equal(
   false,
   "a stale save must not clear a reloaded draft",
 );
-document.querySelector("#save").click();
+await saveConfig();
 assert.equal(
   configWrites[3].body.revision,
   10,
@@ -317,7 +329,7 @@ const countryDraft = structuredClone(countries[0].body.config);
 countryDraft.vpn.active_country = "JP";
 countries[0].resolve(countryDraft);
 await tick();
-document.querySelector("#save").click();
+await saveConfig();
 assert.equal(configWrites[4].body.config.app.name, "after-reload");
 assert.equal(configWrites[4].body.config.vpn.active_country, "JP");
 configWrites[4].resolve({ task_id: 5 });
@@ -340,7 +352,7 @@ configReads[2].resolve({
 await tick();
 countries[1].resolve(countryDraft);
 await tick();
-document.querySelector("#save").click();
+await saveConfig();
 assert.equal(configWrites[5].body.revision, 20);
 assert.equal(
   configWrites[5].body.config.vpn.active_country,
