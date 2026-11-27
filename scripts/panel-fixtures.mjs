@@ -13,6 +13,7 @@ export const capabilitiesFixture = {
   protocols: ["vless", "vmess", "hysteria2", "tuic", "anytls"],
   countries: { JP: "日本", US: "美国" },
   password_bytes: { min: 8, max: 72 },
+  account_name: { min: 1, max: 128, forbidden: "\r\n\0" },
   gateway: {
     defaults: {
       mode: "sticky",

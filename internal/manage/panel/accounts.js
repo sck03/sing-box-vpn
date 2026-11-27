@@ -1,4 +1,5 @@
 import { accountFields } from "./account-fields.js";
+import { capabilities } from "./capabilities.js";
 import {
   openAccountBindingTask,
   accountCreated,
@@ -45,12 +46,13 @@ export async function accounts(ctx) {
             signal,
           }),
           item.revision ? [] : bindingFields(signal),
+          capabilities(ctx.workflowRequest || api),
         ]),
-      ([subscribers, bindings]) =>
+      ([subscribers, bindings, limits]) =>
         formDialog(
           item.revision ? "编辑权益" : "新建权益",
           [
-            ...accountFields(!!item.revision, subscribers),
+            ...accountFields(!!item.revision, subscribers, limits.account_name),
             ...(!item.revision
               ? [
                   {

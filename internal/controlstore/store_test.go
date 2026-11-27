@@ -69,7 +69,7 @@ func TestTaskRecoveryAndConfigurationRevisions(t *testing.T) {
 		t.Fatal(e)
 	}
 	task, e := s.ClaimLane(ctx, "control")
-	if e != nil || task.ID != id {
+	if e != nil || task.ID != id || task.State != "running" || task.Phase != "validating" || string(task.Input) != `{"revision":2}` {
 		t.Fatal(task, e)
 	}
 	state, _ := s.State(ctx)

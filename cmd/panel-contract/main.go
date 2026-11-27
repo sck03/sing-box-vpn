@@ -209,6 +209,7 @@ func main() {
 		{"/api/panel/settings", reflect.TypeFor[manage.PanelSettingsState]()},
 		{"/api/admins", reflect.TypeFor[[]adminauth.Admin]()},
 		{"/api/subscribers", reflect.TypeFor[[]accounting.Subscriber]()},
+		{"/api/grants", reflect.TypeFor[accounting.GrantPage]()},
 	} {
 		result := describe(endpoint.result)
 		// Collection handlers initialize their results even when empty.
@@ -235,6 +236,7 @@ func main() {
 		{"/api/accounts", reflect.TypeFor[manage.AccountSave](), reflect.TypeFor[manage.ActionResult]()},
 		{"/api/accounts/archive", reflect.TypeFor[manage.AccountArchive](), reflect.TypeFor[manage.ActionResult]()},
 		{"/api/grants", reflect.TypeFor[accounting.Grant](), reflect.TypeFor[manage.ShareCreated]()},
+		{"/api/grants/revoke", reflect.TypeFor[manage.GrantRevoke](), reflect.TypeFor[manage.ActionResult]()},
 		{"/api/subscribers", reflect.TypeFor[accounting.Subscriber](), reflect.TypeFor[manage.ActionResult]()},
 		{"/api/panel/settings", reflect.TypeFor[manage.PanelSettingsInput](), reflect.TypeFor[manage.PanelSettingsSaved]()},
 		{"/api/panel/settings/preview", reflect.TypeFor[manage.PanelSettingsInput](), reflect.TypeFor[manage.PanelSettingsPreview]()},

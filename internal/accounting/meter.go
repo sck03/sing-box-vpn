@@ -79,7 +79,7 @@ type authorization struct {
 	mu         sync.Mutex
 	credential string
 	generation int64
-	usage      Usage
+	period     int64
 	until      time.Time
 	epoch      uint64
 	err        error
@@ -99,7 +99,7 @@ func NewMeter(store *Store, runtime string) *Meter {
 	return &Meter{store: store, runtime: runtime, epoch: hex.EncodeToString(id[:]), pools: map[string]*pool{}, handles: map[*Handle]struct{}{}, auth: map[string]*authorization{}}
 }
 
-func (a *authorization) check(ctx context.Context, store *Store, force bool) (Usage, error) {
+func (a *authorization) check(ctx context.Context, store *Store, force bool) (int64, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	now := time.Now()
@@ -107,15 +107,19 @@ func (a *authorization) check(ctx context.Context, store *Store, force bool) (Us
 	if force || epoch != a.epoch || !now.Before(a.until) {
 		query, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		a.usage, a.err = store.authorize(query, a.credential, a.generation, now, false)
-		a.setDeadline(now, epoch)
+		usage, err := store.authorize(query, a.credential, a.generation, now, false)
+		a.err = err
+		a.setSnapshot(usage, now, epoch)
 	}
-	return a.usage, a.err
+	return a.period, a.err
 }
 
-func (a *authorization) setDeadline(now time.Time, epoch uint64) {
+// Copy only the decision's scalar period and deadline. No pointers into the
+// maintenance scratch escape to connection goroutines or survive its reset.
+func (a *authorization) setSnapshot(usage Usage, now time.Time, epoch uint64) {
+	a.period = usage.PeriodID
 	a.epoch, a.checkedAt, a.until = epoch, now, now.Add(AuthorizationInterval)
-	for _, deadline := range []*time.Time{a.usage.EffectiveExpiresAt, a.usage.NextReset} {
+	for _, deadline := range []*time.Time{usage.EffectiveExpiresAt, usage.NextReset} {
 		if deadline != nil && deadline.Before(a.until) {
 			a.until = *deadline
 		}
@@ -163,8 +167,8 @@ func (h *Handle) authorized(ctx context.Context, force bool) error {
 	if h.denied.Load() {
 		return ErrDenied
 	}
-	u, err := h.auth.check(ctx, h.meter.store, force)
-	if err == nil && u.PeriodID != h.pool.period {
+	period, err := h.auth.check(ctx, h.meter.store, force)
+	if err == nil && period != h.pool.period {
 		err = ErrDenied
 	}
 	if err != nil {
@@ -312,15 +316,15 @@ func (m *Meter) Tick(ctx context.Context) error {
 			a.mu.Lock()
 			if !a.checkedAt.After(now) {
 				usage, ok := snapshot[authorizationKey{a.credential, a.generation}]
-				a.usage = Usage{}
+				var value Usage
 				if ok {
-					a.usage = *usage
+					value = *usage
 				}
 				a.err = nil
 				if !ok {
 					a.err = ErrDenied
 				}
-				a.setDeadline(now, epoch)
+				a.setSnapshot(value, now, epoch)
 			}
 			a.mu.Unlock()
 		}

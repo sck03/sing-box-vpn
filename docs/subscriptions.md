@@ -2,7 +2,7 @@
 
 [使用指南](usage.md) · [架构](architecture.md) · [兼容性](compatibility.md)
 
-当前订阅配置为 **schema=6**，CompilerVersion=8、ParserVersion=3。只接受当前配置，不迁移旧数据或恢复旧管理接口。平台配置 schema=8、节点文档 schema=6、模板 version=1、数据库 schema=17 和备份容器格式 8 分别维护，不能一起机械递增。
+当前订阅配置为 **schema=6**，CompilerVersion=8、ParserVersion=3。只接受当前配置，不迁移旧数据或恢复旧管理接口。平台配置 schema=8、节点文档 schema=7、模板 version=1、数据库 schema=17 和备份容器格式 8 分别维护，不能一起机械递增。
 
 ## 普通账户分享
 

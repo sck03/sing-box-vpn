@@ -76,7 +76,8 @@ assert.equal(
 );
 let state = ok(await call("/api/config"));
 const config = state.config;
-assert.equal(config.app.schema, 6);
+assert.equal(config.app.schema, 7);
+assert.equal("version" in config.app, false);
 for (const removed of ["argo", "socks_port", "routing", "country"])
   assert.equal(removed in config.app, false);
 assert.equal(config.schema, 8);
@@ -229,6 +230,13 @@ assert.equal((await call("/api/config/preview", old)).status, 400);
 const suffix = Date.now().toString(36),
   person = "demo-" + suffix,
   account = "monthly-" + suffix;
+assert.deepEqual(ok(await call("/api/capabilities")).account_name,
+  { min: 1, max: 128, forbidden: "\r\n\0" });
+for (const name of ["Line\nBreak", "Line\rBreak", "NUL\0", "名".repeat(43)]) {
+  const rejected = await call("/api/accounts", { account: { id: "invalid-name", name } });
+  assert.equal(rejected.status, 400);
+  assert.equal(rejected.value.error.field, "account.name");
+}
 ok(
   await call("/api/subscribers", {
     id: person,

@@ -29,15 +29,14 @@ func initialApp(ctx context.Context, root, core, address, name string) (App, err
 			return App{}, fmt.Errorf("服务器地址无效: %w", err)
 		}
 	}
-	version, err := CheckCore(ctx, core)
-	if err != nil {
+	if _, err := CheckCore(ctx, core); err != nil {
 		return App{}, err
 	}
 	settings, _, err := loadVPN(root)
 	if err != nil {
 		return App{}, err
 	}
-	app := App{Name: name, Address: address, Version: version}
+	app := App{Name: name, Address: address}
 	used, ranges, err := allocationPorts(root, app, settings)
 	if err != nil {
 		return App{}, err

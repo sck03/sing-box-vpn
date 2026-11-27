@@ -185,6 +185,8 @@ app.argo = {};
 app.routing = {};
 // @ts-expect-error SOCKS endpoints are explicit outbound resources
 app.socks_port = 40000;
+// @ts-expect-error program versions belong to component status, never App
+app.version = "obsolete";
 void [preview, output, badPreview];
 
 // Endpoint names select both the write DTO and response type.
@@ -211,5 +213,8 @@ async function endpointContracts() {
  await mutate("/api/subscribers", { id: "test", name: "Test", disabled: "false" });
  // @ts-expect-error MFA confirmation codes are strings
  await mutate("/api/mfa/confirm", { code: 123456 });
+ await mutate("/api/grants/revoke", { id: "link" });
+ // @ts-expect-error grant revocation requires a stable string ID
+ await mutate("/api/grants/revoke", { id: 123 });
 }
 void endpointContracts;

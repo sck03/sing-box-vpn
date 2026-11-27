@@ -44,7 +44,7 @@ func TestLinuxServiceStartupRecovery(t *testing.T) {
 	run("ip", "netns", "add", namespace)
 	t.Cleanup(func() { _ = exec.Command("ip", "netns", "del", namespace).Run() })
 	root := t.TempDir()
-	app := App{Version: "recovered", Nodes: fixtureNodes([]Object{{"type": "vmess", "tag": "vmess", "listen_port": 20001}, {"type": "hysteria2", "tag": "hy2", "listen_port": 20002}})}
+	app := App{Name: "recovered", Nodes: fixtureNodes([]Object{{"type": "vmess", "tag": "vmess", "listen_port": 20001}, {"type": "hysteria2", "tag": "hy2", "listen_port": 20002}})}
 	setFixtureUDPPorts(&app, "hysteria2", []string{"31000:31002"})
 	before, err := JSONBytes(app)
 	if err != nil {
@@ -165,7 +165,7 @@ func TestServiceRecoveryHelper(t *testing.T) {
 		t.Skip("helper runs only in the isolated service acceptance test")
 	}
 	var app App
-	if found, err := ReadJSON(filepath.Join(os.Getenv("SBVPN_SERVICE_ROOT"), "app.json"), &app); err != nil || !found || app.Version != "recovered" {
+	if found, err := ReadJSON(filepath.Join(os.Getenv("SBVPN_SERVICE_ROOT"), "app.json"), &app); err != nil || !found || app.Name != "recovered" {
 		t.Fatal("incomplete state reached the service", err)
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM)

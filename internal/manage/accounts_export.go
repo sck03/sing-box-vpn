@@ -9,6 +9,7 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/domain"
+	"github.com/sck03/sing-box-vpn/internal/serverconfig"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
@@ -113,11 +114,10 @@ func accountNodes(ctx context.Context, store *accounting.Store, config PlatformC
 	applied := 0
 	for _, binding := range bindings {
 		runtime, entry, credential := binding.runtime, binding.entry, binding.credential
-		node, err := entry.subscriptionNode(app.Address, usage.Name+"-"+entry.ID, runtime, entry.UDPPorts, certificates, credential)
+		node, err := application.AccountNode(serverconfig.Node(entry), app.Address, usage.Name+"-"+entry.ID, credential, certificates.get)
 		if err != nil {
 			return nil, err
 		}
-		node.ID = runtime + "-" + credential.ID
 		if port, override := overrides[runtime+"/"+entry.ID]; override {
 			if node.Protocol != "tuic" || port < 1 || port > 65535 {
 				return nil, errors.New("port overrides require a bound TUIC inbound and a valid port")

@@ -87,8 +87,7 @@ export interface AdministratorInput {
 }
 
 export interface App {
-  schema: 6;
-  version: string;
+  schema: 7;
   name: string;
   address: string;
   nodes: Array<ManagedNode> | null;
@@ -302,6 +301,17 @@ export interface GrantOptions {
   unavailable?: string;
 }
 
+export interface GrantPage {
+  items: Array<Grant> | null;
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export interface GrantRevoke {
+  id: string;
+}
+
 export interface MFAEnrollment {
   secret: string;
   issuer: string;
@@ -331,6 +341,7 @@ export interface MutationContracts {
   "/api/accounts": { input: AccountSave; result: ActionResult };
   "/api/accounts/archive": { input: AccountArchive; result: ActionResult };
   "/api/grants": { input: Grant; result: ShareCreated };
+  "/api/grants/revoke": { input: GrantRevoke; result: ActionResult };
   "/api/subscribers": { input: Subscriber; result: ActionResult };
   "/api/panel/settings": { input: PanelSettingsInput; result: PanelSettingsSaved };
   "/api/panel/settings/preview": { input: PanelSettingsInput; result: PanelSettingsPreview };
@@ -489,6 +500,7 @@ export interface QueryResponses {
   "/api/panel/settings": PanelSettingsState;
   "/api/admins": Array<Admin>;
   "/api/subscribers": Array<Subscriber>;
+  "/api/grants": GrantPage;
 }
 
 export interface QueuedTask {

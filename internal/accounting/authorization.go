@@ -56,7 +56,15 @@ type authorizationRead struct {
 	ids         []string
 	credentials map[authorizationKey]*Usage
 	accounts    map[string]*Usage
-	values      []Usage
+	values      []authorizationValue
+}
+
+// Nullable scan values point into tick-owned storage instead of allocating
+// timestamps and quota pointers for every active credential on every tick.
+type authorizationValue struct {
+	usage            Usage
+	expires, started time.Time
+	quota            int64
 }
 
 func (r *authorizationRead) reset() {
@@ -95,7 +103,7 @@ func (s *Store) authorizationSnapshot(ctx context.Context, runtime string, now t
 		scratch.accounts = make(map[string]*Usage, len(wanted))
 	}
 	if cap(scratch.values) < len(wanted) {
-		scratch.values = make([]Usage, 0, len(wanted))
+		scratch.values = make([]authorizationValue, 0, len(wanted))
 	}
 	result := scratch.credentials
 	var key authorizationKey
@@ -110,21 +118,22 @@ func (s *Store) authorizationSnapshot(ctx context.Context, runtime string, now t
 			rows.Close()
 			return nil, e
 		}
-		if expires.Valid {
-			v := time.Unix(expires.Int64, 0).UTC()
-			u.ExpiresAt = &v
-		}
-		if quota.Valid {
-			v := quota.Int64
-			u.QuotaBytes = &v
-		}
-		if started.Valid {
-			v := time.Unix(started.Int64, 0).UTC()
-			u.StartedAt = &v
-		}
 		if wanted[key] {
-			scratch.values = append(scratch.values, u)
-			result[key] = &scratch.values[len(scratch.values)-1]
+			scratch.values = append(scratch.values, authorizationValue{usage: u})
+			value := &scratch.values[len(scratch.values)-1]
+			if expires.Valid {
+				value.expires = time.Unix(expires.Int64, 0).UTC()
+				value.usage.ExpiresAt = &value.expires
+			}
+			if quota.Valid {
+				value.quota = quota.Int64
+				value.usage.QuotaBytes = &value.quota
+			}
+			if started.Valid {
+				value.started = time.Unix(started.Int64, 0).UTC()
+				value.usage.StartedAt = &value.started
+			}
+			result[key] = &value.usage
 		}
 	}
 	err = rows.Err()

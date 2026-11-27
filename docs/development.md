@@ -1,6 +1,6 @@
 # 开发与发布
 
-2026-11-26 状态一致性修复采用定向验证，命令与边界见[实施报告](refactor-review.md)和[验证记录](validation/2026-11-26-state-consistency.json)。新增状态观察器使用生成的 OverviewSnapshot 并启用 strict；前端回归覆盖 12 条摘要之外的完成通知、自然到期兜底、隐藏/离页清理，以及草稿和已应用/运行状态分离。协议 fixture 通过当前账户来源与生产恢复流程发布，不再手工拼装缺少贡献记录的快照。
+2026-11-26 当前修复与定向验证见[实施报告](refactor-review.md)和[验证记录](validation/2026-11-26-export-task-cleanup.json)。覆盖长资源 ID 导出、名称保存约束、分享列表刷新、真实任务领取后的发布重试、授权缓存生命周期；旧验证记录只说明对应历史提交。特别是凭据重试回归此前通过 Task 详情误取执行输入，本次改为 ClaimLane，并检查“变更已提交、发布未完成”的具体失败阶段。
 
 ## 本地目录与体积
 
@@ -8,7 +8,7 @@
 
 Windows 使用 `./scripts/clean-dev.ps1 -WhatIf` 预览，去掉 `-WhatIf` 清理 `.test`、`.build`、`.cleanup-manual`。加 `-Dependencies` 删除可由 `npm ci` 重建的 node_modules，加 `-BrowserTools` 删除本地 Python 浏览器验证依赖。脚本先核对绝对路径、目录链接和目录内正在运行的程序，再逐项删除；无法读取的旧目录单独跳过并报告，不阻塞其他可重建缓存；不会触及 `.git`、源码、文档示例、当前 Go 工具链及核心校验器。停止正在执行的构建和测试后再使用；清理后首次构建需要重新下载模块和编译。
 
-`.tools/linux-validation.qcow2` 是可重建 Linux 测试虚拟机，可能远大于源码；不再使用时，先运行 `scripts/linux-vm.ps1 stop`，再清理该磁盘、基础镜像、QEMU 和配套测试密钥。不要删除仍在使用的主机部署目录或用户配置。`.build/release` 只需保留当前安装包与 SHA256SUMS，中间构建目录可删除。清缓存后首次构建会重新下载依赖和编译。
+旧 Linux 测试虚拟机、基础镜像及配套测试工具已从当前工作区移除，没有继续引用已删除的管理脚本。清理范围始终限于项目的可重建开发目录，不扫描或删除真实部署目录、用户配置和外部数据库。清缓存后首次构建会重新下载依赖和编译。
 
 任务 API 使用当前 `application.TaskCommand`，不接受调度器 `automatic` 或无关字段。增加操作时同步 `CommandFields`、校验和执行器，再运行 `go run ./cmd/panel-contract`；不要手工修改生成类型。调度器只通过私有入口发起自动刷新/投递。
 
@@ -91,7 +91,7 @@ Windows 先加载 `scripts/dev-env.ps1`，将 `GATEWAY_BINARY` 和 `MANAGED_CORE
 
 可对该独立面板运行真实 HTTP 工作流：设置 `PANEL_TEST_URL`、`PANEL_TEST_USERNAME`（默认 reviewadmin）和 `PANEL_TEST_PASSWORD`，执行 `node scripts/test-panel-api.mjs`。脚本只接受回环 URL，并在创建数据前确认服务均处于 no-system 状态。验证绑定/导出、下载次数、跨站分享、完整候选预览和任务应用；不能指向真实安装。
 
-配置预览为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回普通服务端脱敏配置、输出节点数/变化、结构化验证和 `deployment` 服务变更计划（`changes`、`runtime_observed`、`applied_revision`）。`POST /api/config/preview-output` 接受 `{id,config}`，只编译目标图并返回有界脱敏内容。旧 `/api/subscriptions/preview` 不恢复。节点文档 schema=6、订阅 schema=6、CompilerVersion=8、模板 version=1、平台 schema=8；备份容器为 8，数据库为 17，旧订阅内容明确拒绝。
+配置预览为 `POST /api/config/preview`，请求是完整 PlatformConfig；返回普通服务端脱敏配置、输出节点数/变化、结构化验证和 `deployment` 服务变更计划（`changes`、`runtime_observed`、`applied_revision`）。`POST /api/config/preview-output` 接受 `{id,config}`，只编译目标图并返回有界脱敏内容。旧 `/api/subscriptions/preview` 不恢复。节点文档 schema=7、订阅 schema=6、CompilerVersion=8、模板 version=1、平台 schema=8；备份容器为 8，数据库为 17，旧订阅内容明确拒绝。
 
 新增回归 `compiler_regression_test.go`、`preview_test.go` 覆盖 URI 认证/端口、SIP003、WS early-data、gRPC/XHTTP、名称和策略组范围、脱敏与真实核心检查。`TestImportedTrojanTransportsWithMihomo` 使用真实 sing-box 服务端和 Mihomo 客户端验证 WS/gRPC，错误路径或服务名必须失败。`TestRefreshValidationDoesNotHoldPublicationLock` 覆盖锁外编译与过期配置拒绝，`TestLimitedServerPreservesTLSAndHTTP2` 覆盖 TLS 状态及协议协商。
 
@@ -299,7 +299,7 @@ Windows 验证先加载 scripts/dev-env.ps1，再设置 MANAGED_CORE_BINARY 指�
 
 本轮按改动范围执行验证，不运行完整测试套件。[验证结果与清理记录](validation/2026-11-26-recovery-resource-refactor.json)。证书恢复、状态能力、UDP 归属、账户导出和订阅小文件检查位于 recovery_boundaries_test.go；前端新增第 14 组 test-panel-recovery.mjs。已有发布/投递生命周期、端口防火墙、证书调度、前端导航及部署回归按需运行。计量请求复用执行 accounting 的定向 race 检查。类型检查和 panel-contract -check 检查生成契约，编译检查不等同于 Linux 运行验收。
 
-平台 schema 8 / 节点文档 schema 6 不兼容旧配置；数据库表结构仍为 schema 17。测试应创建新临时目录，不复用之前审核生成的数据库。需要启动真实管理集成夹具时设置 MANAGED_CORE_BINARY；没有该变量的跳过不能记作通过。
+平台 schema 8 / 节点文档 schema=7 不兼容旧配置；数据库表结构仍为 schema 17。测试应创建新临时目录，不复用之前审核生成的数据库。需要启动真实管理集成夹具时设置 MANAGED_CORE_BINARY；没有该变量的跳过不能记作通过。
 
 验证结束后使用 scripts/clean-dev.ps1 -Dependencies 清理项目内 .test、.build、.cleanup-manual 和 node_modules，其中包括旧测试数据库、二进制、缓存、日志与截图。脚本会先确认路径和运行程序。当前使用的 Go 工具链、官方验证核心以及文档仍引用的示例图保留。npm ci 和模块下载可恢复开发依赖。
 

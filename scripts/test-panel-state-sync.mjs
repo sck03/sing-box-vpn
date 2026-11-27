@@ -125,6 +125,73 @@ assert.equal(observed, 5);
 window.setInterval = nativeInterval;
 window.clearInterval = nativeClear;
 
+const { grants } = await import("../internal/manage/panel/grants.js");
+const grantsLife = new AbortController();
+let grantReads = 0, grantDownloads = 0, grantState = "active", grantFallback, grantStopped = false;
+const grantQueries = [];
+window.setInterval = (fn, delay) => { assert.equal(delay, 60000); grantFallback = fn; return 124; };
+window.clearInterval = (id) => { assert.equal(id, 124); grantStopped = true; };
+const grantsContext = {
+  signal: grantsLife.signal, overview: initial,
+  request: async (path) => {
+    grantReads++;
+    grantQueries.push(new URL(path, "http://localhost").searchParams);
+    return { total: 21, items: [{ id: "link", account_id: "account", downloads: grantDownloads, max_downloads: 1, state: grantState }] };
+  },
+};
+root.replaceChildren(...await grants(grantsContext));
+assert.match(root.textContent, /0 \/ 1/);
+const nextPage = [...root.querySelectorAll("button")].find((b) => b.textContent === "下一页");
+nextPage.click();
+await flush();
+assert.equal(grantQueries.at(-1).get("offset"), "20");
+grantDownloads = 1;
+grantState = "exhausted";
+grantsContext.updateOverview({ ...initial, resource_version: 2 });
+await flush();
+assert.match(root.textContent, /1 \/ 1/);
+assert.match(root.textContent, /次数用尽/);
+assert.equal(grantQueries.at(-1).get("offset"), "20", "background refresh must preserve pagination");
+grantState = "expired";
+grantFallback();
+await flush();
+assert.match(root.textContent, /已到期/, "clock expiry must refresh without an overview revision");
+Object.defineProperty(document, "hidden", { configurable: true, value: true });
+const beforeHidden = grantReads;
+grantFallback();
+await flush();
+assert.equal(grantReads, beforeHidden);
+Object.defineProperty(document, "hidden", { configurable: true, value: false });
+document.dispatchEvent(new Event("visibilitychange"));
+await flush();
+assert.equal(grantReads, beforeHidden + 1);
+grantsLife.abort();
+assert.equal(grantStopped, true);
+const beforeLeave = grantReads;
+grantFallback();
+grantsContext.updateOverview({ ...initial, resource_version: 3 });
+await flush();
+assert.equal(grantReads, beforeLeave);
+window.setInterval = nativeInterval;
+window.clearInterval = nativeClear;
+
+const { accountFields } = await import("../internal/manage/panel/account-fields.js");
+const { formDialog } = await import("../internal/manage/panel/ui.js");
+let nameSaves = 0;
+const nameField = accountFields(false, [], capabilitiesFixture.account_name).find((field) => field.key === "name");
+const nameEditor = formDialog("权益名称", [nameField], { name: "有效名称" }, async () => { nameSaves++; });
+for (const name of ["名".repeat(43), "NUL\0"]) {
+  nameEditor.setValue("name", name);
+  nameEditor.form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  await flush();
+  assert.equal(nameSaves, 0);
+  assert.equal(nameEditor.input("name").getAttribute("aria-invalid"), "true");
+}
+nameEditor.setValue("name", "名".repeat(42) + "ab");
+nameEditor.form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+await flush();
+assert.equal(nameSaves, 1, "128 UTF-8 bytes must be accepted");
+
 const { vpngate } = await import("../internal/manage/panel/vpngate.js");
 const gatewayLife = new AbortController();
 const gatewayContext = {

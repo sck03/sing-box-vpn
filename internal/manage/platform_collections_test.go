@@ -6,7 +6,7 @@ import (
 )
 
 func TestPlatformEmptyCollectionsRemainEditable(t *testing.T) {
-	config, err := decodePlatform([]byte(`{"app":{"schema":6,"nodes":null},"certificates":null}`))
+	config, err := decodePlatform([]byte(`{"app":{"schema":7,"nodes":null},"certificates":null}`))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { readFile } from "node:fs/promises";
+import { capabilitiesFixture } from "./panel-fixtures.mjs";
 const dom = new JSDOM(
   await readFile(
     new URL("../internal/manage/panel/index.html", import.meta.url),
@@ -25,7 +26,7 @@ globalThis.fetch = async (path, options) => {
   if (options.signal?.aborted) throw new DOMException("aborted", "AbortError");
   calls.push(path);
   const value =
-    path === "/api/subscribers"
+    path === "/api/capabilities" ? capabilitiesFixture : path === "/api/subscribers"
       ? []
       : path.startsWith("/api/accounts?") || path.startsWith("/api/grants?")
         ? { items: [], total: 0 }

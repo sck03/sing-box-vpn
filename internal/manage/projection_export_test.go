@@ -73,7 +73,7 @@ func TestAccountExportOverridesAreScopedToBoundInbound(t *testing.T) {
 			t.Fatal(nodes, err)
 		}
 		for _, node := range nodes {
-			id := strings.TrimPrefix(node.ID, "normal-")
+			id := strings.TrimPrefix(node.Name, "Ports-")
 			want := 61001
 			if id == "tuic-b" {
 				want = 61002

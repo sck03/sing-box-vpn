@@ -8,7 +8,7 @@ import (
 
 // ClaimAccountFollowers extends one claimed task with at most 15 consecutive
 // account commands. A different control task is an ordering barrier.
-func (s *Store) ClaimAccountFollowers(ctx context.Context, lead int64) ([]Task, error) {
+func (s *Store) ClaimAccountFollowers(ctx context.Context, lead int64) ([]ClaimedTask, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -28,9 +28,9 @@ func (s *Store) ClaimAccountFollowers(ctx context.Context, lead int64) ([]Task, 
 	if err != nil {
 		return nil, err
 	}
-	var tasks []Task
+	var tasks []ClaimedTask
 	for rows.Next() {
-		var task Task
+		var task ClaimedTask
 		if err = rows.Scan(&task.ID, &task.Kind, &task.Actor, &task.State, &task.Phase, &task.Error, &task.Created, &task.Updated, &task.Input); err != nil {
 			rows.Close()
 			return nil, err
@@ -44,10 +44,12 @@ func (s *Store) ClaimAccountFollowers(ctx context.Context, lead int64) ([]Task, 
 	if err != nil {
 		return nil, err
 	}
-	for _, task := range tasks {
-		if _, err = tx.ExecContext(ctx, `UPDATE control_tasks SET state='running',phase='validating',updated=? WHERE id=? AND state='queued'`, time.Now().Unix(), task.ID); err != nil {
+	for i, task := range tasks {
+		tasks[i].Updated = time.Now().Unix()
+		if _, err = tx.ExecContext(ctx, `UPDATE control_tasks SET state='running',phase='validating',updated=? WHERE id=? AND state='queued'`, tasks[i].Updated, task.ID); err != nil {
 			return nil, err
 		}
+		tasks[i].State, tasks[i].Phase = "running", "validating"
 	}
 	if err = tx.Commit(); err != nil {
 		return nil, err

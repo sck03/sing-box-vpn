@@ -30,13 +30,19 @@ type Task struct {
 	Error           string                   `json:"error,omitempty"`
 	Created         int64                    `json:"created"`
 	Updated         int64                    `json:"updated"`
-	Input           json.RawMessage          `json:"-"`
 	Result          json.RawMessage          `json:"result,omitempty"`
 	Outcome         string                   `json:"outcome,omitempty"`
 	Acknowledged    bool                     `json:"acknowledged"`
 	Details         application.TaskAudience `json:"details"`
 	Cancellable     bool                     `json:"cancellable"`
 	CancelRequested bool                     `json:"cancel_requested"`
+}
+
+// ClaimedTask is execution data, available only after claiming queued work.
+// Public task details cannot accidentally be passed to a worker without Input.
+type ClaimedTask struct {
+	Task
+	Input json.RawMessage `json:"-"`
 }
 
 func Open(path string) (*Store, error) {
@@ -237,9 +243,9 @@ func (s *Store) queue(ctx context.Context, lane, kind, actor string, input []byt
 	}
 	return id, tx.Commit()
 }
-func (s *Store) ClaimLane(ctx context.Context, lane string) (v Task, err error) {
+func (s *Store) ClaimLane(ctx context.Context, lane string) (v ClaimedTask, err error) {
 	if !validLane(lane) {
-		return Task{}, errors.New("unknown task lane")
+		return v, errors.New("unknown task lane")
 	}
 	// Idle workers must not contend with durable data-plane reservations.
 	var queued int
@@ -258,11 +264,16 @@ func (s *Store) ClaimLane(ctx context.Context, lane string) (v Task, err error) 
 	if err != nil {
 		return v, err
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE control_tasks SET state='running',phase='validating',updated=? WHERE id=?`, time.Now().Unix(), v.ID)
+	v.Updated = time.Now().Unix()
+	_, err = tx.ExecContext(ctx, `UPDATE control_tasks SET state='running',phase='validating',updated=? WHERE id=?`, v.Updated, v.ID)
 	if err != nil {
 		return v, err
 	}
-	return v, tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return v, err
+	}
+	v.State, v.Phase = "running", "validating"
+	return v, nil
 }
 func (s *Store) Phase(ctx context.Context, id int64, phase string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE control_tasks SET phase=?,updated=? WHERE id=? AND cancel_requested=0`, phase, time.Now().Unix(), id)

@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
+	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/country"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	"math/big"
@@ -52,7 +53,6 @@ type Profile struct {
 	HandshakePort int            `json:"handshake_port,omitempty"`
 }
 type App struct {
-	Version    string        `json:"version"`
 	Name       string        `json:"name"`
 	Address    string        `json:"address"`
 	Nodes      []ManagedNode `json:"nodes"`
@@ -119,10 +119,7 @@ func EnsureCertificate(certPath, keyPath, domain string) error {
 	return err
 }
 
-type certificateInfo struct {
-	Pin, Hash  string
-	SelfSigned bool
-}
+type certificateInfo = application.CertificateIdentity
 type certificateCache map[string]certificateInfo
 
 func (cache certificateCache) get(path string) (certificateInfo, error) {

@@ -81,6 +81,10 @@ type ShareCreated struct {
 	URLs    []string `json:"urls"`
 }
 
+type GrantRevoke struct {
+	ID string `json:"id"`
+}
+
 type OverviewSnapshot struct {
 	ResourceVersion uint64                             `json:"resource_version"`
 	Background      []BackgroundIssue                  `json:"background"`

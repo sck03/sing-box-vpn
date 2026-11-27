@@ -1,11 +1,11 @@
 # 当前实施状态
 
-更新：2026-11-26。面向首次部署，不迁移旧数据库、备份或管理接口。本轮状态同步、运行态展示、发布恢复和测试初始化修复见[实施报告](refactor-review.md)，测试与清理范围见[验证记录](validation/2026-11-26-state-consistency.json)。此前订阅授权与绑定查询、恢复、选择交互和计量样本分别保留在[绑定记录](validation/2026-11-26-subscription-binding-refactor.json)、[恢复记录](validation/2026-11-26-recovery-resource-refactor.json)、[选择交互记录](validation/2026-11-25-selection-refactor.json)与[计量记录](validation/2026-11-25-stability.json)。
+更新：2026-11-26。面向首次部署，不迁移旧数据库、备份或管理接口。本轮账户导出、任务执行类型、分享刷新和授权分配优化见[实施报告](refactor-review.md)，测试与清理范围见[验证记录](validation/2026-11-26-export-task-cleanup.json)。历史记录对应各自基线，不代表当前源码已完成全量验收。
 
 | 契约 | 当前版本 |
 | --- | --- |
 | 数据库 | 17 |
-| 托管节点文档 | 6 |
+| 托管节点文档 | 7 |
 | 平台配置 | 8 |
 | 订阅配置 | 6 |
 | 模板 | 1 |
@@ -21,6 +21,8 @@
 普通账户分享支持可选的链接到期时间和下载次数，仍受权益、scope 和 profiles 限制。原生前端保留按需加载、请求取消、草稿保护和移动端布局，任务区域能在延迟加载后继续收到实时事件。
 
 生产程序保持模块化单体：clientprofile 定义输出能力，subscription 处理纯解析/计划/编译，accounting 处理权益与计量，manage 组合 HTTP、任务和主机操作。没有为历史数据保留运行时迁移层。
+
+application 负责纯账户节点投影，manage 注入证书读取与已应用状态；任务执行只接收 ClaimedTask。账户名称约束由领域层发布给前端，分享列表接入可取消的可见页刷新。连接授权缓存保留值类型周期和截止时间，查询缓冲可复用且不跨 goroutine 暴露。
 
 当前检查结果仅以本轮记录及对应 GitHub Actions 为准。历史报告保存在 Git 历史中，不作为当前源码的验证结果。
 

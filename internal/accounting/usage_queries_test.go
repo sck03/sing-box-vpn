@@ -81,12 +81,22 @@ func TestAuthorizationScratchDoesNotRetainRevokedDecisions(t *testing.T) {
 	}
 	key := authorizationKey{"credential", 1}
 	wanted := map[authorizationKey]bool{key: true}
+	expires := time.Now().UTC().Truncate(time.Second).Add(time.Hour)
+	if _, err := s.db.ExecContext(ctx, `UPDATE accounts SET expires=? WHERE id='alice'`, expires.Unix()); err != nil {
+		t.Fatal(err)
+	}
 	var scratch authorizationRead
 	first, err := s.authorizationSnapshot(ctx, "normal", time.Now(), wanted, &scratch)
 	if err != nil || first[key] == nil {
 		t.Fatal(first, err)
 	}
-	retained := *first[key]
+	if first[key].QuotaBytes == nil || *first[key].QuotaBytes != 100 || first[key].ExpiresAt == nil || !first[key].ExpiresAt.Equal(expires) {
+		t.Fatal("nullable authorization fields lost", first[key])
+	}
+	now := time.Now()
+	var retained authorization
+	retained.setSnapshot(*first[key], expires.Add(-AuthorizationInterval/2), 1)
+	period, until := retained.period, retained.until
 	scratch.reset()
 	u, err := s.Account(ctx, "alice")
 	if err != nil {
@@ -100,8 +110,8 @@ func TestAuthorizationScratchDoesNotRetainRevokedDecisions(t *testing.T) {
 	if err != nil || len(second) != 0 {
 		t.Fatal("revoked decision reused", second, err)
 	}
-	if retained.ID != "alice" || retained.StartedAt == nil {
-		t.Fatal("published value aliased scratch", retained)
+	if retained.period != period || !retained.until.Equal(until) || !until.Equal(expires) || !until.After(now) {
+		t.Fatal("published authorization aliased scratch")
 	}
 	scratch.reset()
 }

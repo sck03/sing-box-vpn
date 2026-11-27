@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/sck03/sing-box-vpn/internal/application"
+	"github.com/sck03/sing-box-vpn/internal/serverconfig"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 	"path/filepath"
 	"testing"
@@ -105,12 +107,19 @@ func fixtureSubscriptionNodes(app App, settings VPNSettings, private map[string]
 		if number(in["listen_port"]) == p.Ports["hysteria2"] {
 			hopping = p.Hopping
 		}
-		node, err := managed[0].subscriptionNode(app.Address, name, scope, hopping, cache, fixtureCredential(managed[0].Protocol))
+		entry := serverconfig.Node(managed[0])
+		entry.UDPPorts = hopping
+		credential := fixtureCredential(entry.Protocol)
+		credential.ID, credential.RuntimeID = entry.ID, scope
+		node, err := application.AccountNode(entry, app.Address, name, credential, cache.get)
 		if err != nil {
 			return err
 		}
 		if scope == normalScope && node.Protocol == "vmess" && app.CDNAddress != "" {
 			node.Server = app.CDNAddress
+		}
+		if err := node.Validate(); err != nil {
+			return err
 		}
 		local[scope] = append(local[scope], node)
 		return nil

@@ -1,4 +1,4 @@
-export const accountFields = (existing, people) => [
+export const accountFields = (existing, people, namePolicy) => [
   {
     key: "id",
     label: "权益 ID",
@@ -6,7 +6,9 @@ export const accountFields = (existing, people) => [
     readonly: existing,
     advanced: true,
   },
-  { key: "name", label: "名称", required: true },
+  { key: "name", label: "名称", required: true,
+    minBytes: namePolicy.min, maxBytes: namePolicy.max, forbidden: namePolicy.forbidden,
+    help: `支持中文，最多 ${namePolicy.max} 个 UTF-8 字节；不能包含换行、回车或空字符。` },
   ...(people.length
     ? [
         {

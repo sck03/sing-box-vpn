@@ -97,9 +97,9 @@ func TestPublicationValidCDNPreviewApplyAndAccountExport(t *testing.T) {
 	if err = service.runTask(ctx, task); err != nil {
 		t.Fatal(err)
 	}
-	task, err = service.Store.Task(ctx, id)
-	if err != nil || task.State != "succeeded" {
-		t.Fatal(task, err)
+	finished, err := service.Store.Task(ctx, id)
+	if err != nil || finished.State != "succeeded" {
+		t.Fatal(finished, err)
 	}
 	usage, err := service.Accounts.DownloadAccount(ctx, "cdn-account", time.Now())
 	if err != nil {

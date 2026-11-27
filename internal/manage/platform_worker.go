@@ -86,7 +86,7 @@ func (s *PlatformService) runLane(ctx context.Context, lane string) error {
 			if claimErr != nil {
 				return claimErr
 			}
-			err = s.runAccountBatch(ctx, append([]controlstore.Task{task}, followers...))
+			err = s.runAccountBatch(ctx, append([]controlstore.ClaimedTask{task}, followers...))
 		} else {
 			err = s.runTask(ctx, task)
 		}
@@ -96,7 +96,7 @@ func (s *PlatformService) runLane(ctx context.Context, lane string) error {
 	}
 }
 
-func (s *PlatformService) runTask(ctx context.Context, task controlstore.Task) error {
+func (s *PlatformService) runTask(ctx context.Context, task controlstore.ClaimedTask) error {
 	s.invalidateOverview()
 	budget := application.ControlTaskTimeout
 	if task.Kind == "subscription" || task.Kind == "outbound-probe" {
@@ -132,7 +132,7 @@ func (s *PlatformService) runTask(ctx context.Context, task controlstore.Task) e
 	if errors.Is(err, errTaskDeferred) {
 		return nil
 	}
-	return s.finishTask(task, err)
+	return s.finishTask(task.Task, err)
 }
 
 func (s *PlatformService) finishTask(task controlstore.Task, err error) error {
@@ -155,7 +155,7 @@ func (s *PlatformService) finishTask(task controlstore.Task, err error) error {
 
 // Each command commits once. Publication is shared, while individual failures
 // remain visible; interrupted or failed publication never replays mutations.
-func (s *PlatformService) runAccountBatch(ctx context.Context, tasks []controlstore.Task) error {
+func (s *PlatformService) runAccountBatch(ctx context.Context, tasks []controlstore.ClaimedTask) error {
 	child, cancel := context.WithTimeout(ctx, application.ControlTaskTimeout)
 	defer cancel()
 	failures := make([]error, len(tasks))
@@ -185,7 +185,7 @@ func (s *PlatformService) runAccountBatch(ctx context.Context, tasks []controlst
 		if failures[i] == nil && lockErr != nil {
 			failures[i] = fmt.Errorf("credential publication incomplete; inspect task and repository before retrying: %w", lockErr)
 		}
-		result = errors.Join(result, s.finishTask(task, failures[i]))
+		result = errors.Join(result, s.finishTask(task.Task, failures[i]))
 	}
 	return result
 }

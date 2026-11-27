@@ -283,6 +283,8 @@ export function formDialog(title, fields, value, save, preserve = false) {
           )
             continue;
           let v = input.value;
+          if (field.forbidden && [...field.forbidden].some((char) => v.includes(char)))
+            throw Object.assign(new Error(`${field.label}不能包含换行、回车或空字符。`), { field: field.key });
           if (field.minBytes !== undefined || field.maxBytes !== undefined) {
             const length = new TextEncoder().encode(v).length;
             if (
@@ -290,9 +292,9 @@ export function formDialog(title, fields, value, save, preserve = false) {
               (length < (field.minBytes || 0) ||
                 length > (field.maxBytes ?? Infinity))
             )
-              throw new Error(
+              throw Object.assign(new Error(
                 `${field.label}需要 ${field.minBytes || 0}–${field.maxBytes} 个 UTF-8 字节，当前为 ${length}。`,
-              );
+              ), { field: field.key });
           }
           switch (field.type) {
             case "multiselect":

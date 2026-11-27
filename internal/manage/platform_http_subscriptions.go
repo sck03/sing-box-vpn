@@ -139,9 +139,7 @@ func (s *PlatformService) serveGrants(w http.ResponseWriter, r *http.Request, ac
 		if !require(admin) {
 			return true
 		}
-		var v struct {
-			ID string `json:"id"`
-		}
+		var v GrantRevoke
 		if err = decodeRequest(w, r, &v, 1024); err == nil {
 			if !audit("grant-revoke", v.ID) {
 				return true

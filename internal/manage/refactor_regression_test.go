@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,16 +35,23 @@ func TestCredentialPublicationRetryDoesNotRepeatRotation(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Runtime = filepath.Join(root, "missing-runtime")
-	task, err := s.Store.Task(ctx, id)
+	task, err := s.Store.ClaimLane(ctx, application.ControlLane)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = s.runAccountBatch(ctx, []controlstore.Task{task}); err != nil {
+	if task.ID != id || len(task.Input) == 0 {
+		t.Fatal("rotation task was not claimed with its input", task.ID)
+	}
+	if err = s.runAccountBatch(ctx, []controlstore.ClaimedTask{task}); err != nil {
 		t.Fatal(err)
 	}
 	finished, err := s.Store.Task(ctx, id)
-	if err != nil || finished.State != "failed" {
-		t.Fatal("missing runtime did not fail publication")
+	if err != nil || finished.State != "failed" || !strings.Contains(finished.Error, "credential publication incomplete") {
+		t.Fatal("expected publication failure after committed rotation", finished, err)
+	}
+	users, revision, err := s.Accounts.CredentialSnapshot(ctx, "normal")
+	if err != nil || revision != 2 || len(users) != 1 || users[0].Generation != 2 {
+		t.Fatal("rotation must commit before publication fails", users, revision, err)
 	}
 	s.Runtime = runtimeBinary
 	for range 2 {
@@ -51,7 +59,7 @@ func TestCredentialPublicationRetryDoesNotRepeatRotation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	users, revision, err := s.Accounts.CredentialSnapshot(ctx, "normal")
+	users, revision, err = s.Accounts.CredentialSnapshot(ctx, "normal")
 	if err != nil || revision != 2 || len(users) != 1 || users[0].Generation != 2 {
 		t.Fatal(users, revision, err)
 	}

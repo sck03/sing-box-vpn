@@ -18,6 +18,9 @@ var Protocols = []string{"vless", "vmess", "hysteria2", "tuic", "anytls"}
 // JSON numbers must round-trip exactly through the panel's JavaScript integers.
 const MaxQuotaBytes int64 = 1<<53 - 1
 
+const MaxAccountNameBytes = 128
+const AccountNameForbidden = "\r\n\x00"
+
 // Account is an independently metered entitlement. Several entitlements may
 // belong to one subscriber without sharing credentials or quota pools.
 type Account struct {
@@ -47,8 +50,11 @@ type Credential struct {
 }
 
 func (a Account) Validate() error {
-	if !ResourceID.MatchString(a.ID) || len(a.Name) == 0 || len(a.Name) > 128 {
-		return errors.New("account requires a stable ID and a name of 1–128 bytes")
+	if !ResourceID.MatchString(a.ID) {
+		return &FieldError{Field: "account.id", Message: "account requires a stable ID of 1–64 letters, digits, underscores or hyphens"}
+	}
+	if len(a.Name) == 0 || len(a.Name) > MaxAccountNameBytes || strings.ContainsAny(a.Name, AccountNameForbidden) {
+		return &FieldError{Field: "account.name", Message: "account name requires 1–128 UTF-8 bytes without carriage returns, newlines or NUL"}
 	}
 	if a.QuotaBytes != nil && (*a.QuotaBytes < 0 || *a.QuotaBytes > MaxQuotaBytes) {
 		return errors.New("quota must be null (unlimited) or 0–9007199254740991 bytes")

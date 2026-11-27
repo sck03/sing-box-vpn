@@ -43,8 +43,7 @@ func boundProtocolServer(t *testing.T, scope string, server manage.Object) manag
 func publishProtocolFixture(t *testing.T, root, core string, app *manage.App) {
 	t.Helper()
 	var err error
-	app.Version, err = manage.CheckCore(t.Context(), core)
-	if err != nil {
+	if _, err = manage.CheckCore(t.Context(), core); err != nil {
 		t.Fatal(err)
 	}
 	settings := manage.VPNSettings{ProxyPort: 7928, Profiles: map[string]manage.Profile{}}

@@ -51,16 +51,16 @@ func TestRefreshTasksPersistRejectedResourceReport(t *testing.T) {
 			if err = s.runTask(t.Context(), task); err != nil {
 				t.Fatal(err)
 			}
-			task, err = s.Store.Task(t.Context(), id)
+			finished, err := s.Store.Task(t.Context(), id)
 			var result application.RefreshResult
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err = json.Unmarshal(task.Result, &result); err != nil {
+			if err = json.Unmarshal(finished.Result, &result); err != nil {
 				t.Fatal(err)
 			}
-			if task.State != "failed" || task.Outcome != "cached" || !result.Published || result.Checked != 1 || result.Updated != 0 || len(result.Failures) != 1 || result.Outputs == 0 {
-				t.Fatal(task.State, task.Outcome, string(task.Result))
+			if finished.State != "failed" || finished.Outcome != "cached" || !result.Published || result.Checked != 1 || result.Updated != 0 || len(result.Failures) != 1 || result.Outputs == 0 {
+				t.Fatal(finished.State, finished.Outcome, string(finished.Result))
 			}
 		})
 	}

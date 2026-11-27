@@ -38,7 +38,7 @@ func TestAccountBatchPublishesOnceAndPreservesIndividualResults(t *testing.T) {
 	if err != nil || len(rest) != 2 {
 		t.Fatal(rest, err)
 	}
-	tasks := append([]controlstore.Task{first}, rest...)
+	tasks := append([]controlstore.ClaimedTask{first}, rest...)
 	if err = s.runAccountBatch(t.Context(), tasks); err != nil {
 		t.Fatal(err)
 	}

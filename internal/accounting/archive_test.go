@@ -45,8 +45,8 @@ func TestComputedExpirySurvivesRenameAndStopsForwarding(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.auth.mu.Lock()
-	h.auth.usage.EffectiveExpiresAt = &deadline
-	h.auth.setDeadline(deadline.Add(-AuthorizationInterval/2), s.authorizationEpoch.Load())
+	u.EffectiveExpiresAt = &deadline
+	h.auth.setSnapshot(u, deadline.Add(-AuthorizationInterval/2), s.authorizationEpoch.Load())
 	cachedUntil := h.auth.until
 	h.auth.mu.Unlock()
 	if !cachedUntil.Equal(deadline) {

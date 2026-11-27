@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/log"
@@ -16,7 +17,8 @@ import (
 func TestCredentialReloadOnlyReplacesChangedInbound(t *testing.T) {
 	raw := []byte(`{"log":{"disabled":true},"inbounds":[{"type":"vless","tag":"one","listen":"127.0.0.1","listen_port":0},{"type":"vless","tag":"two","listen":"127.0.0.1","listen_port":0}],"outbounds":[{"type":"direct","tag":"direct"}]}`)
 	credential := domain.Credential{ID: "alice", AccountID: "alice", RuntimeID: "normal", InboundID: "one", Protocol: "vless", Generation: 1, UUID: "aabbccdd-1122-4333-8444-5566778899aa"}
-	core, err := New(t.Context(), raw, []domain.Credential{credential}, nil)
+	peer := domain.Credential{ID: "bob", AccountID: "bob", RuntimeID: "normal", InboundID: "one", Protocol: "vless", Generation: 1, UUID: "ccccdddd-1122-4333-8444-5566778899aa"}
+	core, err := New(t.Context(), raw, []domain.Credential{credential, peer}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,15 +28,21 @@ func TestCredentialReloadOnlyReplacesChangedInbound(t *testing.T) {
 	}
 	one, two := core.inbounds["one"], core.inbounds["two"]
 	oldOne, oldTwo := one.scope, two.scope
-	if err = core.ReloadCredentials([]domain.Credential{credential}); err != nil {
+	if err = core.ReloadCredentials([]domain.Credential{credential, peer}); err != nil {
 		t.Fatal(err)
 	}
 	if one.scope != oldOne || two.scope != oldTwo {
 		t.Fatal("unchanged users replaced listeners")
 	}
+	// Even unchanged Bob shares the retired listener's lifetime. This is an
+	// explicit contract until the upstream inbound supports atomic user updates.
+	peerConnection, peerClient := net.Pipe()
+	t.Cleanup(func() { peerConnection.Close(); peerClient.Close() })
+	stopPeer := (&guardedRouter{lifetime: oldOne.Context()}).watch(t.Context(), peerConnection)
+	defer stopPeer()
 	credential.Generation++
 	credential.UUID = "bbbbbbbb-1122-4333-8444-5566778899aa"
-	if err = core.ReloadCredentials([]domain.Credential{credential}); err != nil {
+	if err = core.ReloadCredentials([]domain.Credential{credential, peer}); err != nil {
 		t.Fatal(err)
 	}
 	if one.scope == oldOne || oldOne.Context().Err() == nil {
@@ -42,6 +50,12 @@ func TestCredentialReloadOnlyReplacesChangedInbound(t *testing.T) {
 	}
 	if two.scope != oldTwo || oldTwo.Context().Err() != nil {
 		t.Fatal("unaffected inbound was interrupted")
+	}
+	_ = peerClient.SetReadDeadline(time.Now().Add(time.Second))
+	if _, err = peerClient.Read(make([]byte, 1)); err == nil {
+		t.Fatal("same-inbound peer connection survived retired listener")
+	} else if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+		t.Fatal("retired peer connection was not closed")
 	}
 	if err = core.ReloadCredentials(nil); err != nil {
 		t.Fatal(err)
