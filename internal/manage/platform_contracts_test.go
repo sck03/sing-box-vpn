@@ -25,7 +25,7 @@ func contractNode() sub.Node {
 func TestGatewayContractRejectsBadPolicyBeforeSaving(t *testing.T) {
 	root, core, _ := appFixture(t)
 	service, config, _ := platformFixture(t, root, core)
-	configured, err := service.PrepareCountry(t.Context(), config, "JP")
+	configured, err := prepareCountry(service.Root, config, "JP")
 	if err != nil {
 		t.Fatal(err)
 	}

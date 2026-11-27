@@ -1,30 +1,30 @@
 package manage
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	"slices"
 )
 
-func (s *PlatformService) Preset(ctx context.Context, protocol, id string) (ManagedNode, error) {
+// Candidate preparation uses only explicit configuration and local port/material
+// services. It never reads or changes the database's desired configuration.
+func prepareInbound(root string, c PlatformConfig, protocol, id string) (ManagedNode, error) {
 	if !domain.ResourceID.MatchString(id) || !slices.Contains(Protocols, protocol) {
 		return ManagedNode{}, errors.New("invalid preset")
 	}
-	state, err := s.Store.State(ctx)
+	c.normalize()
+	if err := c.Validate(); err != nil {
+		return ManagedNode{}, err
+	}
+	if slices.ContainsFunc(c.App.Nodes, func(n ManagedNode) bool { return n.ID == id }) {
+		return ManagedNode{}, &domain.FieldError{Field: "id", Message: "入站 ID 已存在"}
+	}
+	used, ranges, err := allocationPorts(root, c.App, c.VPN, c.Listener)
 	if err != nil {
 		return ManagedNode{}, err
 	}
-	c, err := decodePlatform(state.Desired)
-	if err != nil {
-		return ManagedNode{}, err
-	}
-	used, ranges, err := allocationPorts(s.Root, c.App, c.VPN)
-	if err != nil {
-		return ManagedNode{}, err
-	}
-	p, err := newProfile(s.Root, used, "", []string{protocol}, ranges...)
+	p, err := newProfile(root, used, "", []string{protocol}, ranges...)
 	if err != nil {
 		return ManagedNode{}, err
 	}
@@ -37,7 +37,7 @@ func (s *PlatformService) Preset(ctx context.Context, protocol, id string) (Mana
 	return ManagedNode{}, errors.New("preset unavailable")
 }
 
-func (s *PlatformService) PrepareCountry(ctx context.Context, c PlatformConfig, cc string) (PlatformConfig, error) {
+func prepareCountry(root string, c PlatformConfig, cc string) (PlatformConfig, error) {
 	c.normalize()
 	if err := c.Validate(); err != nil {
 		return c, err
@@ -46,11 +46,11 @@ func (s *PlatformService) PrepareCountry(ctx context.Context, c PlatformConfig, 
 		return c, errors.New("country must be two uppercase letters")
 	}
 	if _, ok := c.VPN.Profiles[cc]; !ok {
-		used, ranges, e := allocationPorts(s.Root, c.App, c.VPN)
+		used, ranges, e := allocationPorts(root, c.App, c.VPN, c.Listener)
 		if e != nil {
 			return c, e
 		}
-		p, e := NewProfile(s.Root, used, cc+"-", ranges...)
+		p, e := NewProfile(root, used, cc+"-", ranges...)
 		if e != nil {
 			return c, e
 		}

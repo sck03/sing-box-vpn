@@ -9,15 +9,23 @@
  * @param {{section?: string}} [options] */
 export function observeStatus(ctx, read, { section } = {}) {
   const signature = (/** @type {OverviewSnapshot | undefined} */ snapshot) =>
-    JSON.stringify([snapshot?.resource_version, snapshot?.revision,
-      snapshot?.applied_revision, snapshot?.task_counts]);
+    JSON.stringify([
+      snapshot?.resource_version,
+      snapshot?.revision,
+      snapshot?.applied_revision,
+      snapshot?.task_counts,
+    ]);
   let version = signature(ctx.overview);
-  let visible = !section || (ctx.activeSection || ctx.section || section) === section;
-  let queued = false;
+  let visible =
+    !section || (ctx.activeSection || ctx.section || section) === section;
+  let queued = false,
+    stopped = false;
   /** @type {Promise<void> | undefined} */
   let pending;
-  const active = () => visible && !document.hidden && !ctx.signal?.aborted;
+  const active = () =>
+    !stopped && visible && !document.hidden && !ctx.signal?.aborted;
   function refresh() {
+    if (stopped) return Promise.resolve();
     queued = true;
     if (pending) return pending;
     if (!active()) return Promise.resolve();
@@ -26,34 +34,47 @@ export function observeStatus(ctx, read, { section } = {}) {
         queued = false;
         await read();
       }
-    })().finally(() => { pending = undefined; });
+    })().finally(() => {
+      pending = undefined;
+    });
     return pending;
   }
   const updateOverview = ctx.updateOverview;
-  ctx.updateOverview = (snapshot) => {
+  const update = (/** @type {OverviewSnapshot} */ snapshot) => {
     updateOverview?.(snapshot);
     const next = signature(snapshot);
     if (next === version) return;
     version = next;
     void refresh();
   };
+  ctx.updateOverview = update;
+  const sectionChanged = ctx.sectionChanged;
+  const changeSection = (/** @type {string} */ next) => {
+    sectionChanged?.(next);
+    const wasVisible = visible;
+    visible = next === section;
+    if (visible && !wasVisible) void refresh();
+  };
   if (section) {
-    const sectionChanged = ctx.sectionChanged;
-    ctx.sectionChanged = (next) => {
-      sectionChanged?.(next);
-      const wasVisible = visible;
-      visible = next === section;
-      if (visible && !wasVisible) void refresh();
-    };
+    ctx.sectionChanged = changeSection;
   }
-  const visibility = () => { if (active()) void refresh(); };
+  const visibility = () => {
+    if (active()) void refresh();
+  };
   const timer = window.setInterval(visibility, 60000);
-  document.addEventListener('visibilitychange', visibility);
+  document.addEventListener("visibilitychange", visibility);
   const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    queued = false;
     window.clearInterval(timer);
-    document.removeEventListener('visibilitychange', visibility);
+    document.removeEventListener("visibilitychange", visibility);
+    ctx.signal?.removeEventListener("abort", stop);
+    if (ctx.updateOverview === update) ctx.updateOverview = updateOverview;
+    if (section && ctx.sectionChanged === changeSection)
+      ctx.sectionChanged = sectionChanged;
   };
   if (ctx.signal?.aborted) stop();
-  else ctx.signal?.addEventListener('abort', stop, { once: true });
-  return { refresh };
+  else ctx.signal?.addEventListener("abort", stop, { once: true });
+  return { refresh, dispose: stop };
 }

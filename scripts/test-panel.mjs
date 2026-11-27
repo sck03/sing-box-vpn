@@ -32,7 +32,7 @@ const { subscriptions } =
 const { overview } = await import("../internal/manage/panel/overview.js");
 const { admins } = await import("../internal/manage/panel/admins.js");
 const { maintenance } = await import("../internal/manage/panel/maintenance.js");
-const { resourceEditor, table, notice } =
+const { resourceEditor, table } =
   await import("../internal/manage/panel/ui.js");
 const config = {
   app: {
@@ -349,7 +349,6 @@ assert.equal(
 );
 configWrites[5].resolve({ task_id: 6 });
 await tick();
-clearTimeout(notice.timer);
 console.log(
   "Panel DOM checks passed: 12 pages, drafts, role scope, live table state, stale session responses, concurrent config loading/saving/preview/reload.",
 );

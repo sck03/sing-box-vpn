@@ -1,7 +1,8 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [switch]$Dependencies,
-    [switch]$BrowserTools
+    [switch]$BrowserTools,
+    [switch]$Tools
 )
 
 $ErrorActionPreference = 'Stop'
@@ -13,7 +14,8 @@ if (-not (Test-Path -LiteralPath (Join-Path $cleanupRoot 'go.mod')) -or
 $cleanupPrefix = $cleanupRoot.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
 $cleanupNames = @('.test', '.build', '.cleanup-manual')
 if ($Dependencies) { $cleanupNames += 'node_modules' }
-if ($BrowserTools) { $cleanupNames += '.tools/python313-packages' }
+if ($Tools) { $cleanupNames += '.tools' }
+elseif ($BrowserTools) { $cleanupNames += '.tools/python313-packages' }
 
 # Validate every target before deleting anything. Never follow directory links.
 $cleanupSkipped = [Collections.Generic.List[string]]::new()

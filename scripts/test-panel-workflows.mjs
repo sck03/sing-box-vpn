@@ -20,7 +20,6 @@ dom.window.HTMLDialogElement.prototype.close = function () {
 const { pageContext } = await import("../internal/manage/panel/lifecycle.js");
 const { accounts } = await import("../internal/manage/panel/accounts.js");
 const { setCSRF } = await import("../internal/manage/panel/api.js");
-const { notice } = await import("../internal/manage/panel/dom.js");
 const calls = [];
 globalThis.fetch = async (path, options) => {
   if (options.signal?.aborted) throw new DOMException("aborted", "AbortError");
@@ -83,7 +82,6 @@ assert.equal(
   calls.filter((p) => p.startsWith("/api/inbound-options")).length,
   4,
 );
-clearTimeout(notice.timer);
 document.querySelector("dialog").close();
 for (const scope of ["normal", "vpngate"]) for (const failed of [false, true]) {
   let saves = 0, queued, share;
@@ -132,7 +130,6 @@ for (const scope of ["normal", "vpngate"]) for (const failed of [false, true]) {
     assert.equal(new Date(share.expires_at).getFullYear(), 2030);
   }
   document.querySelector("dialog").close();
-  clearTimeout(notice.timer);
 }
 const { createAccountShare } = await import("../internal/manage/panel/sharing.js");
 const { formDialog } = await import("../internal/manage/panel/form-dialog.js");

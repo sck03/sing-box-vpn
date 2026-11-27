@@ -168,7 +168,7 @@ func TestGatewayStateUsesDurableConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := s.PrepareCountry(ctx, initial, "JP")
+	c, err := prepareCountry(s.Root, initial, "JP")
 	if err != nil {
 		t.Fatal(err)
 	}

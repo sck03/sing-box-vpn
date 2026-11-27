@@ -2,6 +2,18 @@
 
 `control.db` 是配置、管理员、权益、凭据、账本、下载授权和任务的权威状态。SQLite WAL + FULL 同步 + 外键。数据库 schema 17；平台配置 schema=8、节点文档 schema=7、订阅配置 schema=6、模板 version=1 是各自独立的格式版本。只接受当前配置，不提供旧数据库、订阅内容、接口或备份迁移。配置派生 JSON、订阅缓存和证书材料是不同职责。
 
+## 草稿、候选与资源身份（2026-11-27）
+
+`draft-controller.js` 管理配置加载合并、重载代次、基线、保存确认及变更路径；不访问 DOM、网络或全局页面。`app.js` 只协调页面、提示与 API。配置比较按 JSON 值结构遍历，预览不再逐层序列化完整子树；保存期间的后续编辑仍保留为未保存状态。
+
+`prepareDraft` 为候选请求捕获独立快照，检查编辑器、取消信号、草稿对象及内容后才能写回。`/api/preset` 和 `/api/country` 的具名请求 DTO 纳入生成契约；`node_presets.go` 使用显式候选配置和本地端口/材料服务，不依赖 PlatformService 或数据库期望配置。初始安装在适配边界读取监听配置，端口分配器不再隐式读取订阅投影。
+
+`formDialog` 与加载弹窗共用 `dialogSession`，保存回调取得编辑器的 signal/active。候选读取随关闭/替换/离页取消；已提交的权益写入属于登录会话，由 `account-editor.js` 编排，`account-onboarding.js` 展示下一步。迟到结果通过 `workflow-results.js` 留存，只允许活动编辑器主动切换弹窗和刷新页面。
+
+普通入站的 ID/协议创建后在编辑器中固定，复制时可指定新 ID。`application.ValidateInboundBindings` 仅依赖返回 ID/协议的窄仓储接口；accounting 不读取凭据秘密即可提供绑定集合。预览、排队提交和执行前都拒绝删除、改名或更换仍有绑定的入站，停用保留绑定。VPNGate 国家切换仍沿用独立的实例规则，不把普通入站删除约束套到国家切换上。已确认配置恢复不受新候选检查阻断。
+
+状态观察器支持显式 dispose，并在页面取消时释放资源；通知使用页面 window 的计时器。测试必须关闭 DOM/取消页面，运行器按脚本限制 60 秒并将未退出判为失败，不通过强制成功退出掩盖泄漏。
+
 公网传输由 `internal/publicaccess` 管理，共用 `internal/tlsconfig`；服务登记位于 `internal/servicecatalog`。主机操作按 service/deployment/units/gateway/network/journal 分文件，日志系统适配位于 `internal/hostservice`。任务保留策略与执行终态分离；面板访问重启由独立助手和持久收据完成。账户服务不再回退读取旧 JSON 配置，调用者必须注入配置/控制仓库，或读取当前数据库。
 
 ## 身份、能力与运行时投影

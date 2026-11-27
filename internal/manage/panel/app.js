@@ -13,6 +13,8 @@ import { overviewStream } from "./live.js";
 import { pageContext } from "./lifecycle.js";
 import { capabilities, validatePassword } from "./capabilities.js";
 import { requestConfiguration } from "./config-preview.js";
+import { createDraftController, prepareDraft } from "./draft-controller.js";
+import { prepareCountry } from "./configuration-api.js";
 import {
   navigation,
   markNavigation,
@@ -40,59 +42,42 @@ $("#menu-toggle").addEventListener("click", () =>
 let page = "overview",
   section = "",
   navigationPage = "",
-  draft = /** @type {import("./contracts.js").PlatformConfig | null} */ (null),
-  original = null,
-  revision = 0,
-  draftGeneration = 0,
-  configLoad = null,
   loading = 0,
   pageRequest,
   showSection,
   clearSearch;
+const drafts = createDraftController(() =>
+  getConfiguration(ctx.session.role === "admin"),
+);
 const ctx = {
   session: null,
-  root: "",
-  dirty: false,
-  async config() {
-    if (!draft) {
-      const generation = draftGeneration;
-      configLoad ??= getConfiguration(ctx.session.role === "admin")
-        .then((response) => {
-          if (generation !== draftGeneration)
-            throw new DOMException("草稿已重新载入", "AbortError");
-          draft = response.config;
-          original = structuredClone(draft);
-          revision = response.revision;
-          ctx.root = response.root;
-          return draft;
-        })
-        .finally(() => {
-          if (generation === draftGeneration) configLoad = null;
-        });
-      return configLoad;
-    }
-    return draft;
+  get root() {
+    return drafts.root;
   },
-  async selectCountry(country) {
-    const current = await ctx.config();
-    const generation = draftGeneration;
-    const submitted = JSON.stringify(current);
-    const next = await api("/api/country", { country, config: current });
-    if (generation !== draftGeneration || current !== draft)
-      throw new DOMException("草稿已重新载入", "AbortError");
-    if (submitted !== JSON.stringify(current))
-      throw new Error("准备国家期间草稿发生变化，请重试。");
-    draft = next;
-    ctx.changed();
+  get dirty() {
+    return drafts.dirty;
+  },
+  config: () => drafts.load(),
+  async selectCountry(country, signal, active) {
+    await prepareDraft(
+      ctx,
+      (config, signal) => prepareCountry({ country, config }, signal),
+      (_config, next) => {
+        drafts.replace(next);
+        ctx.changed();
+      },
+      signal,
+      active,
+    );
     return ctx.render();
   },
   changed() {
-    ctx.dirty = true;
+    drafts.changed();
     $("#draft").hidden = false;
     $("#draft-message").textContent = "配置有未保存的更改 · 切换页面会保留草稿";
   },
   observeRevision(value) {
-    if (draft && value > revision) {
+    if (drafts.loaded && value > drafts.revision) {
       $("#draft").hidden = false;
       $("#draft-message").textContent =
         "服务器已有新的配置版本，请核对草稿后重新载入。";
@@ -130,11 +115,7 @@ const ctx = {
   },
 };
 function resetDraft() {
-  draftGeneration++;
-  draft = null;
-  original = null;
-  configLoad = null;
-  ctx.dirty = false;
+  drafts.reset();
   $("#draft").hidden = true;
 }
 async function renderPage() {
@@ -303,38 +284,19 @@ $("#refresh").addEventListener(
 $("#preview").addEventListener(
   "click",
   action(async () => {
-    if (!draft) throw new Error("没有可校验的配置");
-    const submitted = structuredClone(draft);
-    const baseline = original;
-    const generation = draftGeneration;
-    const changed = [];
-    function diff(a, b, path = "") {
-      if (JSON.stringify(a) === JSON.stringify(b)) return;
-      if (
-        a &&
-        b &&
-        typeof a === "object" &&
-        typeof b === "object" &&
-        !Array.isArray(a) &&
-        !Array.isArray(b)
-      ) {
-        for (const key of new Set([...Object.keys(a), ...Object.keys(b)]))
-          diff(a[key], b[key], path + "/" + key);
-      } else changed.push(path);
-    }
-    diff(baseline, submitted);
+    const submitted = drafts.snapshot();
     await requestConfiguration(
       async (signal) => {
-        const result = await previewConfiguration(submitted, signal);
-        if (generation !== draftGeneration)
+        const result = await previewConfiguration(submitted.config, signal);
+        if (!drafts.active(submitted))
           throw new DOMException("草稿已重新载入", "AbortError");
         return result;
       },
-      changed,
+      drafts.changes(submitted),
       {
         signal: pageRequest?.signal,
         loadOutput: (id, signal) =>
-          previewOutput({ id, config: submitted }, signal),
+          previewOutput({ id, config: submitted.config }, signal),
       },
     );
   }),
@@ -351,18 +313,12 @@ $("#discard").addEventListener(
 $("#save").addEventListener(
   "click",
   action(async () => {
-    if (!draft) throw new Error("没有可保存的配置");
-    const submitted = structuredClone(draft);
-    const submittedRevision = revision;
-    const generation = draftGeneration;
+    const submitted = drafts.snapshot();
     const response = await saveConfiguration({
-      revision: submittedRevision,
-      config: submitted,
+      revision: submitted.revision,
+      config: submitted.config,
     });
-    if (generation !== draftGeneration) return;
-    revision = submittedRevision + 1;
-    original = submitted;
-    ctx.dirty = JSON.stringify(draft) !== JSON.stringify(original);
+    if (!drafts.saved(submitted)) return;
     $("#draft").hidden = !ctx.dirty;
     if (ctx.dirty) ctx.changed();
     notice(

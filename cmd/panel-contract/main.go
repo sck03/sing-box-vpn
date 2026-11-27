@@ -227,6 +227,8 @@ func main() {
 		input, result reflect.Type
 	}{
 		{"/api/config", reflect.TypeFor[manage.ConfigurationSave](), reflect.TypeFor[manage.QueuedTask]()},
+		{"/api/preset", reflect.TypeFor[manage.InboundPreparation](), reflect.TypeFor[manage.ManagedNode]()},
+		{"/api/country", reflect.TypeFor[manage.CountryPreparation](), reflect.TypeFor[manage.PlatformConfig]()},
 		{"/api/tasks", reflect.TypeFor[application.TaskCommand](), reflect.TypeFor[manage.QueuedTask]()},
 		{"/api/certificates", reflect.TypeFor[manage.CertificateImport](), reflect.TypeFor[certificates.CertificateAsset]()},
 		{"/api/certificates/prepare", reflect.TypeFor[manage.CertificatePreparation](), reflect.TypeFor[certificates.CertificateAsset]()},

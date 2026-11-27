@@ -98,6 +98,17 @@ type OverviewSnapshot struct {
 }
 
 // Named wire contracts are shared by handlers and the frontend type generator.
+type InboundPreparation struct {
+	ID       string         `json:"id"`
+	Protocol string         `json:"protocol"`
+	Config   PlatformConfig `json:"config"`
+}
+
+type CountryPreparation struct {
+	Country string         `json:"country"`
+	Config  PlatformConfig `json:"config"`
+}
+
 type ConfigurationSave struct {
 	Revision int64          `json:"revision"`
 	Config   PlatformConfig `json:"config"`

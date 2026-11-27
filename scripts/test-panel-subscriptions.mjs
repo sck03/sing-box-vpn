@@ -44,7 +44,6 @@ const { accountOutputDialog } = await import(
 const { subscriptionWizard } = await import(
   "../internal/manage/panel/subscription-wizard.js"
 );
-const { notice } = await import("../internal/manage/panel/dom.js");
 
 const catalog = {
   mihomo: {
@@ -432,8 +431,6 @@ assert.equal(field("分享地址").value, outputURLs.join("\n"));
 click("完成");
 sharePage.abort();
 setCSRF("");
-
-clearTimeout(notice.timer);
 dom.window.close();
 console.log(
   "Subscription panel passed: effective defaults, compatible clients, stale responses, draft wizard and local list updates.",

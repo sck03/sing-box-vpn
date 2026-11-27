@@ -25,7 +25,8 @@ export function dialogSession(signal) {
   const dialog = $("#dialog");
   const marker = el("span", { hidden: true });
   const controller = new AbortController();
-  const active = () => !controller.signal.aborted && dialog.contains(marker);
+  const active = () =>
+    !controller.signal.aborted && dialog.open && dialog.contains(marker);
   const abort = () => controller.abort();
   const closed = () => {
     if (!dialog.open) abort();

@@ -24,21 +24,44 @@ export async function vpngate(ctx) {
   const active = c?.vpn.active_country || (admin ? "尚未选择" : "运行控制");
   const runtime = el("div", { role: "status" }, help("正在读取网关运行状态…"));
   const gateway = async () => {
-    const { refresh } = observeStatus(ctx, async () => {
-      try {
-        const current = await getGatewayStatus(ctx.signal, ctx.request || api);
-        if (ctx.signal?.aborted) return;
-        const state = ({ ready: "已就绪", stopped: "已停止", starting: "正在启动", switching: "正在切换", failed: "失败", degraded: "异常" })[current.state] || current.state;
-        runtime.replaceChildren(
-          row(badge(state || "暂无运行状态", current.state === "ready" ? "good" : "warn"),
-            help("运行国家：" + (current.country || "尚未运行"))),
-          ...(current.reason ? [help(current.reason)] : []),
-        );
-      } catch (error) {
-        if (error.name === "AbortError" || ctx.signal?.aborted) return;
-        runtime.replaceChildren(help("运行状态暂不可读取：" + error.message), button("重试", refresh));
-      }
-    }, { section: "gateway" });
+    const { refresh } = observeStatus(
+      ctx,
+      async () => {
+        try {
+          const current = await getGatewayStatus(
+            ctx.signal,
+            ctx.request || api,
+          );
+          if (ctx.signal?.aborted) return;
+          const state =
+            {
+              ready: "已就绪",
+              stopped: "已停止",
+              starting: "正在启动",
+              switching: "正在切换",
+              failed: "失败",
+              degraded: "异常",
+            }[current.state] || current.state;
+          runtime.replaceChildren(
+            row(
+              badge(
+                state || "暂无运行状态",
+                current.state === "ready" ? "good" : "warn",
+              ),
+              help("运行国家：" + (current.country || "尚未运行")),
+            ),
+            ...(current.reason ? [help(current.reason)] : []),
+          );
+        } catch (error) {
+          if (error.name === "AbortError" || ctx.signal?.aborted) return;
+          runtime.replaceChildren(
+            help("运行状态暂不可读取：" + error.message),
+            button("重试", refresh),
+          );
+        }
+      },
+      { section: "gateway" },
+    );
     await refresh();
     return status;
   };
@@ -67,9 +90,22 @@ export async function vpngate(ctx) {
             ["ISP", status.exit?.isp],
             ["ASN", status.exit?.asn],
             ["最近更新", status.updated],
-            ["候选刷新", ({ passed: "刷新成功", partial: "部分完成", cached: "刷新失败，使用旧缓存", failed: "刷新失败", running: "正在刷新", not_run: "尚未刷新" })[status.source_refresh?.outcome] || "尚未刷新"],
+            [
+              "候选刷新",
+              {
+                passed: "刷新成功",
+                partial: "部分完成",
+                cached: "刷新失败，使用旧缓存",
+                failed: "刷新失败",
+                running: "正在刷新",
+                not_run: "尚未刷新",
+              }[status.source_refresh?.outcome] || "尚未刷新",
+            ],
             ["候选数量", status.source_refresh?.nodes],
-            ["最近抓取成功", status.source_refresh?.last_success || "尚无成功记录"],
+            [
+              "最近抓取成功",
+              status.source_refresh?.last_success || "尚无成功记录",
+            ],
             ["刷新说明", status.source_refresh?.reason],
           ],
           status.reason,
@@ -145,9 +181,11 @@ export async function vpngate(ctx) {
             },
           ],
           { country: active },
-          async (v) => {
-            await ctx.selectCountry(v.country);
+          async (v, editor) => {
+            await ctx.selectCountry(v.country, editor.signal, editor.active);
           },
+          false,
+          ctx.signal,
         ),
       "primary",
     ),

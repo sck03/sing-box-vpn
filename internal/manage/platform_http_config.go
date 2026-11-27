@@ -148,13 +148,10 @@ func (s *PlatformService) serveConfiguration(w http.ResponseWriter, r *http.Requ
 		if !require(admin) {
 			return true
 		}
-		var v struct {
-			ID       string `json:"id"`
-			Protocol string `json:"protocol"`
-		}
-		if err = decodeRequest(w, r, &v, 1024); err == nil {
+		var v InboundPreparation
+		if err = decodeRequest(w, r, &v, maxJSONFile); err == nil {
 			var node ManagedNode
-			node, err = s.Preset(ctx, v.Protocol, v.ID)
+			node, err = prepareInbound(s.Root, v.Config, v.Protocol, v.ID)
 			if err == nil {
 				jsonResponse(w, node)
 				return true
@@ -167,13 +164,10 @@ func (s *PlatformService) serveConfiguration(w http.ResponseWriter, r *http.Requ
 		if !require(admin) {
 			return true
 		}
-		var v struct {
-			Country string         `json:"country"`
-			Config  PlatformConfig `json:"config"`
-		}
+		var v CountryPreparation
 		if err = decodeRequest(w, r, &v, maxJSONFile); err == nil {
 			var c PlatformConfig
-			c, err = s.PrepareCountry(ctx, v.Config, v.Country)
+			c, err = prepareCountry(s.Root, v.Config, v.Country)
 			if err == nil {
 				jsonResponse(w, c)
 				return true

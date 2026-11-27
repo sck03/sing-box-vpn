@@ -165,6 +165,7 @@ globalThis.fetch = async (url) => {
 document.querySelector("main").replaceChildren(
   ...(await inbounds({
     ...ctx,
+    request: undefined,
     changed() {
       dirty = true;
     },

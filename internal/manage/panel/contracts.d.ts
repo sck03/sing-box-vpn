@@ -196,6 +196,11 @@ export interface CoreSettings {
   experimental?: Record<string, unknown> | null;
 }
 
+export interface CountryPreparation {
+  country: string;
+  config: PlatformConfig;
+}
+
 export interface Credential {
   id: string;
   account_id: string;
@@ -312,6 +317,12 @@ export interface GrantRevoke {
   id: string;
 }
 
+export interface InboundPreparation {
+  id: string;
+  protocol: string;
+  config: PlatformConfig;
+}
+
 export interface MFAEnrollment {
   secret: string;
   issuer: string;
@@ -332,6 +343,8 @@ export interface ManagedNode {
 
 export interface MutationContracts {
   "/api/config": { input: ConfigurationSave; result: QueuedTask };
+  "/api/preset": { input: InboundPreparation; result: ManagedNode };
+  "/api/country": { input: CountryPreparation; result: PlatformConfig };
   "/api/tasks": { input: TaskCommand; result: QueuedTask };
   "/api/certificates": { input: CertificateImport; result: CertificateAsset };
   "/api/certificates/prepare": { input: CertificatePreparation; result: CertificateAsset };

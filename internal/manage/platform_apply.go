@@ -51,6 +51,9 @@ func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revi
 		return 0, controlstore.ErrConflict
 	}
 	active := []string{}
+	if err := s.validateInboundBindings(ctx, c); err != nil {
+		return 0, err
+	}
 	enabled := []string{}
 	if !s.NoSystem {
 		active, enabled, err = serviceSnapshot(ctx, true)
@@ -93,6 +96,9 @@ func (s *PlatformService) apply(ctx context.Context, id int64, input applyInput)
 	}
 	previous, err := decodePlatform(state.Applied)
 	if err != nil {
+		return err
+	}
+	if err := s.validateInboundBindings(ctx, c); err != nil {
 		return err
 	}
 	files, err := s.buildConfig(ctx, c, sub.Candidate, input.Sources)

@@ -37,7 +37,11 @@ func initialApp(ctx context.Context, root, core, address, name string) (App, err
 		return App{}, err
 	}
 	app := App{Name: name, Address: address}
-	used, ranges, err := allocationPorts(root, app, settings)
+	var listener subscriptionSettings
+	if _, err := ReadJSON(filepath.Join(root, "subscription.json"), &listener); err != nil {
+		return App{}, err
+	}
+	used, ranges, err := allocationPorts(root, app, settings, listener)
 	if err != nil {
 		return App{}, err
 	}

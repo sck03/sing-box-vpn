@@ -68,7 +68,7 @@ func prepareFixtureCountry(ctx context.Context, root, core string, app App, coun
 		return c.VPN, err
 	}
 	service := PlatformService{Root: root, Core: core}
-	c, err = service.PrepareCountry(ctx, c, country)
+	c, err = prepareCountry(service.Root, c, country)
 	if err != nil {
 		return c.VPN, err
 	}

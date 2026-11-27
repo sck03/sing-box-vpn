@@ -1,6 +1,27 @@
 package accounting
 
-import "context"
+import (
+	"context"
+
+	"github.com/sck03/sing-box-vpn/internal/application"
+)
+
+func (s *Store) BoundInbounds(ctx context.Context, scope string) ([]application.BoundInbound, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT inbound,protocol FROM credentials WHERE runtime=? ORDER BY inbound,protocol`, scope)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []application.BoundInbound
+	for rows.Next() {
+		var binding application.BoundInbound
+		if err := rows.Scan(&binding.ID, &binding.Protocol); err != nil {
+			return nil, err
+		}
+		result = append(result, binding)
+	}
+	return result, rows.Err()
+}
 
 func (s *Store) HasCredential(ctx context.Context, scope, id string) (bool, error) {
 	var found bool

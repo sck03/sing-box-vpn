@@ -1,8 +1,17 @@
 import { errorMessage } from "./api.js";
 export const $ = (selector, root = document) => root.querySelector(selector);
 const booleanAttributes = new Set([
-  "disabled", "checked", "selected", "hidden", "open", "multiple",
-  "required", "readonly", "autofocus", "inert", "novalidate",
+  "disabled",
+  "checked",
+  "selected",
+  "hidden",
+  "open",
+  "multiple",
+  "required",
+  "readonly",
+  "autofocus",
+  "inert",
+  "novalidate",
 ]);
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -29,8 +38,11 @@ export function notice(message, error = false, link = undefined) {
   if (link) node.append(button(link.label, link.action));
   node.classList.toggle("error", error);
   node.hidden = false;
-  clearTimeout(noticeTimer);
-  noticeTimer = setTimeout(() => (node.hidden = true), error ? 16000 : 6500);
+  window.clearTimeout(noticeTimer);
+  noticeTimer = window.setTimeout(
+    () => (node.hidden = true),
+    error ? 16000 : 6500,
+  );
 }
 const pendingControls = new WeakMap();
 // Business availability remains authoritative while an async action is busy.

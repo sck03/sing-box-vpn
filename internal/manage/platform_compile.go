@@ -46,6 +46,9 @@ func (s *PlatformService) prepareBuild(ctx context.Context, c PlatformConfig) (f
 	if err := c.Validate(); err != nil {
 		return nil, nil, err
 	}
+	if err := s.validateInboundBindings(ctx, c); err != nil {
+		return nil, nil, err
+	}
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 	prepared, err := prepareSubscriptionSources(ctx, s.Root, c.Subscriptions)

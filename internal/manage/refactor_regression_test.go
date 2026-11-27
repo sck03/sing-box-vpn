@@ -120,7 +120,7 @@ func TestCountryNormalizesNullMapsAndBuildIgnoresBrokenProjections(t *testing.T)
 	if _, err := s.Store.Queue(t.Context(), "apply", "test", []byte(`{}`), 1, mustJSON(t, c)); err != nil {
 		t.Fatal(err)
 	}
-	prepared, err := s.PrepareCountry(t.Context(), c, "JP")
+	prepared, err := prepareCountry(s.Root, c, "JP")
 	if err != nil || len(prepared.VPN.Profiles) != 1 || len(prepared.VPNSecrets) != 1 {
 		t.Fatal(prepared.VPN, err)
 	}

@@ -8,6 +8,7 @@ import type {
   App,
   ConfigurationPreview,
   OutputPreview,
+  InboundPreparation,
 } from "../internal/manage/panel/contracts.js";
 
 // Compile-time wire examples. These never send requests or ship in the panel.
@@ -37,6 +38,10 @@ const commands: TaskCommand[] = [
   },
 ];
 void commands;
+
+// @ts-expect-error a preset must reserve ports from the current draft
+const missingCandidate: InboundPreparation = { id: "entry", protocol: "vless" };
+void missingCandidate;
 
 const emptyBinding: TaskCommand = {
   operation: "account",

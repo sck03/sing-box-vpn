@@ -1,11 +1,10 @@
 /** @typedef {import("./contracts.js").ManagedNode} ManagedNode */
 import { api } from "./api.js";
+import { prepareInbound } from "./configuration-api.js";
+import { prepareDraft } from "./draft-controller.js";
 import { loadResult } from "./details.js";
 import { capabilities } from "./capabilities.js";
-import {
-  boundCertificate,
-  certificateChoices,
-} from "./certificate-fields.js";
+import { boundCertificate, certificateChoices } from "./certificate-fields.js";
 import {
   el,
   card,
@@ -17,9 +16,17 @@ import {
   jsonDialog,
   badge,
 } from "./ui.js";
-const nodeFields = (protocols, protocol) => {
+const nodeFields = (protocols, protocol, creating = false) => {
   const fields = [
-    { key: "id", label: "入站 ID", required: true },
+    {
+      key: "id",
+      label: "入站 ID",
+      required: true,
+      readonly: !creating,
+      help: creating
+        ? "新入站使用独立 ID，保存后请绑定账户。"
+        : "ID 用于账户绑定，创建后不可修改；需要新 ID 时请复制入站并重新绑定。",
+    },
     {
       key: "protocol",
       label: "协议",
@@ -187,11 +194,22 @@ export async function inbounds(ctx) {
           id: "node-" + crypto.randomUUID().replaceAll("-", ""),
           protocol: "vless",
         },
-        async (v) => {
-          const node = await api("/api/preset", v);
-          items.push(node);
-          changeNodes();
+        async (v, editor) => {
+          await prepareDraft(
+            ctx,
+            (config, signal) =>
+              prepareInbound({ ...v, config }, signal, ctx.request || api),
+            (_config, node) => {
+              items.push(node);
+              changeNodes();
+            },
+            editor.signal,
+            editor.active,
+            c,
+          );
         },
+        false,
+        ctx.signal,
       ),
     "primary",
   );
@@ -200,7 +218,10 @@ export async function inbounds(ctx) {
       { key: "id", label: "入站" },
       { key: "protocol", label: "协议" },
       { key: "port", label: "端口" },
-      { label: "额外 UDP 端口", value: (n) => (n.udp_ports || []).join(", ") || "—" },
+      {
+        label: "额外 UDP 端口",
+        value: (n) => (n.udp_ports || []).join(", ") || "—",
+      },
       {
         label: "状态",
         value: (n) => (n.disabled ? "已停用" : "已启用"),
@@ -256,8 +277,13 @@ export async function inbounds(ctx) {
       button("复制", () =>
         formDialog(
           "复制入站",
-          nodeFields(protocols, n.protocol),
-          { ...structuredClone(n), id: n.id + "-copy", port: n.port + 1, udp_ports: [] },
+          nodeFields(protocols, n.protocol, true),
+          {
+            ...structuredClone(n),
+            id: n.id + "-copy",
+            port: n.port + 1,
+            udp_ports: [],
+          },
           (v) => {
             items.push(v);
             changeNodes();
@@ -282,6 +308,11 @@ export async function inbounds(ctx) {
             undefined,
             { signal: ctx.signal },
           );
+          if (ctx.signal?.aborted || c !== (await ctx.config())) return;
+          if (impact.accounts.length)
+            throw new Error(
+              "该入站仍有关联权益，请先解除绑定，或编辑并停用入站。",
+            );
           if (
             confirm(
               `删除入站 ${n.id}？\n关联权益：${impact.accounts.join(", ") || "无"}\n可能受影响输出：${impact.outputs.join(", ") || "无"}\n账户下载授权：${impact.download_grants.join(", ") || "无"}\n应用后这些账户不能再通过此入口连接。`,
@@ -296,12 +327,5 @@ export async function inbounds(ctx) {
     ],
   );
   count.textContent = `${items.length} 个入站`;
-  return [
-    host,
-    card(
-      "入站管理",
-      row(add, count),
-      list,
-    ),
-  ];
+  return [host, card("入站管理", row(add, count), list)];
 }

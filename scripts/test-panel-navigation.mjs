@@ -378,7 +378,6 @@ await tick();
 await tick();
 assert.equal(document.querySelector("#page-title").textContent, "运行概览");
 assert.match(document.querySelector("#content").textContent, /常用操作/);
-const { notice } = await import("../internal/manage/panel/dom.js");
 location.hash = "maintenance/backup";
 window.dispatchEvent(new Event("hashchange"));
 await tick(); await tick();
@@ -399,7 +398,6 @@ const afterNavigation = taskReads();
 streams[0].overview({ data: JSON.stringify({ ...snapshot, task_counts: { ...snapshot.task_counts, active: 3 } }) });
 await tick();
 assert.equal(taskReads(), afterNavigation, "retired task view kept reading");
-clearTimeout(notice.timer);
 dom.window.close();
 console.log(
   "Panel navigation checks passed: task-oriented groups, section search, roles, lazy reads, cancellation, sparse drafts, refresh budgets and browser history.",

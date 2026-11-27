@@ -174,7 +174,7 @@ func usedPortRanges(app App, settings VPNSettings) ([]portRange, error) {
 	return ranges, nil
 }
 
-func allocationPorts(root string, app App, settings VPNSettings) (map[int]bool, []portRange, error) {
+func allocationPorts(root string, app App, settings VPNSettings, subscription subscriptionSettings) (map[int]bool, []portRange, error) {
 	used := usedPorts(app, settings)
 	panel := PanelOptions{Listen: "127.0.0.1:2096"}
 	if _, err := ReadJSON(filepath.Join(root, "panel.json"), &panel); err != nil {
@@ -191,10 +191,6 @@ func allocationPorts(root string, app App, settings VPNSettings) (map[int]bool, 
 	used[port] = true
 	ranges, err := usedPortRanges(app, settings)
 	if err != nil {
-		return nil, nil, err
-	}
-	var subscription subscriptionSettings
-	if _, err := ReadJSON(filepath.Join(root, "subscription.json"), &subscription); err != nil {
 		return nil, nil, err
 	}
 	if subscription.Enabled {

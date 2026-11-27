@@ -1,4 +1,14 @@
-import { api } from "./api.js";
+import { api, mutate } from "./api.js";
+
+/** @param {import('./contracts.js').InboundPreparation} input
+ * @param {AbortSignal} [signal] @param {typeof api} [request] */
+export const prepareInbound = (input, signal, request = api) =>
+  mutate("/api/preset", input, signal, request);
+
+/** @param {import('./contracts.js').CountryPreparation} input
+ * @param {AbortSignal} [signal] @param {typeof api} [request] */
+export const prepareCountry = (input, signal, request = api) =>
+  mutate("/api/country", input, signal, request);
 
 /** @param {AbortSignal} [signal] @param {typeof api} [request]
  * @returns {Promise<import('./contracts.js').OutboundOptions>} */

@@ -29,7 +29,7 @@ function globals(window) {
   };
 }
 globals(dom.window);
-const { formDialog, notice } = await import("../internal/manage/panel/ui.js");
+const { formDialog } = await import("../internal/manage/panel/ui.js");
 let saved = 0,
   release;
 formDialog("保存", [], {}, () => {
@@ -177,7 +177,6 @@ authError = "expired";
 sources.at(-1).onerror();
 await retry();
 assert.equal(document.querySelector("#shell").hidden, true);
-clearTimeout(notice.timer);
 
 // Hiding a page cancels a pending reconnect check, including its network I/O.
 const { overviewStream } = await import("../internal/manage/panel/live.js");

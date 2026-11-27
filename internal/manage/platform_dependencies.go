@@ -5,8 +5,17 @@ import (
 	"errors"
 	"slices"
 
+	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 )
+
+func (s *PlatformService) validateInboundBindings(ctx context.Context, c PlatformConfig) error {
+	nodes := make([]application.BoundInbound, 0, len(c.App.Nodes))
+	for _, node := range c.App.Nodes {
+		nodes = append(nodes, application.BoundInbound{ID: node.ID, Protocol: node.Protocol})
+	}
+	return application.ValidateInboundBindings(ctx, s.Accounts, normalScope, nodes)
+}
 
 // InboundImpact reports references without exposing authentication material.
 func (s *PlatformService) InboundImpact(ctx context.Context, scope, id string) (Object, error) {
