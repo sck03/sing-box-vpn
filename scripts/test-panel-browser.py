@@ -137,7 +137,8 @@ def check(browser, base):
         page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(base + "/#subscriptions/status")
     expect(page.get_by_role("heading", name="订阅输出", exact=True)).to_be_visible()
-    expect(page.get_by_text("已发布", exact=True)).to_be_visible()
+    output = page.get_by_role("row").filter(has=page.get_by_role("cell", name="账户订阅", exact=True))
+    expect(output.get_by_role("cell", name="可用", exact=True)).to_be_visible()
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     if screenshots:
         page.screenshot(path=os.path.join(screenshots, "subscription-status.png"), full_page=True)
