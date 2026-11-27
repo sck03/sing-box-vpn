@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 func TestManualHistoryPreservesWork(t *testing.T) {
@@ -12,7 +14,7 @@ func TestManualHistoryPreservesWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	id, err := s.Queue(t.Context(), "service", "admin", []byte("{}"), 0, nil)
+	id, err := s.Queue(t.Context(), "service", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte("{}"), 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +46,7 @@ func TestManualHistoryPreservesWork(t *testing.T) {
 	if err = s.Acknowledge(t.Context(), id); err != nil {
 		t.Fatal(err)
 	}
-	pending, err := s.Queue(t.Context(), "service", "admin", []byte("{}"), 0, nil)
+	pending, err := s.Queue(t.Context(), "service", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte("{}"), 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +63,7 @@ func TestPanelRestartSurvivesRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	id, _ := s.Queue(t.Context(), "panel-restart", "admin", []byte("{}"), 0, nil)
+	id, _ := s.Queue(t.Context(), "panel-restart", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte("{}"), 0, nil)
 	if _, err = s.ClaimLane(t.Context(), "control"); err != nil {
 		t.Fatal(err)
 	}
@@ -92,12 +94,12 @@ func TestHistoryAlwaysIncludesOldActiveTask(t *testing.T) {
 	if err = s.SetHistoryPolicy(t.Context(), HistoryPolicy{Count: 20, Days: 1, ResultBytes: 256 << 10}); err != nil {
 		t.Fatal(err)
 	}
-	active, err := s.Queue(t.Context(), "service", "admin", []byte("{}"), 0, nil)
+	active, err := s.Queue(t.Context(), "service", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte("{}"), 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 60; i++ {
-		id, err := s.Queue(t.Context(), "service", "admin", []byte("{}"), 0, nil)
+		id, err := s.Queue(t.Context(), "service", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte("{}"), 0, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

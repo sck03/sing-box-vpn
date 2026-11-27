@@ -86,7 +86,7 @@ func TestPublicationValidCDNPreviewApplyAndAccountExport(t *testing.T) {
 	if len(preview.Deployment.Changes) != 0 || preview.Deployment.RuntimeObserved {
 		t.Fatal("publication-only edit planned restarts", preview.Deployment)
 	}
-	id, err := service.QueueApply(ctx, config, 1, "admin")
+	id, err := service.QueueApply(ctx, config, 1, domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser})
 	if err != nil {
 		t.Fatal(err)
 	}

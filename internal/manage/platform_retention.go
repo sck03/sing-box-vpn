@@ -2,8 +2,9 @@ package manage
 
 import (
 	"context"
-	"errors"
 	"time"
+
+	"github.com/sck03/sing-box-vpn/internal/application"
 )
 
 // History reclamation owns a separate bounded worker. Slow SQLite maintenance
@@ -17,13 +18,22 @@ func (s *PlatformService) runRetention(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case now := <-timer.C:
-			maintenance, stop := context.WithTimeout(ctx, 30*time.Second)
-			err := errors.Join(s.Accounts.PruneHistory(maintenance, now), s.Store.PruneHistory(maintenance, now), s.pruneCertificates(maintenance, now))
-			if err != nil {
-				_ = s.Auth.Audit(maintenance, "scheduler", "history-retention", "", "failed")
-			}
-			stop()
-			timer.Reset(time.Hour)
+			retry := s.retainHistory(ctx, now)
+			timer.Reset(retry)
 		}
 	}
+}
+
+type certificateHistory struct{ service *PlatformService }
+
+func (c certificateHistory) PruneHistory(ctx context.Context, now time.Time) error {
+	return c.service.pruneCertificates(ctx, now)
+}
+
+func (s *PlatformService) retainHistory(ctx context.Context, now time.Time) time.Duration {
+	retention := application.HistoryRetention{Accounts: s.Accounts, Tasks: s.Store, Certificates: certificateHistory{s}}
+	if retention.Run(ctx, now, func(operation string, err error) { s.schedulerResult(ctx, operation, err) }) {
+		return 5 * time.Minute
+	}
+	return time.Hour
 }

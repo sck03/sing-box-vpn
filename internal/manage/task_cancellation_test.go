@@ -3,15 +3,15 @@ package manage
 import (
 	"context"
 	"errors"
-	"github.com/sck03/sing-box-vpn/internal/application"
-	"github.com/sck03/sing-box-vpn/internal/domain"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 func TestProbeCancellationBeforeAndAfterRegistration(t *testing.T) {
@@ -26,7 +26,7 @@ func TestProbeCancellationBeforeAndAfterRegistration(t *testing.T) {
 				t.Fatal(err)
 			}
 			service := &PlatformService{Store: store}
-			id, err := store.QueueTask(t.Context(), "probe", "outbound-probe", "admin", []byte("{}"))
+			id, err := store.QueueTask(t.Context(), "probe", "outbound-probe", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte("{}"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -82,7 +82,7 @@ func TestRunningOutboundCancellationStopsNetworkAndFinalizes(t *testing.T) {
 		close(disconnected)
 	}))
 	defer server.Close()
-	id, err := service.Queue(t.Context(), application.TaskCommand{Operation: "outbound-probe", ID: "direct", Value: server.URL}, "admin")
+	id, err := service.Queue(t.Context(), application.TaskCommand{Operation: "outbound-probe", ID: "direct", Value: server.URL}, domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser})
 	if err != nil {
 		t.Fatal(err)
 	}

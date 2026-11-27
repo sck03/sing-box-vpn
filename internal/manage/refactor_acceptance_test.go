@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	"github.com/sck03/sing-box-vpn/internal/runtimeconfig"
 )
 
@@ -18,7 +19,7 @@ func TestPreviewAndSaveRejectUnsupportedManagedTransport(t *testing.T) {
 	s, config, _ := platformFixture(t, root, core)
 	config.App.Advanced.DNS = Object{"servers": []Object{{"type": "local", "tag": "dns-local"}, {"type": "quic", "tag": "dns-audit", "server": "1.1.1.1"}}, "final": "dns-audit"}
 	_, previewErr := s.PreviewConfiguration(t.Context(), config)
-	_, saveErr := s.QueueApply(t.Context(), config, 1, "test")
+	_, saveErr := s.QueueApply(t.Context(), config, 1, domain.TaskSubmission{Actor: "test", Source: domain.TaskUser})
 	for _, err := range []error{previewErr, saveErr} {
 		var field *runtimeconfig.FieldError
 		if !errors.As(err, &field) || field.Field != "dns.servers[1].type" {

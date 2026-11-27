@@ -6,18 +6,20 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/sck03/sing-box-vpn/internal/accounting"
-	"github.com/sck03/sing-box-vpn/internal/adminauth"
-	"github.com/sck03/sing-box-vpn/internal/backuparchive"
-	"github.com/sck03/sing-box-vpn/internal/certificates"
-	"github.com/sck03/sing-box-vpn/internal/controlstore"
-	"github.com/sck03/sing-box-vpn/internal/database"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
 	"time"
+
+	"github.com/sck03/sing-box-vpn/internal/accounting"
+	"github.com/sck03/sing-box-vpn/internal/adminauth"
+	"github.com/sck03/sing-box-vpn/internal/backuparchive"
+	"github.com/sck03/sing-box-vpn/internal/certificates"
+	"github.com/sck03/sing-box-vpn/internal/controlstore"
+	"github.com/sck03/sing-box-vpn/internal/database"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 const maxPlatformBackup = backuparchive.MaxArchive
@@ -464,7 +466,7 @@ func (s *PlatformService) servePlatformBackup(w http.ResponseWriter, r *http.Req
 	}
 	if err == nil {
 		var id int64
-		id, err = s.QueueApply(r.Context(), c, v.Revision, actor)
+		id, err = s.QueueApply(r.Context(), c, v.Revision, domain.TaskSubmission{Actor: actor, Source: domain.TaskUser})
 		if err == nil {
 			jsonResponse(w, Object{"task_id": id, "ledger": "current ledger and revocations retained"})
 			return
@@ -513,7 +515,7 @@ func restoreDisasterFrom(ctx context.Context, root string, source io.Reader, pas
 	if err != nil {
 		return err
 	}
-	_, err = db.ExecContext(ctx, `DELETE FROM admin_sessions; DELETE FROM administrators; UPDATE accounts SET disabled=1,revision=revision+1; UPDATE download_grants SET revoked=1; DELETE FROM control_tasks; DELETE FROM runtime_state; UPDATE credential_publications SET published=0,loaded=0;`)
+	_, err = db.ExecContext(ctx, `DELETE FROM admin_sessions; DELETE FROM administrators; UPDATE accounts SET disabled=1,revision=revision+1; UPDATE download_grants SET revoked=1; DELETE FROM control_tasks; DELETE FROM task_requests; DELETE FROM runtime_state; UPDATE credential_publications SET published=0,loaded=0;`)
 	if err == nil {
 		raw, e := encodePlatform(c)
 		err = e

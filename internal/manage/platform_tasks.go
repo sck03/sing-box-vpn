@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"github.com/sck03/sing-box-vpn/internal/application"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 // taskInput is persisted internally. Public commands cannot set scheduling policy.
@@ -22,7 +23,10 @@ func (a taskInput) Validate() error {
 	return a.TaskCommand.ValidateScheduledSubscription()
 }
 
-func (s *PlatformService) Queue(ctx context.Context, a application.TaskCommand, actor string) (int64, error) {
+func (s *PlatformService) Queue(ctx context.Context, a application.TaskCommand, submission domain.TaskSubmission) (int64, error) {
+	if id, err := s.Store.SubmittedTask(ctx, submission); err != nil || id != 0 {
+		return id, err
+	}
 	if err := a.Validate(); err != nil {
 		return 0, err
 	}
@@ -42,6 +46,9 @@ func (s *PlatformService) Queue(ctx context.Context, a application.TaskCommand, 
 				return 0, err
 			}
 			if state.Revision != state.AppliedRevision {
+				if id, err := s.Store.SubmittedTask(ctx, submission); err != nil || id != 0 {
+					return id, err
+				}
 				return 0, errors.New("apply or resolve the pending configuration before changing gateway state")
 			}
 			c, err := decodePlatform(state.Applied)
@@ -52,17 +59,17 @@ func (s *PlatformService) Queue(ctx context.Context, a application.TaskCommand, 
 				return 0, errors.New("configure a gateway country first")
 			}
 			c.Gateway["enabled"] = operation == "start"
-			return s.QueueApply(ctx, c, state.Revision, actor)
+			return s.QueueApply(ctx, c, state.Revision, submission)
 		}
 	}
-	return s.queueTask(ctx, taskInput{TaskCommand: a}, actor)
+	return s.queueTask(ctx, taskInput{TaskCommand: a}, submission)
 }
 
 func (s *PlatformService) queueAutomaticSubscription(ctx context.Context, operation string) (int64, error) {
-	return s.queueTask(ctx, taskInput{TaskCommand: application.TaskCommand{Operation: "subscription", Subscription: application.SubscriptionCommand{Operation: operation}}, Automatic: true}, "scheduler")
+	return s.queueTask(ctx, taskInput{TaskCommand: application.TaskCommand{Operation: "subscription", Subscription: application.SubscriptionCommand{Operation: operation}}, Automatic: true}, domain.TaskSubmission{Actor: "scheduler", Source: domain.TaskScheduler})
 }
 
-func (s *PlatformService) queueTask(ctx context.Context, a taskInput, actor string) (int64, error) {
+func (s *PlatformService) queueTask(ctx context.Context, a taskInput, submission domain.TaskSubmission) (int64, error) {
 	if err := a.Validate(); err != nil {
 		return 0, err
 	}
@@ -70,7 +77,7 @@ func (s *PlatformService) queueTask(ctx context.Context, a taskInput, actor stri
 	if err != nil {
 		return 0, err
 	}
-	id, err := s.Store.QueueTask(ctx, a.Lane(), a.Operation, actor, data)
+	id, err := s.Store.QueueTask(ctx, a.Lane(), a.Operation, submission, data)
 	if err == nil {
 		s.signal(a.Lane())
 	}

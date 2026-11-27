@@ -16,3 +16,10 @@ state.json
 *.auth
 
 node_modules/
+# Accidental root-level development outputs belong under .test or .build.
+/*.db
+/*.db-wal
+/*.db-shm
+/*.exe
+/*.prof
+/coverage.out

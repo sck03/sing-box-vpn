@@ -97,7 +97,13 @@ func (s *Store) commitReservations(batch []*reservationRequest, results []reserv
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err == nil {
 		defer tx.Rollback()
+		// Reserve the writer once per batch, before quota/lease reads and before
+		// savepoints. A rejected row cannot release the cross-process write lock.
+		_, err = tx.ExecContext(ctx, `UPDATE accounts SET charged=charged WHERE id=?`, batch[0].account)
 		for i, r := range batch {
+			if err != nil {
+				break
+			}
 			if results[i].err = r.ctx.Err(); results[i].err != nil {
 				continue
 			}

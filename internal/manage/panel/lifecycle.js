@@ -6,10 +6,21 @@ export function pageContext(context, signal) {
   // Never inherit the parent's dispatcher: it delegates back to this view.
   view.updateOverview = null;
   view.signal = signal;
-  view.request = (path, body, options = {}) => api(path, body, {
-    ...options,
-    signal: options.signal ? AbortSignal.any([signal, options.signal]) : signal,
-  });
+  view.render = () => {
+    if (!signal.aborted) return context.render();
+  };
+  view.request = (path, body, options = {}) =>
+    api(path, body, {
+      ...options,
+      signal: options.signal
+        ? AbortSignal.any([signal, options.signal])
+        : signal,
+    });
   view.workflowRequest = api;
   return view;
+}
+
+// A completed write may refresh only its still-current page and dialog owner.
+export function refreshAfterSave(context, editor) {
+  if (editor.active() && !context.signal?.aborted) return context.render();
 }

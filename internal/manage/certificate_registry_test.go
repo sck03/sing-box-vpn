@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 func TestCertificateRegistryPreparationAndDuplicateImport(t *testing.T) {
@@ -36,7 +38,7 @@ func TestCertificateRegistryPreparationAndDuplicateImport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.Store.Queue(t.Context(), "apply", "test", []byte(`{}`), state.Revision, raw); err != nil {
+	if _, err = s.Store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte(`{}`), state.Revision, raw); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = s.ImportCertificate(t.Context(), CertificateImport{ID: initial[0].ID, Domain: initial[0].Domain, Certificate: "invalid", Key: "invalid"}); err == nil {
@@ -52,7 +54,7 @@ func TestCertificateScheduleSurvivesFailedUnrelatedApply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := s.Store.Queue(t.Context(), "apply", "test", []byte(`{}`), state.Revision, raw)
+	id, err := s.Store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte(`{}`), state.Revision, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +67,7 @@ func TestCertificateScheduleSurvivesFailedUnrelatedApply(t *testing.T) {
 	// A failed desired change must not suppress or replace the live registry.
 	c.Certificates = []CertificateAsset{{ID: "pending", Provider: "acme", Domain: "pending.example.test"}}
 	raw, _ = encodePlatform(c)
-	id, err = s.Store.Queue(t.Context(), "apply", "test", []byte(`{}`), state.Revision+1, raw)
+	id, err = s.Store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte(`{}`), state.Revision+1, raw)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -30,7 +30,7 @@ func TestCredentialPublicationRetryDoesNotRepeatRotation(t *testing.T) {
 		t.Fatal(err)
 	}
 	command := application.AccountCommand{Operation: "rotate", ID: c.ID, Generation: 1, Scope: "normal"}
-	id, err := s.Queue(ctx, application.TaskCommand{Operation: "account", Account: command}, "test")
+	id, err := s.Queue(ctx, application.TaskCommand{Operation: "account", Account: command}, domain.TaskSubmission{Actor: "test", Source: domain.TaskUser})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestCountryNormalizesNullMapsAndBuildIgnoresBrokenProjections(t *testing.T)
 	c.VPN.Profiles = nil
 	c.VPNSecrets = nil
 	c.App.Name = "unsaved-country-draft"
-	if _, err := s.Store.Queue(t.Context(), "apply", "test", []byte(`{}`), 1, mustJSON(t, c)); err != nil {
+	if _, err := s.Store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte(`{}`), 1, mustJSON(t, c)); err != nil {
 		t.Fatal(err)
 	}
 	prepared, err := prepareCountry(s.Root, c, "JP")
@@ -161,7 +161,7 @@ func TestCertificateGarbageCollectionProtectsReferencesAndGrace(t *testing.T) {
 	if err := AtomicJSON(filepath.Join(root, "panel.json"), PanelOptions{Listen: "127.0.0.1:2096", Certificate: filepath.Join(root, "certificates/panel/cert.pem"), Key: filepath.Join(root, "certificates/panel/key.pem")}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Store.Queue(t.Context(), "apply", "test", []byte(`{}`), 1, mustJSON(t, c)); err != nil {
+	if _, err := s.Store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte(`{}`), 1, mustJSON(t, c)); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.pruneCertificates(t.Context(), now); err != nil {

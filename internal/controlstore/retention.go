@@ -34,5 +34,8 @@ func (s *Store) PruneHistory(ctx context.Context, now time.Time) error {
 	if err != nil {
 		return err
 	}
+	if err := pruneTaskRequests(ctx, tx, now); err != nil {
+		return err
+	}
 	return tx.Commit()
 }

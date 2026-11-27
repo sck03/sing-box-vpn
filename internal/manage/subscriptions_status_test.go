@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sck03/sing-box-vpn/internal/adminauth"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
@@ -98,7 +99,7 @@ func TestSubscriptionActivityShowsResourcesAndWebhookLifecycle(t *testing.T) {
 		t.Fatal("viewer accessed private operational status", denied.Code)
 	}
 	config.Subscriptions.Webhook = "https://example.com/?token=state-secret"
-	if _, err = service.Store.Queue(t.Context(), "apply", "admin", []byte(`{}`), 1, mustJSON(t, config)); err != nil {
+	if _, err = service.Store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte(`{}`), 1, mustJSON(t, config)); err != nil {
 		t.Fatal(err)
 	}
 	state := httptest.NewRecorder()

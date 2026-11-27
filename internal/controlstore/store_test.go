@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 func TestIdleClaimDoesNotWaitForAccountingWriter(t *testing.T) {
@@ -49,11 +51,11 @@ func TestTaskRecoveryAndConfigurationRevisions(t *testing.T) {
 	if e = s.Initialize(ctx, []byte(`{"value":1}`)); e != nil {
 		t.Fatal(e)
 	}
-	id, e := s.Queue(ctx, "apply", "admin", []byte(`{"revision":2}`), 1, []byte(`{"value":2}`))
+	id, e := s.Queue(ctx, "apply", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte(`{"revision":2}`), 1, []byte(`{"value":2}`))
 	if e != nil {
 		t.Fatal(e)
 	}
-	if _, e = s.Queue(ctx, "apply", "admin", []byte(`{}`), 2, []byte(`{}`)); e == nil {
+	if _, e = s.Queue(ctx, "apply", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte(`{}`), 2, []byte(`{}`)); e == nil {
 		t.Fatal("overlapping apply accepted")
 	}
 	checkpoint := []byte(`{"revision":2,"services":{"active":["sb-core"],"enabled":["sb-core"]}}`)
@@ -92,10 +94,10 @@ func TestTaskRecoveryAndConfigurationRevisions(t *testing.T) {
 	if e = s.CheckpointApply(ctx, id, checkpoint); !errors.Is(e, ErrConflict) {
 		t.Fatal("finished task accepted an execution checkpoint", e)
 	}
-	if _, e = s.Queue(ctx, "apply", "admin", []byte(`{}`), 1, []byte(`{}`)); !errors.Is(e, ErrConflict) {
+	if _, e = s.Queue(ctx, "apply", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte(`{}`), 1, []byte(`{}`)); !errors.Is(e, ErrConflict) {
 		t.Fatal(e)
 	}
-	id, e = s.Queue(ctx, "account", "admin", []byte(`{"secret":"pending"}`), 0, nil)
+	id, e = s.Queue(ctx, "account", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte(`{"secret":"pending"}`), 0, nil)
 	if e != nil {
 		t.Fatal(e)
 	}

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 func TestBackupWaitsForPublicationAndPreservesRenewal(t *testing.T) {
@@ -72,7 +74,7 @@ func TestRestoredCertificateQueuesRegistration(t *testing.T) {
 	root, core, _ := appFixture(t)
 	s, c, _ := platformFixture(t, root, core)
 	c.Certificates = []CertificateAsset{{ID: "renew", Provider: "acme", Domain: c.App.fixtureProfile().TLSSNI, Email: "test@example.com", Certificate: c.App.fixtureProfile().Certificate, Key: c.App.fixtureProfile().Key}}
-	id, err := s.Store.Queue(t.Context(), "apply", "test", []byte(`{}`), 1, mustJSON(t, c))
+	id, err := s.Store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte(`{}`), 1, mustJSON(t, c))
 	if err != nil {
 		t.Fatal(err)
 	}

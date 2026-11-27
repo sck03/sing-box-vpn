@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 func TestConfigurationViewTracksConfirmedRevision(t *testing.T) {
@@ -24,7 +25,7 @@ func TestConfigurationViewTracksConfirmedRevision(t *testing.T) {
 		t.Fatal(first, revisions, err)
 	}
 	config.App.Name = "next"
-	task, err := store.Queue(t.Context(), "apply", "test", []byte("{}"), 1, mustJSON(t, config))
+	task, err := store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte("{}"), 1, mustJSON(t, config))
 	if err != nil {
 		t.Fatal(err)
 	}

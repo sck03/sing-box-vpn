@@ -5,6 +5,8 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 func TestFailedApplyDoesNotKeepPassingOutcome(t *testing.T) {
@@ -16,7 +18,7 @@ func TestFailedApplyDoesNotKeepPassingOutcome(t *testing.T) {
 	if err = store.Initialize(t.Context(), []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
-	id, err := store.Queue(t.Context(), "apply", "admin", []byte(`{}`), 0, nil)
+	id, err := store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte(`{}`), 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

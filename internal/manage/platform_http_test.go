@@ -3,12 +3,13 @@ package manage
 import (
 	"bytes"
 	"errors"
-	"github.com/sck03/sing-box-vpn/internal/adminauth"
-	"github.com/sck03/sing-box-vpn/internal/domain"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
+
+	"github.com/sck03/sing-box-vpn/internal/adminauth"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 func platformFixture(t *testing.T, root, core string) (*PlatformService, PlatformConfig, adminauth.Session) {
@@ -113,7 +114,7 @@ func TestPanelRolesOriginHostAndCSRF(t *testing.T) {
 			}
 		})
 	}
-	id, e := s.Store.Queue(t.Context(), "apply", "test", []byte(`{}`), 0, nil)
+	id, e := s.Store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte(`{}`), 0, nil)
 	if e != nil {
 		t.Fatal(e)
 	}

@@ -152,7 +152,7 @@ func TestBindingCacheTracksOnlyConfirmedConfiguration(t *testing.T) {
 		t.Fatal("unchanged config copied", err)
 	}
 	config.App.Nodes[0].Disabled = true
-	task, err := store.Queue(t.Context(), "apply", "test", []byte("{}"), 1, mustJSON(t, config))
+	task, err := store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte("{}"), 1, mustJSON(t, config))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +239,7 @@ func TestCandidatePortConflictsDoNotPublish(t *testing.T) {
 			case "forwarding":
 				setFixtureUDPPorts(&config.App, "tuic", []string{fmt.Sprint(port)})
 			}
-			if _, err := service.QueueApply(t.Context(), config, 1, "test"); err == nil {
+			if _, err := service.QueueApply(t.Context(), config, 1, domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}); err == nil {
 				t.Fatal("accepted conflicting ports")
 			}
 			revision, err := service.Store.Revisions(t.Context())

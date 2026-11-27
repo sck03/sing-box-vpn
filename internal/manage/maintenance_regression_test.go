@@ -3,12 +3,13 @@ package manage
 import (
 	"context"
 	"encoding/json"
-	"github.com/sck03/sing-box-vpn/internal/domain"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 func TestPublishedCredentialsDoNotPollStoppedServices(t *testing.T) {
@@ -56,7 +57,7 @@ func TestApplyCheckpointKeepsExecutionBaselineOnReplay(t *testing.T) {
 	if err = s.Store.Initialize(ctx, []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
-	id, err := s.Store.Queue(ctx, "apply", "test", []byte(`{"revision":2}`), 1, []byte(`{}`))
+	id, err := s.Store.Queue(ctx, "apply", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte(`{"revision":2}`), 1, []byte(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +113,7 @@ func TestControlLaneClaimsWhileMaintenanceLockIsBusy(t *testing.T) {
 	if err = lockFile(lock); err != nil {
 		t.Fatal(err)
 	}
-	id, err := s.Store.QueueTask(t.Context(), domain.ControlLane, "program-upgrade", "test", []byte(`{"operation":"program-upgrade"}`))
+	id, err := s.Store.QueueTask(t.Context(), domain.ControlLane, "program-upgrade", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte(`{"operation":"program-upgrade"}`))
 	if err != nil {
 		t.Fatal(err)
 	}

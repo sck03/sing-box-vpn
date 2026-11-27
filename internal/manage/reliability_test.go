@@ -40,7 +40,7 @@ func TestDisabledRequiredAccountDoesNotStopPlatform(t *testing.T) {
 	if _, err := s.build(t.Context(), c); err != nil {
 		t.Fatal(err)
 	}
-	id, err := s.Store.Queue(t.Context(), "apply", "fixture", []byte(`{}`), 1, mustJSON(t, c))
+	id, err := s.Store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "fixture", Source: domain.TaskUser}, []byte(`{}`), 1, mustJSON(t, c))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestRestorePreviewKeepsRevisionUntilApply(t *testing.T) {
 		t.Fatal("preview lost current revision", w.Code, w.Body.String(), err)
 	}
 	config.App.Name = "concurrent-edit"
-	id, err := s.Store.Queue(t.Context(), "apply", "test", []byte(`{}`), preview.Revision, mustJSON(t, config))
+	id, err := s.Store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte(`{}`), preview.Revision, mustJSON(t, config))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestQueuedTaskImmediatelyInvalidatesOverview(t *testing.T) {
 	if _, err := s.overviewSnapshot(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	id, err := s.Queue(t.Context(), application.TaskCommand{Operation: "service", Service: "sb-core", Value: "stop"}, "admin")
+	id, err := s.Queue(t.Context(), application.TaskCommand{Operation: "service", Service: "sb-core", Value: "stop"}, domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser})
 	if err != nil {
 		t.Fatal(err)
 	}

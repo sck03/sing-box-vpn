@@ -3,17 +3,16 @@ package manage
 import (
 	"bytes"
 	"context"
-
-	"github.com/sck03/sing-box-vpn/internal/application"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/sck03/sing-box-vpn/internal/application"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
@@ -84,7 +83,7 @@ func TestSubscriptionRequiredSourceApplyAndRefresh(t *testing.T) {
 	if state.Sources["remote"].Failures != 1 || !bytes.Equal(before, readArtifact(t, root, "normal-provider")) {
 		t.Fatal("transient failure did not retain valid output")
 	}
-	if _, err := service.QueueApply(t.Context(), config, 1, "test"); err == nil {
+	if _, err := service.QueueApply(t.Context(), config, 1, domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}); err == nil {
 		t.Fatal("stale revision accepted")
 	}
 }

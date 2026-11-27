@@ -92,7 +92,7 @@ func TestAccountSubscriptionRecoversWithoutRemoteSources(t *testing.T) {
 				Collections: []sub.Collection{{ID: "all", Name: "All", Sources: []string{"account"}}},
 				Templates:   []sub.Template{{ID: "uri", Version: 1, Client: "uri", Mode: "nodes"}},
 				Outputs:     []sub.Output{{ID: "out", Name: "Output", Collection: "all", Template: "uri"}}}
-			apply, err := s.Store.Queue(ctx, "apply", "test", []byte("{}"), 1, mustJSON(t, c))
+			apply, err := s.Store.Queue(ctx, "apply", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte("{}"), 1, mustJSON(t, c))
 			if err != nil {
 				t.Fatal(err)
 			}

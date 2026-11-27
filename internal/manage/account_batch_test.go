@@ -26,7 +26,7 @@ func TestAccountBatchPublishesOnceAndPreservesIndividualResults(t *testing.T) {
 	for _, id := range []string{"alice", "missing", "bob"} {
 		action := application.TaskCommand{Operation: "account", Account: application.AccountCommand{Operation: "bind", ID: id, Scope: "normal", InboundIDs: []string{c.App.Nodes[0].ID}}}
 		data, _ := json.Marshal(action)
-		if _, err := s.Store.Queue(t.Context(), "account", "admin", data, 0, nil); err != nil {
+		if _, err := s.Store.Queue(t.Context(), "account", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, data, 0, nil); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -64,7 +64,7 @@ func TestDownloadOriginAndIdleScheduler(t *testing.T) {
 	s, c, _ := platformFixture(t, root, core)
 	c.Subscriptions.Sources, c.Subscriptions.Collections, c.Subscriptions.Outputs = nil, nil, nil
 	c.Listener.Enabled, c.Listener.PublicBaseURL = true, "https://download.example/sub/"
-	id, err := s.Store.Queue(t.Context(), "apply", "test", []byte(`{}`), 1, mustJSON(t, c))
+	id, err := s.Store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte(`{}`), 1, mustJSON(t, c))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestGatewayStateUsesDurableConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.Subscriptions.Sources, c.Subscriptions.Collections, c.Subscriptions.Outputs = nil, nil, nil
-	id, err := s.Store.Queue(ctx, "apply", "setup", []byte(`{}`), 1, mustJSON(t, c))
+	id, err := s.Store.Queue(ctx, "apply", domain.TaskSubmission{Actor: "setup", Source: domain.TaskUser}, []byte(`{}`), 1, mustJSON(t, c))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestGatewayStateUsesDurableConfiguration(t *testing.T) {
 	if err = s.Store.Finish(ctx, id, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.Queue(ctx, application.TaskCommand{Operation: "gateway", Config: json.RawMessage(`{"op":"stop"}`)}, "operator"); err != nil {
+	if _, err = s.Queue(ctx, application.TaskCommand{Operation: "gateway", Config: json.RawMessage(`{"op":"stop"}`)}, domain.TaskSubmission{Actor: "operator", Source: domain.TaskUser}); err != nil {
 		t.Fatal(err)
 	}
 	state, err = s.Store.State(ctx)
@@ -194,7 +194,7 @@ func TestGatewayStateUsesDurableConfiguration(t *testing.T) {
 	if err != nil || desired.Gateway["enabled"] != false || state.Revision != 3 || state.AppliedRevision != 2 {
 		t.Fatal(state.Revision, desired.Gateway, err)
 	}
-	if _, err = s.Queue(ctx, application.TaskCommand{Operation: "gateway", Config: json.RawMessage(`{"op":"start"}`)}, "operator"); err == nil {
+	if _, err = s.Queue(ctx, application.TaskCommand{Operation: "gateway", Config: json.RawMessage(`{"op":"start"}`)}, domain.TaskSubmission{Actor: "operator", Source: domain.TaskUser}); err == nil {
 		t.Fatal("pending configuration was overwritten")
 	}
 	// A fresh process reads the durable desired state instead of the projection.

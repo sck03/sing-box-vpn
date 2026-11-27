@@ -1,3 +1,4 @@
+import { refreshAfterSave } from "./lifecycle.js";
 import { api, query, mutate } from "./api.js";
 import { capabilities } from "./capabilities.js";
 import { loadRecords } from "./details.js";
@@ -34,7 +35,9 @@ export async function admins(ctx) {
         { key: "disabled", label: "禁用", type: "bool" },
         {
           key: "password",
-          label: a.revision ? "新密码（留空保持）" : `密码（${policy.min}–${policy.max} 个 UTF-8 字节）`,
+          label: a.revision
+            ? "新密码（留空保持）"
+            : `密码（${policy.min}–${policy.max} 个 UTF-8 字节）`,
           type: "password",
           required: !a.revision,
           minBytes: policy.min,
@@ -42,12 +45,12 @@ export async function admins(ctx) {
         },
       ],
       a,
-      async (v) => {
+      async (v, editor) => {
         const { password, ...admin } = v;
         await mutate("/api/admins", { admin, password });
         notice("管理员已保存，其旧会话已撤销");
         if (v.id === ctx.session.id) ctx.logoutLocal();
-        else ctx.render();
+        else refreshAfterSave(ctx, editor);
       },
     );
   return [

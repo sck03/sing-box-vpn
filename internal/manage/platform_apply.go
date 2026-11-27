@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/sck03/sing-box-vpn/internal/domain"
 
 	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
@@ -22,7 +22,10 @@ type applyServices struct {
 	Enabled []string `json:"enabled"`
 }
 
-func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revision int64, actor string) (int64, error) {
+func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revision int64, submission domain.TaskSubmission) (int64, error) {
+	if id, err := s.Store.SubmittedTask(ctx, submission); err != nil || id != 0 {
+		return id, err
+	}
 	c.normalize()
 	if err := c.Validate(); err != nil {
 		return 0, err
@@ -35,6 +38,9 @@ func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revi
 		return 0, err
 	}
 	if state.Revision != revision {
+		if id, err := s.Store.SubmittedTask(ctx, submission); err != nil || id != 0 {
+			return id, err
+		}
 		return 0, controlstore.ErrConflict
 	}
 	c.Subscriptions.Revision = uint64(revision + 1)
@@ -48,11 +54,17 @@ func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revi
 	// execution validates again against then-current credentials and material.
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if id, err := s.Store.SubmittedTask(ctx, submission); err != nil || id != 0 {
+		return id, err
+	}
 	state, err = s.Store.Revisions(ctx)
 	if err != nil {
 		return 0, err
 	}
 	if state.Revision != revision {
+		if id, err := s.Store.SubmittedTask(ctx, submission); err != nil || id != 0 {
+			return id, err
+		}
 		return 0, controlstore.ErrConflict
 	}
 	if err := s.validateInboundBindings(ctx, c); err != nil {
@@ -68,7 +80,7 @@ func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revi
 		if err := s.validateConfiguredPanelPort(c); err != nil {
 			return err
 		}
-		id, err = s.Store.Queue(ctx, "apply", actor, input, revision, data)
+		id, err = s.Store.Queue(ctx, "apply", submission, input, revision, data)
 		return err
 	})
 	if err == nil {

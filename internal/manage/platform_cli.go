@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
-	"github.com/sck03/sing-box-vpn/internal/application"
-	"github.com/sck03/sing-box-vpn/internal/deployment"
 	"io"
 	"os"
 	"path/filepath"
@@ -15,6 +13,9 @@ import (
 	"time"
 
 	"github.com/sck03/sing-box-vpn/internal/adminauth"
+	"github.com/sck03/sing-box-vpn/internal/application"
+	"github.com/sck03/sing-box-vpn/internal/deployment"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	strict "github.com/sck03/sing-box-vpn/internal/encoding"
 )
 
@@ -193,7 +194,7 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 		if err = decode(&v); err != nil {
 			return err
 		}
-		id, e := s.Queue(ctx, v, "local-cli")
+		id, e := s.Queue(ctx, v, domain.TaskSubmission{Actor: "local-cli", Source: domain.TaskCLI})
 		if e != nil {
 			return e
 		}
@@ -206,7 +207,7 @@ func RunPanel(ctx context.Context, args []string, input io.Reader, output io.Wri
 		if err = decode(&v); err != nil {
 			return err
 		}
-		id, e := s.QueueApply(ctx, v.Config, v.Revision, "local-cli")
+		id, e := s.QueueApply(ctx, v.Config, v.Revision, domain.TaskSubmission{Actor: "local-cli", Source: domain.TaskCLI})
 		if e != nil {
 			return e
 		}

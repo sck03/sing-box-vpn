@@ -1,3 +1,9 @@
+import {
+  taskRequest,
+  settleTaskRequest,
+  setTaskRequestSession,
+} from "./task-requests.js";
+
 /** @typedef {import("./contracts.js").APIError} ErrorDetail */
 export class RequestError extends Error {
   /** @param {string} message @param {number} status @param {ErrorDetail} [detail] */
@@ -35,6 +41,7 @@ export function setCSRF(value) {
   sessionRequests = new AbortController();
   sessionGeneration++;
   csrf = value || "";
+  setTaskRequestSession(csrf);
 }
 /**
  * @param {string} path
@@ -53,6 +60,11 @@ export async function api(
     ...(signal ? [signal] : []),
   ]);
   const multipart = body instanceof FormData;
+  const serialized =
+    body === undefined || multipart ? undefined : JSON.stringify(body);
+  const pendingSubmission = taskRequest(path, serialized);
+  const submission = pendingSubmission ? await pendingSubmission : undefined;
+  requestSignal.throwIfAborted();
   const response = await fetch(path, {
     method: body === undefined ? "GET" : "POST",
     credentials: "same-origin",
@@ -62,9 +74,12 @@ export async function api(
         ? {}
         : multipart
           ? { "X-CSRF-Token": csrf }
-          : { "Content-Type": "application/json", "X-CSRF-Token": csrf },
-    body:
-      body === undefined ? undefined : multipart ? body : JSON.stringify(body),
+          : {
+              "Content-Type": "application/json",
+              "X-CSRF-Token": csrf,
+              ...(submission ? { "Idempotency-Key": submission.id } : {}),
+            },
+    body: body === undefined ? undefined : multipart ? body : serialized,
   });
   const stale = () => {
     requestSignal.throwIfAborted();
@@ -84,22 +99,37 @@ export async function api(
       detail,
     );
     stale();
+    if (
+      response.status >= 400 &&
+      response.status < 500 &&
+      response.status !== 408 &&
+      response.status !== 429
+    )
+      settleTaskRequest(submission);
     throw error;
   }
   const value = await (blob ? response.blob() : response.json());
   stale();
+  if (
+    submission &&
+    (!Number.isSafeInteger(value?.task_id) || value.task_id < 1)
+  )
+    throw new RequestError("任务响应无效，请重试以确认原任务", 502);
+  settleTaskRequest(submission);
   return value;
 }
 
 /** @template {keyof import("./contracts.js").QueryResponses} Path
  * @param {Path} path @param {AbortSignal} [signal] @param {typeof api} [request]
  * @returns {Promise<import("./contracts.js").QueryResponses[Path]>} */
-export const query = (path, signal, request = api) => request(path, undefined, { signal });
+export const query = (path, signal, request = api) =>
+  request(path, undefined, { signal });
 /** @template {keyof import("./contracts.js").MutationContracts} Path
  * @param {Path} path @param {import("./contracts.js").MutationContracts[Path]["input"]} input
  * @param {AbortSignal} [signal] @param {typeof api} [request]
  * @returns {Promise<import("./contracts.js").MutationContracts[Path]["result"]>} */
-export const mutate = (path, input, signal, request = api) => request(path, input, { signal });
+export const mutate = (path, input, signal, request = api) =>
+  request(path, input, { signal });
 
 /** @param {import("./contracts.js").ConfigurationSave} input
  * @returns {Promise<import("./contracts.js").QueuedTask>} */
@@ -117,8 +147,7 @@ export const getTasks = (before = 0, signal) =>
   api("/api/tasks?before=" + before + "&limit=50", undefined, { signal });
 /** @param {AbortSignal} [signal]
  * @returns {Promise<import("./contracts.js").OverviewSnapshot>} */
-export const getOverview = (signal) =>
-  query("/api/overview", signal);
+export const getOverview = (signal) => query("/api/overview", signal);
 /** @param {AbortSignal} [signal] @param {typeof api} [request]
  * @returns {Promise<import("./contracts.js").SubscriptionStatusResponse>} */
 export const getSubscriptionStatus = (signal, request = api) =>
@@ -186,7 +215,9 @@ export const exportAccount = (input, request = api) =>
 /** @param {string} id @param {AbortSignal} [signal] @param {typeof api} [request]
  * @returns {Promise<import("./contracts.js").AccountPortOption[]>} */
 export const getAccountPorts = (id, signal, request = api) =>
-  request("/api/accounts/ports?id=" + encodeURIComponent(id), undefined, { signal });
+  request("/api/accounts/ports?id=" + encodeURIComponent(id), undefined, {
+    signal,
+  });
 /** @param {AbortSignal} [signal] @param {typeof api} [request]
  * @returns {Promise<import("./contracts.js").GatewayStatus>} */
 export const getGatewayStatus = (signal, request = api) =>

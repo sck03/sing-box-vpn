@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/sck03/sing-box-vpn/internal/application"
-	"github.com/sck03/sing-box-vpn/internal/serverconfig"
-	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 	"path/filepath"
 	"testing"
+
+	"github.com/sck03/sing-box-vpn/internal/application"
+	"github.com/sck03/sing-box-vpn/internal/domain"
+	"github.com/sck03/sing-box-vpn/internal/serverconfig"
+	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
 // Fixtures use the production compiler; only synthetic credentials and explicit
@@ -162,7 +164,7 @@ func fixtureSubscriptionNodes(app App, settings VPNSettings, private map[string]
 // Apply through the same revision checks and durable task used by HTTP clients.
 func applyFixture(t *testing.T, s *PlatformService, c PlatformConfig, revision int64) error {
 	t.Helper()
-	_, err := s.QueueApply(t.Context(), c, revision, "test")
+	_, err := s.QueueApply(t.Context(), c, revision, domain.TaskSubmission{Actor: "test", Source: domain.TaskUser})
 	if err != nil {
 		return err
 	}

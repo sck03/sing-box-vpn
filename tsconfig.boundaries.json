@@ -3,6 +3,7 @@
   "compilerOptions": { "strict": true },
   "include": [
     "internal/manage/panel/api.js",
+    "internal/manage/panel/task-requests.js",
     "internal/manage/panel/account-api.js",
     "internal/manage/panel/grant-api.js",
     "internal/manage/panel/configuration-api.js",

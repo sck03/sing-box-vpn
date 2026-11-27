@@ -42,14 +42,42 @@ export async function overview(ctx) {
       : getOverview(ctx.signal)));
   ctx.observeRevision(data.revision);
   const health = el("div", { class: "health-summary", role: "status" });
-  const background = el("section", { class: "card background-health", role: "status" });
+  const background = el("section", {
+    class: "card background-health",
+    role: "status",
+  });
   function updateHealth(next) {
     const issues = next.background || [];
-    const names = { "credential-publication": "凭据发布", "subscription-schedule": "订阅调度", "panel-restart": "面板重启", "program-upgrade": "程序更新", "tunnel-sync": "隧道同步", "certificate-schedule": "证书调度", "audit-write": "审计写入" };
+    const names = {
+      "credential-publication": "凭据发布",
+      "subscription-schedule": "订阅调度",
+      "panel-restart": "面板重启",
+      "program-upgrade": "程序更新",
+      "tunnel-sync": "隧道同步",
+      "certificate-schedule": "证书调度",
+      "audit-write": "审计写入",
+      "account-retention": "权益历史清理",
+      "task-retention": "任务历史清理",
+      "certificate-retention": "证书材料清理",
+    };
     background.hidden = !issues.length;
-    background.replaceChildren(el("h2", {}, "后台操作需要关注"), ...issues.map((issue) =>
-      el("div", {}, help(`${names[issue.operation] || issue.operation}：${issue.message}`),
-        el("small", { class: "muted" }, `连续失败 ${issue.failures} 次 · 首次 ${date(issue.since)} · 最近 ${date(issue.last_failure)}`))));
+    background.replaceChildren(
+      el("h2", {}, "后台操作需要关注"),
+      ...issues.map((issue) =>
+        el(
+          "div",
+          {},
+          help(
+            `${names[issue.operation] || issue.operation}：${issue.message}`,
+          ),
+          el(
+            "small",
+            { class: "muted" },
+            `连续失败 ${issue.failures} 次 · 首次 ${date(issue.since)} · 最近 ${date(issue.last_failure)}`,
+          ),
+        ),
+      ),
+    );
     const failed = next.services.filter(
       (s) => s.ActiveState === "failed",
     ).length;

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"path/filepath"
 	"testing"
+
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 func TestDesiredStateKeepsPendingAndAppliedRevisions(t *testing.T) {
@@ -16,7 +18,7 @@ func TestDesiredStateKeepsPendingAndAppliedRevisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	desired := []byte(`{"value":2}`)
-	if _, err = s.Queue(t.Context(), "apply", "admin", []byte(`{}`), 1, desired); err != nil {
+	if _, err = s.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte(`{}`), 1, desired); err != nil {
 		t.Fatal(err)
 	}
 	state, err := s.DesiredState(t.Context())

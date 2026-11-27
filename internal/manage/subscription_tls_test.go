@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 func TestSubscriptionHTTPSListener(t *testing.T) {
@@ -120,7 +122,7 @@ func TestRestorePreviewUsesArchivedListenerCertificate(t *testing.T) {
 		t.Fatal(err)
 	}
 	config.Listener = subscriptionSettings{Enabled: true, Listen: "127.0.0.1", Port: 2097, PublicBaseURL: "https://sub.example.test:2097", Certificate: cert, Key: key}
-	id, err := s.Store.Queue(t.Context(), "apply", "test", []byte(`{}`), 1, mustJSON(t, config))
+	id, err := s.Store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte(`{}`), 1, mustJSON(t, config))
 	if err != nil {
 		t.Fatal(err)
 	}

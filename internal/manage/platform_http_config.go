@@ -134,7 +134,12 @@ func (s *PlatformService) serveConfiguration(w http.ResponseWriter, r *http.Requ
 					return true
 				}
 				var id int64
-				id, err = s.QueueApply(ctx, v.Config, v.Revision, access.actor)
+				submission, submitErr := taskSubmission(r, access.actor, v)
+				if submitErr != nil {
+					platformError(w, submitErr)
+					return true
+				}
+				id, err = s.QueueApply(ctx, v.Config, v.Revision, submission)
 				if err == nil {
 					jsonResponse(w, QueuedTask{TaskID: id})
 					return true

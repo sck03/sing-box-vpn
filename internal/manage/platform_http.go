@@ -85,6 +85,12 @@ func platformError(w http.ResponseWriter, err error) {
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		status, detail.Code, detail.Retryable = http.StatusServiceUnavailable, "temporarily_unavailable", true
 		w.Header().Set("Retry-After", "1")
+	case errors.Is(err, controlstore.ErrRequestConflict):
+		status, detail.Code, detail.Message = http.StatusConflict, "request_conflict", "同一请求标识不能用于不同操作，请核对提交内容"
+	case errors.Is(err, controlstore.ErrRequestExpired):
+		status, detail.Code, detail.Message = http.StatusGone, "task_history_removed", "上一次操作已受理，但任务记录已清理；请核对实际结果后再发起新操作"
+	case errors.Is(err, controlstore.ErrRequestLimit):
+		status, detail.Code, detail.Message, detail.Retryable = http.StatusServiceUnavailable, "temporarily_unavailable", "任务请求记录已满，请稍后重试", true
 	case errors.Is(err, controlstore.ErrConflict), errors.Is(err, accounting.ErrConflict), errors.Is(err, adminauth.ErrConflict):
 		status, detail.Code = http.StatusConflict, "revision_conflict"
 	case errors.Is(err, adminauth.ErrUnauthorized):

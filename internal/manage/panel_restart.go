@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/sck03/sing-box-vpn/internal/command"
-	"github.com/sck03/sing-box-vpn/internal/controlstore"
-	"github.com/sck03/sing-box-vpn/internal/domain"
 	"net/http"
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/sck03/sing-box-vpn/internal/command"
+	"github.com/sck03/sing-box-vpn/internal/controlstore"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 const panelRestartFile = "panel-restart.json"
@@ -50,8 +51,17 @@ func (s *PlatformService) servePanelRestart(w http.ResponseWriter, r *http.Reque
 	if !a.audit("panel-restart", "sb-panel") {
 		return true
 	}
+	submission, err := taskSubmission(r, a.actor, v)
+	if err != nil {
+		platformError(w, err)
+		return true
+	}
 	var id int64
-	err := withStartupLock(r.Context(), s.Root, func() error {
+	err = withStartupLock(r.Context(), s.Root, func() error {
+		if previous, e := s.Store.SubmittedTask(r.Context(), submission); e != nil || previous != 0 {
+			id = previous
+			return e
+		}
 		if pending, err := s.Store.PendingKind(r.Context(), "panel-restart"); err != nil {
 			return err
 		} else if pending {
@@ -72,7 +82,7 @@ func (s *PlatformService) servePanelRestart(w http.ResponseWriter, r *http.Reque
 		if err != nil {
 			return err
 		}
-		id, err = s.Store.Queue(r.Context(), "panel-restart", a.actor, data, 0, nil)
+		id, err = s.Store.Queue(r.Context(), "panel-restart", submission, data, 0, nil)
 		return err
 	})
 	if err != nil {

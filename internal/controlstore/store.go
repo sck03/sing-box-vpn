@@ -7,9 +7,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"time"
+
 	"github.com/sck03/sing-box-vpn/internal/database"
 	"github.com/sck03/sing-box-vpn/internal/domain"
-	"time"
 )
 
 var ErrConflict = errors.New("configuration revision conflict; reload before saving")
@@ -51,8 +52,10 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS control_state(id INTEGER PRIMARY KEY CHECK(id=1),revision INTEGER NOT NULL,applied_revision INTEGER NOT NULL,desired BLOB NOT NULL,applied BLOB NOT NULL);
-CREATE TABLE IF NOT EXISTS control_tasks(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,actor TEXT NOT NULL,lane TEXT NOT NULL DEFAULT 'control' CHECK(lane IN ('control','subscription','probe')),state TEXT NOT NULL,phase TEXT NOT NULL,error TEXT NOT NULL DEFAULT '',created INTEGER NOT NULL,updated INTEGER NOT NULL,input BLOB NOT NULL,result BLOB NOT NULL DEFAULT '{}',outcome TEXT NOT NULL DEFAULT '',acknowledged INTEGER NOT NULL DEFAULT 0 CHECK(acknowledged IN (0,1)),cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK(cancel_requested IN (0,1)));
+CREATE TABLE IF NOT EXISTS control_tasks(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,actor TEXT NOT NULL,source TEXT NOT NULL DEFAULT 'user' CHECK(source IN ('user','cli','scheduler')),lane TEXT NOT NULL DEFAULT 'control' CHECK(lane IN ('control','subscription','probe')),state TEXT NOT NULL,phase TEXT NOT NULL,error TEXT NOT NULL DEFAULT '',created INTEGER NOT NULL,updated INTEGER NOT NULL,input BLOB NOT NULL,result BLOB NOT NULL DEFAULT '{}',outcome TEXT NOT NULL DEFAULT '',acknowledged INTEGER NOT NULL DEFAULT 0 CHECK(acknowledged IN (0,1)),cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK(cancel_requested IN (0,1)));
 CREATE INDEX IF NOT EXISTS control_task_lane ON control_tasks(state,lane,id);
+CREATE TABLE IF NOT EXISTS task_requests(actor TEXT NOT NULL,request_id TEXT NOT NULL,fingerprint TEXT NOT NULL,task_id INTEGER NOT NULL,created INTEGER NOT NULL,PRIMARY KEY(actor,request_id));
+CREATE INDEX IF NOT EXISTS task_request_created ON task_requests(created);
 CREATE TABLE IF NOT EXISTS runtime_state(instance TEXT PRIMARY KEY,revision INTEGER NOT NULL,version TEXT NOT NULL,started INTEGER NOT NULL,heartbeat INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS observations(name TEXT PRIMARY KEY,value TEXT NOT NULL);
 `)
@@ -160,88 +163,6 @@ func (s *Store) DesiredState(ctx context.Context) (v DesiredState, err error) {
 func (s *Store) State(ctx context.Context) (v State, err error) {
 	err = s.db.QueryRowContext(ctx, `SELECT revision,applied_revision,desired,applied FROM control_state WHERE id=1`).Scan(&v.Revision, &v.AppliedRevision, &v.Desired, &v.Applied)
 	return
-}
-func (s *Store) Queue(ctx context.Context, kind, actor string, input []byte, expected int64, desired []byte) (int64, error) {
-	return s.queue(ctx, "control", kind, actor, input, expected, desired)
-}
-
-func (s *Store) QueueTask(ctx context.Context, lane, kind, actor string, input []byte) (int64, error) {
-	if !validLane(lane) {
-		return 0, errors.New("unknown task lane")
-	}
-	return s.queue(ctx, lane, kind, actor, input, 0, nil)
-}
-
-func validLane(lane string) bool {
-	return lane == domain.ControlLane || lane == domain.SubscriptionLane || lane == domain.ProbeLane
-}
-
-func (s *Store) queue(ctx context.Context, lane, kind, actor string, input []byte, expected int64, desired []byte) (int64, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `UPDATE control_state SET revision=revision WHERE id=1`); err != nil {
-		return 0, err
-	}
-	var pending int
-	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM control_tasks WHERE state IN ('queued','running')`).Scan(&pending); err != nil {
-		return 0, err
-	}
-	if pending >= 32 {
-		return 0, errors.New("task queue is full")
-	}
-	// Leave capacity for configuration repair and automatic refresh under probe load.
-	if lane == domain.ProbeLane {
-		var probes int
-		if err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM control_tasks WHERE lane='probe' AND state IN ('queued','running')").Scan(&probes); err != nil {
-			return 0, err
-		}
-		if probes >= 8 {
-			return 0, errors.New("probe queue is full")
-		}
-	}
-	if desired != nil {
-		// Serialize desired configuration changes with active side effects.
-		var blocking int
-		if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM control_tasks WHERE state IN ('queued','running') AND lane='control'`).Scan(&blocking); err != nil {
-			return 0, err
-		}
-		if blocking > 0 {
-			return 0, errors.New("wait for the current task before saving configuration")
-		}
-		r, e := tx.ExecContext(ctx, `UPDATE control_state SET desired=?,revision=revision+1 WHERE id=1 AND revision=?`, desired, expected)
-		if e != nil {
-			return 0, e
-		}
-		n, e := r.RowsAffected()
-		if e != nil {
-			return 0, e
-		}
-		if n != 1 {
-			return 0, ErrConflict
-		}
-	}
-	now := time.Now().Unix()
-	if actor == "scheduler" {
-		var duplicate int
-		if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM control_tasks WHERE actor=? AND kind=? AND input=? AND state IN ('queued','running')`, actor, kind, input).Scan(&duplicate); err != nil {
-			return 0, err
-		}
-		if duplicate > 0 {
-			return 0, tx.Commit()
-		}
-	}
-	r, err := tx.ExecContext(ctx, `INSERT INTO control_tasks(kind,actor,lane,state,phase,created,updated,input) VALUES(?,?,?,'queued','queued',?,?,?)`, kind, actor, lane, now, now, input)
-	if err != nil {
-		return 0, err
-	}
-	id, err := r.LastInsertId()
-	if err != nil {
-		return 0, err
-	}
-	return id, tx.Commit()
 }
 func (s *Store) ClaimLane(ctx context.Context, lane string) (v ClaimedTask, err error) {
 	if !validLane(lane) {

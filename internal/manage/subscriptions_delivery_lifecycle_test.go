@@ -15,6 +15,7 @@ import (
 
 	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
@@ -149,7 +150,7 @@ func TestDeliveryDoesNotBlockConfigurationQueue(t *testing.T) {
 	if _, err := service.queueAutomaticSubscription(t.Context(), "deliver"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Queue(t.Context(), "apply", "test", []byte("{}"), 1, []byte("{}")); err != nil {
+	if _, err := store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte("{}"), 1, []byte("{}")); err != nil {
 		t.Fatal("delivery blocks config", err)
 	}
 	if task, err := store.ClaimLane(t.Context(), "subscription"); err != nil || task.Kind != "subscription" {

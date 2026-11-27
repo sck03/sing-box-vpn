@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-acme/lego/v5/acme"
 	"github.com/go-acme/lego/v5/lego"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 func BenchmarkCertificateStatus(b *testing.B) {
@@ -61,7 +62,7 @@ func BenchmarkCertificateStatus(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	task, err := s.Store.Queue(b.Context(), "apply", "benchmark", []byte("{}"), state.Revision, data)
+	task, err := s.Store.Queue(b.Context(), "apply", domain.TaskSubmission{Actor: "benchmark", Source: domain.TaskUser}, []byte("{}"), state.Revision, data)
 	if err != nil {
 		b.Fatal(err)
 	}

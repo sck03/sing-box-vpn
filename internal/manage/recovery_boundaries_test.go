@@ -57,7 +57,7 @@ func TestExpiredPublicCertificatesDoNotBlockWorkerRecovery(t *testing.T) {
 	if err = config.Validate(); err == nil {
 		t.Fatal("expired listener candidate accepted")
 	}
-	id, err := service.Store.Queue(t.Context(), "apply", "test", []byte("{}"), 1, mustJSON(t, config))
+	id, err := service.Store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte("{}"), 1, mustJSON(t, config))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestCertificateStatusAndCommandsUseAppliedRegistry(t *testing.T) {
 	root, core, _ := appFixture(t)
 	service, config, _ := platformFixture(t, root, core)
 	config.Certificates = []CertificateAsset{{ID: "live", Provider: "acme", Domain: "live.example.test"}}
-	id, err := service.Store.Queue(t.Context(), "apply", "test", []byte("{}"), 1, mustJSON(t, config))
+	id, err := service.Store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte("{}"), 1, mustJSON(t, config))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestCertificateStatusAndCommandsUseAppliedRegistry(t *testing.T) {
 		t.Fatal(err)
 	}
 	config.Certificates = []CertificateAsset{{ID: "pending", Provider: "acme", Domain: "pending.example.test"}}
-	id, err = service.Store.Queue(t.Context(), "apply", "test", []byte("{}"), 2, mustJSON(t, config))
+	id, err = service.Store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte("{}"), 2, mustJSON(t, config))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,10 +137,10 @@ func TestCertificateStatusAndCommandsUseAppliedRegistry(t *testing.T) {
 	if _, err = service.PrepareCertificate(t.Context(), CertificatePreparation{ID: "replacement", Domain: "replacement.example.test", Email: "admin@example.test"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = service.Queue(t.Context(), application.TaskCommand{Operation: "certificate-renew", ID: "pending"}, "test"); err == nil {
+	if _, err = service.Queue(t.Context(), application.TaskCommand{Operation: "certificate-renew", ID: "pending"}, domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}); err == nil {
 		t.Fatal("queued an unapplied certificate")
 	}
-	if _, err = service.Queue(t.Context(), application.TaskCommand{Operation: "certificate-renew", ID: "live"}, "test"); err != nil {
+	if _, err = service.Queue(t.Context(), application.TaskCommand{Operation: "certificate-renew", ID: "live"}, domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}); err != nil {
 		t.Fatal(err)
 	}
 }

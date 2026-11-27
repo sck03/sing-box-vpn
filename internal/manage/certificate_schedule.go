@@ -7,6 +7,7 @@ import (
 
 	"github.com/sck03/sing-box-vpn/internal/application"
 	"github.com/sck03/sing-box-vpn/internal/certificates"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 type certificateScheduleSource struct{ service *PlatformService }
@@ -37,7 +38,7 @@ func (a certificateScheduleSource) RenewalAttempt(ctx context.Context, id string
 }
 
 func (a certificateScheduleSource) QueueRenewal(ctx context.Context, id string, now time.Time) error {
-	if _, err := a.service.Queue(ctx, application.TaskCommand{Operation: "certificate-renew", ID: id}, "scheduler"); err != nil {
+	if _, err := a.service.Queue(ctx, application.TaskCommand{Operation: "certificate-renew", ID: id}, domain.TaskSubmission{Actor: "scheduler", Source: domain.TaskScheduler}); err != nil {
 		return err
 	}
 	return a.service.Store.Observe(ctx, "certificate-attempt/"+id, strconv.FormatInt(now.Unix(), 10))

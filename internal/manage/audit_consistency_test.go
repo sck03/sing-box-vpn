@@ -19,7 +19,7 @@ func TestStateRolesDoNotExposeCredentialFieldFamilies(t *testing.T) {
 	config.Subscriptions.Templates[0].ProbeURL = "https://example.invalid/probe?key=sentinel-probe"
 	config.App.Advanced.Outbounds = []Object{{"type": "hysteria2", "obfs": Object{"password": "sentinel-obfs"}, "obfs_password": "sentinel-flat"}}
 	config.Gateway["sources"] = []string{"https://example.invalid/nodes?token=sentinel-gateway"}
-	if _, err := s.Store.Queue(t.Context(), "apply", "admin", []byte(`{}`), 1, mustJSON(t, config)); err != nil {
+	if _, err := s.Store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte(`{}`), 1, mustJSON(t, config)); err != nil {
 		t.Fatal(err)
 	}
 	handler := s.Handler(PanelOptions{PublicURL: "http://example.com"})

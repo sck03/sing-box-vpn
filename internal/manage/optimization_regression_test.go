@@ -30,7 +30,7 @@ func TestUpgradeReceiptSurvivesRestartAndCompletesOnce(t *testing.T) {
 			if err := s.Store.Initialize(t.Context(), []byte(`{}`)); err != nil {
 				t.Fatal(err)
 			}
-			id, err := s.Store.Queue(t.Context(), "program-upgrade", "test", []byte(`{}`), 0, nil)
+			id, err := s.Store.Queue(t.Context(), "program-upgrade", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte(`{}`), 0, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -47,7 +47,7 @@ func TestUpgradeReceiptSurvivesRestartAndCompletesOnce(t *testing.T) {
 			if task.State != "running" || task.Phase != "awaiting-panel-health" {
 				t.Fatal(task)
 			}
-			if _, err = s.Store.Queue(t.Context(), "service", "test", []byte(`{}`), 0, nil); err != nil {
+			if _, err = s.Store.Queue(t.Context(), "service", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte(`{}`), 0, nil); err != nil {
 				t.Fatal(err)
 			}
 			if _, err = s.Store.ClaimLane(t.Context(), "control"); !errors.Is(err, sql.ErrNoRows) {
@@ -100,7 +100,7 @@ func TestUpgradeWaitTimeoutReleasesControlLane(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	id, err := s.Store.Queue(t.Context(), "program-upgrade", "test", []byte(`{}`), 0, nil)
+	id, err := s.Store.Queue(t.Context(), "program-upgrade", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte(`{}`), 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestUpgradeWaitTimeoutReleasesControlLane(t *testing.T) {
 	if task, err = s.Store.Task(t.Context(), id); err != nil || task.State != "failed" {
 		t.Fatal("late receipt overwrote timeout", task, err)
 	}
-	if _, err = s.Store.Queue(t.Context(), "service", "test", []byte(`{}`), 0, nil); err != nil {
+	if _, err = s.Store.Queue(t.Context(), "service", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte(`{}`), 0, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = s.Store.ClaimLane(t.Context(), "control"); err != nil {

@@ -102,6 +102,10 @@ func (s *PlatformService) backgroundResult(operation string, err error) {
 func (s *PlatformService) schedulerResult(ctx context.Context, operation string, err error) {
 	s.backgroundResult(operation, err)
 	if err != nil && !errors.Is(err, context.Canceled) {
-		s.backgroundResult("audit-write", s.Auth.Audit(ctx, "scheduler", operation, "", "failed"))
+		// Maintenance can report after its own deadline. Give diagnostics a small,
+		// independent budget instead of losing both the operation and its audit.
+		audit, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		defer cancel()
+		s.backgroundResult("audit-write", s.Auth.Audit(audit, "scheduler", operation, "", "failed"))
 	}
 }

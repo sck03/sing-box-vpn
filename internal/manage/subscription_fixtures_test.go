@@ -3,10 +3,12 @@ package manage
 import (
 	"database/sql"
 	"errors"
-	"github.com/sck03/sing-box-vpn/internal/controlstore"
-	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 	"path/filepath"
 	"testing"
+
+	"github.com/sck03/sing-box-vpn/internal/controlstore"
+	"github.com/sck03/sing-box-vpn/internal/domain"
+	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
 // Compiler fixtures explicitly create the same confirmed state as installation.
@@ -44,7 +46,7 @@ func confirmSubscriptionFixture(t *testing.T, root string) {
 			t.Fatal(err)
 		}
 		platform.Subscriptions = config
-		id, err := store.Queue(t.Context(), "apply", "fixture", []byte("{}"), state.Revision, mustJSON(t, platform))
+		id, err := store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "fixture", Source: domain.TaskUser}, []byte("{}"), state.Revision, mustJSON(t, platform))
 		if err != nil {
 			t.Fatal(err)
 		}

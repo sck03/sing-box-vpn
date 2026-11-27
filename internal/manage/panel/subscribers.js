@@ -1,7 +1,12 @@
+import { refreshAfterSave } from "./lifecycle.js";
 import { api, query, mutate } from "./api.js";
 import { formDialog, card, help, button, table, badge } from "./ui.js";
 export async function subscribers(ctx) {
-  const people = await query("/api/subscribers", ctx.signal, ctx.request || api);
+  const people = await query(
+    "/api/subscribers",
+    ctx.signal,
+    ctx.request || api,
+  );
   const edit = (v) =>
     formDialog(
       "订阅者",
@@ -11,9 +16,9 @@ export async function subscribers(ctx) {
         { key: "disabled", label: "禁用全部所属权益", type: "bool" },
       ],
       v,
-      async (v) => {
+      async (v, editor) => {
         await mutate("/api/subscribers", v);
-        ctx.render();
+        refreshAfterSave(ctx, editor);
       },
     );
   return [

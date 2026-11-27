@@ -109,7 +109,7 @@ func TestSubscriptionDownloadRequiresConfirmedGeneration(t *testing.T) {
 	defer closeSource()
 	control := service.Control.(*controlstore.Store)
 	config.Revision++
-	if _, err := control.Queue(t.Context(), "apply", "test", []byte(`{}`), 1, mustJSON(t, PlatformConfig{Schema: PlatformSchema, Subscriptions: config})); err != nil {
+	if _, err := control.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte(`{}`), 1, mustJSON(t, PlatformConfig{Schema: PlatformSchema, Subscriptions: config})); err != nil {
 		t.Fatal(err)
 	}
 	var snapshot sub.Snapshot

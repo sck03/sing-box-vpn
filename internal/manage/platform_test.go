@@ -5,13 +5,14 @@ import (
 	"bytes"
 	"compress/gzip"
 	"errors"
-	"github.com/sck03/sing-box-vpn/internal/accounting"
-	"github.com/sck03/sing-box-vpn/internal/application"
-	"github.com/sck03/sing-box-vpn/internal/domain"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/sck03/sing-box-vpn/internal/accounting"
+	"github.com/sck03/sing-box-vpn/internal/application"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 func TestDeploymentPlanPreservesStoppedAndUnaffected(t *testing.T) {
@@ -52,7 +53,8 @@ func TestEncryptedPlatformBackupDisasterLedger(t *testing.T) {
 		t.Fatal(e)
 	}
 	c.Certificates = append(c.Certificates, CertificateAsset{ID: "pending", Domain: "example.com", Provider: "acme", Certificate: filepath.ToSlash(filepath.Join(root, "certificates/pending/cert.pem")), Key: filepath.ToSlash(filepath.Join(root, "certificates/pending/key.pem"))})
-	id, e := s.Store.Queue(ctx, "apply", "test", []byte(`{}`), 1, mustJSON(t, c))
+	submission := domain.TaskSubmission{Actor: "test", Source: domain.TaskUser, RequestID: "backup-request-0001", Fingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+	id, e := s.Store.Queue(ctx, "apply", submission, []byte(`{}`), 1, mustJSON(t, c))
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -87,6 +89,9 @@ func TestEncryptedPlatformBackupDisasterLedger(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer recovered.Close()
+	if previous, err := recovered.Store.SubmittedTask(ctx, submission); err != nil || previous != 0 {
+		t.Fatalf("disaster recovery retained a task request receipt: id=%d error=%v", previous, err)
+	}
 	u, e := recovered.Accounts.Account(ctx, "a")
 	if e != nil || u.Charged != 1000 || !u.Disabled {
 		t.Fatal(u, e)

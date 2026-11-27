@@ -45,7 +45,7 @@ func TestRefreshRejectsUnconfirmedGeneration(t *testing.T) {
 	}
 	config.App.Address = "new.example.test"
 	config.Subscriptions.Revision = 2
-	if _, err := store.Queue(t.Context(), "apply", "test", []byte("{}"), 1, mustJSON(t, config)); err != nil {
+	if _, err := store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte("{}"), 1, mustJSON(t, config)); err != nil {
 		t.Fatal(err)
 	}
 	files, snapshot, _, err := compileSubscriptions(t.Context(), root, core, config.Subscriptions, sub.Runtime{}, nil, sub.Candidate, service)

@@ -19,7 +19,7 @@ func TestQueuedTasksNotifyTheirOwnLane(t *testing.T) {
 		{Operation: "outbound-probe", ID: "example"},
 	}
 	for _, command := range commands {
-		id, err := s.queueTask(t.Context(), taskInput{TaskCommand: command}, "test")
+		id, err := s.queueTask(t.Context(), taskInput{TaskCommand: command}, domain.TaskSubmission{Actor: "test", Source: domain.TaskUser})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -42,7 +42,7 @@ func TestGatewayContractRejectsBadPolicyBeforeSaving(t *testing.T) {
 			if _, err := service.PreviewConfiguration(t.Context(), candidate); err == nil {
 				t.Fatal("preview accepted invalid gateway")
 			}
-			if _, err := service.QueueApply(t.Context(), candidate, 1, "admin"); err == nil {
+			if _, err := service.QueueApply(t.Context(), candidate, 1, domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}); err == nil {
 				t.Fatal("queued invalid gateway")
 			}
 		})
@@ -97,7 +97,7 @@ func TestPreviewAndApplyRejectUnsupportedOutputTogether(t *testing.T) {
 			t.Fatal(path, response.Code, response.Body.String())
 		}
 	}
-	if _, err := service.QueueApply(t.Context(), config, 1, "admin"); err == nil {
+	if _, err := service.QueueApply(t.Context(), config, 1, domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}); err == nil {
 		t.Fatal("invalid output queued")
 	}
 	removed := httptest.NewRecorder()
@@ -125,7 +125,7 @@ func TestQuickWarpUsesEndpointAndCandidateKeepsPreparedSource(t *testing.T) {
 	}))
 	defer server.Close()
 	config.Subscriptions = sub.Config{Version: sub.SchemaVersion, Revision: 1, Sources: []sub.Source{{ID: "source", Kind: "remote", Format: "nodes", URL: server.URL, Required: true}}, Collections: []sub.Collection{{ID: "set", Sources: []string{"source"}}}, Templates: []sub.Template{{ID: "template", Client: "uri", Version: 1, Mode: "nodes"}}, Outputs: []sub.Output{{ID: "output", Collection: "set", Template: "template"}}}
-	if _, err := service.QueueApply(t.Context(), config, 1, "admin"); err != nil {
+	if _, err := service.QueueApply(t.Context(), config, 1, domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}); err != nil {
 		t.Fatal(err)
 	}
 	task, err := service.Store.ClaimLane(t.Context(), "control")
@@ -153,7 +153,7 @@ func TestQuickWarpUsesEndpointAndCandidateKeepsPreparedSource(t *testing.T) {
 func TestCancelledTaskPreservesPartialRedactedResults(t *testing.T) {
 	root, core, _ := appFixture(t)
 	service, _, _ := platformFixture(t, root, core)
-	id, err := service.Store.Queue(t.Context(), "subscription", "admin", []byte(`{}`), 0, nil)
+	id, err := service.Store.Queue(t.Context(), "subscription", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte(`{}`), 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

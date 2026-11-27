@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sck03/sing-box-vpn/internal/application"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
@@ -40,7 +41,7 @@ func TestRefreshTasksPersistRejectedResourceReport(t *testing.T) {
 			}
 			command := application.TaskCommand{Operation: "subscription", Subscription: application.SubscriptionCommand{Operation: "refresh"}}
 			confirmSubscriptionFixture(t, root)
-			id, err := s.queueTask(t.Context(), taskInput{TaskCommand: command, Automatic: automatic}, "admin")
+			id, err := s.queueTask(t.Context(), taskInput{TaskCommand: command, Automatic: automatic}, domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser})
 			if err != nil {
 				t.Fatal(err)
 			}

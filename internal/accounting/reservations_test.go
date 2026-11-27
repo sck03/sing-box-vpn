@@ -49,6 +49,35 @@ func TestReservationBatchIsolatesFailuresAndCommitsQuota(t *testing.T) {
 	}
 }
 
+func TestReservationBatchRejectsHeadWithoutBlockingValidRequests(t *testing.T) {
+	for _, missing := range []bool{false, true} {
+		t.Run(fmt.Sprint(missing), func(t *testing.T) {
+			s, _ := fixture(t, ReservationBytes)
+			usage, err := s.Advance(t.Context(), "alice", time.Now(), false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			firstContext, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			account := "alice"
+			if missing {
+				account = "missing"
+			} else {
+				cancel()
+			}
+			first := &reservationRequest{ctx: firstContext, id: fixtureLeaseID("invalid-head"), account: account, runtime: "normal", want: ReservationBytes, now: time.Now(), period: usage.PeriodID, result: make(chan reservationResult, 1)}
+			next := &reservationRequest{ctx: t.Context(), id: fixtureLeaseID("valid-tail"), account: "alice", runtime: "normal", want: ReservationBytes, now: time.Now(), period: usage.PeriodID, result: make(chan reservationResult, 1)}
+			s.commitReservations([]*reservationRequest{first, next}, make([]reservationResult, 2))
+			if failed := <-first.result; failed.err == nil {
+				t.Fatal("invalid first request accepted")
+			}
+			if valid := <-next.result; valid.err != nil || valid.bytes != ReservationBytes {
+				t.Fatal(valid)
+			}
+		})
+	}
+}
+
 // Run unchanged against the baseline to compare concurrent durable reservations.
 func BenchmarkConcurrentDurableReservations(b *testing.B) {
 	_, _, handles := benchmarkMeter(b, 64)

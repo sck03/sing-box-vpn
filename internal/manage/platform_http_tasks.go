@@ -1,9 +1,10 @@
 package manage
 
 import (
-	"github.com/sck03/sing-box-vpn/internal/application"
 	"net/http"
 	"strconv"
+
+	"github.com/sck03/sing-box-vpn/internal/application"
 )
 
 func (s *PlatformService) serveTasks(w http.ResponseWriter, r *http.Request, access panelAccess) bool {
@@ -71,7 +72,12 @@ func (s *PlatformService) serveTasks(w http.ResponseWriter, r *http.Request, acc
 		if !audit(a.Operation, a.ID) {
 			return true
 		}
-		id, e := s.Queue(ctx, a, access.actor)
+		submission, e := taskSubmission(r, access.actor, a)
+		if e != nil {
+			platformError(w, e)
+			return true
+		}
+		id, e := s.Queue(ctx, a, submission)
 		if e != nil {
 			platformError(w, e)
 		} else {

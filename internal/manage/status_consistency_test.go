@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	"github.com/sck03/sing-box-vpn/internal/hostservice"
 )
 
@@ -29,7 +30,7 @@ func TestTunnelSyncContinuesWithFailedDesiredRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	config.Argo = TunnelSettings{Mode: "off"}
-	id, err := service.Store.Queue(t.Context(), "apply", "test", []byte("{}"), 2, mustJSON(t, config))
+	id, err := service.Store.Queue(t.Context(), "apply", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte("{}"), 2, mustJSON(t, config))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +84,7 @@ func TestOverviewInvalidatesBeyondTaskSummary(t *testing.T) {
 	}
 	var hidden int64
 	for i := 0; i < 13; i++ {
-		id, err := service.Store.QueueTask(t.Context(), "subscription", "subscription", "test", []byte("{}"))
+		id, err := service.Store.QueueTask(t.Context(), "subscription", "subscription", domain.TaskSubmission{Actor: "test", Source: domain.TaskUser}, []byte("{}"))
 		if err != nil {
 			t.Fatal(err)
 		}

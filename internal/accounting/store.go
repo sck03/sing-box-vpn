@@ -365,10 +365,6 @@ func (s *Store) credentials(ctx context.Context, predicate string, args ...any) 
 }
 
 func reserveInTransaction(ctx context.Context, tx *sql.Tx, id, account, runtime string, want int64, now time.Time, periodID int64) (int64, error) {
-	// Acquire the SQLite writer before reading the quota, including across processes.
-	if _, err := tx.ExecContext(ctx, `UPDATE accounts SET charged=charged WHERE id=?`, account); err != nil {
-		return 0, err
-	}
 	if err := checkLeaseScope(ctx, tx, id); err != nil {
 		return 0, err
 	}

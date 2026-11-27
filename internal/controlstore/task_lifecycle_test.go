@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 func cancellationStore(t *testing.T) *Store {
@@ -25,7 +27,7 @@ func cancellationStore(t *testing.T) *Store {
 func TestRunningProbeCancellationRetainsLaneUntilFinished(t *testing.T) {
 	s := cancellationStore(t)
 	ctx := t.Context()
-	id, err := s.QueueTask(ctx, "probe", "outbound-probe", "admin", []byte("{}"))
+	id, err := s.QueueTask(ctx, "probe", "outbound-probe", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte("{}"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +41,7 @@ func TestRunningProbeCancellationRetainsLaneUntilFinished(t *testing.T) {
 	if err = s.Cancel(ctx, id); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.QueueTask(ctx, "probe", "outbound-probe", "admin", []byte("{}")); err != nil {
+	if _, err = s.QueueTask(ctx, "probe", "outbound-probe", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte("{}")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = s.ClaimLane(ctx, "probe"); !errors.Is(err, sql.ErrNoRows) {
@@ -78,7 +80,7 @@ func TestCancellationRecoveryAndSideEffectBoundary(t *testing.T) {
 	s := cancellationStore(t)
 	ctx := t.Context()
 	for _, lane := range []string{"control", "subscription", "probe"} {
-		id, err := s.QueueTask(ctx, lane, "subscription", "admin", []byte("{}"))
+		id, err := s.QueueTask(ctx, lane, "subscription", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte("{}"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -108,7 +110,7 @@ func TestCancellationRecoveryAndSideEffectBoundary(t *testing.T) {
 func TestConcurrentClaimsRespectLaneExclusion(t *testing.T) {
 	s := cancellationStore(t)
 	for range 4 {
-		if _, err := s.QueueTask(t.Context(), "probe", "outbound-probe", "admin", []byte("{}")); err != nil {
+		if _, err := s.QueueTask(t.Context(), "probe", "outbound-probe", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte("{}")); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -135,15 +137,15 @@ func TestConcurrentClaimsRespectLaneExclusion(t *testing.T) {
 func TestProbeQueueLeavesCapacityForOtherWork(t *testing.T) {
 	s := cancellationStore(t)
 	for range 8 {
-		if _, err := s.QueueTask(t.Context(), "probe", "outbound-probe", "admin", []byte("{}")); err != nil {
+		if _, err := s.QueueTask(t.Context(), "probe", "outbound-probe", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte("{}")); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := s.QueueTask(t.Context(), "probe", "outbound-probe", "admin", []byte("{}")); err == nil {
+	if _, err := s.QueueTask(t.Context(), "probe", "outbound-probe", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte("{}")); err == nil {
 		t.Fatal("probe budget exceeded")
 	}
 	for _, lane := range []string{"control", "subscription"} {
-		if _, err := s.QueueTask(t.Context(), lane, "service", "admin", []byte("{}")); err != nil {
+		if _, err := s.QueueTask(t.Context(), lane, "service", domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte("{}")); err != nil {
 			t.Fatal(err)
 		}
 	}

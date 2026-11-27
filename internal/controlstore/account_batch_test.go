@@ -3,6 +3,8 @@ package controlstore
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
 func TestAccountBatchRespectsControlOrder(t *testing.T) {
@@ -16,7 +18,7 @@ func TestAccountBatchRespectsControlOrder(t *testing.T) {
 	}
 	var ids []int64
 	for _, kind := range []string{"account", "account", "service", "account"} {
-		id, err := s.Queue(t.Context(), kind, "admin", []byte(`{}`), 0, nil)
+		id, err := s.Queue(t.Context(), kind, domain.TaskSubmission{Actor: "admin", Source: domain.TaskUser}, []byte(`{}`), 0, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
