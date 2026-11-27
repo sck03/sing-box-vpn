@@ -47,47 +47,43 @@ func (s *PlatformService) reconcileCredentials(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	var active []string
-	pending := false
-	for _, v := range versions {
-		pending = pending || v.Published < v.Revision || (!s.NoSystem && v.Loaded < v.Revision)
-	}
-	if !pending {
+	if !slices.ContainsFunc(versions, func(v accounting.CredentialPublication) bool { return v.Published < v.Revision }) {
 		return nil
 	}
+	// Runtime acknowledgements are owned by the core. A published revision on a
+	// deliberately stopped core is not pending publication and must stay idle.
+	state, err := s.Store.State(ctx)
+	if err != nil {
+		return err
+	}
+	config, err := decodePlatform(state.Applied)
+	if err != nil {
+		return err
+	}
+	files, err := s.buildCredentialPublication(ctx, config, versions)
+	if err != nil {
+		return err
+	}
+	if err = s.checkRuntime(ctx, files); err != nil {
+		return err
+	}
+	if err = withStartupLock(ctx, s.Root, func() error { return publishPlatformFiles(s.Root, files) }); err != nil {
+		return err
+	}
+	defer s.invalidateOverview()
+	for _, v := range versions {
+		if v.Published >= v.Revision {
+			continue
+		}
+		if err = s.Accounts.CredentialsPublished(ctx, v.Runtime, v.Revision); err != nil {
+			return err
+		}
+	}
+	var active []string
 	if !s.NoSystem {
 		active, err = s.activeServices(ctx)
 		if err != nil {
 			return err
-		}
-	}
-	needsPublish := slices.ContainsFunc(versions, func(v accounting.CredentialPublication) bool { return v.Published < v.Revision })
-	if needsPublish {
-		state, err := s.Store.State(ctx)
-		if err != nil {
-			return err
-		}
-		config, err := decodePlatform(state.Applied)
-		if err != nil {
-			return err
-		}
-		files, err := s.buildCredentialPublication(ctx, config, versions)
-		if err != nil {
-			return err
-		}
-		if err = s.checkRuntime(ctx, files); err != nil {
-			return err
-		}
-		if err = withStartupLock(ctx, s.Root, func() error { return publishPlatformFiles(s.Root, files) }); err != nil {
-			return err
-		}
-		for _, v := range versions {
-			if v.Published >= v.Revision {
-				continue
-			}
-			if err = s.Accounts.CredentialsPublished(ctx, v.Runtime, v.Revision); err != nil {
-				return err
-			}
 		}
 	}
 	for _, v := range versions {
@@ -97,7 +93,6 @@ func (s *PlatformService) reconcileCredentials(ctx context.Context) error {
 			}
 		}
 	}
-	s.invalidateOverview()
 	return nil
 }
 

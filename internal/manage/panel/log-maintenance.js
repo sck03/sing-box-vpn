@@ -58,23 +58,26 @@ export async function historyControls(ctx) {
               max: 365,
             },
             {
-              key: "mib",
+              key: "result_bytes",
               label: "详情预算（MiB）",
               type: "number",
               min: 0.25,
               max: 64,
               step: 0.25,
+              scale: 1048576,
             },
           ],
-          { count: p.count, days: p.days, mib: p.result_bytes / 1048576 },
+          p,
           async (v) => {
             await api("/api/tasks/history", {
               count: v.count,
               days: v.days,
-              result_bytes: Math.round(v.mib * 1048576),
+              result_bytes: v.result_bytes,
             });
             ctx.render();
           },
+          false,
+          ctx.signal,
         ),
       ),
       button("按策略立即清理", async () => {

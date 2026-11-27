@@ -56,7 +56,14 @@ func TestTaskRecoveryAndConfigurationRevisions(t *testing.T) {
 	if _, e = s.Queue(ctx, "apply", "admin", []byte(`{}`), 2, []byte(`{}`)); e == nil {
 		t.Fatal("overlapping apply accepted")
 	}
+	checkpoint := []byte(`{"revision":2,"services":{"active":["sb-core"],"enabled":["sb-core"]}}`)
+	if e = s.CheckpointApply(ctx, id, checkpoint); !errors.Is(e, ErrConflict) {
+		t.Fatal("queued task accepted an execution checkpoint", e)
+	}
 	if _, e = s.ClaimLane(ctx, "control"); e != nil {
+		t.Fatal(e)
+	}
+	if e = s.CheckpointApply(ctx, id, checkpoint); e != nil {
 		t.Fatal(e)
 	}
 	s.Close()
@@ -69,7 +76,7 @@ func TestTaskRecoveryAndConfigurationRevisions(t *testing.T) {
 		t.Fatal(e)
 	}
 	task, e := s.ClaimLane(ctx, "control")
-	if e != nil || task.ID != id || task.State != "running" || task.Phase != "validating" || string(task.Input) != `{"revision":2}` {
+	if e != nil || task.ID != id || task.State != "running" || task.Phase != "validating" || string(task.Input) != string(checkpoint) {
 		t.Fatal(task, e)
 	}
 	state, _ := s.State(ctx)
@@ -81,6 +88,9 @@ func TestTaskRecoveryAndConfigurationRevisions(t *testing.T) {
 	}
 	if e = s.Finish(ctx, id, nil); e != nil {
 		t.Fatal(e)
+	}
+	if e = s.CheckpointApply(ctx, id, checkpoint); !errors.Is(e, ErrConflict) {
+		t.Fatal("finished task accepted an execution checkpoint", e)
 	}
 	if _, e = s.Queue(ctx, "apply", "admin", []byte(`{}`), 1, []byte(`{}`)); !errors.Is(e, ErrConflict) {
 		t.Fatal(e)

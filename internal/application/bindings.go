@@ -85,12 +85,7 @@ func BindAccounts(ctx context.Context, repository BindingRepository, c AccountCo
 		if err = repository.RequireAccount(ctx, id); err != nil {
 			return result, err
 		}
-		count := 0
 		for _, entry := range selected {
-			if entry.Disabled {
-				continue
-			}
-			count++
 			if bound[[2]string{id, entry.ID}] {
 				continue
 			}
@@ -104,9 +99,6 @@ func BindAccounts(ctx context.Context, repository BindingRepository, c AccountCo
 				credential.Password = c.Password
 			}
 			pending = append(pending, credential)
-		}
-		if count == 0 {
-			return result, errors.New("no enabled inbounds selected")
 		}
 	}
 	if err = repository.BindBatch(ctx, pending); err != nil {

@@ -31,7 +31,7 @@ func atomicJSON(path string, value any) error { return statefile.AtomicJSON(path
 
 type Status struct {
 	Version       string        `json:"version"`
-	State         string        `json:"state"`
+	State         State         `json:"state"`
 	Country       string        `json:"country"`
 	Mode          string        `json:"mode"`
 	Node          string        `json:"node,omitempty"`

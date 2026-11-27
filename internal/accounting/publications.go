@@ -21,6 +21,11 @@ type CredentialPublication struct {
 
 // CredentialPublication is the small polling read; credential secrets are only
 // decoded after the published revision changes.
+func (s *Store) HasUnpublishedCredentials(ctx context.Context) (pending bool, err error) {
+	err = s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM credential_publications WHERE published < revision)`).Scan(&pending)
+	return
+}
+
 func (s *Store) CredentialPublication(ctx context.Context, scope string) (v CredentialPublication, err error) {
 	err = s.db.QueryRowContext(ctx, `SELECT runtime,revision,published,loaded FROM credential_publications WHERE runtime=?`, scope).Scan(&v.Runtime, &v.Revision, &v.Published, &v.Loaded)
 	return

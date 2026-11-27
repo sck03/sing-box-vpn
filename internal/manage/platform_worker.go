@@ -17,56 +17,31 @@ import (
 func (s *PlatformService) runWorkers(ctx context.Context) error {
 	child, cancel := context.WithCancel(ctx)
 	defer cancel()
-	done := make(chan error, 4)
-	go func() { done <- s.runLane(child, "control") }()
-	go func() { done <- s.runLane(child, application.SubscriptionLane) }()
-	go func() { done <- s.runLane(child, application.ProbeLane) }()
-	go func() { done <- s.runRetention(child) }()
-	err := <-done
-	cancel()
-	return errors.Join(err, <-done, <-done, <-done)
+	workers := []func(context.Context) error{
+		func(ctx context.Context) error { return s.runLane(ctx, application.ControlLane) },
+		func(ctx context.Context) error { return s.runLane(ctx, application.SubscriptionLane) },
+		func(ctx context.Context) error { return s.runLane(ctx, application.ProbeLane) },
+		s.runRetention,
+		s.runMaintenance,
+	}
+	done := make(chan error, len(workers))
+	for _, run := range workers {
+		go func() { done <- run(child) }()
+	}
+	var result error
+	for range workers {
+		result = errors.Join(result, <-done)
+		cancel()
+	}
+	return result
 }
 
 func (s *PlatformService) runLane(ctx context.Context, lane string) error {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
-	nextMaintenance, nextSubscriptions := time.Time{}, time.Time{}
-	nextCredentials, credentialDelay := time.Time{}, 5*time.Second
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
-		}
-		// Schedule between tasks as well as while idle; a busy queue must not
-		// starve refresh or renewal. Store deduplication bounds automatic work.
-		if lane == "control" {
-			if time.Now().After(nextCredentials) {
-				reconcile, stop := context.WithTimeout(ctx, 60*time.Second)
-				err := withServiceLock(reconcile, s.Root, func() error { return s.reconcileCredentials(reconcile) })
-				stop()
-				s.backgroundResult("credential-publication", err)
-				if err != nil {
-					credentialDelay = min(credentialDelay*2, 5*time.Minute)
-				} else {
-					credentialDelay = 5 * time.Second
-				}
-				nextCredentials = time.Now().Add(credentialDelay)
-			}
-			if time.Now().After(nextSubscriptions) {
-				s.schedulerResult(ctx, "panel-restart", s.reconcilePanelRestart(ctx))
-				nextSubscriptions = time.Now().Add(time.Minute)
-				s.schedulerResult(ctx, "program-upgrade", s.reconcileProgramUpgrade(ctx))
-				if err := s.Store.ExpireExternal(ctx, time.Now().Add(-upgradeWaitBudget)); err != nil {
-					return err
-				}
-				s.schedulerResult(ctx, "subscription-schedule", s.scheduleSubscriptions(ctx))
-			}
-			if !s.NoSystem && time.Now().After(nextMaintenance) {
-				nextMaintenance = time.Now().Add(30 * time.Second)
-				maintenance, stop := context.WithTimeout(ctx, 30*time.Second)
-				s.schedulerResult(maintenance, "tunnel-sync", s.syncTunnel(maintenance))
-				s.schedulerResult(maintenance, "certificate-schedule", s.scheduleCertificates(maintenance))
-				stop()
-			}
 		}
 		task, err := s.Store.ClaimLane(ctx, lane)
 		if errors.Is(err, sql.ErrNoRows) {

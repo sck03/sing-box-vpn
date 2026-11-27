@@ -391,6 +391,37 @@ await tick();
 assert.equal(queued, undefined, "empty probe URL queued a doomed task");
 subscriptionPage.abort();
 
+// Cache hits still reserve the dialog before yielding to navigation or an editor.
+const cachedWizardPage = new AbortController();
+let catalogReads = 0, presetReads = 0;
+const wizardSections = await subscriptions({
+  signal: cachedWizardPage.signal, session: { role: "admin" }, section: "deliveries",
+  config: async () => ({ subscriptions: {} }), changed() {}, render() {}, task() {},
+  request: async (path) => {
+    if (path === "/api/clients") { catalogReads++; return catalog; }
+    if (path === "/api/subscription-presets") { presetReads++; return presets; }
+    if (path === "/api/subscriptions/actions") return { outputs: [], deliveries: [] };
+    throw Error("Unexpected request " + path);
+  },
+});
+document.querySelector("#content").replaceChildren(...wizardSections);
+await tick();
+click("快速创建订阅");
+await tick();
+assert.match(dialog.textContent, /快速创建订阅 · 来源与客户端/);
+dialog.close();
+click("快速创建订阅");
+formDialog("新的编辑器", [], {}, () => {});
+await tick();
+assert.match(dialog.textContent, /新的编辑器/);
+dialog.close();
+click("快速创建订阅");
+cachedWizardPage.abort();
+await tick();
+assert.equal(dialog.open, false, "cached wizard reopened after page cancellation");
+assert.equal(catalogReads, 1);
+assert.equal(presetReads, 1);
+
 const { setCSRF } = await import("../internal/manage/panel/api.js");
 setCSRF("output-sharing");
 let finishOutputShare, shareRefreshes = 0;

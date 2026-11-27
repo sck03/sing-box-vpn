@@ -203,18 +203,88 @@ assert.equal(nameSaves, 1, "128 UTF-8 bytes must be accepted");
 
 const { vpngate } = await import("../internal/manage/panel/vpngate.js");
 const gatewayLife = new AbortController();
+let gatewayState = "connecting", gatewayReads = 0, gatewayPoll;
+window.setInterval = (fn, delay) => { assert.equal(delay, 5000); gatewayPoll = fn; return 123; };
+window.clearInterval = () => {};
 const gatewayContext = {
   signal: gatewayLife.signal, session: { role: "admin" }, section: "gateway",
   config: async () => ({ vpn: { active_country: "KR", profiles: {} }, gateway: {}, certificates: [] }),
   task() {}, changed() {}, render() {},
-  request: async () => ({ state: "ready", country: "JP", source_refresh: {} }),
+  request: async () => { gatewayReads++; return { state: gatewayState, country: "JP", source_refresh: {} }; },
 };
 root.replaceChildren(...await vpngate(gatewayContext));
 await flush();
 const gatewayPanel = root.querySelector('[role="tabpanel"]:not([hidden])');
 assert.match(gatewayPanel.textContent, /运行国家：JP/);
 assert.doesNotMatch(gatewayPanel.textContent, /运行国家：KR/);
+for (const [state, label] of [["connecting", "正在建立隧道"], ["verifying", "正在验证出口"], ["fetching", "正在获取候选节点"], ["waiting", "等待可用节点"], ["ready", "已就绪"], ["stopped", "已停止"]]) {
+  gatewayState = state;
+  gatewayPoll();
+  await flush();
+  assert.match(gatewayPanel.textContent, new RegExp(label));
+}
+gatewayContext.sectionChanged("access");
+let pausedReads = gatewayReads;
+gatewayPoll();
+await flush();
+assert.equal(gatewayReads, pausedReads, "hidden gateway tab still polled");
+gatewayContext.sectionChanged("gateway");
+await flush();
+Object.defineProperty(document, "hidden", { configurable: true, value: true });
+pausedReads = gatewayReads;
+gatewayPoll();
+await flush();
+assert.equal(gatewayReads, pausedReads, "background browser still polled gateway");
+Object.defineProperty(document, "hidden", { configurable: true, value: false });
 gatewayLife.abort();
+gatewayPoll();
+await flush();
+assert.equal(gatewayReads, pausedReads);
+window.setInterval = nativeInterval;
+window.clearInterval = nativeClear;
+
+const { taskHistory } = await import("../internal/manage/panel/tasks.js");
+const historyLife = new AbortController();
+let historyReads = 0, resolveHistory;
+const historyContext = {
+  signal: historyLife.signal, session: { role: "admin" }, activeSection: "logs",
+  request: async () => {
+    historyReads++;
+    if (historyReads === 2) return new Promise((resolve) => { resolveHistory = resolve; });
+    return { items: [], next_before: 0 };
+  },
+};
+await taskHistory(historyContext, "logs");
+historyContext.updateOverview({ tasks: [], task_counts: { active: 1 } });
+assert.equal(historyReads, 2);
+historyContext.updateOverview({ tasks: [], task_counts: { active: 0 } });
+historyContext.sectionChanged("backup");
+resolveHistory({ items: [], next_before: 0 });
+await flush();
+assert.equal(historyReads, 2, "queued refresh escaped into hidden history");
+historyContext.updateOverview({ tasks: [], task_counts: { active: 2 } });
+await flush();
+assert.equal(historyReads, 2, "hidden history fetched after overview update");
+historyContext.sectionChanged("logs");
+await flush();
+assert.equal(historyReads, 3, "returning to history must read latest state once");
+historyLife.abort();
+
+const failedHistoryLife = new AbortController();
+let failedHistoryReads = 0;
+const failedHistory = await taskHistory({
+  signal: failedHistoryLife.signal, session: { role: "admin" },
+  request: async () => {
+    if (++failedHistoryReads === 1) throw Error("temporary history failure");
+    return { items: [], next_before: 0 };
+  },
+});
+assert.match(failedHistory.textContent, /temporary history failure/);
+[...failedHistory.querySelectorAll("button")].find((button) => button.textContent === "返回最新记录").click();
+await flush();
+assert.equal(failedHistoryReads, 2, "initial history failure had no usable retry");
+assert.match(failedHistory.textContent, /第 1 页/);
+failedHistoryLife.abort();
 
 const { access } = await import("../internal/manage/panel/access.js");
 const accessLife = new AbortController();

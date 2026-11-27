@@ -1,6 +1,10 @@
 # 开发与发布
 
-2026-11-27 当前修复与定向验证见[实施报告](refactor-review.md)。覆盖候选端口分配、草稿版本与弹窗生命周期、权益结果留存、入站绑定约束和测试进程退出。历史验证记录只说明对应提交，不代表本轮执行完整验收。
+2026-11-27 当前修复与定向验证见[实施报告](refactor-review.md)。本轮覆盖任务保留预算、订阅向导缓存生命周期、VPNGate 状态契约、隐藏任务页、独立后台维护及应用执行基线。历史验证记录只说明对应提交，不代表本轮执行完整验收。
+
+本轮前端回归为 `npm test -- test-panel-state-sync.mjs test-panel-lifecycle.mjs test-panel-subscriptions.mjs test-panel-contracts.mjs test-panel-navigation.mjs`。原生表单校验必须使用 `checkValidity/requestSubmit` 验证，直接派发 submit 事件不能证明浏览器允许提交。
+
+`maintenance_regression_test.go` 验证已发布且未加载凭据的空操作、执行基线持久化与重放，以及服务锁被占用时其他控制命令仍能被领取。该组和 controlstore 的任务恢复测试另做定向 race；有真实核心变量的批量发布、发布失败重试和应用回归见本轮验证记录。修改网关状态时同步 `vpngate.States()`，重新运行 `go run ./cmd/panel-contract`；前端 Record 映射会检查遗漏的状态。
 
 ## 本地目录与体积
 

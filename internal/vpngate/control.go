@@ -153,7 +153,7 @@ func (m *manager) handler(parent context.Context) http.Handler {
 				if c.Mode == "fixed" {
 					return errors.New("switch to sticky mode before swapping")
 				}
-				if s.State == "connecting" || s.State == "verifying" {
+				if s.State == Connecting || s.State == Verifying {
 					return errors.New("a tunnel is already connecting")
 				}
 				swap = true
@@ -227,7 +227,7 @@ func runCTLWithOutput(args []string, output io.Writer) error {
 	if e != nil {
 		if op == "status" && *format == "text" {
 			// A saved state.json may outlive the daemon; never present it as a live exit.
-			return writeGatewayStatus(output, Status{State: "unavailable", Country: c.Country, Mode: c.Mode})
+			return writeGatewayStatus(output, Status{State: Unavailable, Country: c.Country, Mode: c.Mode})
 		}
 		return errors.New("gateway control socket unavailable; check yg-vpngate service")
 	}

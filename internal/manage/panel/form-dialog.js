@@ -116,7 +116,8 @@ export function formDialog(
     if (field.readonly) input.disabled = true;
     if (field.min !== undefined) input.min = field.min;
     if (field.max !== undefined) input.max = field.max;
-    if (field.scale) input.step = "any";
+    if (field.step !== undefined) input.step = String(field.step);
+    else if (field.scale) input.step = "any";
     input.setAttribute("aria-label", field.label);
     const label = el(
       control ? "div" : "label",

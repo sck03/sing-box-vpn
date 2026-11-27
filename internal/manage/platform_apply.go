@@ -12,9 +12,13 @@ import (
 
 type applyInput struct {
 	Revision int64                      `json:"revision"`
-	Active   []string                   `json:"active"`
-	Enabled  []string                   `json:"enabled"`
+	Services *applyServices             `json:"services,omitempty"`
 	Sources  map[string]sub.SourceCache `json:"sources,omitempty"`
+}
+
+type applyServices struct {
+	Active  []string `json:"active"`
+	Enabled []string `json:"enabled"`
 }
 
 func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revision int64, actor string) (int64, error) {
@@ -50,22 +54,14 @@ func (s *PlatformService) QueueApply(ctx context.Context, c PlatformConfig, revi
 	if state.Revision != revision {
 		return 0, controlstore.ErrConflict
 	}
-	active := []string{}
 	if err := s.validateInboundBindings(ctx, c); err != nil {
 		return 0, err
-	}
-	enabled := []string{}
-	if !s.NoSystem {
-		active, enabled, err = serviceSnapshot(ctx, true)
-		if err != nil {
-			return 0, err
-		}
 	}
 	data, err := encodePlatform(c)
 	if err != nil {
 		return 0, err
 	}
-	input, _ := json.Marshal(applyInput{Revision: revision + 1, Active: active, Enabled: enabled, Sources: prepared})
+	input, _ := json.Marshal(applyInput{Revision: revision + 1, Sources: prepared})
 	var id int64
 	err = withStartupLock(ctx, s.Root, func() error {
 		if err := s.validateConfiguredPanelPort(c); err != nil {
@@ -116,6 +112,9 @@ func (s *PlatformService) apply(ctx context.Context, id int64, input applyInput)
 	} else if e = s.Store.Result(ctx, id, summary); e != nil {
 		return e
 	}
+	if err := s.checkpointApplyServices(ctx, id, &input); err != nil {
+		return err
+	}
 	return application.ApplyDeployment(ctx, application.Deployment{
 		Phase: func(ctx context.Context, phase string) error { return s.Store.Phase(ctx, id, phase) },
 		Publish: func(ctx context.Context) error {
@@ -125,7 +124,7 @@ func (s *PlatformService) apply(ctx context.Context, id int64, input applyInput)
 			if s.NoSystem {
 				return nil
 			}
-			return s.applyHost(ctx, c, previous, input.Active, false)
+			return s.applyHost(ctx, c, previous, input.Services.Active, false)
 		},
 		Confirm: func(ctx context.Context) error { return s.Store.Applied(ctx, state.Revision) },
 		Recover: func(ctx context.Context) error {
@@ -142,7 +141,34 @@ func (s *PlatformService) apply(ctx context.Context, id int64, input applyInput)
 			if s.NoSystem {
 				return nil
 			}
-			return errors.Join(s.applyHost(ctx, previous, c, input.Active, true), s.restoreEnabled(ctx, input.Enabled))
+			return errors.Join(s.applyHost(ctx, previous, c, input.Services.Active, true), s.restoreEnabled(ctx, input.Services.Enabled))
 		},
 	})
+}
+
+// Called under the service transition lock, after validation and before any
+// publication. Interrupted applies retain this baseline for replay and rollback.
+func (s *PlatformService) checkpointApplyServices(ctx context.Context, id int64, input *applyInput) error {
+	if input.Services != nil {
+		return nil
+	}
+	baseline := &applyServices{}
+	if !s.NoSystem {
+		var err error
+		baseline.Active, baseline.Enabled, err = serviceSnapshot(ctx, true)
+		if err != nil {
+			return err
+		}
+	}
+	candidate := *input
+	candidate.Services = baseline
+	data, err := json.Marshal(candidate)
+	if err != nil {
+		return err
+	}
+	if err = s.Store.CheckpointApply(ctx, id, data); err != nil {
+		return err
+	}
+	*input = candidate
+	return nil
 }

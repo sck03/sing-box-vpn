@@ -17,24 +17,24 @@ func writeGatewayStatus(output io.Writer, status Status) error {
 		countryText = label + " / " + countryText
 	}
 	label := "当前国家"
-	if status.State == "unavailable" {
+	if status.State == Unavailable {
 		label = "配置国家"
 	}
 	fmt.Fprintf(&out, " %s：%s\n", label, terminal.Text(countryText))
-	state := map[string]string{
-		"ready":       "已连接（出口已验证）",
-		"fetching":    "正在获取同国家候选节点",
-		"connecting":  "正在建立 OpenVPN 隧道",
-		"verifying":   "正在验证出口国家 / 运营商",
-		"waiting":     "等待可用节点（转发已阻断）",
-		"stopped":     "已暂停 / 停止（转发已阻断）",
-		"unavailable": "状态不可用（请检查网关服务）",
+	state := map[State]string{
+		Ready:       "已连接（出口已验证）",
+		Fetching:    "正在获取同国家候选节点",
+		Connecting:  "正在建立 OpenVPN 隧道",
+		Verifying:   "正在验证出口国家 / 运营商",
+		Waiting:     "等待可用节点（转发已阻断）",
+		Stopped:     "已暂停 / 停止（转发已阻断）",
+		Unavailable: "状态不可用（请检查网关服务）",
 	}[status.State]
 	if state == "" {
 		state = "未知（暂未确认出口）"
 	}
-	verified := status.State == "ready" && status.Exit != nil && net.ParseIP(status.Exit.IP) != nil && status.Exit.Country == status.Country
-	if status.State == "ready" && !verified {
+	verified := status.State == Ready && status.Exit != nil && net.ParseIP(status.Exit.IP) != nil && status.Exit.Country == status.Country
+	if status.State == Ready && !verified {
 		state = "状态异常（尚无有效的已验证出口）"
 	}
 	fmt.Fprintf(&out, " 连接状态：%s\n", state)
@@ -57,7 +57,7 @@ func writeGatewayStatus(output io.Writer, status Status) error {
 	if verified && status.Exit.ISP != "" {
 		fmt.Fprintf(&out, " 出口运营商：%s\n", terminal.Text(status.Exit.ISP))
 	}
-	if status.Reason != "" && status.State != "ready" && status.State != "stopped" {
+	if status.Reason != "" && status.State != Ready && status.State != Stopped {
 		fmt.Fprintf(&out, " 状态说明：%s\n", terminal.Text(status.Reason))
 	}
 	_, err := output.Write(out.Bytes())

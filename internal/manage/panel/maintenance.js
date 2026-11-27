@@ -10,7 +10,7 @@ import { el, card, row, button, help, showResult, notice } from "./ui.js";
 export async function maintenance(ctx) {
   async function logsAndTasks() {
     const metadata = await capabilities(ctx.request || api);
-    const tasks = await taskHistory(ctx);
+    const tasks = await taskHistory(ctx, ctx.session.role === "admin" ? "logs" : undefined);
     const logs = journalCard(metadata.services || [], ctx);
     const history =
       ctx.session.role === "admin" ? await historyControls(ctx) : null;

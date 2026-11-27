@@ -273,9 +273,11 @@ export interface GatewayRefreshStatus {
   last_success?: string | null;
 }
 
+export type GatewayState = "fetching" | "connecting" | "verifying" | "waiting" | "ready" | "stopped" | "unavailable";
+
 export interface GatewayStatus {
   version: string;
-  state: string;
+  state: GatewayState;
   country: string;
   mode: string;
   node?: string;

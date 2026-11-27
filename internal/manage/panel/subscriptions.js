@@ -13,6 +13,7 @@ import {
   resourceID,
 } from "./template-settings.js";
 import { subscriptionWizard } from "./subscription-wizard.js";
+import { loadDialog } from "./dialog-session.js";
 import { importTemplate } from "./template-import.js";
 import {
   showClientCapabilities,
@@ -50,13 +51,13 @@ export async function subscriptions(ctx) {
   let clients;
   let presets;
   let status;
-  const getPresets = () =>
-    (presets ??= request("/api/subscription-presets").catch((error) => {
+  const getPresets = (signal = ctx.signal) =>
+    (presets ??= request("/api/subscription-presets", undefined, { signal }).catch((error) => {
       presets = null;
       throw error;
     }));
-  const getClients = () =>
-    (clients ??= clientCatalog(request).catch((error) => {
+  const getClients = (signal = ctx.signal) =>
+    (clients ??= clientCatalog((path) => request(path, undefined, { signal })).catch((error) => {
       clients = null;
       throw error;
     }));
@@ -103,12 +104,12 @@ export async function subscriptions(ctx) {
         row(
           button(
             "快速创建订阅",
-            async () =>
-              subscriptionWizard(
-                ctx,
-                c,
-                await getClients(),
-                await getPresets(),
+            () =>
+              loadDialog(
+                ctx.signal,
+                "快速创建订阅",
+                (signal) => Promise.all([getClients(signal), getPresets(signal)]),
+                ([catalog, presets]) => subscriptionWizard(ctx, c, catalog, presets),
               ),
             "primary",
           ),

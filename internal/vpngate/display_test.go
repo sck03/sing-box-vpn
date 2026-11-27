@@ -40,7 +40,7 @@ func TestLiveStatus(t *testing.T) {
 	})}
 	defer server.Close()
 	go server.Serve(listener)
-	for _, state := range []string{"ready", "stopped"} {
+	for _, state := range []State{Ready, Stopped} {
 		payload, err := json.Marshal(Status{State: state, Country: "JP", Mode: "fixed", Exit: &Geo{IP: "203.0.113.20", Country: "JP"}})
 		if err != nil {
 			t.Fatal(err)
@@ -62,9 +62,11 @@ func TestLiveStatus(t *testing.T) {
 
 func TestGatewayDisplayRequiresLiveVerifiedExit(t *testing.T) {
 	for _, test := range []struct {
-		name, state, country string
-		exit                 *Geo
-		connected            bool
+		name      string
+		state     State
+		country   string
+		exit      *Geo
+		connected bool
 	}{
 		{"ready", "ready", "JP", &Geo{IP: "203.0.113.20", Country: "JP"}, true},
 		{"connecting with old exit", "connecting", "JP", &Geo{IP: "203.0.113.20", Country: "JP"}, false},

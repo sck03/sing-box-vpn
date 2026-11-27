@@ -2,6 +2,7 @@ package controlstore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 )
@@ -9,6 +10,23 @@ import (
 // Shared by cancellation mutations and every public task projection.
 const taskCancellable = "cancel_requested=0 AND ((state='queued' AND kind!='apply') OR (state='running' AND lane='probe'))"
 const taskCancellationColumns = "cancel_requested,(" + taskCancellable + ")"
+
+// Persist the execution-time recovery baseline before an apply changes files or
+// services. Recovery retains the private input; terminal tasks erase it.
+func (s *Store) CheckpointApply(ctx context.Context, id int64, input json.RawMessage) error {
+	if !json.Valid(input) {
+		return errors.New("invalid apply checkpoint")
+	}
+	r, err := s.db.ExecContext(ctx, `UPDATE control_tasks SET input=?,updated=? WHERE id=? AND kind='apply' AND state='running' AND cancel_requested=0`, []byte(input), time.Now().Unix(), id)
+	if err != nil {
+		return err
+	}
+	n, err := r.RowsAffected()
+	if err == nil && n != 1 {
+		return ErrConflict
+	}
+	return err
+}
 
 func (s *Store) Finish(ctx context.Context, id int64, result error) error {
 	state, detail := "succeeded", ""

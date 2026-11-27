@@ -1,5 +1,6 @@
 import { api, getTask, getTasks } from "./api.js";
 import { dialogSession } from "./dialog-session.js";
+import { observeStatus } from "./status-observer.js";
 import { validationLabel } from "./validation.js";
 import { table } from "./tables.js";
 import { card } from "./dom.js";
@@ -72,13 +73,12 @@ export async function openTask(id, signal = undefined, completed = undefined) {
   await refresh();
 }
 
-export async function taskHistory(ctx) {
+export async function taskHistory(ctx, section = undefined) {
   const root = el("div");
   let cursors = [0];
   let loading = false;
   let items = [];
-  let pending = false,
-    signature = "";
+  let pending = false;
   let nextBefore = 0;
   const notice = el("p", { role: "status", hidden: true });
   const latest = button("返回最新记录", () => load([0]));
@@ -87,22 +87,8 @@ export async function taskHistory(ctx) {
   const older = button("较早记录", () => load([...cursors, nextBefore]));
   const position = help("");
   const controls = row(newer, position, older, latest);
-  ctx.updateOverview = (snapshot) => {
-    const key = JSON.stringify([snapshot.tasks, snapshot.task_counts]);
-    if (key === signature) return;
-    signature = key;
-    const recent = new Map(snapshot.tasks.map((task) => [task.id, task]));
-    items = items.map((task) => recent.get(task.id) || task);
-    root.querySelector(".data-table")?.updateItems(items);
-    if (cursors.length === 1) {
-      if (loading) pending = true;
-      else void load().catch(showError);
-    } else {
-      notice.textContent = "任务记录已有更新，当前历史页保持不变。";
-      notice.hidden = false;
-      latest.hidden = false;
-    }
-  };
+  newer.disabled = older.disabled = true;
+  root.append(notice, controls);
   const showError = (error) => {
     if (ctx.signal?.aborted) return;
     notice.textContent = "读取任务失败：" + error.message;
@@ -135,11 +121,29 @@ export async function taskHistory(ctx) {
       loading = false;
       if (pending && !ctx.signal?.aborted) {
         pending = false;
-        void load().catch(showError);
+        void observer.refresh();
       }
     }
   };
-  await load();
+  const observer = observeStatus(ctx, async (snapshot) => {
+    if (snapshot) {
+      const recent = new Map(snapshot.tasks.map((task) => [task.id, task]));
+      items = items.map((task) => recent.get(task.id) || task);
+      root.querySelector(".data-table")?.updateItems(items);
+    }
+    if (cursors.length === 1) {
+      if (loading) pending = true;
+      else await load().catch(showError);
+    } else {
+      notice.textContent = "任务记录已有更新，当前历史页保持不变。";
+      notice.hidden = false;
+      latest.hidden = false;
+    }
+  }, {
+    section,
+    key: (snapshot) => JSON.stringify([snapshot?.resource_version, snapshot?.tasks, snapshot?.task_counts]),
+  });
+  await observer.refresh();
   return root;
 }
 

@@ -17,6 +17,16 @@ import {
   jsonDialog,
   badge,
 } from "./ui.js";
+/** @type {Record<import('./contracts.js').GatewayState, string>} */
+const gatewayStates = {
+  fetching: "正在获取候选节点",
+  connecting: "正在建立隧道",
+  verifying: "正在验证出口",
+  waiting: "等待可用节点（转发已阻断）",
+  ready: "已就绪",
+  stopped: "已停止",
+  unavailable: "状态不可用",
+};
 export async function vpngate(ctx) {
   const admin = ctx.session.role === "admin";
   const c = admin ? await ctx.config() : null;
@@ -24,6 +34,7 @@ export async function vpngate(ctx) {
   const active = c?.vpn.active_country || (admin ? "尚未选择" : "运行控制");
   const runtime = el("div", { role: "status" }, help("正在读取网关运行状态…"));
   const gateway = async () => {
+    let previous;
     const { refresh } = observeStatus(
       ctx,
       async () => {
@@ -33,15 +44,10 @@ export async function vpngate(ctx) {
             ctx.request || api,
           );
           if (ctx.signal?.aborted) return;
-          const state =
-            {
-              ready: "已就绪",
-              stopped: "已停止",
-              starting: "正在启动",
-              switching: "正在切换",
-              failed: "失败",
-              degraded: "异常",
-            }[current.state] || current.state;
+          const signature = JSON.stringify([current.state, current.country, current.reason]);
+          if (signature === previous) return;
+          previous = signature;
+          const state = gatewayStates[current.state];
           runtime.replaceChildren(
             row(
               badge(
@@ -54,13 +60,14 @@ export async function vpngate(ctx) {
           );
         } catch (error) {
           if (error.name === "AbortError" || ctx.signal?.aborted) return;
+          previous = undefined;
           runtime.replaceChildren(
             help("运行状态暂不可读取：" + error.message),
             button("重试", refresh),
           );
         }
       },
-      { section: "gateway" },
+      { section: "gateway", interval: 5000 },
     );
     await refresh();
     return status;
@@ -83,7 +90,7 @@ export async function vpngate(ctx) {
         showFacts(
           "出口验证",
           [
-            ["状态", status.state],
+            ["状态", gatewayStates[status.state]],
             ["国家", status.country],
             ["节点", status.node],
             ["出口 IP", status.exit?.ip],

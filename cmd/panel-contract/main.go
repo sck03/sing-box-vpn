@@ -53,6 +53,16 @@ func main() {
 		case reflect.Bool:
 			return "boolean"
 		case reflect.String:
+			if t == reflect.TypeFor[vpngate.State]() {
+				values := make([]string, 0, len(vpngate.States()))
+				for _, state := range vpngate.States() {
+					value, _ := json.Marshal(state)
+					values = append(values, string(value))
+				}
+				n := name(t)
+				types[n] = "export type " + n + " = " + strings.Join(values, " | ") + ";\n"
+				return n
+			}
 			return "string"
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Float32, reflect.Float64:
 			return "number"

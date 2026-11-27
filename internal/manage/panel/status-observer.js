@@ -5,17 +5,19 @@
 
 // Resource invalidation is independent of the bounded task list. A visible-page
 // fallback also covers clock expiry and changes made by another manager process.
-/** @param {StatusContext} ctx @param {() => Promise<void>} read
- * @param {{section?: string}} [options] */
-export function observeStatus(ctx, read, { section } = {}) {
-  const signature = (/** @type {OverviewSnapshot | undefined} */ snapshot) =>
+/** @param {StatusContext} ctx @param {(snapshot?: OverviewSnapshot) => Promise<void>} read
+ * @param {{section?: string, interval?: number,
+ * key?: (snapshot: OverviewSnapshot | undefined) => string}} [options] */
+export function observeStatus(ctx, read, { section, interval = 60000, key } = {}) {
+  const signature = key || ((/** @type {OverviewSnapshot | undefined} */ snapshot) =>
     JSON.stringify([
       snapshot?.resource_version,
       snapshot?.revision,
       snapshot?.applied_revision,
       snapshot?.task_counts,
-    ]);
-  let version = signature(ctx.overview);
+    ]));
+  let snapshot = ctx.overview;
+  let version = signature(snapshot);
   let visible =
     !section || (ctx.activeSection || ctx.section || section) === section;
   let queued = false,
@@ -32,7 +34,7 @@ export function observeStatus(ctx, read, { section } = {}) {
     pending = (async () => {
       while (queued && active()) {
         queued = false;
-        await read();
+        await read(snapshot);
       }
     })().finally(() => {
       pending = undefined;
@@ -40,9 +42,10 @@ export function observeStatus(ctx, read, { section } = {}) {
     return pending;
   }
   const updateOverview = ctx.updateOverview;
-  const update = (/** @type {OverviewSnapshot} */ snapshot) => {
-    updateOverview?.(snapshot);
-    const next = signature(snapshot);
+  const update = (/** @type {OverviewSnapshot} */ value) => {
+    updateOverview?.(value);
+    snapshot = value;
+    const next = signature(value);
     if (next === version) return;
     version = next;
     void refresh();
@@ -61,7 +64,7 @@ export function observeStatus(ctx, read, { section } = {}) {
   const visibility = () => {
     if (active()) void refresh();
   };
-  const timer = window.setInterval(visibility, 60000);
+  const timer = window.setInterval(visibility, interval);
   document.addEventListener("visibilitychange", visibility);
   const stop = () => {
     if (stopped) return;

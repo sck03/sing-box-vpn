@@ -135,5 +135,7 @@ export function subscriptionWizard(ctx, config, catalog, presets) {
         },
       );
     },
+    false,
+    ctx.signal,
   );
 }

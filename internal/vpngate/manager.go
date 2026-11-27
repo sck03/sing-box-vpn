@@ -58,7 +58,7 @@ type manager struct {
 func newManager(c Config, path string, transaction func(string, func() error) error) *manager {
 	// Normalize identity before comparing later validated reloads.
 	c.DataDir, c.RunDir = filepath.Clean(c.DataDir), filepath.Clean(c.RunDir)
-	m := &manager{transaction: transaction, cfg: c, configPath: path, status: Status{Version: version(), State: "stopped", Country: c.Country, Mode: c.Mode, Updated: time.Now()}, connections: map[net.Conn]bool{}, wake: make(chan struct{}, 1), factory: func(c Config) tunnel { return &backend{cfg: c} }}
+	m := &manager{transaction: transaction, cfg: c, configPath: path, status: Status{Version: version(), State: Stopped, Country: c.Country, Mode: c.Mode, Updated: time.Now()}, connections: map[net.Conn]bool{}, wake: make(chan struct{}, 1), factory: func(c Config) tunnel { return &backend{cfg: c} }}
 	m.refreshSlot = make(chan struct{}, 1)
 	m.actionSlot = make(chan struct{}, 1)
 	m.pendingDials = map[*pendingDial]struct{}{}
@@ -78,8 +78,8 @@ func (m *manager) snapshot() Status {
 	defer m.mu.Unlock()
 	s := m.status
 	s.SourceRefresh = m.sourceRefresh
-	if s.State == "ready" && !m.ready {
-		s.State, s.Reason, s.Exit = "waiting", "forwarding blocked; waiting for exit verification", nil
+	if s.State == Ready && !m.ready {
+		s.State, s.Reason, s.Exit = Waiting, "forwarding blocked; waiting for exit verification", nil
 	}
 	if s.Exit != nil {
 		g := *s.Exit
@@ -87,7 +87,7 @@ func (m *manager) snapshot() Status {
 	}
 	return s
 }
-func (m *manager) setStatus(state, reason string, node Node, geo *Geo) {
+func (m *manager) setStatus(state State, reason string, node Node, geo *Geo) {
 	m.mu.Lock()
 	previous := m.status
 	m.status = Status{Version: version(), State: state, Reason: reason, Country: m.cfg.Country, Mode: m.cfg.Mode, Node: node.Host, Exit: geo, Updated: time.Now()}
@@ -127,7 +127,7 @@ func (m *manager) apply(c Config, swap bool) error {
 	m.swap = swap
 	m.ready = false
 	m.epoch++
-	m.status = Status{Version: version(), State: "waiting", Country: c.Country, Mode: c.Mode, Reason: "configuration changed; forwarding blocked", Updated: time.Now()}
+	m.status = Status{Version: version(), State: Waiting, Country: c.Country, Mode: c.Mode, Reason: "configuration changed; forwarding blocked", Updated: time.Now()}
 	if m.cancel != nil {
 		m.cancel()
 	}
@@ -160,7 +160,7 @@ func (m *manager) run(ctx context.Context) {
 			if done != nil {
 				<-done
 			}
-			m.setStatus("stopped", "daemon stopped", Node{}, nil)
+			m.setStatus(Stopped, "daemon stopped", Node{}, nil)
 			return
 		case <-m.wake:
 			m.mu.Lock()
@@ -182,7 +182,7 @@ func (m *manager) run(ctx context.Context) {
 			m.mu.Unlock()
 			if !c.Enabled {
 				cancel()
-				m.setStatus("stopped", "disabled by user", Node{}, nil)
+				m.setStatus(Stopped, "disabled by user", Node{}, nil)
 				continue
 			}
 			done = make(chan struct{})
@@ -209,7 +209,7 @@ func (m *manager) verifyExit(ctx context.Context, c Config, active tunnel, n Nod
 		if revokeOnFailure {
 			m.revoke()
 		}
-		m.setStatus("verifying", err.Error()+"; forwarding blocked", n, nil)
+		m.setStatus(Verifying, err.Error()+"; forwarding blocked", n, nil)
 		var temporary probeUnavailable
 		if !errors.As(err, &temporary) || attempt == 2 {
 			return g, err
@@ -249,7 +249,7 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 		cachedAttempt := len(pool) > 0
 		initial = nil
 		if len(pool) == 0 {
-			m.setStatus("fetching", "fetching same-country candidates", Node{}, nil)
+			m.setStatus(Fetching, "fetching same-country candidates", Node{}, nil)
 			pool = m.reconnectCandidates(c, m.refresh(ctx, c, false), swap)
 		}
 		if len(pool) == 0 {
@@ -257,7 +257,7 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 			if lastFailure != "" {
 				reason += "; last tunnel failure: " + lastFailure
 			}
-			m.setStatus("waiting", reason, Node{}, nil)
+			m.setStatus(Waiting, reason, Node{}, nil)
 		}
 		for _, n := range pool {
 			if ctx.Err() != nil {
@@ -266,7 +266,7 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 			m.mu.Lock()
 			sessionEpoch := m.epoch
 			m.mu.Unlock()
-			m.setStatus("connecting", "OpenVPN handshake", n, nil)
+			m.setStatus(Connecting, "OpenVPN handshake", n, nil)
 			active := m.factory(c)
 			session, stop := context.WithCancelCause(ctx)
 			var client *http.Client
@@ -276,7 +276,7 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 				// checks. A failed process must not retain a 12-second probe and retries.
 				go watchTunnel(session, active, stop)
 				client = tunnelClient(active)
-				m.setStatus("verifying", "verifying exit country and provider", n, nil)
+				m.setStatus(Verifying, "verifying exit country and provider", n, nil)
 				var g Geo
 				// Startup already blocks forwarding; retries must retain its epoch.
 				g, e = m.verifyExit(session, c, active, n, client, false)
@@ -296,7 +296,7 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 					// An implicit fixed node is already persisted in last-node.json;
 					// rewriting gateway.json here could overwrite a concurrent menu edit.
 					_ = saveSourceCache(c, "last-node.json", n)
-					m.setStatus("ready", "volunteer / residential candidate", n, &g)
+					m.setStatus(Ready, "volunteer / residential candidate", n, &g)
 					backoff = 5 * time.Second
 					swap = false
 					e = m.monitorSession(session, c, active, n, client)
@@ -319,7 +319,7 @@ func (m *manager) connectLoop(ctx context.Context, c Config, swap bool) {
 				reason = e.Error()
 			}
 			lastFailure = reason
-			m.setStatus("waiting", reason, n, nil)
+			m.setStatus(Waiting, reason, n, nil)
 			m.mu.Lock()
 			m.failed[n.Host] = time.Now().Add(2 * time.Minute)
 			m.mu.Unlock()
@@ -373,7 +373,7 @@ func (m *manager) monitorSession(ctx context.Context, c Config, active tunnel, n
 			}
 			m.ready = true
 			m.mu.Unlock()
-			m.setStatus("ready", "volunteer / residential candidate", n, &g)
+			m.setStatus(Ready, "volunteer / residential candidate", n, &g)
 		}
 	}
 }

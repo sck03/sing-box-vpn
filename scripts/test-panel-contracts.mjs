@@ -408,7 +408,7 @@ const historyContext = {
   session: { role: "admin" },
   render() {},
   request: async () => ({
-    policy: { count: 20, days: 1, result_bytes: 262144 },
+    policy: { count: 20, days: 1, result_bytes: 8 * 1048576 },
     usage: { completed: 1, pending: 1, result_bytes: 512 },
   }),
 };
@@ -445,6 +445,23 @@ const { historyControls, journalCard } = await import(
   "../internal/manage/panel/log-maintenance.js"
 );
 const retention = await historyControls(historyContext);
+document.querySelector("#content").replaceChildren(retention);
+for (const mib of [0.25, 8, 64]) {
+  [...retention.querySelectorAll("button")].find((b) => b.textContent === "保留策略").click();
+  const form = document.querySelector("dialog form");
+  const budget = form.querySelector('[aria-label="详情预算（MiB）"]');
+  assert.equal(budget.step, "0.25");
+  assert.equal(budget.value, "8", "stored bytes must be displayed as MiB");
+  assert(form.checkValidity(), "default 8 MiB budget failed native form validation");
+  budget.value = String(mib);
+  assert(form.checkValidity(), "valid MiB budget failed native form validation");
+  form.requestSubmit();
+  await tick();
+  assert.deepEqual(maintenanceCalls.pop(), {
+    path: "/api/tasks/history", body: { count: 20, days: 1, result_bytes: mib * 1048576 },
+  });
+  assert.equal(document.querySelector("dialog").open, false);
+}
 [...retention.querySelectorAll("button")]
   .find((b) => b.textContent === "清理已处理")
   .click();
