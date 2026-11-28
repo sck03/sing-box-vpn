@@ -145,7 +145,7 @@ export function accountEditor(ctx) {
         initial: (value) =>
           (choices[scopes.indexOf(value.scope)] || []).map((entry) => entry.id),
         resetOn: ["scope"],
-        help: "默认勾选当前启用入口，可搜索后调整。至少选择一个；排队期间新增的入口不会自动加入。",
+        help: "默认勾选当前启用入口，可搜索后调整。至少选择一个；排队期间新增的入口不会自动加入。绑定会重载受影响入站，该入站下所有用户需重连。",
       },
     ];
   };

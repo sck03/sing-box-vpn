@@ -24,7 +24,14 @@ export async function routing(ctx) {
     a = structuredClone(c.app.advanced || {});
   const effective = await (ctx.request || api)("/api/server", c.app);
   const supported = (await capabilities()).runtime;
-  const fields = () => ruleFields((effective.inbounds || []).map((v) => v.tag), [...(effective.outbounds || []), ...(effective.endpoints || [])].map((v) => v.tag));
+  const fields = () =>
+    ruleFields(
+      (effective.inbounds || []).map((v) => v.tag),
+      [...(effective.outbounds || []), ...(effective.endpoints || [])].map(
+        (v) => v.tag,
+      ),
+      supported.route_actions,
+    );
   const changed = ({ local = false } = {}) => {
     c.app.advanced = a;
     ctx.changed();
@@ -92,7 +99,7 @@ export async function routing(ctx) {
         }),
         button("编辑", () =>
           formDialog("有序路由规则", fields(), r, (v) => {
-            a.route.rules[a.route.rules.indexOf(r)] = cleanRule(v);
+            a.route.rules[a.route.rules.indexOf(r)] = cleanRule(v, r);
             changed();
           }),
         ),

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"strconv"
 	"strings"
 )
@@ -19,12 +20,16 @@ func checkLeaseScope(ctx context.Context, tx *sql.Tx, id string) error {
 	if err != nil || e != nil || len(decoded) != 16 || sequence < 1 || strconv.FormatInt(sequence, 10) != number {
 		return ErrDenied
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO lease_scopes(id) VALUES(?)`, scope); err != nil {
-		return err
-	}
 	var retired int64
 	var closed bool
-	if err = tx.QueryRowContext(ctx, `SELECT retired,closed FROM lease_scopes WHERE id=?`, scope).Scan(&retired, &closed); err != nil {
+	err = tx.QueryRowContext(ctx, `SELECT retired,closed FROM lease_scopes WHERE id=?`, scope).Scan(&retired, &closed)
+	if errors.Is(err, sql.ErrNoRows) {
+		// The reservation transaction already holds the writer lock. A scope is
+		// created once; normal refills need only the replay/closure read.
+		_, err = tx.ExecContext(ctx, `INSERT INTO lease_scopes(id) VALUES(?)`, scope)
+		return err
+	}
+	if err != nil {
 		return err
 	}
 	if closed || sequence <= retired {

@@ -55,7 +55,7 @@ export async function accounts(ctx) {
     session.replace(
       el("h2", {}, "凭据绑定 · " + item.name),
       help(
-        "轮换和解除绑定会立即撤销旧代次；新凭据发布后自动重载对应入站，该入站连接可能短暂中断，其他入站继续运行。",
+        "轮换和解除绑定会立即撤销旧代次；凭据更新会重建对应入站，该入站下所有用户的现有连接都会断开并需重连，其他入站继续运行。",
       ),
       table(
         [
@@ -86,7 +86,7 @@ export async function accounts(ctx) {
                 },
                 {
                   key: "confirmed",
-                  label: "撤销旧凭据并重载对应入站（该入站连接可能短暂中断）",
+                  label: "撤销旧凭据并重载对应入站（该入站所有用户需重连）",
                   type: "bool",
                   required: true,
                 },
@@ -111,7 +111,11 @@ export async function accounts(ctx) {
           button(
             "解除",
             async () => {
-              if (confirm("解除此入口绑定并断开旧凭据？")) {
+              if (
+                confirm(
+                  "解除此入口绑定？对应入站下所有用户的现有连接都会断开并需重连。",
+                )
+              ) {
                 await ctx.task({
                   operation: "account",
                   account: {

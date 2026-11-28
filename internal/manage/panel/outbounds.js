@@ -4,6 +4,7 @@ import { outboundOptions } from "./configuration-api.js";
 import { capabilities } from "./capabilities.js";
 import { workspace } from "./workspace.js";
 import { outboundFields, normalizeOutbound } from "./outbound-fields.js";
+import { wireguardEditor } from "./wireguard.js";
 import {
   el,
   card,
@@ -103,7 +104,9 @@ export async function outbounds(ctx) {
                 (v) => ctx.task({ operation: "outbound-probe", ...v }),
               );
               form.form.prepend(
-                help(`使用已应用版本 ${applied.revision}${applied.pending || ctx.dirty ? "；草稿变更尚未参与检测。" : "。"}`),
+                help(
+                  `使用已应用版本 ${applied.revision}${applied.pending || ctx.dirty ? "；草稿变更尚未参与检测。" : "。"}`,
+                ),
               );
             },
           ),
@@ -121,15 +124,17 @@ export async function outbounds(ctx) {
         title: "出站与出站组",
         rowKey: (item) => item.tag,
         local: true,
-        normalize: (value, previous) => normalizeOutbound(value, previous, runtime.outbound_fields),
+        normalize: (value, previous) =>
+          normalizeOutbound(value, previous, runtime.outbound_fields),
         preserve: true,
         items: a.outbounds,
-        fields: () => outboundFields(
-          runtime.outbounds,
-          [...a.outbounds, ...a.endpoints].map((v) => v.tag),
-          (effective.dns?.servers || []).map((v) => v.tag),
-          runtime.outbound_fields,
-        ),
+        fields: () =>
+          outboundFields(
+            runtime.outbounds,
+            [...a.outbounds, ...a.endpoints].map((v) => v.tag),
+            (effective.dns?.servers || []).map((v) => v.tag),
+            runtime.outbound_fields,
+          ),
         defaults: {
           type: "socks",
           tag: "new-out",
@@ -148,105 +153,7 @@ export async function outbounds(ctx) {
   };
   const warp = async () => {
     await networkModel();
-    return resourceEditor({
-      title: "WARP / WireGuard 端点",
-      rowKey: (item) => item.tag,
-      local: true,
-      items: a.endpoints,
-      fields: [
-        { key: "tag", label: "Tag", required: true },
-        { key: "private_key", label: "私钥", type: "password" },
-        { key: "address", label: "本地地址 CIDR", type: "csv" },
-        { key: "mtu", label: "MTU", type: "number", min: 576, max: 65535,
-          advanced: true, help: "留空使用核心默认值；根据实际隧道链路调整。" },
-      ],
-      normalize: (value) => {
-        if (!value.mtu) delete value.mtu;
-        return value;
-      },
-      defaults: {
-        type: "wireguard",
-        tag: "warp-out",
-        address: ["172.16.0.2/32"],
-        private_key: "",
-        peers: [],
-      },
-      columns: [
-        { key: "tag", label: "Tag" },
-        { key: "type", label: "类型" },
-      ],
-      change: changed,
-      extraActions: (endpoint) => [
-        button("管理对端", () => {
-          const dialog = /** @type {HTMLDialogElement} */ (document.querySelector("#dialog"));
-          const draft = structuredClone(endpoint.peers || []);
-          const render = () => {
-            dialog.replaceChildren(
-              el("h2", {}, "WireGuard 对端 · " + endpoint.tag),
-              resourceEditor({
-                title: "对端",
-                items: draft,
-                fields: [
-                  { key: "address", label: "服务器地址", required: true },
-                  {
-                    key: "port",
-                    label: "端口",
-                    type: "number",
-                    min: 1,
-                    max: 65535,
-                  },
-                  { key: "public_key", label: "公钥", required: true },
-                  {
-                    key: "pre_shared_key",
-                    label: "预共享密钥（可留空）",
-                    type: "password",
-                  },
-                  {
-                    key: "allowed_ips",
-                    label: "允许的 IP CIDR",
-                    type: "csv",
-                    required: true,
-                  },
-                  {
-                    key: "persistent_keepalive_interval",
-                    label: "保活间隔（秒，0 停用）",
-                    type: "number",
-                    min: 0,
-                    max: 65535,
-                  },
-                ],
-                defaults: {
-                  address: "",
-                  port: 51820,
-                  public_key: "",
-                  allowed_ips: ["0.0.0.0/0", "::/0"],
-                },
-                columns: [
-                  { key: "address", label: "服务器" },
-                  { key: "port", label: "端口" },
-                  {
-                    label: "允许网段",
-                    value: (v) => v.allowed_ips?.join(", "),
-                  },
-                ],
-                normalize: (v) => {
-                  if (!v.pre_shared_key) delete v.pre_shared_key;
-                  return v;
-                },
-                change: () => {
-                  endpoint.peers = structuredClone(draft);
-                  changed();
-                  render();
-                },
-              }),
-              button("完成", () => dialog.close()),
-            );
-            dialog.showModal();
-          };
-          render();
-        }),
-      ],
-    });
+    return wireguardEditor(ctx, a.endpoints, changed);
   };
   const services = () =>
     resourceEditor({

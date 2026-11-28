@@ -19,8 +19,9 @@ try {
   dom.window.HTMLDialogElement.prototype.close = function () {
     this.open = false;
   };
-  const { table, badge, formDialog, remoteTable } =
-    await import("../internal/manage/panel/ui.js");
+  const { table, badge, formDialog, remoteTable } = await import(
+    "../internal/manage/panel/ui.js"
+  );
   const host = document.querySelector("#content");
   document.querySelector("#shell").hidden = false;
   const list = table(
@@ -155,23 +156,25 @@ try {
   assert.equal(document.activeElement, remoteFocus);
 
   let saved;
-  formDialog(
-    "额度",
-    [
-      {
-        key: "quota",
-        label: "额度 GiB",
-        type: "number",
-        scale: 1073741824,
-        nullable: true,
+  const quotaEditor = () =>
+    formDialog(
+      "额度",
+      [
+        {
+          key: "quota",
+          label: "额度 GiB",
+          type: "number",
+          scale: 1073741824,
+          nullable: true,
+        },
+      ],
+      { quota: 1073741824 },
+      (v) => {
+        saved = v;
       },
-    ],
-    { quota: 1073741824 },
-    (v) => {
-      saved = v;
-    },
-  );
-  const field = document.querySelector("dialog input");
+    );
+  quotaEditor();
+  let field = document.querySelector("dialog input");
   assert.equal(field.value, "1");
   field.value = "1.5";
   document
@@ -179,6 +182,8 @@ try {
     .dispatchEvent(new Event("submit", { cancelable: true }));
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(saved.quota, 1610612736);
+  quotaEditor();
+  field = document.querySelector("dialog input");
   field.value = "0.1";
   document
     .querySelector("dialog form")
@@ -260,8 +265,9 @@ try {
     false,
   );
 
-  const { createAccountShare } =
-    await import("../internal/manage/panel/sharing.js");
+  const { createAccountShare } = await import(
+    "../internal/manage/panel/sharing.js"
+  );
   let createdShare;
   await createAccountShare(
     [
@@ -348,8 +354,9 @@ try {
     false,
   );
 
-  const { maintenance } =
-    await import("../internal/manage/panel/maintenance.js");
+  const { maintenance } = await import(
+    "../internal/manage/panel/maintenance.js"
+  );
   const maintenanceContext = {
     session: { role: "operator" },
     request: async () => ({

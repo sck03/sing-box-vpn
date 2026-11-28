@@ -1,7 +1,6 @@
 package manage
 
 import (
-	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/adminauth"
 	"github.com/sck03/sing-box-vpn/internal/controlstore"
 	"github.com/sck03/sing-box-vpn/internal/domain"
@@ -85,15 +84,15 @@ type GrantRevoke struct {
 }
 
 type OverviewSnapshot struct {
-	ResourceVersion uint64                             `json:"resource_version"`
-	Background      []BackgroundIssue                  `json:"background"`
-	Revision        int64                              `json:"revision"`
-	AppliedRevision int64                              `json:"applied_revision"`
-	Services        []ServiceState                     `json:"services"`
-	Runtimes        []controlstore.RuntimeState        `json:"runtimes"`
-	Tasks           []controlstore.Task                `json:"tasks"`
-	TaskCounts      controlstore.TaskCounts            `json:"task_counts"`
-	Credentials     []accounting.CredentialPublication `json:"credentials"`
+	ResourceVersion uint64                         `json:"resource_version"`
+	Background      []BackgroundIssue              `json:"background"`
+	Revision        int64                          `json:"revision"`
+	AppliedRevision int64                          `json:"applied_revision"`
+	Services        []ServiceState                 `json:"services"`
+	Runtimes        []controlstore.RuntimeState    `json:"runtimes"`
+	Tasks           []controlstore.Task            `json:"tasks"`
+	TaskCounts      controlstore.TaskCounts        `json:"task_counts"`
+	Credentials     []domain.CredentialPublication `json:"credentials"`
 }
 
 // Named wire contracts are shared by handlers and the frontend type generator.

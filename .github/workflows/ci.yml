@@ -91,7 +91,7 @@ jobs:
       - name: Strict protocol fixture preflight
         run: SBVPN_REQUIRE_CLIENT_CHECK=1 go test -count=1 -run '^TestRealFiveProtocolsTCPUDP$' ./internal/vpngate
       - name: Go tests, race detection and 72 real subscription TCP/UDP links
-        run: SBVPN_REQUIRE_CLIENT_CHECK=1 RUN_UDP_IDLE_TESTS=1 go test -race -timeout=25m -count=1 -v ./...
+        run: SBVPN_REQUIRE_CLIENT_CHECK=1 RUN_UDP_IDLE_TESTS=1 RUN_SUBSCRIPTION_SOAK=1m go test -race -timeout=25m -count=1 -v ./...
       - name: Managed runtime account isolation and real TCP/UDP links
         run: |
           go test -race -tags with_quic,with_utls,with_wireguard,with_gvisor -count=1 ./internal/runtime

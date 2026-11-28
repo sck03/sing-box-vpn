@@ -286,6 +286,7 @@ export function formDialog(
     "submit",
     action(async (event) => {
       event.preventDefault();
+      if (!session.active()) return;
       const errorNode = form.querySelector(".form-error");
       errorNode.hidden = true;
       for (const [, input] of inputs) {
@@ -313,6 +314,7 @@ export function formDialog(
           const structured = original !== null && typeof original === "object";
           if (
             (field.type === "date" ||
+              (control && original !== undefined) ||
               ((preserve || structured) &&
                 (!field.visible || field.visible(value)))) &&
             fieldSnapshot(input) === initial

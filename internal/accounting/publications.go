@@ -9,24 +9,13 @@ import (
 	"github.com/sck03/sing-box-vpn/internal/domain"
 )
 
-// CredentialPublication separates durable mutations, generated downloads and
-// credentials actually loaded by a running core. Mutations advance revision in
-// the same transaction; a crash cannot lose the need to reconcile.
-type CredentialPublication struct {
-	Runtime   string `json:"runtime"`
-	Revision  int64  `json:"revision"`
-	Published int64  `json:"published"`
-	Loaded    int64  `json:"loaded"`
-}
-
-// CredentialPublication is the small polling read; credential secrets are only
-// decoded after the published revision changes.
+// HasUnpublishedCredentials avoids loading revisions when publication is idle.
 func (s *Store) HasUnpublishedCredentials(ctx context.Context) (pending bool, err error) {
 	err = s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM credential_publications WHERE published < revision)`).Scan(&pending)
 	return
 }
 
-func (s *Store) CredentialPublication(ctx context.Context, scope string) (v CredentialPublication, err error) {
+func (s *Store) CredentialPublication(ctx context.Context, scope string) (v domain.CredentialPublication, err error) {
 	err = s.db.QueryRowContext(ctx, `SELECT runtime,revision,published,loaded FROM credential_publications WHERE runtime=?`, scope).Scan(&v.Runtime, &v.Revision, &v.Published, &v.Loaded)
 	return
 }
@@ -36,15 +25,15 @@ func advanceCredentials(ctx context.Context, tx *sql.Tx, scope string) error {
 	return err
 }
 
-func (s *Store) CredentialPublications(ctx context.Context) ([]CredentialPublication, error) {
+func (s *Store) CredentialPublications(ctx context.Context) ([]domain.CredentialPublication, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT runtime,revision,published,loaded FROM credential_publications ORDER BY runtime`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	result := []CredentialPublication{}
+	result := []domain.CredentialPublication{}
 	for rows.Next() {
-		var v CredentialPublication
+		var v domain.CredentialPublication
 		if err := rows.Scan(&v.Runtime, &v.Revision, &v.Published, &v.Loaded); err != nil {
 			return nil, err
 		}

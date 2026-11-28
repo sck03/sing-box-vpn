@@ -68,6 +68,57 @@ def check(browser, base):
       } finally { grid.remove(); }
     }""")
     assert refreshed == {"focused": True, "unaffected": True, "patched": True, "clicks": 1}, refreshed
+    # Exercise the real shared editors with keyboard/form validation in Chromium.
+    # This isolated DOM fixture does not alter the panel's persisted configuration.
+    page.evaluate("""async () => {
+      const { wireguardEditor } = await import('/panel/wireguard.js');
+      const fixture = {
+        endpoints: [{type:'wireguard', tag:'browser-warp', private_key:'initial-key',
+          address:['172.16.0.2/32'], peers:[{address:'original.example',port:51820,
+          public_key:'public-key',allowed_ips:'0.0.0.0/0'}]}],
+        controller: new AbortController(), changes: 0,
+      };
+      fixture.host = document.createElement('div');
+      fixture.host.id = 'network-editor-fixture';
+      fixture.host.append(wireguardEditor({signal:fixture.controller.signal}, fixture.endpoints, () => fixture.changes++));
+      document.querySelector('#content').append(fixture.host);
+      window.networkEditorFixture = fixture;
+    }""")
+    peer_fixture = page.locator("#network-editor-fixture")
+    peer_fixture.locator("tbody summary").click()
+    peer_fixture.get_by_role("button", name="管理对端", exact=True).click()
+    peer_dialog = page.locator("#dialog")
+    for address in ["first.example", "second.example"]:
+        peer_dialog.locator("tbody summary").click()
+        peer_dialog.get_by_role("button", name="编辑", exact=True).click()
+        peer_dialog.get_by_label("服务器地址", exact=True).fill(address)
+        peer_dialog.get_by_role("button", name="保存", exact=True).click()
+        expect(peer_dialog.locator("tbody")).to_contain_text(address)
+    peer_dialog.get_by_role("button", name="完成", exact=True).click()
+    peer_fixture.locator("tbody summary").click()
+    peer_fixture.get_by_role("button", name="编辑", exact=True).click()
+    peer_dialog.get_by_label("私钥", exact=True).fill("changed-key")
+    peer_dialog.get_by_role("button", name="保存", exact=True).click()
+    state = page.evaluate("window.networkEditorFixture.endpoints[0]")
+    assert state["peers"][0]["address"] == "second.example", state
+    assert state["private_key"] == "changed-key", state
+    page.evaluate("window.networkEditorFixture.controller.abort(); window.networkEditorFixture.host.remove(); delete window.networkEditorFixture;")
+    for action in [None, "bypass"]:
+        page.evaluate("""async (action) => {
+          const {formDialog} = await import('/panel/form-dialog.js');
+          const {ruleFields, cleanRule} = await import('/panel/network-fields.js');
+          const {capabilities} = await import('/panel/capabilities.js');
+          const rule = {domain_suffix:'example.com', inbound:'in1',outbound:'direct'};
+          if (action) rule.action = action;
+          formDialog('路由编辑回归', ruleFields(['in1'],['direct'],(await capabilities()).runtime.route_actions),
+            rule, value => { window.networkRuleResult = cleanRule(value, rule); });
+        }""", action)
+        expect(peer_dialog.get_by_label("出站", exact=True)).to_be_visible()
+        peer_dialog.get_by_role("button", name="保存", exact=True).click()
+        expect(peer_dialog).not_to_be_visible()
+        rule = page.evaluate("window.networkRuleResult")
+        assert rule["domain_suffix"] == "example.com" and rule["inbound"] == "in1" and rule["outbound"] == "direct", rule
+    page.evaluate("delete window.networkRuleResult")
     result = api.post(base + "/api/accounts", headers=headers, data={"account": {
         "id": account, "name": account, "duration_seconds": 86400, "quota_bytes": None,
     }})

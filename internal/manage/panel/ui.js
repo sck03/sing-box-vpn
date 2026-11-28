@@ -6,8 +6,8 @@ import { formDialog } from "./form-dialog.js";
 import { dialogSession } from "./dialog-session.js";
 export { formDialog } from "./form-dialog.js";
 
-export function jsonDialog(title, value, save) {
-  const session = dialogSession(),
+export function jsonDialog(title, value, save, signal = undefined) {
+  const session = dialogSession(signal),
     input = el("textarea", {
       class: "json",
       "aria-label": title,
@@ -23,6 +23,7 @@ export function jsonDialog(title, value, save) {
       button(
         "保存到草稿",
         async () => {
+          if (!session.active()) return;
           await save(JSON.parse(input.value));
           if (session.active()) session.close();
         },
@@ -31,6 +32,33 @@ export function jsonDialog(title, value, save) {
     ),
   );
 }
+
+// Child forms replace the shared dialog. Reopen the resource list only after a
+// successful edit, while its page still owns the workflow. List actions update
+// locally without rebuilding the page or discarding the current filter/page.
+/** @param {Parameters<typeof resourceEditor>[0]} options */
+export function resourceDialog(options) {
+  const { signal, change, ...editor } = options;
+  const open = () => {
+    if (signal?.aborted) return;
+    const session = dialogSession(signal);
+    session.replace(
+      resourceEditor({
+        ...editor,
+        signal,
+        local: true,
+        change: () => {
+          if (signal?.aborted) return;
+          change();
+          if (!session.active()) open();
+        },
+      }),
+      button("完成", session.close),
+    );
+  };
+  open();
+}
+
 export function resourceEditor({
   title,
   items,
@@ -45,6 +73,7 @@ export function resourceEditor({
   rowKey = undefined,
   pageSize = undefined,
   compact = true,
+  signal = undefined,
 }) {
   let view;
   const change = () => {
@@ -57,18 +86,30 @@ export function resourceEditor({
       button(
         "新增",
         () =>
-          formDialog("新增" + title, typeof fields === "function" ? fields() : fields, structuredClone(defaults), (v) => {
-            items.push(normalize(v));
-            change();
-          }),
+          formDialog(
+            "新增" + title,
+            typeof fields === "function" ? fields() : fields,
+            structuredClone(defaults),
+            (v) => {
+              items.push(normalize(v));
+              change();
+            },
+            preserve,
+            signal,
+          ),
         "primary",
       ),
       button("高级 JSON", () =>
-        jsonDialog(title, items, (v) => {
-          if (!Array.isArray(v)) throw new Error("需要数组");
-          items.splice(0, items.length, ...v);
-          change();
-        }),
+        jsonDialog(
+          title,
+          items,
+          (v) => {
+            if (!Array.isArray(v)) throw new Error("需要数组");
+            items.splice(0, items.length, ...v);
+            change();
+          },
+          signal,
+        ),
       ),
     ),
     (view = table(
@@ -88,6 +129,7 @@ export function resourceEditor({
               change();
             },
             preserve,
+            signal,
           ),
         ),
         ...extraActions(item),
@@ -104,13 +146,19 @@ export function resourceEditor({
               change();
             },
             preserve,
+            signal,
           );
         }),
         button("JSON", () =>
-          jsonDialog(title, item, (v) => {
-            items[items.indexOf(item)] = v;
-            change();
-          }),
+          jsonDialog(
+            title,
+            item,
+            (v) => {
+              items[items.indexOf(item)] = v;
+              change();
+            },
+            signal,
+          ),
         ),
         button(
           "删除",

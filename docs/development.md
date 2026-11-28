@@ -25,7 +25,7 @@ go build -tags with_quic,with_utls,with_wireguard,with_gvisor -o .build/managed-
 本次相关前端入口：
 
 ```bash
-npm test -- test-panel-task-requests.mjs test-panel-submissions.mjs test-panel-workflows.mjs test-panel-lifecycle.mjs
+npm test -- test-panel-network-editors.mjs test-panel-task-requests.mjs test-panel-submissions.mjs test-panel-lifecycle.mjs
 npm run typecheck
 ```
 
@@ -33,6 +33,7 @@ npm run typecheck
 - submissions：响应丢失后的重试编号、会话重载与退出清理、管理员/订阅者/任务保留策略保存及 TOTP 密钥生成的页面与弹窗归属。
 - workflows/lifecycle：共享表单、迟到结果回看、加载弹窗取消和竞争归属。
 - state-sync：资源状态失效、隐藏页、局部刷新和生效/草稿分离。
+- network-editors：当前核心单值/数组契约、默认路由与 bypass 无损保存、连续对端编辑后再编辑父端点、离页旧表单拒绝提交。真实浏览器套件同时验证原生提交与指针交互。
 - checkJs 覆盖全部面板 JS；contracts 检查命令正反例，boundaries 对列出的请求和状态边界开启 strict。不能把它描述为全前端严格类型检查。
 
 可见页面夹具使用 `pretendToBeVisual: true`，隐藏行为另设 document.hidden。表单输入有效性用 checkValidity/requestSubmit 验证；直接派发 submit 只能验证处理器。浏览器视觉、焦点、移动端和原生验证仍由真实浏览器验收负责。
@@ -73,6 +74,8 @@ Linux 主机验收在 CI 或可丢弃隔离系统执行 `scripts/test-platform-l
 HTTP 任务、配置提交和面板重启可传 `Idempotency-Key`，面板自动处理。相同 key 只用于同一请求；409 表示内容冲突，410 表示已受理但历史被清理。其他 CRUD 和 multipart 恢复不承诺此重试协议。请求回执最多 10,000、至少保留 24 小时；前端只存摘要和随机编号，最多 128 个未确认项，退出清除。
 
 页面读取绑定 pageContext.signal，已提交写入绑定登录会话。保存完成后使用 refreshAfterSave 检查页面及 dialogSession 归属；需要回看结果时使用 workflow-results，不用迟到回调替换当前窗口。资源编辑尽量局部更新，保留搜索、排序、分页和焦点。多选、自由 token、字段联动统一复用现有控件；动态候选来自当前资源，不维护平行状态副本。
+
+子资源管理使用 resourceDialog，并把页面 signal 传给资源列表、表单和 JSON 编辑器。不要在页面刷新后继续复用旧对象闭包，也不要用 document.querySelector('#dialog') 自行管理嵌套编辑生命周期。表单回归每次成功提交后重新打开编辑器；向已关闭表单派发 submit 仅用于验证它被拒绝。
 
 ## 性能验证
 

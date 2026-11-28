@@ -9,8 +9,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/application"
+	"github.com/sck03/sing-box-vpn/internal/domain"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
 
@@ -43,15 +43,24 @@ func (s *PlatformService) mutateAccount(ctx context.Context, id int64, command a
 // Reconcile durable intent, never replay bind/rotate/unbind. This also runs on
 // startup and after interrupted tasks. Deliberately stopped cores stay stopped.
 func (s *PlatformService) reconcileCredentials(ctx context.Context) error {
-	versions, err := s.Accounts.CredentialPublications(ctx)
-	if err != nil {
-		return err
-	}
-	if !slices.ContainsFunc(versions, func(v accounting.CredentialPublication) bool { return v.Published < v.Revision }) {
-		return nil
-	}
-	// Runtime acknowledgements are owned by the core. A published revision on a
-	// deliberately stopped core is not pending publication and must stay idle.
+	published := false
+	defer func() {
+		if published {
+			s.invalidateOverview()
+		}
+	}()
+	return application.ReconcileCredentials(ctx, s.Accounts, application.CredentialPublicationTarget{
+		Publish: func(ctx context.Context, versions []domain.CredentialPublication) error {
+			err := s.publishCredentials(ctx, versions)
+			published = err == nil
+			return err
+		},
+		Active:      s.activeCredentialRuntimes,
+		AwaitLoaded: s.awaitCredentialLoad,
+	})
+}
+
+func (s *PlatformService) publishCredentials(ctx context.Context, versions []domain.CredentialPublication) error {
 	state, err := s.Store.State(ctx)
 	if err != nil {
 		return err
@@ -70,35 +79,29 @@ func (s *PlatformService) reconcileCredentials(ctx context.Context) error {
 	if err = withStartupLock(ctx, s.Root, func() error { return publishPlatformFiles(s.Root, files) }); err != nil {
 		return err
 	}
-	defer s.invalidateOverview()
-	for _, v := range versions {
-		if v.Published >= v.Revision {
-			continue
-		}
-		if err = s.Accounts.CredentialsPublished(ctx, v.Runtime, v.Revision); err != nil {
-			return err
-		}
+	return nil
+}
+
+func (s *PlatformService) activeCredentialRuntimes(ctx context.Context) ([]string, error) {
+	if s.NoSystem {
+		return nil, nil
+	}
+	services, err := s.activeServices(ctx)
+	if err != nil {
+		return nil, err
 	}
 	var active []string
-	if !s.NoSystem {
-		active, err = s.activeServices(ctx)
-		if err != nil {
-			return err
+	for _, scope := range []string{normalScope, vpngateScope} {
+		if slices.Contains(services, scopeService(scope)) {
+			active = append(active, scope)
 		}
 	}
-	for _, v := range versions {
-		if v.Loaded < v.Revision && slices.Contains(active, scopeService(v.Runtime)) {
-			if err = s.awaitCredentialLoad(ctx, v.Runtime, v.Revision); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+	return active, nil
 }
 
 // Credential changes leave routing, certificates and unrelated runtimes intact.
 // Rebuild subscriptions only when an account source consumes a changed runtime.
-func (s *PlatformService) buildCredentialPublication(ctx context.Context, c PlatformConfig, versions []accounting.CredentialPublication) (fileBundle, error) {
+func (s *PlatformService) buildCredentialPublication(ctx context.Context, c PlatformConfig, versions []domain.CredentialPublication) (fileBundle, error) {
 	c.normalize()
 	if err := c.validate(false); err != nil {
 		return nil, err

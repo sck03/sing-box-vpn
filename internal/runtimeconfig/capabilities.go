@@ -14,6 +14,7 @@ type Capabilities struct {
 	DNS            []string                  `json:"dns"`
 	Endpoints      []string                  `json:"endpoints"`
 	Services       []string                  `json:"services"`
+	RouteActions   []string                  `json:"route_actions"`
 	OutboundFields map[string]OutboundFields `json:"outbound_fields"`
 }
 
@@ -25,11 +26,12 @@ type OutboundFields struct {
 
 func Supported() Capabilities {
 	return Capabilities{
-		Inbounds:  []string{"vless", "vmess", "hysteria2", "tuic", "anytls"},
-		Outbounds: []string{"direct", "socks", "selector", "urltest", "vless", "vmess", "hysteria2", "tuic", "anytls"},
-		DNS:       []string{"tcp", "udp", "tls", "https", "local", "resolved"},
-		Endpoints: []string{"wireguard"},
-		Services:  []string{"resolved"},
+		Inbounds:     []string{"vless", "vmess", "hysteria2", "tuic", "anytls"},
+		Outbounds:    []string{"direct", "socks", "selector", "urltest", "vless", "vmess", "hysteria2", "tuic", "anytls"},
+		DNS:          []string{"tcp", "udp", "tls", "https", "local", "resolved"},
+		Endpoints:    []string{"wireguard"},
+		Services:     []string{"resolved"},
+		RouteActions: []string{"route", "route-options", "bypass", "reject", "hijack-dns", "sniff", "resolve"},
 		OutboundFields: map[string]OutboundFields{
 			"vless": {TLS: true, UTLS: true}, "vmess": {TLS: true, UTLS: true},
 			"hysteria2": {TLS: true, RequiredTLS: true}, "tuic": {TLS: true, RequiredTLS: true},

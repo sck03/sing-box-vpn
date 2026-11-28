@@ -1,20 +1,42 @@
 // Declarative field schemas keep configuration rules separate from page layout.
-export const ruleFields = (inbounds = [], outbounds = []) => [
+export const ruleFields = (inbounds, outbounds, actions) => [
   { key: "domain_suffix", label: "域名后缀", type: "csv" },
   { key: "ip_cidr", label: "IP CIDR", type: "csv" },
-  { key: "inbound", label: "入站入口", type: "multiselect", options: inbounds, help: "留空匹配所有入口；这里是路由筛选条件，不是账户绑定。" },
+  {
+    key: "inbound",
+    label: "入站入口",
+    type: "multiselect",
+    options: inbounds,
+    help: "留空匹配所有入口；这里是路由筛选条件，不是账户绑定。",
+  },
   {
     key: "action",
     label: "动作",
     type: "select",
-    options: ["route", "reject", "sniff", "resolve"],
+    default: "route",
+    options: actions,
+    help: "路由动作来自核心能力目录；高级参数可通过路由 JSON 编辑。",
   },
-  { key: "outbound", label: "出站", type: "select", options: outbounds, required: true, visible: (v) => v.action === "route" },
+  {
+    key: "outbound",
+    label: "出站",
+    type: "select",
+    options: [["", "默认"], ...outbounds],
+    required: (v) => (v.action || "route") === "route",
+    visible: (v) => ["route", "bypass"].includes(v.action || "route"),
+  },
 ];
-export function cleanRule(value) {
+export function cleanRule(value, previous = undefined) {
   for (const key of ["domain_suffix", "ip_cidr", "inbound", "outbound"])
     if (!value[key]?.length) delete value[key];
-  if (value.action !== "route") delete value.outbound;
+  // Clear a route target only on an explicit action transition. Advanced actions
+  // and omitted defaults must survive an otherwise unchanged structured edit.
+  if (
+    previous &&
+    (previous.action || "route") !== (value.action || "route") &&
+    !["route", "bypass"].includes(value.action || "route")
+  )
+    delete value.outbound;
   return value;
 }
 export const routeDefaults = { auto_detect_interface: true };

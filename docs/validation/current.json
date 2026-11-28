@@ -1,0 +1,107 @@
+{
+  "date": "2026-11-29",
+  "base_commit": "3d4dc0dd8118fbfc10cb29ea24bcbf72f87080ac",
+  "scope": [
+    "lossless current-core configuration editing",
+    "WireGuard resource ownership and local updates",
+    "credential publication application boundary",
+    "durable reservation SQL reduction",
+    "development artifact cleanup"
+  ],
+  "schemas": {
+    "database": 18,
+    "platform": 8,
+    "node": 7,
+    "subscription": 6,
+    "backup": 8
+  },
+  "validation": {
+    "frontend_scripts": 19,
+    "typecheck": "passed (checkJs plus contracts and selected strict boundaries)",
+    "generated_contracts": "passed",
+    "go_vet": "passed",
+    "api": "passed with newly built binaries",
+    "chromium": "passed; desktop and mobile including 320px",
+    "go_race": {
+      "command": "RUN_UDP_IDLE_TESTS=1 go test -race -tags with_quic,with_utls,with_wireguard,with_gvisor -json -count=1 -timeout=25m ./...",
+      "result": "All 21 tested packages passed after correcting the new route-options fixture and rerunning the runtime package",
+      "passed_top_level": 549,
+      "passed_including_subtests": 1125,
+      "initial_skipped": 37,
+      "skip_reasons": [
+        "Mihomo is not installed locally (35 entries)",
+        "Windows symlink privilege (1 entry)",
+        "Opt-in subscription soak (rerun separately and passed)"
+      ],
+      "fixture_correction": "route-options requires nonempty options; added override_port=8443; complete runtime race rerun passed"
+    },
+    "linux": "GitHub Actions on the resulting main commit",
+    "subscription_soak": {
+      "duration_seconds": 60.055,
+      "requests": 2078,
+      "failures": 0,
+      "heap_before": 853608,
+      "heap_after": 1078056,
+      "goroutines_before": 6,
+      "goroutines_after": 2
+    },
+    "markdown_links": 68
+  },
+  "performance": {
+    "environment": "Windows amd64 / i5-9400F / GOMAXPROCS=4 / three interleaved 1s baseline and optimized repetitions after all other tests finished",
+    "single_allocs_before": [
+      207,
+      207,
+      207
+    ],
+    "single_allocs_after": [
+      196,
+      195,
+      195
+    ],
+    "concurrent_allocs_before": [
+      190,
+      190,
+      189
+    ],
+    "concurrent_allocs_after": [
+      178,
+      177,
+      177
+    ],
+    "single_bytes_before": [9057, 9060, 9067],
+    "single_bytes_after": [8651, 8642, 8625],
+    "concurrent_bytes_before": [7797, 7815, 7778],
+    "concurrent_bytes_after": [7371, 7360, 7335],
+    "single_megabytes_per_second_before": [57.61, 57.09, 56.85],
+    "single_megabytes_per_second_after": [57.73, 56.72, 55.66],
+    "concurrent_megabytes_per_second_before": [165.61, 159.65, 160.99],
+    "concurrent_megabytes_per_second_after": [168.68, 165.66, 168.11],
+    "conclusion": "One fewer SQL statement per existing-scope refill and about 6% fewer allocations. Modest concurrent microbenchmark improvement; no stable single-pool throughput gain or demonstrated end-to-end VPN/VPS resource gain."
+  },
+  "limitations": [
+    "Changed inbound disconnects all existing users on that inbound; UI documents this impact.",
+    "No target VPS long-load RSS/CPU capacity result."
+  ],
+  "cleanup": {
+    "historical_validation_files_removed": 16,
+    "external_historical_directories": "all five previously documented paths absent",
+    "removed_directories": [".test", ".build", "node_modules", ".tools"],
+    "measurement": "Sum of file lengths including .git, immediately before and after artifact cleanup, before the delivery commit",
+    "workspace_before_bytes": 3244006267,
+    "workspace_after_bytes": 7245624,
+    "freed_bytes": 3236760643,
+    "files_before": 52404,
+    "files_after": 821
+  },
+  "delivery": {
+    "branch": "main",
+    "initial_local_branches": [
+      "main"
+    ],
+    "initial_remote_branches": [
+      "main"
+    ],
+    "release_published": false
+  }
+}

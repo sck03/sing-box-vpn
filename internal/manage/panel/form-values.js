@@ -1,3 +1,13 @@
+// Current core listable fields accept a scalar or an array. Normalize only the
+// control's working value; an untouched field retains its original JSON shape.
+export function listValues(value) {
+  return [
+    ...new Set(
+      (value == null ? [] : Array.isArray(value) ? value : [value]).map(String),
+    ),
+  ];
+}
+
 // DNS resolver fields accept a tag or sing-box's structured resolver options.
 export function resolverValue(text) {
   const value = text.trim();

@@ -10,6 +10,12 @@
 - `manage` 负责装配、鉴权与传输、平台发布和主机适配。新流程先明确其状态所有者，再决定模块，避免只拆文件却继续共享全部平台状态。
 - 前端保留原生 ES modules、统一表单/表格/弹窗组件及现有窄屏布局，不增加生产框架依赖。
 
+凭据发布版本属于 `domain.CredentialPublication`。`application.ReconcileCredentials` 通过窄仓储接口编排待发布筛选、原子发布后的确认和运行核心加载等待；`manage` 注入文件编译/校验、原子落盘及主机观测。失败重试只重建尚未确认的发布，不重放绑定、轮换或解除操作，不启动手动停止的核心。不存在 accounting 到 application 的反向依赖。
+
+多值字段在 `form-values.listValues` 适配为控件内部数组；未修改时保留原始单值/数组形状，修改后提交数组。路由动作选项由 `runtimeconfig.Supported().route_actions` 提供；省略动作按 route 显示，bypass 可选择出站。只有明确切换到不使用出站的动作才清理旧目标，高级字段不因普通编辑被抹除。
+
+WireGuard 编辑由独立 `wireguard.js` 维护字段与端点标识，复用 `resourceDialog`、`resourceEditor` 和 `dialogSession`。对端保存更新当前端点草稿并使其他标签失效，不重建整个页面；子表单成功后回到资源列表。离页取消窗口归属，已经关闭、替换或取消的表单不得提交或重新弹出。
+
 ## 任务来源、幂等与执行
 
 `domain.TaskSubmission` 将审计操作者 `Actor`、可信来源 `Source`、请求标识与指纹分开。HTTP 固定来源 user，CLI 固定 cli，内部调度器固定 scheduler。管理员可以叫 scheduler，其名称不会开启自动去重。公开 TaskCommand 不接受这些内部调度字段。

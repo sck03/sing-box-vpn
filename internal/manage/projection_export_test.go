@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sck03/sing-box-vpn/internal/accounting"
 	"github.com/sck03/sing-box-vpn/internal/domain"
 	sub "github.com/sck03/sing-box-vpn/internal/subscription"
 )
@@ -106,7 +105,7 @@ func TestCredentialPublicationBuildOnlyAffectedRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Core = filepath.Join(root, "unused-core")
-	files, err := s.buildCredentialPublication(t.Context(), config, []accounting.CredentialPublication{{Runtime: normalScope, Revision: 2, Published: 1}, {Runtime: vpngateScope, Revision: 1, Published: 1}})
+	files, err := s.buildCredentialPublication(t.Context(), config, []domain.CredentialPublication{{Runtime: normalScope, Revision: 2, Published: 1}, {Runtime: vpngateScope, Revision: 1, Published: 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +138,7 @@ func TestCredentialPublicationRefreshesDependentAccountSources(t *testing.T) {
 	config.Subscriptions.Sources = []sub.Source{{ID: "account", Kind: "account", AccountID: "a", Scope: normalScope, Required: true}}
 	config.Subscriptions.Collections = []sub.Collection{{ID: "account", Sources: []string{"account"}}}
 	config.Subscriptions.Outputs = []sub.Output{{ID: "account", Collection: "account", Template: "normal-uri"}}
-	files, err := s.buildCredentialPublication(t.Context(), config, []accounting.CredentialPublication{{Runtime: normalScope, Revision: 1}})
+	files, err := s.buildCredentialPublication(t.Context(), config, []domain.CredentialPublication{{Runtime: normalScope, Revision: 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +153,7 @@ func TestCredentialPublicationRefreshesDependentAccountSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The same normal-only source is unrelated to a VPNGate credential change.
-	files, err = s.buildCredentialPublication(t.Context(), config, []accounting.CredentialPublication{{Runtime: vpngateScope, Revision: 1}})
+	files, err = s.buildCredentialPublication(t.Context(), config, []domain.CredentialPublication{{Runtime: vpngateScope, Revision: 1}})
 	if err != nil {
 		t.Fatal(err)
 	}

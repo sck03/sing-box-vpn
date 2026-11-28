@@ -55,11 +55,20 @@ for (const invalid of [
   },
   { operation: "service", service: "sb-core", value: "stop", scope: "normal" },
   { operation: "service", service: "sb-core", value: "stop", id: "ignored" },
-  { operation: "subscription", subscription: { operation: "refresh", id: "ignored" } },
+  {
+    operation: "subscription",
+    subscription: { operation: "refresh", id: "ignored" },
+  },
   { operation: "subscription", subscription: { operation: "check" } },
-  { operation: "subscription", subscription: { operation: "check", id: "output" } },
+  {
+    operation: "subscription",
+    subscription: { operation: "check", id: "output" },
+  },
   { operation: "subscription", subscription: { operation: "deliver" } },
-  { operation: "subscription", subscription: { operation: "deliver", probe_url: "https://example.test" } },
+  {
+    operation: "subscription",
+    subscription: { operation: "deliver", probe_url: "https://example.test" },
+  },
 ])
   assert.equal(
     (await call("/api/tasks", invalid)).status,
@@ -185,6 +194,32 @@ assert.equal(rejectedTransport.status, 400);
 assert.equal(rejectedTransport.value.error.code, "invalid_field");
 assert(rejectedTransport.value.error.field.endsWith("transport.type"));
 
+const routingCapabilities = ok(await call("/api/capabilities")).runtime
+  .route_actions;
+assert(
+  routingCapabilities.includes("bypass") &&
+    routingCapabilities.includes("hijack-dns"),
+);
+for (const rule of [
+  {
+    domain_suffix: "example.com",
+    inbound: projected.inbounds[0].tag,
+    outbound: "direct",
+  },
+  { domain_suffix: ["example.com"], action: "bypass", outbound: "direct" },
+]) {
+  const candidate = structuredClone(config);
+  candidate.app.advanced ??= {};
+  candidate.app.advanced.route = {
+    ...projected.route,
+    rules: [rule],
+    final: "direct",
+  };
+  const effective = ok(await call("/api/server", candidate.app));
+  assert.deepEqual(effective.route.rules[0], rule);
+  ok(await call("/api/config/preview", candidate));
+}
+
 assert.equal(config.subscriptions.version, 6);
 const subscriptionCapabilities = ok(
   await call("/api/subscription-capabilities"),
@@ -230,10 +265,15 @@ assert.equal((await call("/api/config/preview", old)).status, 400);
 const suffix = Date.now().toString(36),
   person = "demo-" + suffix,
   account = "monthly-" + suffix;
-assert.deepEqual(ok(await call("/api/capabilities")).account_name,
-  { min: 1, max: 128, forbidden: "\r\n\0" });
+assert.deepEqual(ok(await call("/api/capabilities")).account_name, {
+  min: 1,
+  max: 128,
+  forbidden: "\r\n\0",
+});
 for (const name of ["Line\nBreak", "Line\rBreak", "NUL\0", "名".repeat(43)]) {
-  const rejected = await call("/api/accounts", { account: { id: "invalid-name", name } });
+  const rejected = await call("/api/accounts", {
+    account: { id: "invalid-name", name },
+  });
   assert.equal(rejected.status, 400);
   assert.equal(rejected.value.error.field, "account.name");
 }
@@ -265,7 +305,11 @@ for (const inbound_ids of [undefined, []]) {
     operation: "account",
     account: { operation: "bind", id: account, scope: "normal", inbound_ids },
   });
-  assert.equal(rejected.status, 400, "binding requires an explicit nonempty inlet snapshot");
+  assert.equal(
+    rejected.status,
+    400,
+    "binding requires an explicit nonempty inlet snapshot",
+  );
 }
 const queued = ok(
   await call("/api/tasks", {

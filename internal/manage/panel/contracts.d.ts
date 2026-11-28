@@ -110,6 +110,7 @@ export interface Capabilities {
   dns: Array<string> | null;
   endpoints: Array<string> | null;
   services: Array<string> | null;
+  route_actions: Array<string> | null;
   outbound_fields: Record<string, OutboundFields> | null;
 }
 
